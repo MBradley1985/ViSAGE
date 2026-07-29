@@ -39,6 +39,7 @@ class HaloLayer:
         self._snapshot: HaloSnapshot | None = None
         self._focus_mask: np.ndarray | None = None
         self._filter_mask: np.ndarray | None = None
+        self._slice_mask: np.ndarray | None = None  # lightcone redshift cut
         self._offset: np.ndarray = np.zeros(3, dtype=np.float32)
 
     # ------------------------------------------------------------------
@@ -108,14 +109,27 @@ class HaloLayer:
         if self._snapshot is not None:
             self._redraw()
 
+    def set_slice_mask(self, mask: np.ndarray | None) -> None:
+        """Lightcone redshift/time cut keep-mask (True = shown)."""
+        self._slice_mask = mask
+        if self._snapshot is not None:
+            self._redraw()
+
     def _combined_mask(self) -> np.ndarray | None:
-        if self._focus_mask is None:
-            return self._filter_mask
-        if self._filter_mask is None:
-            return self._focus_mask
-        if len(self._focus_mask) != len(self._filter_mask):
+        masks = [
+            m
+            for m in (self._focus_mask, self._filter_mask, self._slice_mask)
+            if m is not None
+        ]
+        if not masks:
             return None
-        return self._focus_mask & self._filter_mask
+        n = len(masks[0])
+        if any(len(m) != n for m in masks):
+            return None
+        out = masks[0].copy()
+        for m in masks[1:]:
+            out = out & m
+        return out
 
     # ------------------------------------------------------------------
     # Internal

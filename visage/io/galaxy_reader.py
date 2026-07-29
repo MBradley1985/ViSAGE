@@ -140,7 +140,7 @@ def load_galaxy_snapshot(
     hdf5_path: str | Path,
     snap_num: int,
     min_stellar_mass: float = 1.0e8,
-    max_galaxies: int = 100_000,
+    max_galaxies: int | None = None,
     hubble_h: float | None = None,
     scale_factors: np.ndarray | None = None,
     omega_m: float | None = None,
@@ -303,7 +303,9 @@ def load_galaxy_snapshot(
     mask = (stellar_mass > min_stellar_mass) & (mvir_raw > 0)
     indices = np.where(mask)[0]
 
-    if len(indices) > max_galaxies:
+    # max_galaxies=None → load every galaxy (no downsample). All snapshots are
+    # preloaded, so there's no display cap.
+    if max_galaxies is not None and len(indices) > max_galaxies:
         rng = np.random.default_rng(42)
         indices = rng.choice(indices, max_galaxies, replace=False)
 

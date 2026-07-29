@@ -117,14 +117,21 @@ def _parse_rotate(mode: str) -> tuple[float, float]:
 def build_toolbar(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
     snap_count = scene._snap_table.count
+    # Slider bounds — normally the full snap table, but a lightcone only spans
+    # the snapshots actually present in the cone (snap_min..snap_max).
+    snap_lo = int(getattr(scene.primary, "snap_min", 0))
+    snap_hi = int(getattr(scene.primary, "snap_max", snap_count - 1))
 
     state.snap_num = scene.current_snap
     state.snap_label = scene.snap_label
-    state.snap_max = snap_count - 1
+    state.snap_min = snap_lo
+    state.snap_max = snap_hi
     state.play_speed = 1
     _snap_count = [
         snap_count
     ]  # mutable so closures stay current after model switch
+    _snap_lo = [snap_lo]  # slider lower bound (0 for a box)
+    _snap_hi = [snap_hi]  # slider upper bound (snap_count-1 for a box)
     state.is_playing = False
     state.is_reverse = False
     state.is_repeat = False
@@ -166,12 +173,17 @@ def build_toolbar(server, scene: Scene) -> None:
     def _on_model_change():
         new_count = scene._snap_table.count
         _snap_count[0] = new_count
+        _snap_lo[0] = int(getattr(scene.active_model, "snap_min", 0))
+        _snap_hi[0] = int(
+            getattr(scene.active_model, "snap_max", new_count - 1)
+        )
         _suppress_snap[0] = False  # cancel any in-flight prerender
         _frames["key"] = None
         _frames["data"] = {}
         _preload_started[0] = False
         _preload_done[0] = False
-        state.snap_max = new_count - 1
+        state.snap_min = _snap_lo[0]
+        state.snap_max = _snap_hi[0]
         state.snap_num = scene.current_snap
         state.snap_label = scene.snap_label
         state.flush()
@@ -222,7 +234,6 @@ def build_toolbar(server, scene: Scene) -> None:
             round(hl.opacity, 3),
             hl.color_mode,
             hl.colormap,
-            scene.fof_links_visible,
             str(scene._focus_region),
             scene.camera.has_member_indicators,
         ]
@@ -393,9 +404,9 @@ def build_toolbar(server, scene: Scene) -> None:
         # high-z (reverse). Only that range is rendered.
         start = int(state.snap_num)
         if _ctl["reverse"]:
-            order = list(range(start, -1, -1))
+            order = list(range(start, _snap_lo[0] - 1, -1))
         else:
-            order = list(range(start, _snap_count[0]))
+            order = list(range(start, _snap_hi[0] + 1))
         # Invalidate the frame cache if the camera, rotation, or start position
         # changed. Start is included because rotation bakes the angle by frame
         # position — the same snapshot lands at a different angle when playback
@@ -510,13 +521,13 @@ def build_toolbar(server, scene: Scene) -> None:
 
     @ctrl.set("stop")
     def on_stop():
-        _end_playback_to(_snap_count[0] - 1)
+        _end_playback_to(_snap_hi[0])
 
     @ctrl.set("snap_prev")
     def on_snap_prev():
         if _play_task[0] is not None and not _play_task[0].done():
             return
-        n = max(0, int(state.snap_num) - 1)
+        n = max(_snap_lo[0], int(state.snap_num) - 1)
         scene.set_snapshot(n)
         state.snap_num = n
         state.snap_label = scene.snap_label
@@ -527,7 +538,7 @@ def build_toolbar(server, scene: Scene) -> None:
     def on_snap_next():
         if _play_task[0] is not None and not _play_task[0].done():
             return
-        n = min(_snap_count[0] - 1, int(state.snap_num) + 1)
+        n = min(_snap_hi[0], int(state.snap_num) + 1)
         scene.set_snapshot(n)
         state.snap_num = n
         state.snap_label = scene.snap_label
@@ -542,6 +553,12 @@ def build_toolbar(server, scene: Scene) -> None:
         for whichever model is currently selected.
         """
         _snap_count[0] = scene.active_model.snap_count
+        _snap_lo[0] = int(getattr(scene.active_model, "snap_min", 0))
+        _snap_hi[0] = int(
+            getattr(scene.active_model, "snap_max", _snap_count[0] - 1)
+        )
+        state.snap_min = _snap_lo[0]
+        state.snap_max = _snap_hi[0]
         _frames["key"] = None
         _frames["data"] = {}
 
@@ -550,7 +567,12 @@ def build_toolbar(server, scene: Scene) -> None:
         """Update slider bounds + current snap after a model switch."""
         new_count = scene._snap_table.count
         _snap_count[0] = new_count
-        state.snap_max = new_count - 1
+        _snap_lo[0] = int(getattr(scene.active_model, "snap_min", 0))
+        _snap_hi[0] = int(
+            getattr(scene.active_model, "snap_max", new_count - 1)
+        )
+        state.snap_min = _snap_lo[0]
+        state.snap_max = _snap_hi[0]
         state.snap_num = scene.current_snap
         state.snap_label = scene.snap_label
         # Invalidate pre-rendered frame cache; reset preload so it reruns
@@ -948,7 +970,7 @@ def build_toolbar(server, scene: Scene) -> None:
     with v3.VCol(style="max-width:240px;padding:0 4px;"):
         v3.VSlider(
             v_model=("snap_num",),
-            min=0,
+            min=("snap_min",),
             max=("snap_max",),
             step=1,
             thumb_label=False,

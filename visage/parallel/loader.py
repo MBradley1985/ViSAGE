@@ -43,7 +43,7 @@ class SnapshotLoader:
         min_halo_mass: float = 1.0e10,
         min_stellar_mass: float = 1.0e8,
         max_halos: int = 100_000,
-        max_galaxies: int = 100_000,
+        max_galaxies: int | None = None,
     ) -> None:
         self._cfg = config
         self._snap_table = snap_table

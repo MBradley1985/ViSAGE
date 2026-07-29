@@ -3,7 +3,7 @@ from __future__ import annotations
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
-from visage.wizard.controller import WizardController, _STEPS
+from visage.wizard.controller import WizardController, _STEPS, _MAX_PARAMS
 
 _WIZ_CSS = """
 .wiz-title { color: #06b6d4; font-weight: 700; letter-spacing: 0.08em; }
@@ -120,7 +120,8 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                     "height:'640px',maxHeight:'80vh',"
                     "width:'100%',maxWidth:'calc(100vw - 48px)',"
                     "justifyContent: (wiz_par_show || wiz_sw_config_show || "
-                    "pso_gallery_show) ? 'flex-start' : 'center'"
+                    "wiz_lc_config_show || pso_gallery_show) "
+                    "? 'flex-start' : 'center'"
                     "}",
                 ),
             ):
@@ -128,8 +129,8 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 with v3.VCard(
                     style=(
                         "`flex:1;min-width:0;"
-                        "max-width:${(wiz_par_show || wiz_sw_config_show) "
-                        "? '860px' : '1100px'};"
+                        "max-width:${(wiz_par_show || wiz_sw_config_show "
+                        "|| wiz_lc_config_show) ? '860px' : '1100px'};"
                         "background:#000000;border:2px solid #06b6d4;"
                         "display:grid;grid-template-rows:1fr auto;"
                         "overflow:hidden;position:relative;`",
@@ -243,9 +244,13 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                     style="font-family:monospace;text-transform:none;",
                                 )
 
-                # ── Right: editor card — SAGE26 .par OR SAGEswarm run_pso.sh ──
+                # ── Right: editor card — SAGE26 .par / SAGEswarm run_pso.sh /
+                #    sage-lightcone run_lightcone.sh ─────────────────────────
                 with v3.VCard(
-                    v_show=("wiz_par_show || wiz_sw_config_show",),
+                    v_show=(
+                        "wiz_par_show || wiz_sw_config_show "
+                        "|| wiz_lc_config_show",
+                    ),
                     style=(
                         "flex:1;min-width:0;"
                         "background:#000000;border:2px solid #06b6d4;"
@@ -266,45 +271,58 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                             size="small",
                         )
                         html.Span(
-                            "{{ wiz_sw_config_show ? 'run_pso.sh' "
-                            ": 'Parameter File' }}",
+                            "{{ wiz_lc_config_show ? 'Lightcone Parameters' "
+                            ": (wiz_sw_config_show ? 'SAGEswarm Parameters' "
+                            ": 'SAGE26 Parameters') }}",
                             style="color:#06b6d4;font-size:0.82rem;",
                         )
+                    # Parameter form: one labelled box per option (from the
+                    # underlying .par / run_pso.sh / run_lightcone.sh).  Edited
+                    # values are folded back into the file on Save & Run.
                     with v3.VSheet(
                         color="#000000",
-                        style="flex:1;min-height:0;overflow-y:auto;padding:8px 12px;",
+                        style="flex:1;min-height:0;overflow-y:auto;padding:10px 14px;",
                     ):
-                        # SAGE26 parameter file
-                        v3.VTextarea(
-                            v_if=("wiz_par_show",),
-                            v_model=("wiz_par_text",),
-                            rows=9,
-                            auto_grow=True,
-                            variant="outlined",
-                            bg_color="#000000",
-                            hide_details=True,
-                            classes="wiz-par-area",
-                            style=(
-                                "font-family:monospace;color:#e2e8f0;"
-                                "height:100%;"
-                            ),
-                            label="Edit freely — format is preserved",
-                        )
-                        # SAGEswarm run script (all run options live here)
-                        v3.VTextarea(
-                            v_if=("wiz_sw_config_show",),
-                            v_model=("wiz_sw_script_text",),
-                            rows=9,
-                            auto_grow=True,
-                            variant="outlined",
-                            bg_color="#000000",
-                            hide_details=True,
-                            classes="wiz-par-area",
-                            style=(
-                                "font-family:monospace;color:#e2e8f0;"
-                                "height:100%;"
-                            ),
-                            label="Edit constraints, PSO params, paths — then Save & Run",
+                        # A fixed pool of rows, each bound to its OWN scalar
+                        # state var (wiz_pv_<i>) so trame reliably syncs edits.
+                        # Rows beyond the current parameter count stay hidden.
+                        for i in range(_MAX_PARAMS):
+                            with html.Div(
+                                v_show=(f"{i} < wiz_param_count",),
+                                style=(
+                                    "display:flex;align-items:center;gap:12px;"
+                                    "margin-bottom:8px;"
+                                ),
+                            ):
+                                html.Div(
+                                    f"{{{{ wiz_pl_{i} }}}}",
+                                    title=(f"wiz_ph_{i}",),
+                                    style=(
+                                        "min-width:200px;max-width:200px;"
+                                        "text-align:right;color:#9ca3af;"
+                                        "font-family:monospace;font-size:0.78rem;"
+                                        "overflow:hidden;text-overflow:ellipsis;"
+                                        "white-space:nowrap;flex-shrink:0;"
+                                    ),
+                                )
+                                v3.VTextField(
+                                    v_model=(f"wiz_pv_{i}",),
+                                    variant="outlined",
+                                    density="compact",
+                                    hide_details=True,
+                                    bg_color="#000000",
+                                    color="cyan",
+                                    classes="wiz-par-area",
+                                    style=(
+                                        "font-family:monospace;color:#e2e8f0;"
+                                        "flex:1;"
+                                    ),
+                                )
+                        # Empty-state hint if no parameters were parsed.
+                        html.Div(
+                            "No editable parameters found.",
+                            v_show=("wiz_param_count === 0",),
+                            style="color:#9ca3af;font-size:0.8rem;",
                         )
 
         # SAGE logo — pinned to bottom-right corner of the wizard screen
