@@ -10,6 +10,11 @@ from pathlib import Path
 
 _SAGE26_REPO = "https://github.com/MBradley1985/SAGE26.git"
 _SAGESWARM_REPO = "https://github.com/MBradley1985/SAGEswarm.git"
+# LightSAGE (upstream repo: sage-home/sage-lightcone) is a third-party
+# package (not ours) — we only clone, build, and run it; we never modify
+# anything inside the checkout.  "LightSAGE" is ViSAGE's display name for
+# it; the clone URL below is the real, unrenameable upstream repo.
+_LIGHTSAGE_REPO = "https://github.com/sage-home/sage-lightcone"
 
 import html as _html_mod
 import re as _re
@@ -111,6 +116,17 @@ _STEPS_SAGESWARM = [
     "View plots",
 ]
 
+# LightSAGE flow — same chip count (6). Clone → build the C++ tools →
+# edit a run script → run the two-stage pipeline → done.
+_STEPS_SAGELIGHTCONE = [
+    "Scan",
+    "Clone",
+    "Build",
+    "Configure",
+    "Run",
+    "Done",
+]
+
 # The SAGEswarm run is driven by editing its run_pso.sh script (all options —
 # constraints, PSO params, bounds file, sim settings — are shell vars in there),
 # mirroring how the SAGE26 flow edits the .par file.
@@ -150,6 +166,170 @@ python3 ./main.py \\
   --Omega0 "$OMEGA0" \\
   --h0 "$H0" \\
   -S "$SPACEFILE"
+"""
+
+# The LightSAGE repo is third-party, so ViSAGE keeps its editable run
+# script OUTSIDE the checkout (in ~/.visage). The script only *calls* the
+# repo's wrapper scripts (scripts/sage2kdtree.sh, scripts/lightcone.sh) — it
+# never writes into the repo. Both pipeline stages live in the one script.
+_LC_RUN_SCRIPT = "run_lightcone.sh"
+
+# ViSAGE builds ONLY the two lightcone C++ tools (sage2kdtree, cli_lightcone).
+# The repo's own build_platform_aware.sh additionally clones and compiles SAGE
+# (sage-model) to generate test data — we don't want that: ViSAGE already
+# manages SAGE (SAGE26) and feeds its HDF5 output into the pipeline. So we run
+# a leaner, tools-only cmake build from this ViSAGE-managed helper (kept in
+# ~/.visage, never written into the repo).
+_LC_BUILD_SCRIPT = "build_lightcone_tools.sh"
+
+_LC_BUILD_SCRIPT_TEMPLATE = """\
+#!/bin/bash
+# ViSAGE-managed build for the LightSAGE C++ tools ONLY.
+# Builds: sage2kdtree, cli_lightcone  (NOT SAGE — ViSAGE uses SAGE26 output).
+# Never modifies the LightSAGE repository (bin/ is gitignored build output).
+set -e
+
+LC_DIR="{lc_dir}"
+cd "$LC_DIR"
+
+EXTRA=""
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # Pull in the repo's env (HDF5/Boost paths, venv) WITHOUT building SAGE.
+    source setup_mac.sh >/dev/null 2>&1 || true
+    HDF5_PREFIX="$(brew --prefix hdf5 2>/dev/null)"
+    EXTRA="-DCMAKE_OSX_ARCHITECTURES=arm64 -DHDF5_PREFER_PARALLEL=OFF"
+    [ -n "$HDF5_PREFIX" ] && EXTRA="$EXTRA -DHDF5_ROOT=$HDF5_PREFIX"
+
+    # macOS SDK guard: Apple clang < 17 cannot parse the macOS 26 SDK's libc++
+    # (<bit> uses __builtin_ctzg, absent before LLVM 19). If the active compiler
+    # chokes on the default SDK, fall back to an installed 15.x SDK.
+    if ! printf '#include <algorithm>\\n#include <vector>\\nint main(){{std::vector<int> v{{3,1,2}};std::sort(v.begin(),v.end());return v[0];}}' \\
+         | "${{CXX:-clang++}}" -std=c++17 -x c++ -fsyntax-only - >/dev/null 2>&1; then
+        for S in MacOSX15.sdk MacOSX15.4.sdk MacOSX15.0.sdk MacOSX14.sdk; do
+            for BASE in "/Library/Developer/CommandLineTools/SDKs" \\
+                        "$(xcode-select -p 2>/dev/null)/Platforms/MacOSX.platform/Developer/SDKs"; do
+                CAND="$BASE/$S"
+                if [ -d "$CAND" ]; then
+                    EXTRA="$EXTRA -DCMAKE_OSX_SYSROOT=$CAND"
+                    echo "ViSAGE: using compatible macOS SDK -> $CAND"
+                    break 2
+                fi
+            done
+        done
+    fi
+else
+    # HPC/Linux: modules provide HDF5/Boost; no SDK override needed.
+    source setup.sh >/dev/null 2>&1 || true
+fi
+
+NJOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+echo "==> Configuring (tools only, USE_MPI=OFF) ..."
+cmake -B bin -DCMAKE_BUILD_TYPE=Release -DUSE_MPI=OFF $EXTRA .
+echo "==> Building sage2kdtree + cli_lightcone ..."
+make -C bin -j"$NJOBS" sage2kdtree cli_lightcone
+echo "==> Done: $(ls bin/sage2kdtree bin/cli_lightcone 2>/dev/null)"
+"""
+
+_LC_RUN_SCRIPT_TEMPLATE = """\
+#!/bin/bash
+# ViSAGE-managed LightSAGE run script.
+# Edit the paths and parameters below, then click 'Save & Run Lightcone'.
+# This script only CALLS the LightSAGE wrapper scripts — it never
+# modifies the LightSAGE repository itself.
+set -e
+
+# Location of the LightSAGE checkout (auto-filled by ViSAGE).
+LIGHTCONE_DIR="{lightcone_dir}"
+
+# -- Stage 1: sage2kdtree -- SAGE HDF5 output -> KD-tree indexed HDF5 --------
+SAGE_OUTPUT_DIR="{sage_output_dir}"   # directory holding model_N.hdf5 files
+PARAM_FILE="{param_file}"             # SAGE .par file (cosmology/sim settings)
+ALIST_FILE="{alist_file}"             # expansion-factor (a_list) file
+KDTREE_OUT="./millennium-kdtree.h5"   # KD-tree output file
+
+# -- Stage 2: cli_lightcone -- KD-tree HDF5 -> flat lightcone HDF5 -----------
+RAMIN=0                    # right ascension min (degrees)
+RAMAX=10                   # right ascension max (degrees)
+DECMIN=0                   # declination min (degrees)
+DECMAX=10                  # declination max (degrees)
+ZMIN=0                     # redshift min
+ZMAX=1                     # redshift max
+OUTDIR="{outdir}"          # ViSAGE's standard output folder (see docs)
+OUTFILE="lightcone.h5"
+
+# -- Stage 3 (optional): synthetic photometry (SED synthesis) ---------------
+# Forward-models AB magnitudes per galaxy from its star-formation history
+# using FSPS — see the ViSAGE docs for what this does and its simplifications
+# (single present-day metallicity, no dust). Requires: pip install "sage-viewer[sed]"
+SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
+SED_FRAME="both"                       # rest | obs | both
+# Filter bands to compute — check any combination below. UV-optical-NIR is
+# checked by default; WISE (mid-IR) is available but off by default, since
+# its flux is dominated by dust emission this pipeline doesn't model.
+BAND_GALEX_FUV_ENABLED=1
+BAND_GALEX_NUV_ENABLED=1
+BAND_SDSS_U_ENABLED=1
+BAND_SDSS_G_ENABLED=1
+BAND_SDSS_R_ENABLED=1
+BAND_SDSS_I_ENABLED=1
+BAND_SDSS_Z_ENABLED=1
+BAND_2MASS_J_ENABLED=1
+BAND_2MASS_H_ENABLED=1
+BAND_2MASS_KS_ENABLED=1
+BAND_WISE_W1_ENABLED=0
+BAND_WISE_W2_ENABLED=0
+BAND_WISE_W3_ENABLED=0
+BAND_WISE_W4_ENABLED=0
+
+echo "==> Stage 1/2: sage2kdtree"
+"$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
+  -s "$SAGE_OUTPUT_DIR" \\
+  -p "$PARAM_FILE" \\
+  -a "$ALIST_FILE" \\
+  -o "$KDTREE_OUT"
+
+echo "==> Stage 2/2: cli_lightcone"
+mkdir -p "$OUTDIR"
+"$LIGHTCONE_DIR/scripts/lightcone.sh" \\
+  -d "$KDTREE_OUT" \\
+  --ramin "$RAMIN"   --ramax "$RAMAX" \\
+  --decmin "$DECMIN" --decmax "$DECMAX" \\
+  --zmin "$ZMIN"     --zmax "$ZMAX" \\
+  --outdir "$OUTDIR" \\
+  -o "$OUTFILE"
+
+echo "==> Lightcone written to $OUTDIR/$OUTFILE"
+
+if [ "$SED_ENABLED" = "1" ]; then
+  echo "==> Stage 3: synthetic photometry (SED synthesis)"
+  # Lowercase on purpose: internal/computed, never re-parsed as an editable
+  # wizard parameter (only UPPERCASE VAR=value assignments are, so a user's
+  # edit here can never desync the checkboxes above from what actually runs).
+  sed_bands=""
+  [ "$BAND_GALEX_FUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_fuv"
+  [ "$BAND_GALEX_NUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_nuv"
+  [ "$BAND_SDSS_U_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_u"
+  [ "$BAND_SDSS_G_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_g"
+  [ "$BAND_SDSS_R_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_r"
+  [ "$BAND_SDSS_I_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_i"
+  [ "$BAND_SDSS_Z_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_z"
+  [ "$BAND_2MASS_J_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_j"
+  [ "$BAND_2MASS_H_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_h"
+  [ "$BAND_2MASS_KS_ENABLED" = "1" ]   && sed_bands="$sed_bands 2mass_ks"
+  [ "$BAND_WISE_W1_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w1"
+  [ "$BAND_WISE_W2_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w2"
+  [ "$BAND_WISE_W3_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w3"
+  [ "$BAND_WISE_W4_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w4"
+  if [ -z "$sed_bands" ]; then
+    echo "No bands checked — skipping SED synthesis."
+  else
+    bands_csv="$(echo "$sed_bands" | tr -s ' ' ',' | sed 's/^,//')"
+    "{python_exe}" -m visage.sed.photometry \\
+      --input "$OUTDIR/$OUTFILE" \\
+      --bands "$bands_csv" \\
+      --frame "$SED_FRAME"
+  fi
+fi
 """
 
 _MILLENNIUM_PAR_TEMPLATE = """\
@@ -264,6 +444,111 @@ UnitMass_in_g             1.989e+43   %WATCH OUT: 10^10Msun
 UnitVelocity_in_cm_per_s  100000      %WATCH OUT: km/s
 """
 
+# ── Config → parameter-form parsing ──────────────────────────────────────
+# The wizard shows editable configs (SAGE26 .par, run_pso.sh, run_lightcone.sh)
+# as a list of labelled boxes rather than raw text.  We parse the file into an
+# ordered [{key, label, value, hint}] list for the form, and write edited
+# values back into the ORIGINAL text (preserving comments, layout, and any
+# non-parameter lines) so the on-disk format is unchanged apart from values.
+
+# Max parameters the form can show (enough for the SAGE26 .par, ~51 entries).
+# Each slot is a dedicated top-level state var so trame syncs edits reliably.
+_MAX_PARAMS = 64
+
+_PAR_LINE = _re.compile(r"^(\s*)([A-Za-z]\w*)(\s+)([^%\n]*?)\s*(?:%\s*(.*))?$")
+_PAR_APPLY = _re.compile(r"^(\s*)([A-Za-z]\w*)(\s+)([^%\n]*?)(\s*%.*)?$")
+# Shell assignment token: VAR="..." | VAR='...' | VAR=bare.  Matched anywhere
+# on a line so multi-assignment lines (VAR=0; VAR2=10) all parse.  References
+# like "$VAR" and flags like -c/--opt have no `NAME=` so they're never matched.
+_SH_ASSIGN = _re.compile(r"""([A-Z_][A-Z0-9_]*)=("[^"]*"|'[^']*'|[^\s;#]*)""")
+
+
+def _sh_split_comment(line: str) -> tuple[str, str]:
+    """Split a shell line into (code, comment-including-#).  Naive '#' handling
+    is fine for our run scripts, which never use '#' inside a value."""
+    i = line.find("#")
+    return (line, "") if i < 0 else (line[:i], line[i:])
+
+
+def _sh_unquote(raw: str) -> tuple[str, str]:
+    if len(raw) >= 2 and raw[0] in "\"'" and raw[-1] == raw[0]:
+        return raw[1:-1], raw[0]
+    return raw, ""
+
+
+def _parse_params(text: str, kind: str) -> list[dict]:
+    """Parse a .par ('par') or shell run-script ('sh') into an ordered list of
+    {key, label, value, hint} — one entry per KEY VALUE / VAR=value option."""
+    params: list[dict] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        if kind == "par":
+            if not line.strip() or line.lstrip().startswith("%"):
+                continue
+            m = _PAR_LINE.match(line)
+            if not m:
+                continue
+            key, val = m.group(2), m.group(4).strip()
+            if not val or key in seen:
+                continue
+            seen.add(key)
+            params.append(
+                {
+                    "key": key,
+                    "label": key,
+                    "value": val,
+                    "hint": (m.group(5) or "").strip(),
+                }
+            )
+        else:  # shell — scan every VAR=value assignment (any per line)
+            code, comment = _sh_split_comment(line)
+            hint = comment.lstrip("# ").strip()
+            for m in _SH_ASSIGN.finditer(code):
+                key = m.group(1)
+                if key in seen:
+                    continue
+                seen.add(key)
+                val, _q = _sh_unquote(m.group(2))
+                params.append(
+                    {"key": key, "label": key, "value": val, "hint": hint}
+                )
+    return params
+
+
+def _apply_params(text: str, params: list[dict], kind: str) -> str:
+    """Write edited param values back into the original text, preserving
+    indentation, key spacing, quoting and trailing comments."""
+    vals = {p["key"]: str(p["value"]) for p in params}
+    out: list[str] = []
+    for line in text.splitlines():
+        if kind == "par":
+            if line.strip() and not line.lstrip().startswith("%"):
+                m = _PAR_APPLY.match(line)
+                if m and m.group(2) in vals:
+                    out.append(
+                        f"{m.group(1)}{m.group(2)}{m.group(3)}"
+                        f"{vals[m.group(2)]}{m.group(5) or ''}"
+                    )
+                    continue
+            out.append(line)
+        else:
+            code, comment = _sh_split_comment(line)
+
+            def _repl(m: _re.Match) -> str:
+                key = m.group(1)
+                if key not in vals:
+                    return m.group(0)
+                nv = vals[key]
+                _old, q = _sh_unquote(m.group(2))
+                if not q and any(ch.isspace() for ch in nv):
+                    q = '"'  # quote a value that gained spaces
+                return f"{key}={q}{nv}{q}"
+
+            out.append(_SH_ASSIGN.sub(_repl, code) + comment)
+    tail = "\n" if text.endswith("\n") else ""
+    return "\n".join(out) + tail
+
+
 _KIND_COLORS = {
     "title": "#06b6d4",
     "ok": "#22c55e",
@@ -306,9 +591,11 @@ class WizardController:
         self._back: str = "back_fresh"  # Back target for par/compile steps
 
         # SAGEswarm (PSO calibration) flow state
-        self._flow: str = "sage26"  # "sage26" | "sageswarm"
+        self._flow: str = "sage26"  # "sage26" | "sageswarm" | "sagelightcone"
         self._sw_dir: Path | None = None
         self._sw_sage_bin: Path | None = None
+        # LightSAGE flow state
+        self._lc_dir: Path | None = None
         self._plot_task = None  # asyncio task watching for PSO plots
         self._plot_watch_stop = True
         self._plot_seen: dict[str, int] = {}  # plot name → last-seen mtime
@@ -335,6 +622,18 @@ class WizardController:
         self._st.wiz_run_active = False  # a _run_cmd subprocess is live
         self._st.pso_plots = []  # [{name, data_url, mtime}]
         self._st.pso_gallery_show = False
+        # LightSAGE config (run_lightcone.sh editor, lives in ~/.visage)
+        self._st.wiz_lc_config_show = False
+        self._st.wiz_lc_script_text = ""  # editable run_lightcone.sh contents
+        # Parameter form (labelled boxes) shown in place of the raw config
+        # text.  Each option binds to its OWN top-level scalar state var
+        # (wiz_pv_<i>) — trame reliably syncs those back, unlike nested edits
+        # to a single list-of-dicts var.
+        self._param_keys: list[str] = []  # ordered keys, index-aligned to pool
+        self._st.wiz_params_kind = "par"  # "par" | "sh"
+        self._st.wiz_params_target = ""  # "par" | "sw" | "lc"
+        self._st.wiz_param_count = 0
+        self._init_param_pool()
 
         server.controller.set("wiz_choose")(self._on_choice)
         server.controller.set("wiz_close")(self._on_close)
@@ -351,19 +650,27 @@ class WizardController:
         clone/compile/run-and-explore path) or ``"sageswarm"`` (clone / install
         / configure / run the PSO calibration tool with a live plot gallery).
         """
-        self._flow = flow if flow in ("sage26", "sageswarm") else "sage26"
+        self._flow = (
+            flow
+            if flow in ("sage26", "sageswarm", "sagelightcone")
+            else "sage26"
+        )
         self._sage26_dir = None
         self._par_path = None
         self._models = []
         self._sw_dir = None
         self._sw_sage_bin = None
+        self._lc_dir = None
         self._stop_plot_watch()
         self._wiz_buf = bytearray()
         self._back = "back_fresh"
         self._st.wiz_step = 0
-        self._st.wiz_steps = list(
-            _STEPS_SAGESWARM if self._flow == "sageswarm" else _STEPS
-        )
+        if self._flow == "sageswarm":
+            self._st.wiz_steps = list(_STEPS_SAGESWARM)
+        elif self._flow == "sagelightcone":
+            self._st.wiz_steps = list(_STEPS_SAGELIGHTCONE)
+        else:
+            self._st.wiz_steps = list(_STEPS)
         self._st.wiz_lines = []
         self._st.wiz_choices = []
         self._st.wiz_busy = True
@@ -376,6 +683,11 @@ class WizardController:
         self._st.wiz_clone_dir = str(Path.home())
         self._st.wiz_sw_config_show = False
         self._st.wiz_sw_script_text = ""
+        self._st.wiz_lc_config_show = False
+        self._st.wiz_lc_script_text = ""
+        self._param_keys = []
+        self._st.wiz_params_target = ""
+        self._init_param_pool()
         self._st.pso_plots = []
         self._st.pso_gallery_show = False
         # Push a clear sequence as the first "chunk" so a late-mounting xterm
@@ -384,6 +696,8 @@ class WizardController:
         self._st.flush()
         if self._flow == "sageswarm":
             asyncio.ensure_future(self._step_sw_scan())
+        elif self._flow == "sagelightcone":
+            asyncio.ensure_future(self._step_lc_scan())
         else:
             asyncio.ensure_future(self._step_scan())
 
@@ -451,7 +765,87 @@ class WizardController:
         self._st.wiz_filename_show = False
         self._st.wiz_clone_dir_show = False
         self._st.wiz_sw_config_show = False
+        self._st.wiz_lc_config_show = False
         self._st.flush()
+
+    @staticmethod
+    def _pretty_param_label(key: str) -> str:
+        """Shorter checkbox label for a ``BAND_<FILTER>_ENABLED`` param — the
+        raw key overflows the label column's fixed width once params are
+        half-width (2-column checkbox layout). Shows the literal FSPS filter
+        name (e.g. "sdss_g"), which also matches what --bands expects.
+        Every other key (including plain ``SED_ENABLED``) is left as-is."""
+        if key.startswith("BAND_") and key.endswith("_ENABLED"):
+            return key[len("BAND_") : -len("_ENABLED")].lower()
+        return key
+
+    def _init_param_pool(self) -> None:
+        """Clear all parameter-form slots (label/value/hint per index)."""
+        for i in range(_MAX_PARAMS):
+            self._st[f"wiz_pl_{i}"] = ""
+            self._st[f"wiz_pv_{i}"] = ""
+            self._st[f"wiz_ph_{i}"] = ""
+            self._st[f"wiz_pcb_{i}"] = False
+        self._st.wiz_param_count = 0
+
+    def _show_params(self, text: str, kind: str, target: str) -> None:
+        """Populate the parameter form (labelled boxes) from a config's text.
+        Each option fills its own wiz_pl/pv/ph_<i> slot. Keys named
+        ``*_ENABLED`` render as a checkbox (true_value "1" / false_value "0")
+        instead of a text box — see ui.py."""
+        params = _parse_params(text, kind)
+        if len(params) > _MAX_PARAMS:
+            self._emit(
+                f"Note: showing the first {_MAX_PARAMS} of {len(params)} "
+                "parameters; edit the rest by hand if needed.",
+                "warn",
+            )
+            params = params[:_MAX_PARAMS]
+        self._param_keys = [p["key"] for p in params]
+        self._st.wiz_params_kind = kind
+        self._st.wiz_params_target = target
+        for i in range(_MAX_PARAMS):
+            if i < len(params):
+                self._st[f"wiz_pl_{i}"] = self._pretty_param_label(
+                    params[i]["label"]
+                )
+                self._st[f"wiz_pv_{i}"] = params[i]["value"]
+                self._st[f"wiz_ph_{i}"] = params[i]["hint"]
+                self._st[f"wiz_pcb_{i}"] = params[i]["key"].endswith(
+                    "_ENABLED"
+                )
+            else:
+                self._st[f"wiz_pl_{i}"] = ""
+                self._st[f"wiz_pv_{i}"] = ""
+                self._st[f"wiz_ph_{i}"] = ""
+                self._st[f"wiz_pcb_{i}"] = False
+        self._st.wiz_param_count = len(params)
+        self._st.flush()
+
+    def _sync_params_to_text(self) -> None:
+        """Write the form's edited values back into the config's raw text
+        (called just before saving to disk).  Reads each slot's live value."""
+        keys = self._param_keys
+        if not keys:
+            return
+        params = [
+            {"key": k, "value": self._st[f"wiz_pv_{i}"]}
+            for i, k in enumerate(keys)
+        ]
+        kind = self._st.wiz_params_kind
+        target = self._st.wiz_params_target
+        if target == "par":
+            self._st.wiz_par_text = _apply_params(
+                str(self._st.wiz_par_text or ""), params, kind
+            )
+        elif target == "sw":
+            self._st.wiz_sw_script_text = _apply_params(
+                str(self._st.wiz_sw_script_text or ""), params, kind
+            )
+        elif target == "lc":
+            self._st.wiz_lc_script_text = _apply_params(
+                str(self._st.wiz_lc_script_text or ""), params, kind
+            )
 
     async def _run_cmd(self, cmd: list[str], cwd: Path | None = None) -> int:
         """Run a command in a PTY so ANSI colors and \\r progress bars work."""
@@ -679,17 +1073,25 @@ class WizardController:
             )
         choices.append(
             {
-                "label": "Start Fresh",
-                "value": "fresh",
-                "icon": "mdi-git",
+                "label": "SAGEswarm",
+                "value": "sageswarm",
+                "icon": "mdi-chart-scatter-plot",
                 "disabled": False,
             }
         )
         choices.append(
             {
-                "label": "Calibrate with SAGEswarm",
-                "value": "sageswarm",
-                "icon": "mdi-chart-scatter-plot",
+                "label": "LightSAGE",
+                "value": "sagelightcone",
+                "icon": "mdi-telescope",
+                "disabled": False,
+            }
+        )
+        choices.append(
+            {
+                "label": "Start Fresh",
+                "value": "fresh",
+                "icon": "mdi-git",
                 "disabled": False,
             }
         )
@@ -777,6 +1179,35 @@ class WizardController:
             self._st.pso_gallery_show = False
             self._st.flush()
             await self._step_sw_scan()
+
+        # ── LightSAGE (lightcone extraction) flow ────────────────────
+        elif value == "sagelightcone":
+            await self._step_lc_scan()
+
+        elif value == "lc_clone":
+            await self._step_lc_clone()
+
+        elif value == "confirm_lc_clone":
+            await self._do_lc_clone()
+
+        elif value == "lc_build":
+            await self._step_lc_build()
+
+        elif value == "lc_configure":
+            await self._step_lc_config()
+
+        elif value == "lc_run":
+            await self._step_lc_run()
+
+        elif value == "lc_visualize":
+            await self._launch_lightcone_viewer()
+
+        elif value == "lc_back_scan":
+            self._emit("", "info")
+            await self._step_lc_scan()
+
+        elif value == "lc_done":
+            await self._step_lc_scan()
 
         elif value == "back_sage26":
             self._flow = "sage26"
@@ -1148,6 +1579,7 @@ class WizardController:
             self._emit(f"Could not read par file: {exc}", "err")
             return
         self._st.wiz_par_text = text
+        self._show_params(text, "par", "par")
         self._st.wiz_par_show = True
         self._st.flush()
         self._set_choices(
@@ -1169,6 +1601,7 @@ class WizardController:
 
     async def _step_run_sage26(self) -> None:
         self._st.wiz_step = 4
+        self._sync_params_to_text()  # fold edited form values into the .par text
         self._st.wiz_par_show = False
         self._st.flush()
 
@@ -1268,7 +1701,7 @@ class WizardController:
 
     def _find_sageswarm(self) -> Path | None:
         roots = [Path.cwd().parent, Path.cwd(), Path.home()]
-        names = ["SAGEswarm", "sageswarm", "SAGE-PSO", "sage-pso"]
+        names = ["SAGEswarm", "sageswarm"]
         for root in roots:
             for name in names:
                 c = root / name
@@ -1405,9 +1838,9 @@ class WizardController:
             )
         choices.append(
             {
-                "label": "Switch to SAGE26 setup",
+                "label": "Back",
                 "value": "back_sage26",
-                "icon": "mdi-swap-horizontal",
+                "icon": "mdi-arrow-left",
                 "disabled": False,
             }
         )
@@ -1542,6 +1975,7 @@ class WizardController:
         )
         self._emit("", "info")
 
+        self._show_params(str(self._st.wiz_sw_script_text or ""), "sh", "sw")
         self._st.wiz_sw_config_show = True
         self._st.flush()
         self._set_choices(
@@ -1558,6 +1992,7 @@ class WizardController:
 
     async def _step_sw_run(self) -> None:
         self._st.wiz_step = 4
+        self._sync_params_to_text()  # fold edited form values into run_pso.sh
         self._st.wiz_sw_config_show = False
         self._st.flush()
         script = self._sw_script_path()
@@ -1716,6 +2151,478 @@ class WizardController:
         if changed:
             self._st.pso_plots = [by_name[k] for k in sorted(by_name)]
             self._st.flush()
+
+    # ── LightSAGE (lightcone extraction) flow ────────────────────────────────
+
+    def _find_sagelightcone(self) -> Path | None:
+        """Locate an existing LightSAGE checkout by its wrapper scripts.
+
+        "LightSAGE" is the folder name ViSAGE clones into; the other names are
+        back-compat aliases for checkouts made under the upstream repo's own
+        name (sage-lightcone) or manually renamed."""
+        roots = [Path.cwd().parent, Path.cwd(), Path.home()]
+        names = [
+            "LightSAGE",
+            "sage-lightcone",
+            "sage_lightcone",
+            "tao-lightcone-cli",
+            "lightcone",
+        ]
+        for root in roots:
+            for name in names:
+                c = root / name
+                if c.is_dir() and (c / "scripts" / "sage2kdtree.sh").is_file():
+                    return c
+        return None
+
+    def _lc_built(self, lc: Path) -> tuple[bool, list[str]]:
+        """Which of the two executables are present in the checkout's bin/."""
+        tools = [
+            name
+            for name in ("sage2kdtree", "cli_lightcone")
+            if (lc / "bin" / name).is_file()
+        ]
+        return (len(tools) > 0, tools)
+
+    def _lc_script_path(self) -> Path:
+        """Editable run script — kept in ~/.visage, never inside the repo."""
+        return Path.home() / ".visage" / _LC_RUN_SCRIPT
+
+    def _lc_build_script_path(self) -> Path:
+        """Tools-only build helper — kept in ~/.visage, never in the repo."""
+        return Path.home() / ".visage" / _LC_BUILD_SCRIPT
+
+    def _lc_output_file(self) -> Path | None:
+        """The lightcone HDF5 the run produced — parsed from OUTDIR/OUTFILE in
+        the edited run script, resolved relative to the script's dir."""
+        text = str(self._st.wiz_lc_script_text or "")
+        script_dir = self._lc_script_path().parent
+
+        def _var(name: str, default: str) -> str:
+            m = _re.search(
+                rf'^\s*{name}\s*=\s*["\']?([^"\'\n#]+)',
+                text,
+                _re.MULTILINE,
+            )
+            return m.group(1).strip() if m else default
+
+        outdir = _var("OUTDIR", str(Path.cwd() / "sage_outputs" / "lightcone"))
+        outfile = _var("OUTFILE", "lightcone.h5")
+        p = Path(outdir).expanduser()
+        if not p.is_absolute():
+            p = script_dir / p
+        return p / outfile
+
+    async def _launch_lightcone_viewer(self) -> None:
+        """Relaunch ViSAGE in Lightcone Mode on the produced HDF5 — mirrors the
+        Explore-mode launch (os.execv), but with --lightcone."""
+        out = self._lc_output_file()
+        if out is None or not out.is_file():
+            self._emit(
+                f"Lightcone output not found (looked for {out}).", "err"
+            )
+            self._set_choices(
+                [
+                    {
+                        "label": "Run again",
+                        "value": "lc_run",
+                        "icon": "mdi-replay",
+                        "disabled": False,
+                    },
+                    self._back_choice("lc_back_scan"),
+                ]
+            )
+            return
+        self._emit("", "info")
+        self._emit(f"Opening lightcone in ViSAGE: {out}", "title")
+        self._emit(
+            "Starting the viewer — refresh your browser when ready.", "info"
+        )
+        self._st.flush()
+        await asyncio.sleep(1.0)
+
+        visage_cmd = shutil.which("visage")
+        argv = ["--lightcone", str(out), "--port", str(self._port)]
+        if visage_cmd:
+            os.execv(visage_cmd, [visage_cmd, *argv])
+        else:
+            os.execv(
+                sys.executable, [sys.executable, "-m", "visage.cli", *argv]
+            )
+
+    def _lc_seed_script(self) -> str:
+        """Seed run_lightcone.sh, pre-filling paths from discovered dirs."""
+        lc = str(self._lc_dir) if self._lc_dir else "/path/to/LightSAGE"
+        sage = self._sage26_dir
+        if sage:
+            sage_out = str(sage / "output" / "millennium")
+            par = str(sage / "input" / "millennium.par")
+            alist = str(
+                sage / "input" / "millennium" / "trees" / "millennium.a_list"
+            )
+        else:
+            sage_out = "../SAGE26/output/millennium"
+            par = "../SAGE26/input/millennium.par"
+            alist = "../SAGE26/input/millennium/trees/millennium.a_list"
+        # ViSAGE's standard output folder (same convention as screenshots,
+        # recordings, and exported catalogues — see docs/user_guide/launch_mode.md).
+        outdir = Path.cwd() / "sage_outputs" / "lightcone"
+        return _LC_RUN_SCRIPT_TEMPLATE.format(
+            lightcone_dir=lc,
+            sage_output_dir=sage_out,
+            param_file=par,
+            alist_file=alist,
+            outdir=str(outdir),
+            python_exe=sys.executable,
+        )
+
+    async def _step_lc_scan(self) -> None:
+        self._flow = "sagelightcone"
+        self._st.wiz_steps = list(_STEPS_SAGELIGHTCONE)
+        self._st.wiz_step = 0
+        self._emit("ViSAGE  ::  LightSAGE — Lightcone Extraction", "title")
+        self._emit("=" * 52, "sep")
+        self._emit("Scanning for the LightSAGE package...", "info")
+        self._emit("", "info")
+
+        self._lc_dir = self._find_sagelightcone()
+        built = False
+        if self._lc_dir:
+            self._emit(f"  LightSAGE found : {self._lc_dir}", "ok")
+            built, tools = self._lc_built(self._lc_dir)
+            if built:
+                self._emit(
+                    f"  Built           : Yes  ({', '.join(tools)})", "ok"
+                )
+            else:
+                self._emit(
+                    "  Built           : No   (build it before running)",
+                    "warn",
+                )
+        else:
+            self._emit(
+                "  LightSAGE       : Not found — clone it to begin",
+                "warn",
+            )
+
+        # SAGE26 is the usual source of the HDF5 output the pipeline consumes;
+        # note whether we can find it so we can pre-fill the run script paths.
+        self._sage26_dir = self._sage26_dir or self._find_sage26()
+        if self._sage26_dir:
+            self._emit(f"  SAGE26 source   : {self._sage26_dir}", "ok")
+        else:
+            self._emit(
+                "  SAGE26 source   : Not found — set paths in the "
+                "run script manually",
+                "warn",
+            )
+        self._emit("", "info")
+
+        choices: list[dict] = []
+        if self._lc_dir:
+            choices.append(
+                {
+                    "label": "Build LightSAGE",
+                    "value": "lc_build",
+                    "icon": "mdi-hammer-wrench",
+                    "disabled": False,
+                }
+            )
+            choices.append(
+                {
+                    "label": "Configure & Run Lightcone",
+                    "value": "lc_configure",
+                    "icon": "mdi-play",
+                    "disabled": False,
+                }
+            )
+            choices.append(
+                {
+                    "label": "Re-clone LightSAGE",
+                    "value": "lc_clone",
+                    "icon": "mdi-git",
+                    "disabled": False,
+                }
+            )
+        else:
+            choices.append(
+                {
+                    "label": "Clone LightSAGE",
+                    "value": "lc_clone",
+                    "icon": "mdi-git",
+                    "disabled": False,
+                }
+            )
+        choices.append(
+            {
+                "label": "Back",
+                "value": "back_sage26",
+                "icon": "mdi-arrow-left",
+                "disabled": False,
+            }
+        )
+        self._set_choices(choices)
+
+    async def _step_lc_clone(self) -> None:
+        self._st.wiz_step = 1
+        self._emit("Choose where to clone LightSAGE:", "info")
+        self._emit(
+            "  A 'LightSAGE' folder will be created inside the chosen "
+            "directory.",
+            "info",
+        )
+        self._emit("", "info")
+        self._st.wiz_clone_dir = str(Path.home())
+        self._st.wiz_clone_dir_show = True
+        self._st.flush()
+        self._set_choices(
+            [
+                {
+                    "label": "Clone Here",
+                    "value": "confirm_lc_clone",
+                    "icon": "mdi-git",
+                    "disabled": False,
+                },
+                self._back_choice("lc_back_scan"),
+            ]
+        )
+
+    async def _do_lc_clone(self) -> None:
+        self._st.wiz_step = 1
+        raw = str(self._st.wiz_clone_dir or "").strip() or str(Path.home())
+        parent = Path(raw).expanduser().resolve()
+        if not parent.is_dir():
+            self._emit(f"Directory not found: {parent}", "err")
+            self._st.wiz_clone_dir_show = True
+            self._st.flush()
+            self._set_choices(
+                [
+                    {
+                        "label": "Clone Here",
+                        "value": "confirm_lc_clone",
+                        "icon": "mdi-git",
+                        "disabled": False,
+                    },
+                    self._back_choice("lc_back_scan"),
+                ]
+            )
+            return
+        target = parent / "LightSAGE"
+        self._emit(f"Cloning LightSAGE into {target} ...", "info")
+        # --recurse-submodules per the LightSAGE README (it vendors SAGE).
+        rc = await self._run_cmd(
+            [
+                "git",
+                "clone",
+                "--recurse-submodules",
+                _LIGHTSAGE_REPO,
+                str(target),
+            ],
+            cwd=parent,
+        )
+        if rc != 0:
+            self._emit(
+                "Clone failed. Check internet connection and try again.", "err"
+            )
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+        self._lc_dir = target
+        await self._step_lc_build()
+
+    async def _step_lc_build(self) -> None:
+        self._st.wiz_step = 2
+        if not self._lc_dir:
+            self._emit("LightSAGE not found — clone it first.", "err")
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+
+        # Build ONLY the two tools — NOT SAGE. The repo's build_platform_aware.sh
+        # would clone + compile sage-model to make test data, but ViSAGE already
+        # manages SAGE (SAGE26) and feeds its HDF5 output in, so we skip it and
+        # run a leaner cmake build from a ViSAGE-managed helper in ~/.visage.
+        build_script = self._lc_build_script_path()
+        try:
+            build_script.parent.mkdir(parents=True, exist_ok=True)
+            build_script.write_text(
+                _LC_BUILD_SCRIPT_TEMPLATE.format(lc_dir=str(self._lc_dir))
+            )
+        except OSError as exc:
+            self._emit(f"Could not write build helper: {exc}", "err")
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+        self._emit(
+            "Building the LightSAGE tools only (sage2kdtree, "
+            "cli_lightcone) — SAGE is not rebuilt; ViSAGE feeds SAGE26 output "
+            "into the pipeline.",
+            "info",
+        )
+        self._emit("C++/CMake build — this can take a few minutes ...", "info")
+        rc = await self._run_cmd(["bash", str(build_script)], cwd=self._lc_dir)
+        if rc != 0:
+            self._emit(
+                "Build failed. See output above (check Boost/HDF5/CMake).",
+                "err",
+            )
+            self._set_choices(
+                [
+                    {
+                        "label": "Configure anyway",
+                        "value": "lc_configure",
+                        "icon": "mdi-arrow-right",
+                        "disabled": False,
+                    },
+                    self._back_choice("lc_back_scan"),
+                ]
+            )
+            return
+        built, tools = self._lc_built(self._lc_dir)
+        if built:
+            self._emit(f"Build complete!  ({', '.join(tools)})", "ok")
+        else:
+            self._emit(
+                "Build finished but no executables found in bin/. "
+                "Check the output above.",
+                "warn",
+            )
+        await self._step_lc_config()
+
+    async def _step_lc_config(self) -> None:
+        """Edit run_lightcone.sh (both pipeline stages live in it), then run —
+        mirrors the SAGE26 .par / SAGEswarm run_pso.sh editors, but the script
+        is stored in ~/.visage so the LightSAGE repo is never touched."""
+        self._st.wiz_step = 3
+        if not self._lc_dir:
+            self._emit("LightSAGE not found — clone it first.", "err")
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+        built, _ = self._lc_built(self._lc_dir)
+        if not built:
+            self._emit(
+                "Note: executables not built yet — the run will fail until "
+                "you build. You can still edit the script now.",
+                "warn",
+            )
+
+        script = self._lc_script_path()
+        try:
+            script.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self._emit(f"Could not create {script.parent}: {exc}", "err")
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+
+        if script.is_file():
+            try:
+                self._st.wiz_lc_script_text = script.read_text()
+                self._emit(f"Loaded {script} — edit it on the right.", "ok")
+            except OSError as exc:
+                self._emit(f"Could not read {script}: {exc}", "err")
+                self._set_choices([self._back_choice("lc_back_scan")])
+                return
+        else:
+            self._st.wiz_lc_script_text = self._lc_seed_script()
+            self._emit(f"Seeded a new run script at {script}.", "info")
+
+        self._emit(
+            "Set the SAGE output/param/a_list paths (stage 1) and the "
+            "ra/dec/z ranges (stage 2), then Save & Run.",
+            "info",
+        )
+        self._emit("", "info")
+        self._show_params(str(self._st.wiz_lc_script_text or ""), "sh", "lc")
+        self._st.wiz_lc_config_show = True
+        self._st.flush()
+        self._set_choices(
+            [
+                {
+                    "label": "Save & Run Lightcone",
+                    "value": "lc_run",
+                    "icon": "mdi-play",
+                    "disabled": False,
+                },
+                self._back_choice("lc_back_scan"),
+            ]
+        )
+
+    async def _step_lc_run(self) -> None:
+        self._st.wiz_step = 4
+        self._sync_params_to_text()  # fold edited form values into run_lightcone.sh
+        self._st.wiz_lc_config_show = False
+        self._st.flush()
+        if not self._lc_dir:
+            self._emit("LightSAGE directory not set.", "err")
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+
+        script = self._lc_script_path()
+        try:
+            script.parent.mkdir(parents=True, exist_ok=True)
+            script.write_text(str(self._st.wiz_lc_script_text or ""))
+            self._emit(f"Saved {script}", "ok")
+        except OSError as exc:
+            self._emit(f"Could not save {script}: {exc}", "err")
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+
+        self._emit("", "info")
+        self._emit(
+            "Running the lightcone pipeline (sage2kdtree → cli_lightcone).",
+            "info",
+        )
+        self._emit("This can take a while.  Use Cancel to stop.", "info")
+        self._emit("", "info")
+
+        # Run from the script's own dir (~/.visage) so its relative outputs
+        # (KDTREE_OUT, OUTDIR) land there, not inside the LightSAGE repo.
+        rc = await self._run_cmd(["bash", str(script)], cwd=script.parent)
+        if rc != 0:
+            self._emit(f"Lightcone pipeline exited with code {rc}.", "err")
+            self._set_choices(
+                [
+                    {
+                        "label": "Run again",
+                        "value": "lc_run",
+                        "icon": "mdi-replay",
+                        "disabled": False,
+                    },
+                    self._back_choice("lc_back_scan"),
+                ]
+            )
+            return
+
+        self._st.wiz_step = 5
+        self._emit("", "info")
+        self._emit("Lightcone pipeline complete!", "ok")
+        out = self._lc_output_file()
+        if out is not None and out.is_file():
+            self._emit(f"Lightcone written: {out}", "ok")
+        self._emit(
+            f"Outputs are under {script.parent} "
+            "(see KDTREE_OUT / OUTDIR in the script).",
+            "info",
+        )
+        self._set_choices(
+            [
+                {
+                    "label": "Visualize lightcone",
+                    "value": "lc_visualize",
+                    "icon": "mdi-telescope",
+                    "disabled": False,
+                },
+                {
+                    "label": "Run again",
+                    "value": "lc_run",
+                    "icon": "mdi-replay",
+                    "disabled": False,
+                },
+                {
+                    "label": "Done",
+                    "value": "lc_done",
+                    "icon": "mdi-check",
+                    "disabled": False,
+                },
+            ]
+        )
 
     async def _launch_explore(
         self, par_path: Path, model_name: str | None = None

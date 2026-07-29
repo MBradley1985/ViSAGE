@@ -27,6 +27,23 @@ Launch:
 visage --par input/microuchuu.par
 ```
 
+## LightSAGE lightcone output
+
+A [LightSAGE](https://github.com/sage-home/sage-lightcone) `cli_lightcone` run produces a single flat HDF5 file — no periodic box, no per-snapshot groups, one array per field at the root:
+
+- Pass-through SAGE fields keep their original CamelCase names — `Posx`/`Posy`/`Posz`, `StellarMass`, `SnapNum`, `Type`, `Mvir`, `Rvir`, `SfrDisk`/`SfrBulge`, …
+- Computed fields are lowercase — `ra`, `dec`, `distance`, `redshift_cosmological`, `redshift_observed`, `sfr`
+- Mass fields are in `10^10 Msun/h` (same convention as SAGE HDF5 output); positions are observer-frame comoving Mpc/h
+- Cosmology and provenance are recorded in the `SageOutputHeader` and `LightconeOutputHeader` groups
+
+Launch:
+
+```bash
+visage --lightcone /path/to/lightcone.h5
+```
+
+See [Lightcone Mode](lightcone.md) for what's different about viewing a lightcone versus a SAGE box.
+
 ## How the par file is used
 
 ViSAGE's `parse_par()` reads the `.par` file you pass to the CLI. Relative paths in the par file are resolved relative to the par file's parent directory (your SAGE26 root), so you can run `visage` from anywhere as long as you give it the absolute or correctly relative path to the par file.

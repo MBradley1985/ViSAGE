@@ -52,6 +52,9 @@ ColorMode = Literal[
     "metals_ejected_mass",
     "metals_ics",
 ]
+# Plus, for LightSAGE lightcones with SED data: "sed:<key>" where <key> is a
+# GalaxySnapshot.sed_mags key (e.g. "sed:mag_rest_sdss_g") — not enumerable
+# ahead of time since it depends on which bands a given cone was run with.
 
 _RANGES = {
     "stellar_mass": (8.0, 12.5),  # log10(Msun)
@@ -152,6 +155,17 @@ class GalaxyLayer:
         self._focus_mask: np.ndarray | None = None
         self._filter_mask: np.ndarray | None = None
         self._offset: np.ndarray = np.zeros(3, dtype=np.float32)
+        # ── Lightcone extensions (both no-ops in normal box Explore mode) ──
+        # World-radius multiplier: galaxies are Rvir-sized splats, sub-pixel
+        # across a ~575 Mpc/h lightcone, so the lightcone layer scales them up.
+        self._radius_scale: float = 1.0
+        # Lightcone redshift/time cut: a keep-mask (True = shown).  The slider
+        # sets it to remove part of the cone (e.g. a near-side redshift cut).
+        # Composed (AND) with the focus/filter masks; None = no cut.
+        self._slice_mask: np.ndarray | None = None
+        # Always render the disk/bulge inner stellar layers (normally focus-only)
+        # — the lightcone enables these so galaxies look more defined.
+        self._show_inner_layers: bool = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -207,6 +221,27 @@ class GalaxyLayer:
         self._snapshot = snapshot
         self._redraw()
 
+    def set_radius_scale(self, scale: float) -> None:
+        """Multiply per-galaxy world radii (lightcone visibility). 1.0 = box."""
+        self._radius_scale = max(float(scale), 1e-6)
+        if self._snapshot is not None:
+            self._redraw()
+
+    def set_slice_mask(self, mask: np.ndarray | None) -> None:
+        """Lightcone redshift/time cut: keep only galaxies where mask is True
+        (removes the rest from the render).  None disables the cut."""
+        self._slice_mask = mask
+        if self._snapshot is not None:
+            self._redraw()
+
+    def set_show_inner_layers(self, on: bool) -> None:
+        """Always draw the disk/bulge inner stellar layers (otherwise only
+        shown inside a focus region).  Used by the lightcone for more definition.
+        """
+        self._show_inner_layers = bool(on)
+        if self._snapshot is not None:
+            self._redraw()
+
     def set_mask(self, mask: np.ndarray | None) -> None:
         """Backwards-compatible: sets the focus mask."""
         self.set_focus_mask(mask)
@@ -224,16 +259,24 @@ class GalaxyLayer:
             self._redraw()
 
     def _combined_mask(self) -> np.ndarray | None:
-        if self._focus_mask is None:
-            return self._filter_mask
-        if self._filter_mask is None:
-            return self._focus_mask
-        if len(self._focus_mask) != len(self._filter_mask):
+        # AND together focus + filter + slice (lightcone cut) keep-masks.
+        masks = [
+            m
+            for m in (self._focus_mask, self._filter_mask, self._slice_mask)
+            if m is not None
+        ]
+        if not masks:
+            return None
+        n = len(masks[0])
+        if any(len(m) != n for m in masks):
             # Masks are from different snapshots mid-transition; can't safely
             # combine them.  Return None so _redraw() shows everything until
-            # both masks are refreshed for the new snapshot.
+            # they're refreshed for the new snapshot.
             return None
-        return self._focus_mask & self._filter_mask
+        out = masks[0].copy()
+        for m in masks[1:]:
+            out = out & m
+        return out
 
     # ------------------------------------------------------------------
     # Internal
@@ -251,30 +294,19 @@ class GalaxyLayer:
             self._cloud = None
             return
 
-        # Combined focus + filter mask
+        # Combined focus + filter + lightcone-slice keep-mask.  A lightcone
+        # redshift/time cut removes galaxies here just like a property filter.
         mask = self._combined_mask()
         if mask is not None and len(mask) == snap.count:
-            from dataclasses import fields as _dc_fields
-
-            from visage.io.galaxy_reader import GalaxySnapshot as _GS
-
-            # Mask every per-galaxy array field; pass scalars (snap_num)
-            # through unchanged.  Field-agnostic so new GalaxySnapshot
-            # fields are sliced automatically.
-            n = snap.count
-            kwargs = {}
-            for fld in _dc_fields(snap):
-                value = getattr(snap, fld.name)
-                if isinstance(value, np.ndarray) and len(value) == n:
-                    value = value[mask]
-                kwargs[fld.name] = value
-            snap = _GS(**kwargs)
+            snap = self._subset(snap, mask)
             if snap.count == 0:
                 self._clear_actors()
                 self._cloud = None
                 return
 
-        radii = galaxy_world_radii_rvir(snap.rvir, snap.mvir)
+        radii = galaxy_world_radii_rvir(
+            snap.rvir, snap.mvir, scale=self._radius_scale
+        )
         eff_pos = snap.positions + self._offset
 
         # Every mode shares the same Structure composition (BH core, cold-gas
@@ -284,11 +316,19 @@ class GalaxyLayer:
         self._clear_actors()
         self._cloud = None
         self._render_params = ()
+        self._render_composition(snap, radii, eff_pos)
+
+    def _render_composition(
+        self,
+        snap: GalaxySnapshot,
+        radii: np.ndarray,
+        eff_pos: np.ndarray,
+    ) -> None:
+        """The complete Explore galaxy render: the structure composition plus,
+        for non-structure Colour-by modes, the outer property halo.  Shared by
+        box Explore and the lightcone (dim full cone + bright shell) so both
+        paths draw identical splats, layers and colormaps."""
         self._render_structure(snap, radii, eff_pos)
-
-        if self._color_mode == "structure":
-            return
-
         if self._color_mode == "type":
             mass_colors = normalize_log(
                 snap.stellar_mass, *_RANGES["stellar_mass"]
@@ -300,15 +340,38 @@ class GalaxyLayer:
                 if not np.any(tmask):
                     continue
                 self._render_outer_property(
-                    eff_pos[tmask],
-                    mass_colors[tmask],
-                    radii[tmask],
-                    cmap,
+                    eff_pos[tmask], mass_colors[tmask], radii[tmask], cmap
                 )
-            return
+        elif self._color_mode != "structure":
+            colors = self._compute_colors(snap)
+            self._render_outer_property(eff_pos, colors, radii, self._colormap)
 
-        colors = self._compute_colors(snap)
-        self._render_outer_property(eff_pos, colors, radii, self._colormap)
+    @staticmethod
+    def _subset(snap: GalaxySnapshot, mask: np.ndarray) -> GalaxySnapshot:
+        """Field-agnostic slice of a GalaxySnapshot by a boolean mask."""
+        from dataclasses import fields as _dc_fields
+
+        from visage.io.galaxy_reader import GalaxySnapshot as _GS
+
+        n = snap.count
+        kwargs = {}
+        for fld in _dc_fields(snap):
+            v = getattr(snap, fld.name)
+            if isinstance(v, np.ndarray) and len(v) == n:
+                v = v[mask]
+            elif isinstance(v, dict):
+                # e.g. sed_mags: dict[str, np.ndarray] — slice every array
+                # inside it too, so it stays aligned with the sliced snapshot.
+                v = {
+                    k: (
+                        arr[mask]
+                        if isinstance(arr, np.ndarray) and len(arr) == n
+                        else arr
+                    )
+                    for k, arr in v.items()
+                }
+            kwargs[fld.name] = v
+        return _GS(**kwargs)
 
     def _update_in_place(
         self,
@@ -443,11 +506,11 @@ class GalaxyLayer:
         # removed — invisible / negligible at typical zoom levels and
         # together they were the bulk of the per-frame splat cost.)
 
-        # ---- (3) Focus-only inner stellar layers ---------------------
-        # Only rendered when a focus region is active (sphere or box).
-        # At full-scene scale these would be invisible; in focus they add
-        # meaningful structural detail showing the bulge/disk mass split.
-        if self._focus_mask is not None:
+        # ---- (3) Inner stellar layers (disk/bulge) -------------------
+        # Normally focus-only (a focus region active); at full-scene box scale
+        # they'd be invisible.  The lightcone opts in via _show_inner_layers so
+        # its galaxies get the extra disk/bulge definition everywhere.
+        if self._focus_mask is not None or self._show_inner_layers:
             disk_mass = np.maximum(snap.stellar_mass - snap.bulge_mass, 0.0)
             disk_scalar = _logn(disk_mass, 7.0, 12.0)
             bulge_scalar = _logn(snap.bulge_mass, 6.0, 12.0)
@@ -558,6 +621,13 @@ class GalaxyLayer:
 
     def _compute_colors(self, snap: GalaxySnapshot) -> np.ndarray:
         m = self._color_mode
+        if m.startswith("sed:"):
+            return self._compute_sed_colors(snap, m[len("sed:") :])
+        if m.startswith("sedcolor:"):
+            _, blue_key, red_key = m.split(":", 2)
+            return self._compute_sed_color_index(snap, blue_key, red_key)
+        if m.startswith("sedml:"):
+            return self._compute_sed_mass_to_light(snap, m[len("sedml:") :])
         if m == "ssfr":
             return normalize_log(snap.ssfr, *_RANGES["ssfr"])
         if m == "sfr":
@@ -596,3 +666,87 @@ class GalaxyLayer:
                 np.maximum(getattr(snap, attr), floor), *_RANGES[m]
             )
         return normalize_log(snap.stellar_mass, *_RANGES["stellar_mass"])
+
+    @staticmethod
+    def _compute_sed_colors(snap: GalaxySnapshot, band_key: str) -> np.ndarray:
+        """Colour by a synthetic AB magnitude band (LightSAGE SED only).
+
+        Rest- and observed-frame magnitude scales differ enormously between
+        lightcones (depends on distance range, filter, etc.), so — unlike
+        every other mode — this uses data-driven percentile bounds rather
+        than a fixed _RANGES entry. Zero-mass galaxies carry NaN (no light);
+        they fall back to the low end of the scale rather than breaking the
+        percentile computation.
+        """
+        mags = snap.sed_mags.get(band_key)
+        if mags is None or len(mags) != snap.count:
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        finite = mags[np.isfinite(mags)]
+        if finite.size == 0:
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        lo, hi = np.percentile(finite, [2.0, 98.0])
+        if hi <= lo:
+            hi = lo + 1.0
+        # Brighter (smaller/more negative mag) -> higher scalar value, so
+        # "bright" lands on the colormap's hot end like every other mode.
+        norm = np.clip((hi - mags) / (hi - lo), 0.0, 1.0)
+        return np.nan_to_num(norm, nan=0.0).astype(np.float32)
+
+    @staticmethod
+    def _normalize_percentile(
+        values: np.ndarray, n: int, lo_pct: float = 2.0, hi_pct: float = 98.0
+    ) -> np.ndarray:
+        """Clip-and-scale `values` to [0, 1] using data-driven percentile
+        bounds, falling back to a flat mid-grey when there's nothing finite
+        to compute bounds from (shared by every SED-derived colour mode)."""
+        if values is None or len(values) != n:
+            return np.full(n, 0.5, dtype=np.float32)
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            return np.full(n, 0.5, dtype=np.float32)
+        lo, hi = np.percentile(finite, [lo_pct, hi_pct])
+        if hi <= lo:
+            hi = lo + 1.0
+        norm = np.clip((values - lo) / (hi - lo), 0.0, 1.0)
+        return np.nan_to_num(norm, nan=0.5).astype(np.float32)
+
+    @staticmethod
+    def _compute_sed_color_index(
+        snap: GalaxySnapshot, blue_key: str, red_key: str
+    ) -> np.ndarray:
+        """Colour by a magnitude colour index (e.g. g-r): blue_key minus
+        red_key, both full sed_mags keys from the SAME frame. Larger (redder)
+        index -> higher scalar value, so a diverging colormap (e.g. coolwarm)
+        puts blue galaxies on the blue end and red galaxies on the red end."""
+        blue = snap.sed_mags.get(blue_key)
+        red = snap.sed_mags.get(red_key)
+        if (
+            blue is None
+            or red is None
+            or len(blue) != snap.count
+            or len(red) != snap.count
+        ):
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        index = blue - red
+        return GalaxyLayer._normalize_percentile(index, snap.count)
+
+    @staticmethod
+    def _compute_sed_mass_to_light(
+        snap: GalaxySnapshot, band_key: str
+    ) -> np.ndarray:
+        """Colour by log10(M*/L) in the given rest-frame band. Luminosity is
+        derived from the rest-frame absolute magnitude via the band's solar
+        AB magnitude (visage.sed.filters.SOLAR_ABSMAG_AB) — only bands listed
+        there are offered, so this never guesses a zeropoint."""
+        from visage.sed.filters import SOLAR_ABSMAG_AB
+
+        mags = snap.sed_mags.get(band_key)
+        filt = band_key[len("mag_rest_") :]
+        m_sun = SOLAR_ABSMAG_AB.get(filt)
+        if mags is None or len(mags) != snap.count or m_sun is None:
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        mass = np.maximum(snap.stellar_mass, 1.0)
+        with np.errstate(invalid="ignore"):
+            log_l = -0.4 * (mags - m_sun)  # log10(L / Lsun)
+            log_ml = np.log10(mass) - log_l  # log10(M*/L) in Msun/Lsun
+        return GalaxyLayer._normalize_percentile(log_ml, snap.count)

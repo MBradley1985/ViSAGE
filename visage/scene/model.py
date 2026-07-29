@@ -10,7 +10,6 @@ from visage.config import SimConfig
 from visage.io.par_reader import parse_par
 from visage.io.snapshot_table import SnapshotTable
 from visage.parallel.loader import SnapshotLoader
-from visage.scene.fof_layer import FofLinkLayer
 from visage.scene.galaxy_layer import GalaxyLayer
 from visage.scene.halo_layer import HaloLayer
 
@@ -91,7 +90,6 @@ class Model:
         )
         self.halo_layer: HaloLayer = HaloLayer(plotter)
         self.galaxy_layer: GalaxyLayer = GalaxyLayer(plotter)
-        self.fof_layer: FofLinkLayer = FofLinkLayer(plotter)
         self.fields_available: dict[str, bool] = self._detect_fields()
         self._current_snap: int = -1
         self._offset: np.ndarray = np.zeros(3, dtype=np.float64)
@@ -135,7 +133,6 @@ class Model:
         halos, galaxies = self.loader.get(snap_num)
         self.halo_layer.update(halos)
         self.galaxy_layer.update(galaxies)
-        self.fof_layer.update(halos)
         self._current_snap = snap_num
 
     @property
@@ -174,7 +171,6 @@ class Model:
         f32 = self._offset.astype(np.float32)
         self.halo_layer.set_offset(f32)
         self.galaxy_layer.set_offset(f32)
-        self.fof_layer.set_offset(f32)
 
     def shutdown(self) -> None:
         self.loader.shutdown()

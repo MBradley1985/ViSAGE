@@ -117,14 +117,21 @@ def _parse_rotate(mode: str) -> tuple[float, float]:
 def build_toolbar(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
     snap_count = scene._snap_table.count
+    # Slider bounds — normally the full snap table, but a lightcone only spans
+    # the snapshots actually present in the cone (snap_min..snap_max).
+    snap_lo = int(getattr(scene.primary, "snap_min", 0))
+    snap_hi = int(getattr(scene.primary, "snap_max", snap_count - 1))
 
     state.snap_num = scene.current_snap
     state.snap_label = scene.snap_label
-    state.snap_max = snap_count - 1
+    state.snap_min = snap_lo
+    state.snap_max = snap_hi
     state.play_speed = 1
     _snap_count = [
         snap_count
     ]  # mutable so closures stay current after model switch
+    _snap_lo = [snap_lo]  # slider lower bound (0 for a box)
+    _snap_hi = [snap_hi]  # slider upper bound (snap_count-1 for a box)
     state.is_playing = False
     state.is_reverse = False
     state.is_repeat = False
@@ -166,12 +173,17 @@ def build_toolbar(server, scene: Scene) -> None:
     def _on_model_change():
         new_count = scene._snap_table.count
         _snap_count[0] = new_count
+        _snap_lo[0] = int(getattr(scene.active_model, "snap_min", 0))
+        _snap_hi[0] = int(
+            getattr(scene.active_model, "snap_max", new_count - 1)
+        )
         _suppress_snap[0] = False  # cancel any in-flight prerender
         _frames["key"] = None
         _frames["data"] = {}
         _preload_started[0] = False
         _preload_done[0] = False
-        state.snap_max = new_count - 1
+        state.snap_min = _snap_lo[0]
+        state.snap_max = _snap_hi[0]
         state.snap_num = scene.current_snap
         state.snap_label = scene.snap_label
         state.flush()
@@ -222,7 +234,6 @@ def build_toolbar(server, scene: Scene) -> None:
             round(hl.opacity, 3),
             hl.color_mode,
             hl.colormap,
-            scene.fof_links_visible,
             str(scene._focus_region),
             scene.camera.has_member_indicators,
         ]
@@ -393,9 +404,9 @@ def build_toolbar(server, scene: Scene) -> None:
         # high-z (reverse). Only that range is rendered.
         start = int(state.snap_num)
         if _ctl["reverse"]:
-            order = list(range(start, -1, -1))
+            order = list(range(start, _snap_lo[0] - 1, -1))
         else:
-            order = list(range(start, _snap_count[0]))
+            order = list(range(start, _snap_hi[0] + 1))
         # Invalidate the frame cache if the camera, rotation, or start position
         # changed. Start is included because rotation bakes the angle by frame
         # position — the same snapshot lands at a different angle when playback
@@ -510,13 +521,13 @@ def build_toolbar(server, scene: Scene) -> None:
 
     @ctrl.set("stop")
     def on_stop():
-        _end_playback_to(_snap_count[0] - 1)
+        _end_playback_to(_snap_hi[0])
 
     @ctrl.set("snap_prev")
     def on_snap_prev():
         if _play_task[0] is not None and not _play_task[0].done():
             return
-        n = max(0, int(state.snap_num) - 1)
+        n = max(_snap_lo[0], int(state.snap_num) - 1)
         scene.set_snapshot(n)
         state.snap_num = n
         state.snap_label = scene.snap_label
@@ -527,7 +538,7 @@ def build_toolbar(server, scene: Scene) -> None:
     def on_snap_next():
         if _play_task[0] is not None and not _play_task[0].done():
             return
-        n = min(_snap_count[0] - 1, int(state.snap_num) + 1)
+        n = min(_snap_hi[0], int(state.snap_num) + 1)
         scene.set_snapshot(n)
         state.snap_num = n
         state.snap_label = scene.snap_label
@@ -542,6 +553,12 @@ def build_toolbar(server, scene: Scene) -> None:
         for whichever model is currently selected.
         """
         _snap_count[0] = scene.active_model.snap_count
+        _snap_lo[0] = int(getattr(scene.active_model, "snap_min", 0))
+        _snap_hi[0] = int(
+            getattr(scene.active_model, "snap_max", _snap_count[0] - 1)
+        )
+        state.snap_min = _snap_lo[0]
+        state.snap_max = _snap_hi[0]
         _frames["key"] = None
         _frames["data"] = {}
 
@@ -550,7 +567,12 @@ def build_toolbar(server, scene: Scene) -> None:
         """Update slider bounds + current snap after a model switch."""
         new_count = scene._snap_table.count
         _snap_count[0] = new_count
-        state.snap_max = new_count - 1
+        _snap_lo[0] = int(getattr(scene.active_model, "snap_min", 0))
+        _snap_hi[0] = int(
+            getattr(scene.active_model, "snap_max", new_count - 1)
+        )
+        state.snap_min = _snap_lo[0]
+        state.snap_max = _snap_hi[0]
         state.snap_num = scene.current_snap
         state.snap_label = scene.snap_label
         # Invalidate pre-rendered frame cache; reset preload so it reruns
@@ -611,17 +633,25 @@ def build_toolbar(server, scene: Scene) -> None:
             _rotate_task[0] = asyncio.ensure_future(_rotate_loop())
 
     # ------------------------------------------------------------------
-    # Fly-through mode — cinematic tour of the simulation box:
-    #   1. Approach     : fly-in from reset position to box centre
-    #   2. Galaxy visit : fly to most massive galaxy, spin around it
-    #   3. Group visit  : fly to most massive group,   spin around it
-    #   4. Cluster visit: fly to most massive cluster, spin around it
-    #   5. Return       : fly back to box orbit + continuous orbit
+    # Fly-through mode — a continuous tour of every group and cluster:
+    #   1. Approach : Explore Mode only — fly in from the reset view to the
+    #                 box centre as an establishing shot. Lightcone Mode
+    #                 skips this (see below) and goes straight to step 2.
+    #   2. Tour     : fly to each group/cluster in turn, spin around it,
+    #                 then move to the next — looping forever once every
+    #                 target has been visited. Never zooms out to orbit
+    #                 the box/cone as a whole.
+    # In Lightcone Mode, targets are ordered near → far (a genuine flight
+    # outward through the cone) and the tour's first move zooms straight
+    # from the reset framing into the nearest group/cluster — no separate
+    # approach to the observer's point (that looked wrong: the cone's
+    # narrow sky angle inside a much wider FOV read as a thin sliver/bar,
+    # and the transition into the first target didn't flow).
+    # In Explore Mode, targets are ordered most massive → least.
     # ------------------------------------------------------------------
 
     _FT_FPS = 15  # render rate during fly-through
-    _FT_APPROACH_SECS = 10.0  # fly-in duration (reset → box centre)
-    _FT_BOX_DPS = 8.0  # box orbit speed deg/s (return orbit)
+    _FT_APPROACH_SECS = 10.0  # fly-in duration (reset → starting viewpoint)
     _FT_GROUP_RADIUS = 15.0  # standoff radius for group spin
     _FT_CLUSTER_RADIUS = 30.0  # standoff radius for cluster spin
     _FT_GROUP_DPS = 10.0  # group spin speed deg/s
@@ -632,11 +662,8 @@ def build_toolbar(server, scene: Scene) -> None:
 
         try:
             interval = 1.0 / _FT_FPS
-            bs = scene._cfg.box_size
-            half = bs / 2.0
-            cx, cy, cz = half, half, half
-            orbit_r = bs * 1.7  # same standoff as the reset/focus-on-box view
             cam = scene.plotter.camera
+            is_lc = scene.is_lightcone
 
             def _active():
                 return bool(getattr(state, "flythrough_active", False))
@@ -680,70 +707,81 @@ def build_toolbar(server, scene: Scene) -> None:
                     secs,
                 )
 
-            # ── Snap to reset and begin ────────────────────────────────────
-            cam.position = (half, half, bs * 2.2)
-            cam.focal_point = (cx, cy, cz)
-            cam.up = (0.0, 1.0, 0.0)
-            _push()
-            await asyncio.sleep(interval)
-
-            # ── Phase 1: Approach — reset → box centre ────────────────────
-            # Focal ends slightly past centre (-z) so position never equals
-            # focal_point at the final frame (degenerate camera causes a flash).
-            if not await _smooth_move(
-                _np.array([half, half, bs * 2.2]),
-                _np.array([cx, cy, cz]),
-                _np.array([cx, cy, cz]),
-                _np.array([cx, cy, cz - 0.5]),
-                _FT_APPROACH_SECS,
-            ):
-                return
-
-            deg_step = _FT_BOX_DPS * interval
-
-            # ── Load simulation data for target selection ─────────────────
+            # ── Load simulation data + build the continuous tour list ─────
             halos, galaxies = scene.active_model.loader.get(scene.current_snap)
             off = _np.array(scene.active_model.offset, dtype=float)
 
-            group_pos = None
-            cluster_positions = []
-
+            targets = []  # [(position, standoff_radius, spin_deg_per_sec)]
+            h_pos = _np.empty((0, 3))
             if halos.count > 0:
                 log_m = _np.log10(
                     _np.maximum(_np.array(halos.masses, dtype=float), 1.0)
                 )
                 h_pos = _np.array(halos.positions, dtype=float) + off
+                mask = log_m >= 12.5  # groups (12.5-14) and clusters (>=14)
+                if mask.any():
+                    idxs = _np.where(mask)[0]
+                    if is_lc:
+                        # Observer sits at the coordinate origin in a
+                        # lightcone — tour near-to-far, like actually
+                        # flying outward through the cone.
+                        dist = _np.linalg.norm(h_pos[idxs], axis=1)
+                        order = idxs[_np.argsort(dist)]
+                    else:
+                        order = idxs[_np.argsort(-halos.masses[idxs])]
+                    for i in order:
+                        if log_m[i] >= 14.0:
+                            targets.append(
+                                (h_pos[i], _FT_CLUSTER_RADIUS, _FT_CLUSTER_DPS)
+                            )
+                        else:
+                            targets.append(
+                                (h_pos[i], _FT_GROUP_RADIUS, _FT_GROUP_DPS)
+                            )
 
-                grp_mask = (log_m >= 12.5) & (log_m < 14.0)
-                if grp_mask.any():
-                    best = int(
-                        _np.argmax(_np.where(grp_mask, halos.masses, 0.0))
-                    )
-                    group_pos = h_pos[best]
+            # ── Snap to the normal reset framing ───────────────────────────
+            scene.camera.reset()
+            start_pos = _np.array(cam.position, dtype=float)
+            start_focal = _np.array(cam.focal_point, dtype=float)
+            _push()
+            await asyncio.sleep(interval)
 
-                # All clusters, sorted most-to-least massive
-                clu_mask = log_m >= 14.0
-                if clu_mask.any():
-                    clu_idx = _np.where(clu_mask)[0]
-                    clu_idx = clu_idx[_np.argsort(halos.masses[clu_idx])[::-1]]
-                    cluster_positions = [h_pos[i] for i in clu_idx]
-
-            # ── Phase 2: Most massive group ───────────────────────────────
-            if group_pos is not None:
-                if not await _fly_to_orbit(group_pos, _FT_GROUP_RADIUS, 8.0):
-                    return
-                if not await _orbit_around(
-                    group_pos, _FT_GROUP_RADIUS, 360.0, _FT_GROUP_DPS
+            # ── Phase 1: Approach ──────────────────────────────────────────
+            # Explore Mode: fly in from the reset view to the box centre —
+            # an establishing shot before the tour begins.
+            # Lightcone Mode: no separate approach — parking the camera at
+            # the observer's point (the coordinate origin) looked wrong (the
+            # cone's narrow sky angle inside a much wider FOV read as a thin
+            # sliver/bar, and the transition into the first target didn't
+            # flow). Instead, the tour's own first move (below) zooms
+            # straight from the reset framing into the first group/cluster.
+            if not is_lc:
+                bs = scene._cfg.box_size
+                half = bs / 2.0
+                dest_pos = _np.array([half, half, half])
+                dest_focal = dest_pos + _np.array([0.0, 0.0, -0.5])
+                if not await _smooth_move(
+                    start_pos,
+                    start_focal,
+                    dest_pos,
+                    dest_focal,
+                    _FT_APPROACH_SECS,
                 ):
                     return
 
-            # ── Phase 3: All clusters (most → least massive) ──────────────
-            for cpos in cluster_positions:
-                if not await _fly_to_orbit(cpos, _FT_CLUSTER_RADIUS, 10.0):
+            # ── Phase 2: Continuous group/cluster tour — loops forever ────
+            i = 0
+            while _active():
+                if not targets:
+                    await asyncio.sleep(interval)
+                    continue
+                pos, radius, dps = targets[i % len(targets)]
+                approach_secs = 10.0 if radius == _FT_CLUSTER_RADIUS else 8.0
+                if not await _fly_to_orbit(pos, radius, approach_secs):
                     return
                 # Focus ON — render one stationary frame so focus is visible
                 # before any rotation starts.
-                scene.set_focus_sphere(tuple(cpos), _FT_CLUSTER_RADIUS)
+                scene.set_focus_sphere(tuple(pos), radius)
                 state.focus_active = True
                 _push()
                 await asyncio.sleep(interval)
@@ -751,9 +789,7 @@ def build_toolbar(server, scene: Scene) -> None:
                     scene.clear_focus()
                     state.focus_active = False
                     return
-                if not await _orbit_around(
-                    cpos, _FT_CLUSTER_RADIUS, 360.0, _FT_CLUSTER_DPS
-                ):
+                if not await _orbit_around(pos, radius, 360.0, dps):
                     scene.clear_focus()
                     state.focus_active = False
                     return
@@ -767,43 +803,7 @@ def build_toolbar(server, scene: Scene) -> None:
                     return
                 scene.clear_focus()
                 state.focus_active = False
-
-            # ── Phase 5: Return to box orbit ──────────────────────────────
-            # Pick the orbit angle that minimises the fly-back distance.
-            diff = _np.array(cam.position, dtype=float) - _np.array(
-                [cx, cy, cz]
-            )
-            diff[1] = 0.0
-            nrm = _np.linalg.norm(diff)
-            theta = _np.arctan2(diff[0], diff[2]) if nrm > 1e-6 else 0.0
-            rtn_pos = _np.array(
-                [
-                    cx + orbit_r * _np.sin(theta),
-                    cy,
-                    cz + orbit_r * _np.cos(theta),
-                ]
-            )
-            if not await _smooth_move(
-                _np.array(cam.position, dtype=float),
-                _np.array(cam.focal_point, dtype=float),
-                rtn_pos,
-                _np.array([cx, cy, cz]),
-                10.0,
-            ):
-                return
-
-            # ── Phase 6: Continuous orbit ─────────────────────────────────
-            while _active():
-                theta += _np.deg2rad(deg_step)
-                cam.position = (
-                    cx + orbit_r * _np.sin(theta),
-                    cy,
-                    cz + orbit_r * _np.cos(theta),
-                )
-                cam.focal_point = (cx, cy, cz)
-                cam.up = (0.0, 1.0, 0.0)
-                _push()
-                await asyncio.sleep(interval)
+                i += 1
 
         except asyncio.CancelledError:
             pass
@@ -948,7 +948,7 @@ def build_toolbar(server, scene: Scene) -> None:
     with v3.VCol(style="max-width:240px;padding:0 4px;"):
         v3.VSlider(
             v_model=("snap_num",),
-            min=0,
+            min=("snap_min",),
             max=("snap_max",),
             step=1,
             thumb_label=False,

@@ -268,6 +268,134 @@ def _cbar_style(gradient: str) -> str:
     return _CBAR_BASE + gradient
 
 
+def _sed_split_key(key: str) -> tuple[str, str]:
+    """ "mag_rest_sdss_g" -> ("rest", "sdss_g"), "mag_obs_..." -> ("observed", ...)."""
+    if key.startswith("mag_rest_"):
+        return "rest", key[len("mag_rest_") :]
+    if key.startswith("mag_obs_"):
+        return "observed", key[len("mag_obs_") :]
+    return "?", key
+
+
+def _sed_short_label(filt: str) -> str:
+    """ "sdss_g" -> "g", "2mass_j" -> "j", "galex_fuv" -> "fuv"."""
+    for prefix in ("sdss_", "2mass_", "galex_", "wise_"):
+        if filt.startswith(prefix):
+            return filt[len(prefix) :]
+    return filt.replace("_", " ")
+
+
+def _sed_band_title(key: str) -> str:
+    """ "mag_rest_sdss_g" -> "g (rest)", "mag_obs_2mass_j" -> "j (observed)"."""
+    frame, filt = _sed_split_key(key)
+    return f"{_sed_short_label(filt)} ({frame})"
+
+
+def _sed_extra_modes(sed_bands: list[str]) -> list[dict]:
+    """Colour-index (e.g. "g - r") and mass-to-light entries derived from
+    whatever SED bands are present, ordered blue-to-red within each frame."""
+    from visage.sed.filters import EFFECTIVE_WAVELENGTH_A, SOLAR_ABSMAG_AB
+
+    by_frame: dict[str, list[tuple[float, str, str]]] = {
+        "rest": [],
+        "observed": [],
+    }
+    for key in sed_bands:
+        frame, filt = _sed_split_key(key)
+        if frame in by_frame:
+            by_frame[frame].append(
+                (EFFECTIVE_WAVELENGTH_A.get(filt, 1.0e9), filt, key)
+            )
+
+    modes: list[dict] = []
+    for frame, entries in by_frame.items():
+        entries.sort(key=lambda e: e[0])
+        pairs = [(entries[i], entries[i + 1]) for i in range(len(entries) - 1)]
+        if len(entries) >= 3:
+            pairs.append((entries[0], entries[-1]))  # broadest span too
+        for (_, blue_filt, blue_key), (_, red_filt, red_key) in pairs:
+            modes.append(
+                {
+                    "title": (
+                        f"{_sed_short_label(blue_filt)} - "
+                        f"{_sed_short_label(red_filt)} ({frame})"
+                    ),
+                    "value": f"sedcolor:{blue_key}:{red_key}",
+                }
+            )
+
+    for key in sed_bands:
+        frame, filt = _sed_split_key(key)
+        if frame == "rest" and filt in SOLAR_ABSMAG_AB:
+            modes.append(
+                {
+                    "title": f"M*/L ({_sed_short_label(filt)}, rest)",
+                    "value": f"sedml:{key}",
+                }
+            )
+    return modes
+
+
+def _sed_default_cmap(mode: str) -> str:
+    """Default colormap for a SED colour-by mode — a diverging map for
+    colour indices (so blue/red galaxies land on the matching colormap end),
+    a mass-like map for M*/L, and a frame-distinct sequential map for a raw
+    band (so the colorbar itself hints which frame is active)."""
+    if mode.startswith("sedcolor:"):
+        return "coolwarm"  # low(bluer)->blue end, high(redder)->red end
+    if mode.startswith("sedml:"):
+        return "cividis"  # matches the other mass-like modes (bh/bulge mass)
+    frame, _ = _sed_split_key(mode[len("sed:") :])
+    return "magma" if frame == "observed" else "viridis"
+
+
+def _sed_cbar_range(scene: Scene, mode: str) -> tuple[str, str]:
+    """(value-at-norm-0, value-at-norm-1) labels for a SED colour-by mode —
+    matches whichever direction GalaxyLayer._compute_colors actually maps to
+    the colormap, so the bar's low/high ends agree with their labels."""
+    import numpy as np
+
+    try:
+        _, galaxies = scene.active_model.loader.get(0)
+        if mode.startswith("sedcolor:"):
+            _, blue_key, red_key = mode.split(":", 2)
+            blue = galaxies.sed_mags.get(blue_key)
+            red = galaxies.sed_mags.get(red_key)
+            if blue is None or red is None:
+                return "—", "—"
+            values = blue - red  # ascending index -> ascending norm
+            fmt = "{:+.2f}".format
+        elif mode.startswith("sedml:"):
+            from visage.sed.filters import SOLAR_ABSMAG_AB
+
+            band_key = mode[len("sedml:") :]
+            mags = galaxies.sed_mags.get(band_key)
+            filt = band_key[len("mag_rest_") :]
+            m_sun = SOLAR_ABSMAG_AB.get(filt)
+            if mags is None or m_sun is None:
+                return "—", "—"
+            mass = np.maximum(galaxies.stellar_mass, 1.0)
+            with np.errstate(invalid="ignore"):
+                values = np.log10(mass) + 0.4 * (mags - m_sun)
+            fmt = "{:.1f}".format
+        else:
+            band_key = mode[len("sed:") :]
+            mags = galaxies.sed_mags.get(band_key)
+            if mags is None:
+                return "—", "—"
+            # Brighter (smaller mag) -> higher norm, so negate before taking
+            # percentiles and negate back when formatting for display.
+            values = -mags
+            fmt = lambda v: f"{-v:.1f}"  # noqa: E731
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            return "—", "—"
+        lo, hi = np.percentile(finite, [2.0, 98.0])
+        return fmt(lo), fmt(hi)
+    except Exception:
+        return "—", "—"
+
+
 def build_navigation_panel(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
 
@@ -383,7 +511,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.env_show_pairs = True
     state.env_show_group = True
     state.env_show_cluster = True
-    state.fof_links_on = False  # FoF-link gold lines toggle
     state.filter_gal_age = [0.0, 14.0]  # Gyr  (mass-weighted stellar age)
 
     # ── Galaxy info panel ──────────────────────────────────────
@@ -433,36 +560,24 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     def _rebuild_color_mode_lists() -> None:
         fields = dict(scene.active_model.fields_available)
+        sed_bands = getattr(scene.active_model, "sed_bands_available", [])
+        sed_modes = [
+            {"title": _sed_band_title(k), "value": f"sed:{k}"}
+            for k in sed_bands
+        ]
         state.halo_color_modes = _filter_modes(_HALO_MODES, fields)
+        # SED bands live only in the dedicated Synthetic Photometry section
+        # below, not in the general "Colour by" dropdown.
         state.galaxy_color_modes = _filter_modes(_GALAXY_MODES, fields)
+        state.sed_color_modes = sed_modes
+        state.has_sed_data = bool(sed_modes)
+        state.is_lightcone = scene.is_lightcone
 
     _rebuild_color_mode_lists()
 
     def _push():
         if hasattr(server.controller, "view_update"):
             server.controller.view_update()
-
-    def _sync_fof_layer() -> None:
-        """Rebuild FoF links to match the current combined halo mask.
-
-        Called after any change that alters which halos are visible
-        (filter sliders, focus sphere/box, snapshot change, halo toggle).
-        Passes None when every halo is visible so _filter_segments skips
-        the position lookup entirely."""
-        fl = scene.active_model.fof_layer
-        if not fl.visible:
-            return
-        hl = scene.halo_layer
-        snap = hl._snapshot
-        if snap is None:
-            return
-        mask = hl._combined_mask()
-        vis_pos = (
-            snap.positions[mask]
-            if (mask is not None and len(mask) == snap.count)
-            else None
-        )
-        fl.sync_masks(vis_pos)
 
     def _focused() -> bool:
         return bool(state.focus_active)
@@ -747,7 +862,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
             scene.galaxy_layer.set_filter_mask(g_mask)
 
-        _sync_fof_layer()
         _push()
 
     # Re-apply on every snapshot change (new data, masks must be rebuilt)
@@ -875,11 +989,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @state.change("halos_visible")
     def on_halo_toggle(halos_visible, **_):
         scene.halo_layer.visible = bool(halos_visible)
-        # FoF links connect halos — hide them whenever halos are hidden.
-        should_show_fof = bool(halos_visible) and bool(state.fof_links_on)
-        if should_show_fof:
-            _sync_fof_layer()  # update masks before the visible setter triggers _rebuild
-        scene.active_model.fof_layer.visible = should_show_fof
         _push()
 
     @state.change("galaxies_visible")
@@ -924,13 +1033,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
             galaxy_color_mode != "structure"
             and "galaxy_colormap" not in state.modified_keys
         ):
-            state.galaxy_colormap = _GAL_CMAP_DEFAULTS.get(
-                galaxy_color_mode, "viridis"
+            default_cmap = (
+                "plasma"
+                if galaxy_color_mode.startswith("sed:")
+                else _GAL_CMAP_DEFAULTS.get(galaxy_color_mode, "viridis")
             )
+            state.galaxy_colormap = default_cmap
         # Categorical / multi-layer modes (density, type, structure) don't have
-        # a single colormap range — fall back to a generic label.
+        # a single colormap range — fall back to a generic label. SED bands
+        # get a data-driven (percentile) range instead of a fixed lookup.
         if galaxy_color_mode in _GAL_CB:
             _, lo, hi = _GAL_CB[galaxy_color_mode]
+        elif galaxy_color_mode.startswith("sed:"):
+            lo, hi = _sed_cbar_range(scene, galaxy_color_mode[len("sed:") :])
         else:
             lo, hi = "—", "—"
         state.gal_cbar_min = lo
@@ -1110,7 +1225,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
             state.focus_active = True
         except Exception:
             pass
-        _sync_fof_layer()
         _push()
 
     def _go_to_galaxy_at_radius(radius: float) -> None:
@@ -1122,7 +1236,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 state.focus_active = True
         except Exception:
             pass
-        _sync_fof_layer()
         _push()
 
     @ctrl.set("go_to_galaxy_1")
@@ -1149,18 +1262,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.galinfo_items = []
         state.groupinfo_show = False
         state.groupinfo_items = []
-        state.flush()
-        _push()
-
-    @ctrl.set("toggle_fof_links")
-    def on_toggle_fof_links():
-        new_state = not bool(state.fof_links_on)
-        # Only actually visible when halos are also shown
-        actual_vis = new_state and bool(state.halos_visible)
-        if actual_vis:
-            _sync_fof_layer()  # update masks before enabling so first render is correct
-        scene.set_fof_links_visible(actual_vis)
-        state.fof_links_on = new_state
         state.flush()
         _push()
 
@@ -1256,7 +1357,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         state.focus_active = True
         state.flush()
-        _sync_fof_layer()
         _push()
 
     @ctrl.set("show_galaxy_info")
@@ -2626,7 +2726,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # Always engage focus on Go
         scene.set_focus_sphere((x, y, z), d)
         state.focus_active = True
-        _sync_fof_layer()
         _push()
 
     @ctrl.set("toggle_draw_sphere")
@@ -2784,7 +2883,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # Coords behaviour. User can toggle it off via the focus button.
         scene.set_focus_box(xmin, xmax, ymin, ymax, zmin, zmax)
         state.focus_active = True
-        _sync_fof_layer()
         _push()
 
     @ctrl.set("toggle_draw_box")
@@ -2927,7 +3025,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.clear_focus()
         state.focus_active = False
         state.flush()
-        _sync_fof_layer()
         _push()
 
     @ctrl.set("clear_draw_box")
@@ -2945,26 +3042,33 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.clear_focus()
         state.focus_active = False
         state.flush()
-        _sync_fof_layer()
         _push()
 
     @ctrl.set("reset_camera")
     def on_reset():
         _clear_draw_widgets()
         scene.camera._clear_indicator()
-        regions = [(0.0, 0.0, 0.0, scene.primary.box_size)]
-        for name in scene._adjacent_order:
-            m = scene._models.get(name)
-            if m is not None:
-                off = m.offset
-                regions.append(
-                    (float(off[0]), float(off[1]), float(off[2]), m.box_size)
-                )
-        scene.camera.focus_on_boxes(regions)
+        if scene.is_lightcone:
+            # A lightcone isn't a cube at the origin — frame its actual
+            # bounds (CameraController.reset() already does this correctly).
+            scene.camera.reset()
+        else:
+            regions = [(0.0, 0.0, 0.0, scene.primary.box_size)]
+            for name in scene._adjacent_order:
+                m = scene._models.get(name)
+                if m is not None:
+                    off = m.offset
+                    regions.append(
+                        (
+                            float(off[0]),
+                            float(off[1]),
+                            float(off[2]),
+                            m.box_size,
+                        )
+                    )
+            scene.camera.focus_on_boxes(regions)
         scene.clear_focus()
         state.focus_active = False
-        _sync_fof_layer()
-        # _sync_fof_layer may show/hide actors, changing scene bounds.
         # Recompute clipping planes so all geometry is visible without
         # the user having to zoom/move to trigger an automatic update.
         scene.plotter.renderer.ResetCameraClippingRange()
@@ -3628,7 +3732,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _clear_draw_widgets()
             state.focus_active = False
             scene.clear_focus()
-            _sync_fof_layer()
             _push()
             return
 
@@ -3696,7 +3799,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 scene._apply_focus_masks(halos.positions, galaxies.positions)
                 state.focus_active = True
 
-        _sync_fof_layer()
         _push()
 
     # ------------------------------------------------------------------
@@ -3989,6 +4091,57 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
                         )
 
+                with v3.VSheet(
+                    color="transparent",
+                    v_show=("is_lightcone && has_sed_data",),
+                ):
+                    v3.VDivider(style="margin:14px 0;")
+                    v3.VLabel(
+                        "SYNTHETIC PHOTOMETRY (SED)",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#7FDBFF;padding:6px 0 8px;display:block;"
+                        ),
+                    )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VSelect(
+                            v_model=("galaxy_color_mode",),
+                            items=("sed_color_modes",),
+                            label="Colour by band",
+                            hide_details=True,
+                            variant="outlined",
+                            color="#7FDBFF",
+                            density="compact",
+                        )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VSelect(
+                            v_model=("galaxy_colormap",),
+                            items=(_CMAPS,),
+                            label="Colormap",
+                            hide_details=True,
+                            variant="outlined",
+                            color="#7FDBFF",
+                            density="compact",
+                        )
+                    with v3.VSheet(
+                        color="transparent", style="padding:4px 0 8px;"
+                    ):
+                        with v3.VSheet(
+                            color="transparent",
+                            style="display:flex;align-items:center;gap:4px;",
+                        ):
+                            v3.VLabel(
+                                "{{ gal_cbar_min }}",
+                                style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            )
+                            v3.VSheet(
+                                style=("gal_cbar_style",), color="transparent"
+                            )
+                            v3.VLabel(
+                                "{{ gal_cbar_max }}",
+                                style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            )
+
                 v3.VDivider(style="margin:14px 0 10px;")
 
                 v3.VBtn(
@@ -4244,16 +4397,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     density="compact",
                     prepend_icon="mdi-bullseye-arrow",
                     click=ctrl.highlight_group_members,
-                    style="margin-bottom:6px;",
-                )
-                v3.VBtn(
-                    "{{ fof_links_on ? 'FoF Links: On' : 'FoF Links: Off' }}",
-                    block=True,
-                    density="compact",
-                    variant=("fof_links_on ? 'flat' : 'outlined'",),
-                    color="#FFD700",
-                    prepend_icon="mdi-vector-polyline",
-                    click=ctrl.toggle_fof_links,
                     style="margin-bottom:6px;",
                 )
                 v3.VBtn(

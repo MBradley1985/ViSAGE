@@ -137,8 +137,9 @@ def create_app(
     min_halo_mass: float = 1.0e10,
     min_stellar_mass: float = 1.0e8,
     max_halos: int = 100_000,
-    max_galaxies: int = 100_000,
+    max_galaxies: int | None = None,
     port: int = 8080,
+    lightcone_path: str | Path | None = None,
 ):
     scene = Scene(
         primary_par_path=par_path,
@@ -149,6 +150,7 @@ def create_app(
         min_stellar_mass=min_stellar_mass,
         max_halos=max_halos,
         max_galaxies=max_galaxies,
+        lightcone_path=lightcone_path,
     )
 
     server = get_server(client_type="vue3")
@@ -251,10 +253,16 @@ def create_app(
     # with a model_0.hdf5 is one model, named after the folder).  The .par
     # files are still used internally for tree paths but they are no longer
     # surfaced in the UI.
-    primary_hdf5 = Path(scene.primary.cfg.hdf5_path)
-    output_dir = primary_hdf5.parent.parent
-    par_d = Path(par_dir) if par_dir else Path(par_path).parent
-    discovered = find_models(output_dir, par_dir=par_d)
+    # A lightcone is a single standalone cloud — there are no sibling SAGE
+    # model folders to discover, so skip the scan (and the par-based paths,
+    # which don't apply).
+    if lightcone_path is not None:
+        discovered = []
+    else:
+        primary_hdf5 = Path(scene.primary.cfg.hdf5_path)
+        output_dir = primary_hdf5.parent.parent
+        par_d = Path(par_dir) if par_dir else Path(par_path).parent
+        discovered = find_models(output_dir, par_dir=par_d)
     # Index by model name for fast lookup
     discovered_by_name: dict[str, dict] = {m["name"]: m for m in discovered}
 
@@ -336,6 +344,56 @@ def create_app(
         return out
 
     server.state.models_list = _build_models_list()
+
+    # ── Session models registry ─────────────────────────────────────────
+    # Remember every model (box or lightcone) opened this session so the user
+    # can jump back to any of them from the Launch dropdown.  Re-opening one
+    # relaunches ViSAGE on it (like the wizard's own Explore/Visualize launch).
+    from visage.utils import recent_models as _recent
+
+    if lightcone_path is not None:
+        _cur_kind = "lightcone"
+        _cur_path = str(Path(lightcone_path).expanduser().resolve())
+        _cur_name = Path(lightcone_path).stem
+    else:
+        _cur_kind = "box"
+        _cur_path = (
+            str(Path(par_path).expanduser().resolve()) if par_path else ""
+        )
+        _cur_name = scene.primary_name
+    _sess_entries = (
+        _recent.record(_cur_name, _cur_kind, _cur_path)
+        if _cur_path
+        else _recent.load()
+    )
+    server.state.session_models = [
+        {
+            "name": e.get("name", ""),
+            "kind": e.get("kind", "box"),
+            "path": e.get("path", ""),
+            "active": e.get("kind") == _cur_kind
+            and e.get("path") == _cur_path,
+        }
+        for e in _sess_entries
+    ]
+
+    @server.controller.set("open_recent_model")
+    def _open_recent_model(path, kind):
+        import os as _os, sys as _sys, shutil as _shutil
+
+        argv = (
+            ["--lightcone", str(path)]
+            if kind == "lightcone"
+            else ["--par", str(path)]
+        ) + ["--port", str(port)]
+        exe = _shutil.which("visage")
+        if exe:
+            _os.execv(exe, [exe, *argv])
+        else:
+            _os.execv(
+                _sys.executable, [_sys.executable, "-m", "visage.cli", *argv]
+            )
+
     server.state.active_box_name = scene.primary_name
     server.state.box_strip_items = []
     server.state.model_loading = False
@@ -642,6 +700,12 @@ def create_app(
         server.state.wiz_active = True
         server.state.flush()
 
+    @server.controller.set("open_sagelightcone_wizard")
+    def _open_sagelightcone_wizard():
+        _wiz_ctrl.reset_and_start(flow="sagelightcone")
+        server.state.wiz_active = True
+        server.state.flush()
+
     @server.controller.set("check_for_updates")
     async def _on_check_for_updates():
         import asyncio
@@ -783,7 +847,7 @@ def create_app(
                             ),
                         )
                 with v3.VList(density="compact", bg_color="transparent"):
-                    # ── Launch Mode at the top ─────────────────────────────
+                    # ── Launch Mode ────────────────────────────────────────
                     v3.VListSubheader(
                         "LAUNCH MODE",
                         style="color:#06b6d4;font-size:0.65rem;",
@@ -796,12 +860,53 @@ def create_app(
                         density="compact",
                     )
                     v3.VListItem(
-                        title="Calibrate with SAGEswarm",
+                        title="SAGEswarm",
                         prepend_icon="mdi-chart-scatter-plot",
                         click=server.controller.open_sageswarm_wizard,
                         color="cyan",
                         density="compact",
                     )
+                    v3.VListItem(
+                        title="LightSAGE",
+                        prepend_icon="mdi-telescope",
+                        click=server.controller.open_sagelightcone_wizard,
+                        color="cyan",
+                        density="compact",
+                    )
+                    # ── Session models (boxes + lightcones loaded this
+                    #    session; click to re-open one) ──────────────────────
+                    v3.VDivider(
+                        v_show=(
+                            "session_models && session_models.length > 0",
+                        ),
+                        style="margin:4px 0;",
+                    )
+                    v3.VListSubheader(
+                        "SESSION MODELS",
+                        style="color:#06b6d4;font-size:0.65rem;",
+                        v_show=(
+                            "session_models && session_models.length > 0",
+                        ),
+                    )
+                    with html.Div(
+                        v_for=("m in session_models",),
+                        key=("'sess-' + m.path",),
+                    ):
+                        v3.VListItem(
+                            title=("m.name",),
+                            subtitle=("m.kind",),
+                            prepend_icon=(
+                                "m.kind === 'lightcone' "
+                                "? 'mdi-telescope' : 'mdi-cube-outline'",
+                            ),
+                            click=(
+                                server.controller.open_recent_model,
+                                "[m.path, m.kind]",
+                            ),
+                            active=("m.active",),
+                            color="cyan",
+                            density="compact",
+                        )
                     v3.VDivider(style="margin:4px 0;")
                     # ── Models (switch rows) ───────────────────────────────
                     v3.VListSubheader(
@@ -898,8 +1003,42 @@ def create_app(
                         density="compact",
                     )
 
+            # ── Explore Mode menu (hamburger) — tabs.  Sits right next to the
+            #    Launch Mode button. ─────────────────────────────────────────
+            with v3.VMenu(close_on_content_click=True):
+                with v3.Template(v_slot_activator="{ props }"):
+                    v3.VBtn(
+                        icon="mdi-menu",
+                        variant="text",
+                        density="compact",
+                        v_bind="props",
+                        title="Tabs",
+                        style="margin-left:2px;",
+                    )
+                with v3.VList(density="compact", bg_color="transparent"):
+                    for label, value in _NAV_TABS:
+                        v3.VListItem(
+                            title=label,
+                            value=value,
+                            click=f"nav_active_tab = '{value}'",
+                            active=(f"nav_active_tab === '{value}'",),
+                            color="cyan",
+                        )
+
+            # ── SAGE26 setup button — the box (opens the SAGE26 setup
+            #    wizard). ─────────────────────────────────────────────────
+            v3.VBtn(
+                icon="mdi-cube-outline",
+                variant="text",
+                density="compact",
+                color="white",
+                title="SAGE26 Setup",
+                click=server.controller.open_wizard,
+                style="margin-left:2px;",
+            )
+
             # ── SAGEswarm button — opens the wizard straight into the PSO
-            #    calibration flow (sibling of the Launch Mode button) ────────
+            #    calibration flow. ───────────────────────────────────────────
             v3.VBtn(
                 icon="mdi-chart-scatter-plot",
                 variant="text",
@@ -910,29 +1049,17 @@ def create_app(
                 style="margin-left:2px;",
             )
 
-            # ── Explore Mode menu (hamburger) — tabs only ──────────────────
-            with v3.VMenu(close_on_content_click=True):
-                with v3.Template(v_slot_activator="{ props }"):
-                    v3.VBtn(
-                        icon="mdi-menu",
-                        variant="text",
-                        density="compact",
-                        v_bind="props",
-                        title="Explore Mode",
-                    )
-                with v3.VList(density="compact", bg_color="transparent"):
-                    v3.VListSubheader(
-                        "EXPLORE MODE",
-                        style="color:#06b6d4;font-size:0.65rem;",
-                    )
-                    for label, value in _NAV_TABS:
-                        v3.VListItem(
-                            title=label,
-                            value=value,
-                            click=f"nav_active_tab = '{value}'",
-                            active=(f"nav_active_tab === '{value}'",),
-                            color="cyan",
-                        )
+            # ── LightSAGE button — opens the wizard straight into the
+            #    lightcone-extraction flow. ────────────────────────────────
+            v3.VBtn(
+                icon="mdi-telescope",
+                variant="text",
+                density="compact",
+                color="white",
+                title="LightSAGE — Lightcone Extraction",
+                click=server.controller.open_sagelightcone_wizard,
+                style="margin-left:2px;",
+            )
 
             # ── Export catalogue button ────────────────────────────────────
             v3.VBtn(

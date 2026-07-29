@@ -37,7 +37,8 @@ class Scene:
         min_halo_mass: float = 1.0e10,
         min_stellar_mass: float = 1.0e8,
         max_halos: int = 100_000,
-        max_galaxies: int = 100_000,
+        max_galaxies: int | None = None,
+        lightcone_path: str | Path | None = None,
     ) -> None:
         self._plotter = pv.Plotter(
             off_screen=off_screen, window_size=[1600, 900]
@@ -56,9 +57,19 @@ class Scene:
 
         self._models: dict[str, Model] = {}
         self._primary_name: str = ""
+        self._is_lightcone: bool = lightcone_path is not None
 
-        # Build the primary model
-        primary = Model(primary_par_path, self._plotter, self._loader_kwargs)
+        # Build the primary model — a lightcone (flat cone) or a SAGE box.
+        if self._is_lightcone:
+            from visage.scene.lightcone_model import LightconeModel
+
+            primary = LightconeModel(
+                lightcone_path, self._plotter, self._loader_kwargs
+            )
+        else:
+            primary = Model(
+                primary_par_path, self._plotter, self._loader_kwargs
+            )
         self._models[primary.name] = primary
         self._primary_name = primary.name
 
@@ -73,12 +84,19 @@ class Scene:
         self._labels_enabled: bool = True
 
         self._camera = CameraController(self._plotter, primary.box_size)
+        if self._is_lightcone:
+            # Frame the actual cone bounds, not a cube.
+            self._camera.set_lightcone_bounds(getattr(primary, "bounds", None))
 
-        self._current_snap: int = (
-            initial_snap
-            if initial_snap is not None
-            else primary.snap_count - 1
-        )
+        if initial_snap is not None:
+            self._current_snap: int = initial_snap
+        elif self._is_lightcone:
+            # Full cone by default: the near-side cut is "off" at snap_max.
+            self._current_snap = getattr(
+                primary, "snap_max", primary.snap_count - 1
+            )
+        else:
+            self._current_snap = primary.snap_count - 1
 
         self._on_snap_change: list[Callable[[int], None]] = []
         self._on_model_change: list[Callable[[], None]] = []
@@ -94,11 +112,17 @@ class Scene:
 
         halo_reader.VERBOSE = False
         galaxy_reader.VERBOSE = False
-        self.primary.loader.preload_all()
+        # A lightcone is a single static cloud — nothing to preload.
+        if not self._is_lightcone:
+            self.primary.loader.preload_all()
 
     # ------------------------------------------------------------------
     # Primary model & layer access
     # ------------------------------------------------------------------
+
+    @property
+    def is_lightcone(self) -> bool:
+        return self._is_lightcone
 
     @property
     def primary(self) -> Model:
@@ -122,13 +146,6 @@ class Scene:
     @property
     def galaxy_layer(self) -> GalaxyLayer:
         return self.active_model.galaxy_layer
-
-    @property
-    def fof_links_visible(self) -> bool:
-        return self.active_model.fof_layer.visible
-
-    def set_fof_links_visible(self, visible: bool) -> None:
-        self.active_model.fof_layer.visible = bool(visible)
 
     @property
     def camera(self) -> CameraController:
@@ -400,7 +417,6 @@ class Scene:
             return
         old_primary_box = self.primary.box_size
         self._models[self._primary_name].visible = False
-        self._models[self._primary_name].fof_layer.visible = False
 
         # If old primary was active, transfer focus to new primary
         if self._active_box_name == self._primary_name:

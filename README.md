@@ -48,8 +48,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Filters are **active-only** — a slider sitting at its full-range endpoints has no effect; move it inward to filter. Every galaxy with detectable mass is visible at startup.
 - Filters auto-disable when the loaded model doesn't contain the underlying field
 - Reset Filters button restores defaults
-- **FoF links are filter-aware** — satellite→central gold lines are only drawn for halos that pass the active filter mask, focus sphere/box, and the halos-visible toggle; they stay correct during playback and recording
-- **Playback respects all scene state** — the pre-render frame cache is keyed on filter values, focus region, layer visibility/opacity/color-mode, FoF state, and highlight indicator state; changing any of these and pressing Play again always produces fresh frames
+- **Playback respects all scene state** — the pre-render frame cache is keyed on filter values, focus region, layer visibility/opacity/color-mode, and highlight indicator state; changing any of these and pressing Play again always produces fresh frames
 
 ### Side-by-side multi-box comparison
 - Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the hamburger menu
@@ -83,14 +82,31 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Stories load from `sage_stories/` in your launch directory; a bundled **Presentation Template** provides a full talk skeleton to copy and fill in — see the [Story Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/story_mode/)
 
 ### Launch Mode wizard
-- Guided setup flow for configuring and launching SAGE26, accessible standalone (`visage` with no `--par`) or from the Explore Mode hamburger menu
-- Step chips in the header track progress (cyan = current step, green = done, white = pending)
+- Guided setup flow, accessible standalone (`visage` with no `--par`/`--lightcone`) or from the Launch-Mode dropdown (SAGE-logo button, top-left of the toolbar)
+- Three guided flows share the same wizard shell, switchable at any time ("Back" / dedicated toolbar buttons):
+  - **SAGE26 setup** — clone, compile, configure, and run SAGE26
+  - **SAGEswarm** — clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run the PSO calibration with a live plot gallery
+  - **LightSAGE** — clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build *only* the `sage2kdtree` / `cli_lightcone` tools (SAGE itself is never rebuilt — ViSAGE feeds it your existing SAGE26 output), configure and run the two-stage pipeline, then jump straight into **Lightcone Mode** on the result — with an optional third stage that synthesizes broadband photometry (SED) via FSPS (`pip install "sage-viewer[sed]"`)
+- Step chips in the header track progress per flow (cyan = current step, green = done, white = pending)
 - **Rescan** button re-runs the environment scan from scratch at any point
 - **Clone SAGE26** option clones the SAGE26 repository from GitHub — prompts for the parent directory (defaults to home folder) before cloning
 - **Create config file** option generates a new `.par` from a template pre-filled with paths for your SAGE26 directory; choose a custom filename before writing
-- Par file editor opens side-by-side with the terminal when a `.par` file needs editing — both panels visible simultaneously
-- Screenshots, recordings, and catalogue exports all save to `sage_outputs/` in the directory you launched from
-- Wizard always resets cleanly when reopened from Explore Mode
+- Every editable config (`.par`, `run_pso.sh`, `run_lightcone.sh`) is shown as a **parameter form** — one labelled box per option, pre-filled with its default — instead of raw text; edits fold back into the file on Save & Run, preserving comments and layout
+- The LightSAGE build auto-detects a macOS Apple-clang/SDK mismatch and falls back to a compatible SDK; the generated build/run scripts live in `~/.visage/`, never inside the third-party checkout
+- Screenshots, recordings, catalogue exports, and LightSAGE lightcone output all save to `sage_outputs/` in the directory you launched from
+- Wizard always resets cleanly when reopened
+
+### Lightcone Mode
+- `visage --lightcone FILE` opens a `cli_lightcone` HDF5 output in the **exact same Explore UI** as a SAGE box — same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering
+- Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
+- The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
+- Camera reset frames the cone horizontally, centred in the viewport
+- Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, from the **Session Models** list (see below), or directly via `--lightcone`
+
+### Session models
+- The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
+- Click any entry to jump straight back to it (a quick relaunch on the same port) — so loading a box after a lightcone (or vice versa) never loses track of what you had open
+- Persisted in `~/.visage/session_models.json` across relaunches
 
 ### Embedded console (Console tab)
 - **Terminal mode** — a live xterm.js terminal backed by a real PTY (`$SHELL -l`); full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`) all work
@@ -144,7 +160,9 @@ ssh -L 8080:localhost:8080 user@cluster
 ## Command-line options
 
 ```text
---par FILE              Path to a SAGE .par file — omit to launch in Launch Mode (wizard)
+--par FILE              Path to a SAGE .par file — omit (with --lightcone) to launch in Launch Mode (wizard)
+--lightcone FILE        Path to a cli_lightcone HDF5 output file — opens the
+                        full Explore UI on the lightcone instead of a SAGE box
 --par-dir DIR           Directory to scan for additional .par files
                         (defaults to the parent of --par; used for the
                         multi-model dropdown)
@@ -152,10 +170,11 @@ ssh -L 8080:localhost:8080 user@cluster
 --port N                Trame server port (default: 8080)
 --n-jobs N              Worker threads for parallel halo file reads
 --max-halos N           Downsample ceiling per snapshot
---max-galaxies N        Downsample ceiling per snapshot
 --min-halo-mass MSUN    Minimum halo mass to load
 --min-stellar-mass MSUN Minimum stellar mass to load
 ```
+
+Galaxies have no display cap — every galaxy above the mass floor loads, since all snapshots are preloaded up front.
 
 ## Multi-model workflow
 
@@ -235,7 +254,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 | Tab | Purpose |
 |---|---|
-| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar) |
+| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); in Lightcone Mode with SED data, a dedicated Synthetic Photometry section adds colour-by-band |
 | Filters    | Range sliders for halo and galaxy properties |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Target     | Halo / galaxy navigation, focus zoom, Galaxy Info, Highlight Galaxy |

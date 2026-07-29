@@ -33,6 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--lightcone",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Path to a cli_lightcone HDF5 output file. Opens the full Explore "
+            "UI on the lightcone (a flat galaxy cone) instead of a SAGE box; "
+            "the snapshot slider highlights redshift/time shells."
+        ),
+    )
+    p.add_argument(
         "--snap",
         type=int,
         default=None,
@@ -74,13 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Downsample ceiling for haloes per snapshot (default: 100000)",
     )
     p.add_argument(
-        "--max-galaxies",
-        type=int,
-        default=100_000,
-        metavar="N",
-        help="Downsample ceiling for galaxies per snapshot (default: 100000)",
-    )
-    p.add_argument(
         "--version",
         action="version",
         version=f"visage {__version__}",
@@ -91,7 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
-    if args.par is None:
+    if args.lightcone is not None:
+        _lightcone_mode(args)
+    elif args.par is None:
         _launch_mode(args)
     else:
         _explore_mode(args)
@@ -134,7 +139,6 @@ def _explore_mode(args) -> None:
         min_halo_mass=args.min_halo_mass,
         min_stellar_mass=args.min_stellar_mass,
         max_halos=args.max_halos,
-        max_galaxies=args.max_galaxies,
         port=args.port,
     )
     print("[3/4] Building scene and Trame UI...")
@@ -143,6 +147,37 @@ def _explore_mode(args) -> None:
     print(
         f"         Background: preloading all {scene.snap_count} snapshots into memory..."
     )
+    print(f"\n  --> Open http://localhost:{args.port} in your browser\n")
+
+    server.start(port=args.port, open_browser=False)
+
+
+def _lightcone_mode(args) -> None:
+    lc_path = Path(args.lightcone)
+    if not lc_path.exists():
+        print(f"Error: lightcone file not found: {lc_path}", file=sys.stderr)
+        sys.exit(1)
+
+    from visage._version import __version__ as _ver
+
+    print(f"\nViSAGE {_ver}  —  Lightcone Mode")
+    print(f"Lightcone : {lc_path.resolve()}")
+    print("\n[1/3] Reading lightcone galaxies + host haloes...")
+
+    from visage.app import create_app
+
+    server, scene = create_app(
+        par_path="",
+        initial_snap=args.snap,
+        n_jobs=args.n_jobs,
+        min_halo_mass=args.min_halo_mass,
+        min_stellar_mass=args.min_stellar_mass,
+        max_halos=args.max_halos,
+        port=args.port,
+        lightcone_path=lc_path,
+    )
+    print("[2/3] Building scene and Trame UI...")
+    print(f"[3/3] Starting server on port {args.port}...")
     print(f"\n  --> Open http://localhost:{args.port} in your browser\n")
 
     server.start(port=args.port, open_browser=False)

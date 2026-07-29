@@ -1,6 +1,6 @@
 # Quickstart
 
-## Two ways to launch
+## Three ways to launch
 
 **Explore Mode** — view existing SAGE26 results using a full path to your `.par` file:
 
@@ -8,12 +8,20 @@
 visage --par /path/to/SAGE26/input/millennium.par
 ```
 
-**Launch Mode** (wizard) — configure and run SAGE26. Run from your SAGE26 root so the wizard can find your `.par` files and executable automatically:
+**Launch Mode** (wizard) — configure and run SAGE26, calibrate with SAGEswarm, or extract a lightcone with LightSAGE. Run from your SAGE26 root so the wizard can find your `.par` files and executable automatically:
 
 ```bash
 cd /path/to/SAGE26
 visage
 ```
+
+**Lightcone Mode** — view a LightSAGE `cli_lightcone` HDF5 output (produced by the wizard's LightSAGE flow, or from a manual run):
+
+```bash
+visage --lightcone /path/to/lightcone.h5
+```
+
+See the [Launch Mode](../user_guide/launch_mode.md) and [Lightcone Mode](../user_guide/lightcone.md) guides for details.
 
 ## Explore Mode examples
 

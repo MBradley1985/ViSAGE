@@ -32,6 +32,15 @@ class CameraController:
             None  # thin white outline marking the FOF central
         )
         self._group_ring_actor = None  # red ring sized to enclose the group
+        # Lightcone mode: frame the actual point-cloud bounds instead of a
+        # cubic box (a cone is not a box). None => normal box framing.
+        self._lc_bounds: np.ndarray | None = None
+
+    def set_lightcone_bounds(self, bounds: np.ndarray | None) -> None:
+        """Enable lightcone framing: bounds = [[xmin,ymin,zmin],[xmax,ymax,zmax]]."""
+        self._lc_bounds = (
+            None if bounds is None else np.asarray(bounds, dtype=float)
+        )
 
     # ------------------------------------------------------------------
     # Index updates (called by Scene on snapshot change)
@@ -324,8 +333,25 @@ class CameraController:
     # ------------------------------------------------------------------
 
     def reset(self) -> None:
-        """Fit the full simulation box in view, centred on the box midpoint."""
+        """Fit the full simulation box in view, centred on the box midpoint.
+
+        In lightcone mode, frame the actual point-cloud bounds (a cone is not
+        a cube) with an isometric 3/4 view instead of the box math."""
         self._clear_indicator()
+        if self._lc_bounds is not None:
+            # Lay the cone out horizontally, centred in the viewport: look
+            # straight down -Z so the long radial (X) axis is horizontal and
+            # the observer→distance direction reads left→right, then fit.
+            b = self._lc_bounds
+            cx, cy, cz = (b[0] + b[1]) / 2.0
+            span = float(np.max(b[1] - b[0])) or 1.0
+            self._pl.camera_position = [
+                (cx, cy, cz + span * 2.0),  # camera on +Z, looking down -Z
+                (cx, cy, cz),  # focus at cone centre
+                (0.0, 1.0, 0.0),  # +Y up  → X axis horizontal
+            ]
+            self._pl.reset_camera()
+            return
         half = self._box_size / 2.0
         self._pl.camera_position = [
             (half, half, self._box_size * 2.2),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import h5py
@@ -69,6 +69,10 @@ class GalaxySnapshot:
     # ─────────────────────────────────────────────────────────────────
     sage_indices: np.ndarray  # (N,) int64 — row indices in raw HDF5 snap group
     snap_num: int
+    # ── Synthetic photometry (LightSAGE lightcones only) ────────────────
+    # key -> (N,) float32 AB magnitude, e.g. "mag_rest_sdss_g",
+    # "mag_obs_sdss_r". Empty for every non-SED-enabled snapshot/model.
+    sed_mags: dict = field(default_factory=dict)
 
     @property
     def count(self) -> int:
@@ -140,7 +144,7 @@ def load_galaxy_snapshot(
     hdf5_path: str | Path,
     snap_num: int,
     min_stellar_mass: float = 1.0e8,
-    max_galaxies: int = 100_000,
+    max_galaxies: int | None = None,
     hubble_h: float | None = None,
     scale_factors: np.ndarray | None = None,
     omega_m: float | None = None,
@@ -303,7 +307,9 @@ def load_galaxy_snapshot(
     mask = (stellar_mass > min_stellar_mass) & (mvir_raw > 0)
     indices = np.where(mask)[0]
 
-    if len(indices) > max_galaxies:
+    # max_galaxies=None → load every galaxy (no downsample). All snapshots are
+    # preloaded, so there's no display cap.
+    if max_galaxies is not None and len(indices) > max_galaxies:
         rng = np.random.default_rng(42)
         indices = rng.choice(indices, max_galaxies, replace=False)
 

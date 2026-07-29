@@ -20,6 +20,12 @@ class _FakeState:
         except KeyError as exc:
             raise AttributeError(k) from exc
 
+    def __setitem__(self, k, v):
+        self._d[k] = v
+
+    def __getitem__(self, k):
+        return self._d[k]
+
     def flush(self):
         pass
 
