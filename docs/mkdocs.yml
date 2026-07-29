@@ -85,6 +85,7 @@ nav:
       - Navigation: user_guide/navigation.md
       - Multi-Box Comparison: user_guide/multi_box.md
       - Launch Mode: user_guide/launch_mode.md
+      - Lightcone Mode: user_guide/lightcone.md
       - Recording: user_guide/recording.md
       - Story Mode: user_guide/story_mode.md
       - Library: user_guide/library.md

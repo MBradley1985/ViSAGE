@@ -1,6 +1,7 @@
-"""Tests for the sage-lightcone wizard flow (discovery, build detection,
-run-script seeding). The flow clones/builds/runs a third-party package, so we
-only ever exercise the pure helpers here — no network or subprocess calls."""
+"""Tests for the LightSAGE (sage-lightcone) wizard flow (discovery, build
+detection, run-script seeding). The flow clones/builds/runs a third-party
+package, so we only ever exercise the pure helpers here — no network or
+subprocess calls."""
 
 from __future__ import annotations
 
@@ -56,9 +57,9 @@ def _ctrl():
     return WizardController(_FakeServer(), 0, auto_start=False)
 
 
-def _make_checkout(root: Path) -> Path:
-    """A minimal directory that looks like a sage-lightcone checkout."""
-    lc = root / "sage-lightcone"
+def _make_checkout(root: Path, name: str = "LightSAGE") -> Path:
+    """A minimal directory that looks like a LightSAGE (sage-lightcone) checkout."""
+    lc = root / name
     (lc / "scripts").mkdir(parents=True)
     (lc / "scripts" / "sage2kdtree.sh").write_text("#!/bin/bash\n")
     (lc / "scripts" / "lightcone.sh").write_text("#!/bin/bash\n")
@@ -73,16 +74,25 @@ def test_steps_have_same_chip_count():
 
 
 def test_find_sagelightcone_by_scripts(tmp_path, monkeypatch):
-    lc = _make_checkout(tmp_path)
+    lc = _make_checkout(tmp_path)  # default name: LightSAGE
     monkeypatch.chdir(tmp_path)
     c = _ctrl()
     # Discovery searches cwd/parent/home; cwd is tmp_path so it finds lc.
     assert c._find_sagelightcone() == lc
 
 
+def test_find_sagelightcone_back_compat_alias(tmp_path, monkeypatch):
+    # A checkout under the upstream repo's own name (pre-rebrand / manual
+    # clone) is still discovered.
+    lc = _make_checkout(tmp_path, name="sage-lightcone")
+    monkeypatch.chdir(tmp_path)
+    c = _ctrl()
+    assert c._find_sagelightcone() == lc
+
+
 def test_find_sagelightcone_requires_wrapper_script(tmp_path, monkeypatch):
-    # A directory named sage-lightcone but without the wrapper script is not it.
-    (tmp_path / "sage-lightcone").mkdir()
+    # A directory named LightSAGE but without the wrapper script is not it.
+    (tmp_path / "LightSAGE").mkdir()
     monkeypatch.chdir(tmp_path)
     c = _ctrl()
     assert c._find_sagelightcone() is None
@@ -110,12 +120,12 @@ def test_lc_script_path_is_outside_repo(tmp_path):
     c = _ctrl()
     p = c._lc_script_path()
     assert p == Path.home() / ".visage" / _LC_RUN_SCRIPT
-    assert "sage-lightcone" not in str(p)
+    assert "LightSAGE" not in str(p)
 
 
 def test_lc_seed_script_prefills_sage_paths(tmp_path):
     c = _ctrl()
-    c._lc_dir = tmp_path / "sage-lightcone"
+    c._lc_dir = tmp_path / "LightSAGE"
     c._sage26_dir = tmp_path / "SAGE26"
     text = c._lc_seed_script()
 
@@ -132,14 +142,14 @@ def test_lc_seed_script_falls_back_without_sage26():
     c._lc_dir = None
     c._sage26_dir = None
     text = c._lc_seed_script()
-    assert "/path/to/sage-lightcone" in text
+    assert "/path/to/LightSAGE" in text
     assert "../SAGE26/output/millennium" in text
 
 
 def test_run_template_formats_cleanly():
     # No stray braces that would break str.format on the shell body.
     s = _LC_RUN_SCRIPT_TEMPLATE.format(
-        lightcone_dir="/x/sage-lightcone",
+        lightcone_dir="/x/LightSAGE",
         sage_output_dir="/x/out",
         param_file="/x/m.par",
         alist_file="/x/a_list",

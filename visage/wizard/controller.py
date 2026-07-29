@@ -10,9 +10,11 @@ from pathlib import Path
 
 _SAGE26_REPO = "https://github.com/MBradley1985/SAGE26.git"
 _SAGESWARM_REPO = "https://github.com/MBradley1985/SAGEswarm.git"
-# sage-lightcone is a third-party package (not ours) — we only clone, build,
-# and run it; we never modify anything inside the checkout.
-_SAGELIGHTCONE_REPO = "https://github.com/sage-home/sage-lightcone"
+# LightSAGE (upstream repo: sage-home/sage-lightcone) is a third-party
+# package (not ours) — we only clone, build, and run it; we never modify
+# anything inside the checkout.  "LightSAGE" is ViSAGE's display name for
+# it; the clone URL below is the real, unrenameable upstream repo.
+_LIGHTSAGE_REPO = "https://github.com/sage-home/sage-lightcone"
 
 import html as _html_mod
 import re as _re
@@ -114,7 +116,7 @@ _STEPS_SAGESWARM = [
     "View plots",
 ]
 
-# sage-lightcone flow — same chip count (6). Clone → build the C++ tools →
+# LightSAGE flow — same chip count (6). Clone → build the C++ tools →
 # edit a run script → run the two-stage pipeline → done.
 _STEPS_SAGELIGHTCONE = [
     "Scan",
@@ -166,7 +168,7 @@ python3 ./main.py \\
   -S "$SPACEFILE"
 """
 
-# The sage-lightcone repo is third-party, so ViSAGE keeps its editable run
+# The LightSAGE repo is third-party, so ViSAGE keeps its editable run
 # script OUTSIDE the checkout (in ~/.visage). The script only *calls* the
 # repo's wrapper scripts (scripts/sage2kdtree.sh, scripts/lightcone.sh) — it
 # never writes into the repo. Both pipeline stages live in the one script.
@@ -182,9 +184,9 @@ _LC_BUILD_SCRIPT = "build_lightcone_tools.sh"
 
 _LC_BUILD_SCRIPT_TEMPLATE = """\
 #!/bin/bash
-# ViSAGE-managed build for the sage-lightcone C++ tools ONLY.
+# ViSAGE-managed build for the LightSAGE C++ tools ONLY.
 # Builds: sage2kdtree, cli_lightcone  (NOT SAGE — ViSAGE uses SAGE26 output).
-# Never modifies the sage-lightcone repository (bin/ is gitignored build output).
+# Never modifies the LightSAGE repository (bin/ is gitignored build output).
 set -e
 
 LC_DIR="{lc_dir}"
@@ -230,13 +232,13 @@ echo "==> Done: $(ls bin/sage2kdtree bin/cli_lightcone 2>/dev/null)"
 
 _LC_RUN_SCRIPT_TEMPLATE = """\
 #!/bin/bash
-# ViSAGE-managed sage-lightcone run script.
+# ViSAGE-managed LightSAGE run script.
 # Edit the paths and parameters below, then click 'Save & Run Lightcone'.
-# This script only CALLS the sage-lightcone wrapper scripts — it never
-# modifies the sage-lightcone repository itself.
+# This script only CALLS the LightSAGE wrapper scripts — it never
+# modifies the LightSAGE repository itself.
 set -e
 
-# Location of the sage-lightcone checkout (auto-filled by ViSAGE).
+# Location of the LightSAGE checkout (auto-filled by ViSAGE).
 LIGHTCONE_DIR="{lightcone_dir}"
 
 # -- Stage 1: sage2kdtree -- SAGE HDF5 output -> KD-tree indexed HDF5 --------
@@ -536,7 +538,7 @@ class WizardController:
         self._flow: str = "sage26"  # "sage26" | "sageswarm" | "sagelightcone"
         self._sw_dir: Path | None = None
         self._sw_sage_bin: Path | None = None
-        # sage-lightcone flow state
+        # LightSAGE flow state
         self._lc_dir: Path | None = None
         self._plot_task = None  # asyncio task watching for PSO plots
         self._plot_watch_stop = True
@@ -564,7 +566,7 @@ class WizardController:
         self._st.wiz_run_active = False  # a _run_cmd subprocess is live
         self._st.pso_plots = []  # [{name, data_url, mtime}]
         self._st.pso_gallery_show = False
-        # sage-lightcone config (run_lightcone.sh editor, lives in ~/.visage)
+        # LightSAGE config (run_lightcone.sh editor, lives in ~/.visage)
         self._st.wiz_lc_config_show = False
         self._st.wiz_lc_script_text = ""  # editable run_lightcone.sh contents
         # Parameter form (labelled boxes) shown in place of the raw config
@@ -995,15 +997,7 @@ class WizardController:
             )
         choices.append(
             {
-                "label": "Start Fresh",
-                "value": "fresh",
-                "icon": "mdi-git",
-                "disabled": False,
-            }
-        )
-        choices.append(
-            {
-                "label": "Calibrate with SAGEswarm",
+                "label": "SAGEswarm",
                 "value": "sageswarm",
                 "icon": "mdi-chart-scatter-plot",
                 "disabled": False,
@@ -1011,9 +1005,17 @@ class WizardController:
         )
         choices.append(
             {
-                "label": "Extract lightcone (sage-lightcone)",
+                "label": "LightSAGE",
                 "value": "sagelightcone",
                 "icon": "mdi-telescope",
+                "disabled": False,
+            }
+        )
+        choices.append(
+            {
+                "label": "Start Fresh",
+                "value": "fresh",
+                "icon": "mdi-git",
                 "disabled": False,
             }
         )
@@ -1102,7 +1104,7 @@ class WizardController:
             self._st.flush()
             await self._step_sw_scan()
 
-        # ── sage-lightcone (lightcone extraction) flow ────────────────────
+        # ── LightSAGE (lightcone extraction) flow ────────────────────
         elif value == "sagelightcone":
             await self._step_lc_scan()
 
@@ -1623,7 +1625,7 @@ class WizardController:
 
     def _find_sageswarm(self) -> Path | None:
         roots = [Path.cwd().parent, Path.cwd(), Path.home()]
-        names = ["SAGEswarm", "sageswarm", "SAGE-PSO", "sage-pso"]
+        names = ["SAGEswarm", "sageswarm"]
         for root in roots:
             for name in names:
                 c = root / name
@@ -1760,9 +1762,9 @@ class WizardController:
             )
         choices.append(
             {
-                "label": "Switch to SAGE26 setup",
+                "label": "Back",
                 "value": "back_sage26",
-                "icon": "mdi-swap-horizontal",
+                "icon": "mdi-arrow-left",
                 "disabled": False,
             }
         )
@@ -2074,12 +2076,17 @@ class WizardController:
             self._st.pso_plots = [by_name[k] for k in sorted(by_name)]
             self._st.flush()
 
-    # ── sage-lightcone (lightcone extraction) flow ───────────────────────────
+    # ── LightSAGE (lightcone extraction) flow ────────────────────────────────
 
     def _find_sagelightcone(self) -> Path | None:
-        """Locate an existing sage-lightcone checkout by its wrapper scripts."""
+        """Locate an existing LightSAGE checkout by its wrapper scripts.
+
+        "LightSAGE" is the folder name ViSAGE clones into; the other names are
+        back-compat aliases for checkouts made under the upstream repo's own
+        name (sage-lightcone) or manually renamed."""
         roots = [Path.cwd().parent, Path.cwd(), Path.home()]
         names = [
+            "LightSAGE",
             "sage-lightcone",
             "sage_lightcone",
             "tao-lightcone-cli",
@@ -2169,7 +2176,7 @@ class WizardController:
 
     def _lc_seed_script(self) -> str:
         """Seed run_lightcone.sh, pre-filling paths from discovered dirs."""
-        lc = str(self._lc_dir) if self._lc_dir else "/path/to/sage-lightcone"
+        lc = str(self._lc_dir) if self._lc_dir else "/path/to/LightSAGE"
         sage = self._sage26_dir
         if sage:
             sage_out = str(sage / "output" / "millennium")
@@ -2192,30 +2199,28 @@ class WizardController:
         self._flow = "sagelightcone"
         self._st.wiz_steps = list(_STEPS_SAGELIGHTCONE)
         self._st.wiz_step = 0
-        self._emit(
-            "ViSAGE  ::  sage-lightcone — Lightcone Extraction", "title"
-        )
+        self._emit("ViSAGE  ::  LightSAGE — Lightcone Extraction", "title")
         self._emit("=" * 52, "sep")
-        self._emit("Scanning for the sage-lightcone package...", "info")
+        self._emit("Scanning for the LightSAGE package...", "info")
         self._emit("", "info")
 
         self._lc_dir = self._find_sagelightcone()
         built = False
         if self._lc_dir:
-            self._emit(f"  sage-lightcone found : {self._lc_dir}", "ok")
+            self._emit(f"  LightSAGE found : {self._lc_dir}", "ok")
             built, tools = self._lc_built(self._lc_dir)
             if built:
                 self._emit(
-                    f"  Built                : Yes  ({', '.join(tools)})", "ok"
+                    f"  Built           : Yes  ({', '.join(tools)})", "ok"
                 )
             else:
                 self._emit(
-                    "  Built                : No   (build it before running)",
+                    "  Built           : No   (build it before running)",
                     "warn",
                 )
         else:
             self._emit(
-                "  sage-lightcone       : Not found — clone it to begin",
+                "  LightSAGE       : Not found — clone it to begin",
                 "warn",
             )
 
@@ -2223,10 +2228,10 @@ class WizardController:
         # note whether we can find it so we can pre-fill the run script paths.
         self._sage26_dir = self._sage26_dir or self._find_sage26()
         if self._sage26_dir:
-            self._emit(f"  SAGE26 source        : {self._sage26_dir}", "ok")
+            self._emit(f"  SAGE26 source   : {self._sage26_dir}", "ok")
         else:
             self._emit(
-                "  SAGE26 source        : Not found — set paths in the "
+                "  SAGE26 source   : Not found — set paths in the "
                 "run script manually",
                 "warn",
             )
@@ -2236,7 +2241,7 @@ class WizardController:
         if self._lc_dir:
             choices.append(
                 {
-                    "label": "Build sage-lightcone",
+                    "label": "Build LightSAGE",
                     "value": "lc_build",
                     "icon": "mdi-hammer-wrench",
                     "disabled": False,
@@ -2252,7 +2257,7 @@ class WizardController:
             )
             choices.append(
                 {
-                    "label": "Re-clone sage-lightcone",
+                    "label": "Re-clone LightSAGE",
                     "value": "lc_clone",
                     "icon": "mdi-git",
                     "disabled": False,
@@ -2261,7 +2266,7 @@ class WizardController:
         else:
             choices.append(
                 {
-                    "label": "Clone sage-lightcone",
+                    "label": "Clone LightSAGE",
                     "value": "lc_clone",
                     "icon": "mdi-git",
                     "disabled": False,
@@ -2269,9 +2274,9 @@ class WizardController:
             )
         choices.append(
             {
-                "label": "Switch to SAGE26 setup",
+                "label": "Back",
                 "value": "back_sage26",
-                "icon": "mdi-swap-horizontal",
+                "icon": "mdi-arrow-left",
                 "disabled": False,
             }
         )
@@ -2279,9 +2284,9 @@ class WizardController:
 
     async def _step_lc_clone(self) -> None:
         self._st.wiz_step = 1
-        self._emit("Choose where to clone sage-lightcone:", "info")
+        self._emit("Choose where to clone LightSAGE:", "info")
         self._emit(
-            "  A 'sage-lightcone' folder will be created inside the chosen "
+            "  A 'LightSAGE' folder will be created inside the chosen "
             "directory.",
             "info",
         )
@@ -2321,15 +2326,15 @@ class WizardController:
                 ]
             )
             return
-        target = parent / "sage-lightcone"
-        self._emit(f"Cloning sage-lightcone into {target} ...", "info")
-        # --recurse-submodules per the sage-lightcone README (it vendors SAGE).
+        target = parent / "LightSAGE"
+        self._emit(f"Cloning LightSAGE into {target} ...", "info")
+        # --recurse-submodules per the LightSAGE README (it vendors SAGE).
         rc = await self._run_cmd(
             [
                 "git",
                 "clone",
                 "--recurse-submodules",
-                _SAGELIGHTCONE_REPO,
+                _LIGHTSAGE_REPO,
                 str(target),
             ],
             cwd=parent,
@@ -2346,7 +2351,7 @@ class WizardController:
     async def _step_lc_build(self) -> None:
         self._st.wiz_step = 2
         if not self._lc_dir:
-            self._emit("sage-lightcone not found — clone it first.", "err")
+            self._emit("LightSAGE not found — clone it first.", "err")
             self._set_choices([self._back_choice("lc_back_scan")])
             return
 
@@ -2365,7 +2370,7 @@ class WizardController:
             self._set_choices([self._back_choice("lc_back_scan")])
             return
         self._emit(
-            "Building the sage-lightcone tools only (sage2kdtree, "
+            "Building the LightSAGE tools only (sage2kdtree, "
             "cli_lightcone) — SAGE is not rebuilt; ViSAGE feeds SAGE26 output "
             "into the pipeline.",
             "info",
@@ -2403,10 +2408,10 @@ class WizardController:
     async def _step_lc_config(self) -> None:
         """Edit run_lightcone.sh (both pipeline stages live in it), then run —
         mirrors the SAGE26 .par / SAGEswarm run_pso.sh editors, but the script
-        is stored in ~/.visage so the sage-lightcone repo is never touched."""
+        is stored in ~/.visage so the LightSAGE repo is never touched."""
         self._st.wiz_step = 3
         if not self._lc_dir:
-            self._emit("sage-lightcone not found — clone it first.", "err")
+            self._emit("LightSAGE not found — clone it first.", "err")
             self._set_choices([self._back_choice("lc_back_scan")])
             return
         built, _ = self._lc_built(self._lc_dir)
@@ -2464,7 +2469,7 @@ class WizardController:
         self._st.wiz_lc_config_show = False
         self._st.flush()
         if not self._lc_dir:
-            self._emit("sage-lightcone directory not set.", "err")
+            self._emit("LightSAGE directory not set.", "err")
             self._set_choices([self._back_choice("lc_back_scan")])
             return
 
@@ -2487,7 +2492,7 @@ class WizardController:
         self._emit("", "info")
 
         # Run from the script's own dir (~/.visage) so its relative outputs
-        # (KDTREE_OUT, OUTDIR) land there, not inside the sage-lightcone repo.
+        # (KDTREE_OUT, OUTDIR) land there, not inside the LightSAGE repo.
         rc = await self._run_cmd(["bash", str(script)], cwd=script.parent)
         if rc != 0:
             self._emit(f"Lightcone pipeline exited with code {rc}.", "err")

@@ -2904,15 +2904,25 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def on_reset():
         _clear_draw_widgets()
         scene.camera._clear_indicator()
-        regions = [(0.0, 0.0, 0.0, scene.primary.box_size)]
-        for name in scene._adjacent_order:
-            m = scene._models.get(name)
-            if m is not None:
-                off = m.offset
-                regions.append(
-                    (float(off[0]), float(off[1]), float(off[2]), m.box_size)
-                )
-        scene.camera.focus_on_boxes(regions)
+        if scene.is_lightcone:
+            # A lightcone isn't a cube at the origin — frame its actual
+            # bounds (CameraController.reset() already does this correctly).
+            scene.camera.reset()
+        else:
+            regions = [(0.0, 0.0, 0.0, scene.primary.box_size)]
+            for name in scene._adjacent_order:
+                m = scene._models.get(name)
+                if m is not None:
+                    off = m.offset
+                    regions.append(
+                        (
+                            float(off[0]),
+                            float(off[1]),
+                            float(off[2]),
+                            m.box_size,
+                        )
+                    )
+            scene.camera.focus_on_boxes(regions)
         scene.clear_focus()
         state.focus_active = False
         # Recompute clipping planes so all geometry is visible without

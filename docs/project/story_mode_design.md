@@ -232,7 +232,7 @@ captured/restored with the `box_profile` save/load pattern.
 | Group | Keys |
 |---|---|
 | **Context** | `snap_num` (model + theme handled at story/scene level) |
-| **Layers** (9) | `halos_visible`, `galaxies_visible`, `halo_opacity`, `galaxy_opacity`, `halo_color_mode`, `halo_colormap`, `galaxy_color_mode`, `galaxy_colormap`, `fof_links_on` |
+| **Layers** (8) | `halos_visible`, `galaxies_visible`, `halo_opacity`, `galaxy_opacity`, `halo_color_mode`, `halo_colormap`, `galaxy_color_mode`, `galaxy_colormap` |
 | **Colourbars** (6) | `gal_cbar_min`, `gal_cbar_max`, `gal_cbar_style`, `halo_cbar_min`, `halo_cbar_max`, `halo_cbar_style` |
 | **Filters** (43) | 7 × `filter_halo_*` + 36 × `filter_gal_*` — from the canonical list below |
 | **Environment** (5) | `env_show_cluster`, `env_show_field`, `env_show_group`, `env_show_isolated`, `env_show_pairs` |

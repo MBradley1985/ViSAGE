@@ -860,14 +860,14 @@ def create_app(
                         density="compact",
                     )
                     v3.VListItem(
-                        title="Calibrate with SAGEswarm",
+                        title="SAGEswarm",
                         prepend_icon="mdi-chart-scatter-plot",
                         click=server.controller.open_sageswarm_wizard,
                         color="cyan",
                         density="compact",
                     )
                     v3.VListItem(
-                        title="Extract lightcone (sage-lightcone)",
+                        title="LightSAGE",
                         prepend_icon="mdi-telescope",
                         click=server.controller.open_sagelightcone_wizard,
                         color="cyan",
@@ -1012,14 +1012,10 @@ def create_app(
                         variant="text",
                         density="compact",
                         v_bind="props",
-                        title="Explore Mode menu",
+                        title="Tabs",
                         style="margin-left:2px;",
                     )
                 with v3.VList(density="compact", bg_color="transparent"):
-                    v3.VListSubheader(
-                        "EXPLORE MODE",
-                        style="color:#06b6d4;font-size:0.65rem;",
-                    )
                     for label, value in _NAV_TABS:
                         v3.VListItem(
                             title=label,
@@ -1053,14 +1049,14 @@ def create_app(
                 style="margin-left:2px;",
             )
 
-            # ── sage-lightcone button — opens the wizard straight into the
+            # ── LightSAGE button — opens the wizard straight into the
             #    lightcone-extraction flow. ────────────────────────────────
             v3.VBtn(
                 icon="mdi-telescope",
                 variant="text",
                 density="compact",
                 color="white",
-                title="sage-lightcone — Lightcone Extraction",
+                title="LightSAGE — Lightcone Extraction",
                 click=server.controller.open_sagelightcone_wizard,
                 style="margin-left:2px;",
             )

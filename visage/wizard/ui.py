@@ -245,7 +245,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                 )
 
                 # ── Right: editor card — SAGE26 .par / SAGEswarm run_pso.sh /
-                #    sage-lightcone run_lightcone.sh ─────────────────────────
+                #    LightSAGE run_lightcone.sh ─────────────────────────
                 with v3.VCard(
                     v_show=(
                         "wiz_par_show || wiz_sw_config_show "

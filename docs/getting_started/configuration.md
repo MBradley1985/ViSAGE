@@ -6,14 +6,16 @@ ViSAGE reads all simulation parameters directly from the SAGE `.par` file. No se
 
 | Option | Default | Description |
 |---|---|---|
-| `--par FILE` | (required) | Path to SAGE .par file |
+| `--par FILE` | (required unless `--lightcone`) | Path to SAGE .par file. Omit both `--par` and `--lightcone` to start in Launch Mode |
+| `--lightcone FILE` | — | Path to a `cli_lightcone` HDF5 output file — opens the full Explore UI on the lightcone instead of a SAGE box |
 | `--snap N` | last snap | Initial snapshot number |
 | `--port N` | 8080 | Trame server port |
 | `--n-jobs N` | CPUs-1 | Parallel workers for halo loading |
 | `--min-halo-mass MSUN` | 1e10 | Minimum halo mass floor (Msun) |
 | `--min-stellar-mass MSUN` | 1e8 | Minimum stellar mass floor (Msun) |
 | `--max-halos N` | 100000 | Downsample ceiling for haloes per snapshot |
-| `--max-galaxies N` | 100000 | Downsample ceiling for galaxies per snapshot |
+
+Galaxies have no display cap — every galaxy passing the mass floor is loaded (all snapshots are preloaded, so there's no need to downsample for playback speed).
 
 ## Par file fields used
 
@@ -38,7 +40,6 @@ For interactive use on a laptop with miniMillennium:
 ```bash
 visage --par input/millennium.par \
   --max-halos 30000 \
-  --max-galaxies 30000 \
   --min-halo-mass 1e11 \
   --n-jobs 4
 ```

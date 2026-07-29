@@ -22,6 +22,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   them in a dedicated, right-docked gallery panel that refreshes as plots appear
   or change (mtime-diffed, base64-inlined; server-side timer, no client polling).
 
+- **LightSAGE lightcone extraction flow in the Launch wizard.** A third guided
+  flow, alongside SAGE26 setup and SAGEswarm: clone LightSAGE (upstream repo
+  `sage-home/sage-lightcone`) → build *only* the `sage2kdtree` / `cli_lightcone`
+  tools (SAGE itself is never rebuilt — ViSAGE feeds in your existing SAGE26
+  output) → configure the two-stage pipeline → run it, streamed to the wizard
+  terminal → **Visualize lightcone** launches straight into Lightcone Mode on
+  the result. The macOS build step auto-detects an Apple-clang/SDK mismatch
+  (Xcode's newest SDK ships libc++ headers newer LLVMs don't support) and
+  falls back to a compatible installed SDK. All generated build/run scripts
+  live under `~/.visage/`, never inside the third-party checkout. Reachable
+  from the wizard menu ("Extract lightcone (LightSAGE)") and a new toolbar
+  button beside the SAGEswarm one.
+
+- **Lightcone Mode — the full Explore UI on a lightcone.** `visage --lightcone
+  FILE` opens a `cli_lightcone` HDF5 output in the exact same toolbar,
+  navigation panel, and info panel as a SAGE box — same gaussian-splat
+  rendering, colour-by modes, and colormaps. Reads every SAGE field carried in
+  the flat lightcone file into a full galaxy snapshot plus host haloes built
+  from the `Type == 0` centrals. The snapshot slider becomes a redshift/time
+  cut spanning only the snapshots present in the cone: moving it removes the
+  near (lower-redshift) side, keeping the far side, with the full cone shown
+  at the slider's maximum. Camera reset frames the cone horizontally, centred
+  in the viewport.
+
+- **Wizard parameter form.** Every editable config the wizard opens (SAGE26
+  `.par`, SAGEswarm `run_pso.sh`, LightSAGE `run_lightcone.sh`) is now shown as
+  a list of labelled boxes — one per option, pre-filled with its current value
+  — instead of a raw text editor. Edits fold back into the file on Save & Run,
+  preserving comments, quoting, and layout.
+
+- **Session models.** The Launch-Mode dropdown now lists every box and
+  lightcone opened so far in the session under **Session Models**, and
+  clicking one jumps straight back to it. Persisted across relaunches in
+  `~/.visage/session_models.json`, so switching from a lightcone to a box (or
+  back) never loses track of what was open.
+
 ### Changed
 
 - **Rebrand: SAGE-Viewer is now ViSAGE.** The import package `sage_viewer`
@@ -37,6 +73,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   output; analytic Δ=200 fallback from Mvir where missing) instead of a fixed
   stellar-mass mapping. Most galaxies render tighter and less diffuse, while
   massive cluster centrals gain their true extent.
+
+- **No galaxy display cap.** Every galaxy passing the mass floor now loads —
+  there's no benefit to downsampling since all snapshots are preloaded up
+  front. `--max-galaxies` is removed from the CLI.
+
+### Removed
+
+- **FoF (friends-of-friends) satellite→central link lines.** The gold link
+  overlay, its toggle button, and the underlying `fof_segments` data have been
+  removed entirely. The separate FOF-*group* inspection features (Group Info
+  panel, Highlight Members, environment classification) are unaffected.
 
 ---
 

@@ -121,6 +121,10 @@ class Scene:
     # ------------------------------------------------------------------
 
     @property
+    def is_lightcone(self) -> bool:
+        return self._is_lightcone
+
+    @property
     def primary(self) -> Model:
         return self._models[self._primary_name]
 
