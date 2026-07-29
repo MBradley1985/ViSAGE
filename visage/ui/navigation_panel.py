@@ -336,6 +336,10 @@ def _sed_extra_modes(sed_bands: list[str]) -> list[dict]:
     return modes
 
 
+def _is_sed_mode(mode: str) -> bool:
+    return mode.startswith(("sed:", "sedcolor:", "sedml:"))
+
+
 def _sed_default_cmap(mode: str) -> str:
     """Default colormap for a SED colour-by mode — a diverging map for
     colour indices (so blue/red galaxies land on the matching colormap end),
@@ -555,6 +559,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.galaxy_opacity = scene.galaxy_layer.opacity
     state.halo_color_mode = scene.halo_layer.color_mode
     state.galaxy_color_mode = scene.galaxy_layer.color_mode
+    # Mirrors galaxy_color_mode ONLY when it's a SED mode, else "" — the SED
+    # section's own "Colour by band" picker binds to this (not
+    # galaxy_color_mode directly) so it shows its placeholder instead of a
+    # non-SED mode's raw value (e.g. "structure") when nothing SED-related
+    # is selected.
+    state.sed_galaxy_color_mode = (
+        scene.galaxy_layer.color_mode
+        if _is_sed_mode(scene.galaxy_layer.color_mode)
+        else ""
+    )
     state.halo_colormap = scene.halo_layer.colormap
     state.galaxy_colormap = scene.galaxy_layer.colormap
 
@@ -564,7 +578,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         sed_modes = [
             {"title": _sed_band_title(k), "value": f"sed:{k}"}
             for k in sed_bands
-        ]
+        ] + _sed_extra_modes(sed_bands)
         state.halo_color_modes = _filter_modes(_HALO_MODES, fields)
         # SED bands live only in the dedicated Synthetic Photometry section
         # below, not in the general "Colour by" dropdown.
@@ -1034,8 +1048,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             and "galaxy_colormap" not in state.modified_keys
         ):
             default_cmap = (
-                "plasma"
-                if galaxy_color_mode.startswith("sed:")
+                _sed_default_cmap(galaxy_color_mode)
+                if _is_sed_mode(galaxy_color_mode)
                 else _GAL_CMAP_DEFAULTS.get(galaxy_color_mode, "viridis")
             )
             state.galaxy_colormap = default_cmap
@@ -1044,13 +1058,33 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # get a data-driven (percentile) range instead of a fixed lookup.
         if galaxy_color_mode in _GAL_CB:
             _, lo, hi = _GAL_CB[galaxy_color_mode]
-        elif galaxy_color_mode.startswith("sed:"):
-            lo, hi = _sed_cbar_range(scene, galaxy_color_mode[len("sed:") :])
+        elif _is_sed_mode(galaxy_color_mode):
+            lo, hi = _sed_cbar_range(scene, galaxy_color_mode)
         else:
             lo, hi = "—", "—"
         state.gal_cbar_min = lo
         state.gal_cbar_max = hi
+        # Keep the SED section's own picker in sync: show the mode there
+        # only when it's actually a SED mode, else clear it back to its
+        # placeholder (rather than displaying e.g. "structure").
+        new_sed_val = (
+            galaxy_color_mode if _is_sed_mode(galaxy_color_mode) else ""
+        )
+        if state.sed_galaxy_color_mode != new_sed_val:
+            state.sed_galaxy_color_mode = new_sed_val
         _push()
+
+    @state.change("sed_galaxy_color_mode")
+    def on_sed_galaxy_mode(sed_galaxy_color_mode, **_):
+        # Forward-only: picking a SED mode here drives the real state
+        # (galaxy_color_mode), which in turn clears/sets this var back via
+        # on_galaxy_mode above. Never forward an empty clear — on_galaxy_mode
+        # is the one that produces those, not the other way around.
+        if (
+            sed_galaxy_color_mode
+            and sed_galaxy_color_mode != state.galaxy_color_mode
+        ):
+            state.galaxy_color_mode = sed_galaxy_color_mode
 
     @state.change("halo_colormap")
     def on_halo_cmap(halo_colormap, **_):
@@ -4105,7 +4139,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VSelect(
-                            v_model=("galaxy_color_mode",),
+                            v_model=("sed_galaxy_color_mode",),
                             items=("sed_color_modes",),
                             label="Colour by band",
                             hide_details=True,

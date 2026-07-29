@@ -8,6 +8,40 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-07-29
+
+### Fixed
+
+- **SED Structure-panel section was showing colour indices/mass-to-light as
+  dropdown options that silently did nothing, and the "Colour by band"
+  picker displayed the general dropdown's current mode (e.g. "structure")
+  as if it were selected.** Both were wiring bugs from the previous
+  release: the colour-index/mass-to-light list-building helper was written
+  but never actually called, and the picker shared its `v_model` with the
+  general "Colour by" dropdown instead of its own dedicated state. The
+  picker now has its own state (clearing back to a placeholder whenever a
+  non-SED mode is active elsewhere), and colour-index/M\*/L modes get their
+  intended default colormap (diverging `coolwarm` / mass-like `cividis`)
+  and computed colorbar range, not the generic fallback.
+
+- **A `run_lightcone.sh` saved by an older ViSAGE version never gained new
+  wizard features.** Since a saved script was loaded verbatim, one saved
+  before the per-band checkbox refactor kept its old single `SED_BANDS`
+  text field forever — the new 14-checkbox grid simply never appeared,
+  even after upgrading ViSAGE. Loading a script now detects an outdated
+  structure and regenerates it from the current template, carrying every
+  customizable value forward (paths, ra/dec/z, SED settings) and mapping
+  the old space-separated band list onto the matching new checkboxes.
+
+### Changed
+
+- **All 14 SED filter-band checkboxes are checked by default** in the
+  LightSAGE run script (previously WISE W1-4 defaulted off); uncheck any
+  you don't want. `visage.sed.filters.DEFAULT_BANDS` (used by the
+  standalone `visage-sed` CLI) matches. WISE's mid-IR flux is still
+  dominated by dust emission this pipeline doesn't model — that caveat
+  applies regardless of the checkbox default.
+
 ## [2.1.1] — 2026-07-29
 
 ### Fixed

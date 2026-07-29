@@ -160,6 +160,89 @@ def test_lc_config_resyncs_stale_lightcone_dir(tmp_path, monkeypatch):
     assert str(stale_dir) not in text
 
 
+_OLD_FORMAT_LC_SCRIPT = """\
+#!/bin/bash
+set -e
+LIGHTCONE_DIR="/old/LightSAGE"
+SAGE_OUTPUT_DIR="/x/sage/output/millennium"
+PARAM_FILE="/x/sage/input/millennium.par"
+ALIST_FILE="/x/sage/input/millennium/trees/millennium.a_list"
+KDTREE_OUT="./millennium-kdtree.h5"
+RAMIN=0
+RAMAX=10
+DECMIN=0
+DECMAX=5
+ZMIN=0
+ZMAX=0.1
+OUTDIR="./lightcone_output"
+OUTFILE="lightcone.h5"
+SED_ENABLED=1
+SED_BANDS="sdss_u sdss_g sdss_r sdss_i sdss_z"
+SED_FRAME="both"
+"""
+
+
+def test_lc_config_migrates_old_format_script(tmp_path, monkeypatch):
+    # A script saved before the per-band checkbox refactor has a single
+    # SED_BANDS text field and no BAND_*_ENABLED keys at all -- loading it
+    # must upgrade the structure (so the new checkboxes actually appear in
+    # the parameter form) while carrying forward every value the user could
+    # have customized, mapping the old band list onto the new checkboxes.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    lc = _make_checkout(tmp_path, name="LightSAGE")
+    (lc / "bin").mkdir()
+    (lc / "bin" / "sage2kdtree").write_text("")
+    (lc / "bin" / "cli_lightcone").write_text("")
+
+    script_path = tmp_path / ".visage" / _LC_RUN_SCRIPT
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text(_OLD_FORMAT_LC_SCRIPT)
+
+    c = _ctrl()
+    c._lc_dir = lc
+    asyncio.run(c._step_lc_config())
+
+    text = c._st.wiz_lc_script_text
+    # Structure upgraded: checkboxes present, old text field gone.
+    assert "BAND_GALEX_FUV_ENABLED" in text
+    assert "SED_BANDS" not in text
+    # User's chosen values carried forward.
+    assert 'SAGE_OUTPUT_DIR="/x/sage/output/millennium"' in text
+    assert "DECMAX=5" in text and "ZMAX=0.1" in text
+    assert "SED_ENABLED=1" in text
+    assert 'SED_FRAME="both"' in text
+    # Old SED_BANDS mapped onto the matching checkboxes...
+    assert "BAND_SDSS_U_ENABLED=1" in text
+    assert "BAND_SDSS_G_ENABLED=1" in text
+    assert "BAND_SDSS_R_ENABLED=1" in text
+    assert "BAND_SDSS_I_ENABLED=1" in text
+    assert "BAND_SDSS_Z_ENABLED=1" in text
+    # ...and everything NOT in the old list is off, not defaulted on.
+    assert "BAND_GALEX_FUV_ENABLED=0" in text
+    assert "BAND_WISE_W1_ENABLED=0" in text
+    # Old hardcoded OUTDIR default upgraded to the new convention.
+    assert 'OUTDIR="./lightcone_output"' not in text
+    assert "sage_outputs/lightcone" in text
+    # LIGHTCONE_DIR also resynced (migration regenerates from the seed
+    # template, which already fills the verified checkout).
+    assert f'LIGHTCONE_DIR="{lc}"' in text
+
+
+def test_lc_migrate_script_is_noop_for_current_format():
+    from visage.wizard.controller import _LC_RUN_SCRIPT_TEMPLATE
+
+    c = _ctrl()
+    current = _LC_RUN_SCRIPT_TEMPLATE.format(
+        lightcone_dir="/x/LightSAGE",
+        sage_output_dir="/x/out",
+        param_file="/x/m.par",
+        alist_file="/x/a_list",
+        outdir="/x/sage_outputs/lightcone",
+        python_exe="/usr/bin/python3",
+    )
+    assert c._lc_migrate_script(current) == current
+
+
 def test_lc_seed_script_prefills_sage_paths(tmp_path):
     c = _ctrl()
     c._lc_dir = tmp_path / "LightSAGE"

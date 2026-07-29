@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 
-# Pre-checked default band set in the wizard's SED options (any FSPS filter
-# name — see fsps.list_filters() — can be requested; this is only the
-# default selection). UV + optical + near-IR, chosen to be meaningful with
-# add_dust_emission=False (see ssp_grid.py) — mid-IR (e.g. WISE) would be
-# dominated by dust emission we don't model, so it's deliberately excluded
-# from the default even though FSPS can compute it if requested explicitly.
+# Pre-checked default band set for SED synthesis — the wizard's LightSAGE
+# checkboxes and this module's own CLI both default to every band here (any
+# FSPS filter name — see fsps.list_filters() — can be requested beyond this
+# set). Note WISE (mid-IR, W1-W4) flux is dominated by dust emission this
+# pipeline doesn't model (add_dust_emission=False — see ssp_grid.py), so
+# treat those bands with that caveat in mind.
 DEFAULT_BANDS = (
     "galex_fuv",
     "galex_nuv",
@@ -19,6 +19,10 @@ DEFAULT_BANDS = (
     "2mass_j",
     "2mass_h",
     "2mass_ks",
+    "wise_w1",
+    "wise_w2",
+    "wise_w3",
+    "wise_w4",
 )
 
 
