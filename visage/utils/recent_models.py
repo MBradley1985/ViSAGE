@@ -30,6 +30,13 @@ def _save(entries: list[dict]) -> None:
         pass
 
 
+def _prune(entries: list[dict]) -> list[dict]:
+    """Drop entries whose file no longer exists — a path can go stale (moved,
+    deleted, or a throwaway test file from outside a normal session) and
+    there's otherwise nothing that ever removes it."""
+    return [e for e in entries if Path(e.get("path", "")).is_file()]
+
+
 def record(name: str, kind: str, path: str) -> list[dict]:
     """Promote (name, kind, path) to most-recent and return the updated list.
 
@@ -38,7 +45,7 @@ def record(name: str, kind: str, path: str) -> list[dict]:
     p = str(Path(path).expanduser())
     entries = [
         e
-        for e in _load_raw()
+        for e in _prune(_load_raw())
         if not (e.get("kind") == kind and e.get("path") == p)
     ]
     entries.insert(0, {"name": str(name), "kind": str(kind), "path": p})
@@ -48,5 +55,10 @@ def record(name: str, kind: str, path: str) -> list[dict]:
 
 
 def load() -> list[dict]:
-    """Return the stored entries (most-recent first)."""
-    return _load_raw()
+    """Return the stored entries (most-recent first), pruning any that no
+    longer exist on disk (and persisting that cleanup)."""
+    entries = _load_raw()
+    pruned = _prune(entries)
+    if len(pruned) != len(entries):
+        _save(pruned)
+    return pruned

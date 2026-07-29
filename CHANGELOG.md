@@ -8,7 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.1.2] — 2026-07-29
+## [2.1.3] — 2026-07-29
+
+### Fixed
+
+- **Session Models could show entries pointing at files that no longer
+  exist**, with no way to tell why or where they came from — every launch
+  ever recorded a path into `~/.visage/session_models.json` and nothing
+  ever pruned it. Loading the registry now drops any entry whose file is
+  gone (and persists that cleanup); the dropdown also shows each entry's
+  containing folder as its subtitle (full path on hover), so two entries
+  with the same name/kind — e.g. two lightcones — are distinguishable.
 
 ### Fixed
 
