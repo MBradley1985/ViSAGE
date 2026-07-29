@@ -371,6 +371,10 @@ def create_app(
             "name": e.get("name", ""),
             "kind": e.get("kind", "box"),
             "path": e.get("path", ""),
+            # Shown as the visible subtitle (full path is the hover tooltip)
+            # so two entries with the same name/kind — e.g. two lightcones —
+            # are actually distinguishable in the dropdown.
+            "parent": str(Path(e.get("path", "")).parent),
             "active": e.get("kind") == _cur_kind
             and e.get("path") == _cur_path,
         }
@@ -891,10 +895,11 @@ def create_app(
                     with html.Div(
                         v_for=("m in session_models",),
                         key=("'sess-' + m.path",),
+                        title=("m.path",),  # full path on hover
                     ):
                         v3.VListItem(
                             title=("m.name",),
-                            subtitle=("m.kind",),
+                            subtitle=("m.parent",),
                             prepend_icon=(
                                 "m.kind === 'lightcone' "
                                 "? 'mdi-telescope' : 'mdi-cube-outline'",
