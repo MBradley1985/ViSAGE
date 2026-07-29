@@ -8,19 +8,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+## [2.1.0] — 2026-07-29
 
-- **SAGEswarm calibration flow in the Launch wizard.** A new guided flow mirrors
-  the SAGE26 setup path — clone SAGEswarm → `pip install -r requirements.txt` →
-  pick the compiled `./sage` binary + `.par` → set constraints (`-x`) + output
-  dir (`-o`) → run `python main.py …`, streamed to the wizard terminal. Reachable
-  from the wizard menu ("SAGEswarm") and from a new toolbar button beside the
-  Launch Mode button. The header step chips are now flow-aware (`wiz_steps`
-  state var).
-- **Live PSO plot gallery.** While a SAGEswarm run is in progress, ViSAGE watches
-  the SAGEswarm main folder (the run's cwd) for `*.png` diagnostics and shows
-  them in a dedicated, right-docked gallery panel that refreshes as plots appear
-  or change (mtime-diffed, base64-inlined; server-side timer, no client polling).
+### Added
 
 - **LightSAGE lightcone extraction flow in the Launch wizard.** A third guided
   flow, alongside SAGE26 setup and SAGEswarm: clone LightSAGE (upstream repo
@@ -88,20 +78,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Rebrand: SAGE-Viewer is now ViSAGE.** The import package `sage_viewer`
-  is renamed to `visage` and the CLI command `sage-viewer` becomes `visage`.
-  GitHub URLs point to `MBradley1985/ViSAGE`. The PyPI distribution stays
-  **`sage-viewer`** (`pip install sage-viewer`) — `visage`/`vi-sage` are blocked
-  on PyPI by the existing `visage` project. This is a breaking change for anyone
-  importing `sage_viewer` or invoking the old `sage-viewer` command.
-
-- **Galaxy splats scale with the subhalo virial radius.** All galaxy layers
-  (CGM/Hot outer envelope, cold-gas envelope, focus-only disk/bulge, and the
-  Colour-by halo) are now sized by the galaxy's `Rvir` (read from the SAGE
-  output; analytic Δ=200 fallback from Mvir where missing) instead of a fixed
-  stellar-mass mapping. Most galaxies render tighter and less diffuse, while
-  massive cluster centrals gain their true extent.
-
 - **No galaxy display cap.** Every galaxy passing the mass floor now loads —
   there's no benefit to downsampling since all snapshots are preloaded up
   front. `--max-galaxies` is removed from the CLI.
@@ -124,6 +100,40 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   overlay, its toggle button, and the underlying `fof_segments` data have been
   removed entirely. The separate FOF-*group* inspection features (Group Info
   panel, Highlight Members, environment classification) are unaffected.
+
+---
+
+## [2.0.0] — 2026-07-24
+
+### Added
+
+- **SAGEswarm calibration flow in the Launch wizard.** A new guided flow mirrors
+  the SAGE26 setup path — clone SAGEswarm → `pip install -r requirements.txt` →
+  pick the compiled `./sage` binary + `.par` → set constraints (`-x`) + output
+  dir (`-o`) → run `python main.py …`, streamed to the wizard terminal. Reachable
+  from the wizard menu ("SAGEswarm") and from a new toolbar button beside the
+  Launch Mode button. The header step chips are now flow-aware (`wiz_steps`
+  state var).
+- **Live PSO plot gallery.** While a SAGEswarm run is in progress, ViSAGE watches
+  the SAGEswarm main folder (the run's cwd) for `*.png` diagnostics and shows
+  them in a dedicated, right-docked gallery panel that refreshes as plots appear
+  or change (mtime-diffed, base64-inlined; server-side timer, no client polling).
+
+### Changed
+
+- **Rebrand: SAGE-Viewer is now ViSAGE.** The import package `sage_viewer`
+  is renamed to `visage` and the CLI command `sage-viewer` becomes `visage`.
+  GitHub URLs point to `MBradley1985/ViSAGE`. The PyPI distribution stays
+  **`sage-viewer`** (`pip install sage-viewer`) — `visage`/`vi-sage` are blocked
+  on PyPI by the existing `visage` project. This is a breaking change for anyone
+  importing `sage_viewer` or invoking the old `sage-viewer` command.
+
+- **Galaxy splats scale with the subhalo virial radius.** All galaxy layers
+  (CGM/Hot outer envelope, cold-gas envelope, focus-only disk/bulge, and the
+  Colour-by halo) are now sized by the galaxy's `Rvir` (read from the SAGE
+  output; analytic Δ=200 fallback from Mvir where missing) instead of a fixed
+  stellar-mass mapping. Most galaxies render tighter and less diffuse, while
+  massive cluster centrals gain their true extent.
 
 ---
 
