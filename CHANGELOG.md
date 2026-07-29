@@ -8,6 +8,19 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-07-29
+
+### Fixed
+
+- **Stale `LIGHTCONE_DIR` in a saved `run_lightcone.sh`.** A previously-saved
+  run script could reference a LightSAGE checkout that no longer exists —
+  moved, deleted, or cloned under an older ViSAGE version's folder-naming
+  convention (`sage-lightcone` vs `LightSAGE`) — failing stage 1 outright
+  with "No such file or directory". `LIGHTCONE_DIR` is now always resynced
+  to whatever the current session's scan actually found and verified when
+  loading a saved script, while every genuine user preference in it (ra/dec/z
+  ranges, output dir, SED settings) is left untouched.
+
 ## [2.1.0] — 2026-07-29
 
 ### Added
