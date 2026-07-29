@@ -281,28 +281,38 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                     # values are folded back into the file on Save & Run.
                     with v3.VSheet(
                         color="#000000",
-                        style="flex:1;min-height:0;overflow-y:auto;padding:10px 14px;",
+                        style=(
+                            "flex:1;min-height:0;overflow-y:auto;padding:10px 14px;"
+                            "display:flex;flex-wrap:wrap;align-content:flex-start;"
+                        ),
                     ):
                         # A fixed pool of rows, each bound to its OWN scalar
                         # state var (wiz_pv_<i>) so trame reliably syncs edits.
                         # Rows beyond the current parameter count stay hidden.
+                        # Checkbox rows are half-width so consecutive ones
+                        # (e.g. the SED filter-band picks) wrap into 2 columns;
+                        # text-field rows stay full-width, one per line.
                         for i in range(_MAX_PARAMS):
                             with html.Div(
                                 v_show=(f"{i} < wiz_param_count",),
                                 style=(
-                                    "display:flex;align-items:center;gap:12px;"
-                                    "margin-bottom:8px;"
+                                    f"'display:flex;align-items:center;gap:10px;"
+                                    f"margin-bottom:8px;box-sizing:border-box;' + "
+                                    f"(wiz_pcb_{i} ? 'flex:0 0 calc(50% - 8px);' "
+                                    f": 'flex:0 0 100%;')",
                                 ),
                             ):
                                 html.Div(
                                     f"{{{{ wiz_pl_{i} }}}}",
                                     title=(f"wiz_ph_{i}",),
                                     style=(
-                                        "min-width:200px;max-width:200px;"
-                                        "text-align:right;color:#9ca3af;"
-                                        "font-family:monospace;font-size:0.78rem;"
-                                        "overflow:hidden;text-overflow:ellipsis;"
-                                        "white-space:nowrap;flex-shrink:0;"
+                                        f"(wiz_pcb_{i} ? "
+                                        f"'min-width:120px;max-width:120px;' : "
+                                        f"'min-width:200px;max-width:200px;') + "
+                                        f"'text-align:right;color:#9ca3af;"
+                                        f"font-family:monospace;font-size:0.78rem;"
+                                        f"overflow:hidden;text-overflow:ellipsis;"
+                                        f"white-space:nowrap;flex-shrink:0;'",
                                     ),
                                 )
                                 # *_ENABLED keys render as a checkbox
@@ -338,7 +348,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                         html.Div(
                             "No editable parameters found.",
                             v_show=("wiz_param_count === 0",),
-                            style="color:#9ca3af;font-size:0.8rem;",
+                            style="flex:0 0 100%;color:#9ca3af;font-size:0.8rem;",
                         )
 
         # SAGE logo — pinned to bottom-right corner of the wizard screen

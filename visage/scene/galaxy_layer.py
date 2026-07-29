@@ -623,6 +623,11 @@ class GalaxyLayer:
         m = self._color_mode
         if m.startswith("sed:"):
             return self._compute_sed_colors(snap, m[len("sed:") :])
+        if m.startswith("sedcolor:"):
+            _, blue_key, red_key = m.split(":", 2)
+            return self._compute_sed_color_index(snap, blue_key, red_key)
+        if m.startswith("sedml:"):
+            return self._compute_sed_mass_to_light(snap, m[len("sedml:") :])
         if m == "ssfr":
             return normalize_log(snap.ssfr, *_RANGES["ssfr"])
         if m == "sfr":
@@ -686,3 +691,62 @@ class GalaxyLayer:
         # "bright" lands on the colormap's hot end like every other mode.
         norm = np.clip((hi - mags) / (hi - lo), 0.0, 1.0)
         return np.nan_to_num(norm, nan=0.0).astype(np.float32)
+
+    @staticmethod
+    def _normalize_percentile(
+        values: np.ndarray, n: int, lo_pct: float = 2.0, hi_pct: float = 98.0
+    ) -> np.ndarray:
+        """Clip-and-scale `values` to [0, 1] using data-driven percentile
+        bounds, falling back to a flat mid-grey when there's nothing finite
+        to compute bounds from (shared by every SED-derived colour mode)."""
+        if values is None or len(values) != n:
+            return np.full(n, 0.5, dtype=np.float32)
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            return np.full(n, 0.5, dtype=np.float32)
+        lo, hi = np.percentile(finite, [lo_pct, hi_pct])
+        if hi <= lo:
+            hi = lo + 1.0
+        norm = np.clip((values - lo) / (hi - lo), 0.0, 1.0)
+        return np.nan_to_num(norm, nan=0.5).astype(np.float32)
+
+    @staticmethod
+    def _compute_sed_color_index(
+        snap: GalaxySnapshot, blue_key: str, red_key: str
+    ) -> np.ndarray:
+        """Colour by a magnitude colour index (e.g. g-r): blue_key minus
+        red_key, both full sed_mags keys from the SAME frame. Larger (redder)
+        index -> higher scalar value, so a diverging colormap (e.g. coolwarm)
+        puts blue galaxies on the blue end and red galaxies on the red end."""
+        blue = snap.sed_mags.get(blue_key)
+        red = snap.sed_mags.get(red_key)
+        if (
+            blue is None
+            or red is None
+            or len(blue) != snap.count
+            or len(red) != snap.count
+        ):
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        index = blue - red
+        return GalaxyLayer._normalize_percentile(index, snap.count)
+
+    @staticmethod
+    def _compute_sed_mass_to_light(
+        snap: GalaxySnapshot, band_key: str
+    ) -> np.ndarray:
+        """Colour by log10(M*/L) in the given rest-frame band. Luminosity is
+        derived from the rest-frame absolute magnitude via the band's solar
+        AB magnitude (visage.sed.filters.SOLAR_ABSMAG_AB) — only bands listed
+        there are offered, so this never guesses a zeropoint."""
+        from visage.sed.filters import SOLAR_ABSMAG_AB
+
+        mags = snap.sed_mags.get(band_key)
+        filt = band_key[len("mag_rest_") :]
+        m_sun = SOLAR_ABSMAG_AB.get(filt)
+        if mags is None or len(mags) != snap.count or m_sun is None:
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        mass = np.maximum(snap.stellar_mass, 1.0)
+        with np.errstate(invalid="ignore"):
+            log_l = -0.4 * (mags - m_sun)  # log10(L / Lsun)
+            log_ml = np.log10(mass) - log_l  # log10(M*/L) in Msun/Lsun
+        return GalaxyLayer._normalize_percentile(log_ml, snap.count)

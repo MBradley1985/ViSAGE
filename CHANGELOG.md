@@ -41,15 +41,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   pipeline stage forward-models broadband AB magnitudes for every lightcone
   galaxy from its star-formation history, using
   [python-fsps](https://github.com/dfm/python-fsps) (`pip install
-  "sage-viewer[sed]"`). Enabled via a checkbox in the LightSAGE run-script
-  parameter form (`SED_ENABLED`, `SED_BANDS`, `SED_FRAME`); computes rest-frame
-  (10 pc), observed-frame (luminosity-distance, K-corrected), or both, using
-  the simulation's own cosmology rather than an assumed one. Results are
-  written back into the lightcone HDF5 file as `mag_rest_<band>` /
-  `mag_obs_<band>` datasets. When present, a new **Synthetic Photometry
-  (SED)** section appears in the Structure panel (LightSAGE mode only),
-  letting you colour galaxies by any computed band via the same colour-by /
-  colormap mechanism as every other property.
+  "sage-viewer[sed]"`). Enabled via **SED_ENABLED** in the LightSAGE
+  run-script parameter form, with a **SED_FRAME** choice (rest / observed /
+  both) and a 14-checkbox, 2-column grid of individual filter bands (GALEX
+  FUV/NUV, SDSS ugriz, 2MASS JHKs, WISE W1-4 — UV/optical/NIR checked by
+  default, WISE off by default since its mid-IR flux needs a dust model this
+  pipeline doesn't have). Computes rest-frame (10 pc), observed-frame
+  (luminosity-distance, K-corrected), or both, using the simulation's own
+  cosmology rather than an assumed one. Results are written back into the
+  lightcone HDF5 file as `mag_rest_<band>` / `mag_obs_<band>` datasets. When
+  present, a new **Synthetic Photometry (SED)** section appears in the
+  Structure panel (LightSAGE mode only) with a dedicated colour-by-band
+  dropdown — every raw band, every derived colour index (e.g. g-r) between
+  adjacent/broadest bands in a frame, and mass-to-light ratio for bands with
+  a known solar magnitude — via the same colormap mechanism as every other
+  property, with mode-appropriate default colormaps (diverging for colour
+  indices, frame-distinct sequential for raw bands).
+- **Wizard checkbox parameters render in a 2-column grid.** Any
+  `*_ENABLED`-suffixed parameter-form field is now laid out half-width so
+  consecutive checkboxes (like the new SED band picks) wrap into two columns
+  instead of one long vertical list; text fields are unaffected (still
+  full-width, one per row).
 
 - **Lightcone Mode — the full Explore UI on a lightcone.** `visage --lightcone
   FILE` opens a `cli_lightcone` HDF5 output in the exact same toolbar,

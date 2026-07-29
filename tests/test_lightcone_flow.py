@@ -173,6 +173,62 @@ def test_run_template_formats_cleanly():
     assert "/usr/bin/python3" in s and "visage.sed.photometry" in s
 
 
+def test_run_template_sed_bands_are_individual_checkboxes():
+    # Each filter is its own BAND_<NAME>_ENABLED checkbox (not a single
+    # space-separated SED_BANDS text field), and the params parser must pick
+    # up all of them plus SED_ENABLED/SED_FRAME — but NOT the lowercase
+    # internal accumulator vars (those must never become editable params,
+    # or a user's edit could desync them from the checkboxes above).
+    s = _LC_RUN_SCRIPT_TEMPLATE.format(
+        lightcone_dir="/x/LightSAGE",
+        sage_output_dir="/x/out",
+        param_file="/x/m.par",
+        alist_file="/x/a_list",
+        outdir="/x/sage_outputs/lightcone",
+        python_exe="/usr/bin/python3",
+    )
+    assert "SED_BANDS" not in s
+    for band in (
+        "GALEX_FUV",
+        "GALEX_NUV",
+        "SDSS_U",
+        "SDSS_G",
+        "SDSS_R",
+        "SDSS_I",
+        "SDSS_Z",
+        "2MASS_J",
+        "2MASS_H",
+        "2MASS_KS",
+        "WISE_W1",
+        "WISE_W2",
+        "WISE_W3",
+        "WISE_W4",
+    ):
+        assert f"BAND_{band}_ENABLED" in s
+
+    from visage.wizard.controller import _parse_params
+
+    keys = [p["key"] for p in _parse_params(s, "sh")]
+    band_keys = [k for k in keys if k.startswith("BAND_")]
+    assert len(band_keys) == 14
+    assert "SED_ENABLED" in keys and "SED_FRAME" in keys
+    assert "sed_bands" not in keys and "bands_csv" not in keys
+
+
+def test_pretty_param_label_shortens_band_checkboxes():
+    from visage.wizard.controller import WizardController
+
+    assert (
+        WizardController._pretty_param_label("BAND_SDSS_G_ENABLED") == "sdss_g"
+    )
+    assert (
+        WizardController._pretty_param_label("BAND_2MASS_KS_ENABLED")
+        == "2mass_ks"
+    )
+    # Non-BAND checkboxes (and everything else) are left alone.
+    assert WizardController._pretty_param_label("SED_ENABLED") == "SED_ENABLED"
+
+
 # ── Lightcone reader / output-format tests ────────────────────────────────
 
 import numpy as np  # noqa: E402

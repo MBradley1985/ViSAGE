@@ -268,33 +268,130 @@ def _cbar_style(gradient: str) -> str:
     return _CBAR_BASE + gradient
 
 
+def _sed_split_key(key: str) -> tuple[str, str]:
+    """ "mag_rest_sdss_g" -> ("rest", "sdss_g"), "mag_obs_..." -> ("observed", ...)."""
+    if key.startswith("mag_rest_"):
+        return "rest", key[len("mag_rest_") :]
+    if key.startswith("mag_obs_"):
+        return "observed", key[len("mag_obs_") :]
+    return "?", key
+
+
+def _sed_short_label(filt: str) -> str:
+    """ "sdss_g" -> "g", "2mass_j" -> "j", "galex_fuv" -> "fuv"."""
+    for prefix in ("sdss_", "2mass_", "galex_", "wise_"):
+        if filt.startswith(prefix):
+            return filt[len(prefix) :]
+    return filt.replace("_", " ")
+
+
 def _sed_band_title(key: str) -> str:
     """ "mag_rest_sdss_g" -> "g (rest)", "mag_obs_2mass_j" -> "j (observed)"."""
-    if key.startswith("mag_rest_"):
-        frame, filt = "rest", key[len("mag_rest_") :]
-    elif key.startswith("mag_obs_"):
-        frame, filt = "observed", key[len("mag_obs_") :]
-    else:
-        frame, filt = "?", key
-    label = filt[5:] if filt.startswith("sdss_") else filt.replace("_", " ")
-    return f"{label} ({frame})"
+    frame, filt = _sed_split_key(key)
+    return f"{_sed_short_label(filt)} ({frame})"
 
 
-def _sed_cbar_range(scene: Scene, band_key: str) -> tuple[str, str]:
-    """(bright, faint) magnitude labels for a SED colour-by band, computed
-    from the same percentile bounds GalaxyLayer uses to normalize it."""
+def _sed_extra_modes(sed_bands: list[str]) -> list[dict]:
+    """Colour-index (e.g. "g - r") and mass-to-light entries derived from
+    whatever SED bands are present, ordered blue-to-red within each frame."""
+    from visage.sed.filters import EFFECTIVE_WAVELENGTH_A, SOLAR_ABSMAG_AB
+
+    by_frame: dict[str, list[tuple[float, str, str]]] = {
+        "rest": [],
+        "observed": [],
+    }
+    for key in sed_bands:
+        frame, filt = _sed_split_key(key)
+        if frame in by_frame:
+            by_frame[frame].append(
+                (EFFECTIVE_WAVELENGTH_A.get(filt, 1.0e9), filt, key)
+            )
+
+    modes: list[dict] = []
+    for frame, entries in by_frame.items():
+        entries.sort(key=lambda e: e[0])
+        pairs = [(entries[i], entries[i + 1]) for i in range(len(entries) - 1)]
+        if len(entries) >= 3:
+            pairs.append((entries[0], entries[-1]))  # broadest span too
+        for (_, blue_filt, blue_key), (_, red_filt, red_key) in pairs:
+            modes.append(
+                {
+                    "title": (
+                        f"{_sed_short_label(blue_filt)} - "
+                        f"{_sed_short_label(red_filt)} ({frame})"
+                    ),
+                    "value": f"sedcolor:{blue_key}:{red_key}",
+                }
+            )
+
+    for key in sed_bands:
+        frame, filt = _sed_split_key(key)
+        if frame == "rest" and filt in SOLAR_ABSMAG_AB:
+            modes.append(
+                {
+                    "title": f"M*/L ({_sed_short_label(filt)}, rest)",
+                    "value": f"sedml:{key}",
+                }
+            )
+    return modes
+
+
+def _sed_default_cmap(mode: str) -> str:
+    """Default colormap for a SED colour-by mode — a diverging map for
+    colour indices (so blue/red galaxies land on the matching colormap end),
+    a mass-like map for M*/L, and a frame-distinct sequential map for a raw
+    band (so the colorbar itself hints which frame is active)."""
+    if mode.startswith("sedcolor:"):
+        return "coolwarm"  # low(bluer)->blue end, high(redder)->red end
+    if mode.startswith("sedml:"):
+        return "cividis"  # matches the other mass-like modes (bh/bulge mass)
+    frame, _ = _sed_split_key(mode[len("sed:") :])
+    return "magma" if frame == "observed" else "viridis"
+
+
+def _sed_cbar_range(scene: Scene, mode: str) -> tuple[str, str]:
+    """(value-at-norm-0, value-at-norm-1) labels for a SED colour-by mode —
+    matches whichever direction GalaxyLayer._compute_colors actually maps to
+    the colormap, so the bar's low/high ends agree with their labels."""
     import numpy as np
 
     try:
         _, galaxies = scene.active_model.loader.get(0)
-        mags = galaxies.sed_mags.get(band_key)
-        if mags is None:
-            return "—", "—"
-        finite = mags[np.isfinite(mags)]
+        if mode.startswith("sedcolor:"):
+            _, blue_key, red_key = mode.split(":", 2)
+            blue = galaxies.sed_mags.get(blue_key)
+            red = galaxies.sed_mags.get(red_key)
+            if blue is None or red is None:
+                return "—", "—"
+            values = blue - red  # ascending index -> ascending norm
+            fmt = "{:+.2f}".format
+        elif mode.startswith("sedml:"):
+            from visage.sed.filters import SOLAR_ABSMAG_AB
+
+            band_key = mode[len("sedml:") :]
+            mags = galaxies.sed_mags.get(band_key)
+            filt = band_key[len("mag_rest_") :]
+            m_sun = SOLAR_ABSMAG_AB.get(filt)
+            if mags is None or m_sun is None:
+                return "—", "—"
+            mass = np.maximum(galaxies.stellar_mass, 1.0)
+            with np.errstate(invalid="ignore"):
+                values = np.log10(mass) + 0.4 * (mags - m_sun)
+            fmt = "{:.1f}".format
+        else:
+            band_key = mode[len("sed:") :]
+            mags = galaxies.sed_mags.get(band_key)
+            if mags is None:
+                return "—", "—"
+            # Brighter (smaller mag) -> higher norm, so negate before taking
+            # percentiles and negate back when formatting for display.
+            values = -mags
+            fmt = lambda v: f"{-v:.1f}"  # noqa: E731
+        finite = values[np.isfinite(values)]
         if finite.size == 0:
             return "—", "—"
-        bright, faint = np.percentile(finite, [2.0, 98.0])
-        return f"{bright:.1f}", f"{faint:.1f}"
+        lo, hi = np.percentile(finite, [2.0, 98.0])
+        return fmt(lo), fmt(hi)
     except Exception:
         return "—", "—"
 

@@ -262,8 +262,24 @@ OUTFILE="lightcone.h5"
 # using FSPS — see the ViSAGE docs for what this does and its simplifications
 # (single present-day metallicity, no dust). Requires: pip install "sage-viewer[sed]"
 SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
-SED_BANDS="sdss_u sdss_g sdss_r sdss_i sdss_z"   # space-separated FSPS filter names
 SED_FRAME="both"                       # rest | obs | both
+# Filter bands to compute — check any combination below. UV-optical-NIR is
+# checked by default; WISE (mid-IR) is available but off by default, since
+# its flux is dominated by dust emission this pipeline doesn't model.
+BAND_GALEX_FUV_ENABLED=1
+BAND_GALEX_NUV_ENABLED=1
+BAND_SDSS_U_ENABLED=1
+BAND_SDSS_G_ENABLED=1
+BAND_SDSS_R_ENABLED=1
+BAND_SDSS_I_ENABLED=1
+BAND_SDSS_Z_ENABLED=1
+BAND_2MASS_J_ENABLED=1
+BAND_2MASS_H_ENABLED=1
+BAND_2MASS_KS_ENABLED=1
+BAND_WISE_W1_ENABLED=0
+BAND_WISE_W2_ENABLED=0
+BAND_WISE_W3_ENABLED=0
+BAND_WISE_W4_ENABLED=0
 
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
@@ -286,11 +302,33 @@ echo "==> Lightcone written to $OUTDIR/$OUTFILE"
 
 if [ "$SED_ENABLED" = "1" ]; then
   echo "==> Stage 3: synthetic photometry (SED synthesis)"
-  BANDS_CSV="$(echo "$SED_BANDS" | tr -s ' ' ',')"
-  "{python_exe}" -m visage.sed.photometry \\
-    --input "$OUTDIR/$OUTFILE" \\
-    --bands "$BANDS_CSV" \\
-    --frame "$SED_FRAME"
+  # Lowercase on purpose: internal/computed, never re-parsed as an editable
+  # wizard parameter (only UPPERCASE VAR=value assignments are, so a user's
+  # edit here can never desync the checkboxes above from what actually runs).
+  sed_bands=""
+  [ "$BAND_GALEX_FUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_fuv"
+  [ "$BAND_GALEX_NUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_nuv"
+  [ "$BAND_SDSS_U_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_u"
+  [ "$BAND_SDSS_G_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_g"
+  [ "$BAND_SDSS_R_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_r"
+  [ "$BAND_SDSS_I_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_i"
+  [ "$BAND_SDSS_Z_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_z"
+  [ "$BAND_2MASS_J_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_j"
+  [ "$BAND_2MASS_H_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_h"
+  [ "$BAND_2MASS_KS_ENABLED" = "1" ]   && sed_bands="$sed_bands 2mass_ks"
+  [ "$BAND_WISE_W1_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w1"
+  [ "$BAND_WISE_W2_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w2"
+  [ "$BAND_WISE_W3_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w3"
+  [ "$BAND_WISE_W4_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w4"
+  if [ -z "$sed_bands" ]; then
+    echo "No bands checked — skipping SED synthesis."
+  else
+    bands_csv="$(echo "$sed_bands" | tr -s ' ' ',' | sed 's/^,//')"
+    "{python_exe}" -m visage.sed.photometry \\
+      --input "$OUTDIR/$OUTFILE" \\
+      --bands "$bands_csv" \\
+      --frame "$SED_FRAME"
+  fi
 fi
 """
 
@@ -730,6 +768,17 @@ class WizardController:
         self._st.wiz_lc_config_show = False
         self._st.flush()
 
+    @staticmethod
+    def _pretty_param_label(key: str) -> str:
+        """Shorter checkbox label for a ``BAND_<FILTER>_ENABLED`` param — the
+        raw key overflows the label column's fixed width once params are
+        half-width (2-column checkbox layout). Shows the literal FSPS filter
+        name (e.g. "sdss_g"), which also matches what --bands expects.
+        Every other key (including plain ``SED_ENABLED``) is left as-is."""
+        if key.startswith("BAND_") and key.endswith("_ENABLED"):
+            return key[len("BAND_") : -len("_ENABLED")].lower()
+        return key
+
     def _init_param_pool(self) -> None:
         """Clear all parameter-form slots (label/value/hint per index)."""
         for i in range(_MAX_PARAMS):
@@ -757,7 +806,9 @@ class WizardController:
         self._st.wiz_params_target = target
         for i in range(_MAX_PARAMS):
             if i < len(params):
-                self._st[f"wiz_pl_{i}"] = params[i]["label"]
+                self._st[f"wiz_pl_{i}"] = self._pretty_param_label(
+                    params[i]["label"]
+                )
                 self._st[f"wiz_pv_{i}"] = params[i]["value"]
                 self._st[f"wiz_ph_{i}"] = params[i]["hint"]
                 self._st[f"wiz_pcb_{i}"] = params[i]["key"].endswith(
