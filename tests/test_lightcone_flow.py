@@ -5,6 +5,7 @@ subprocess calls."""
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from visage.wizard.controller import (
@@ -121,6 +122,42 @@ def test_lc_script_path_is_outside_repo(tmp_path):
     p = c._lc_script_path()
     assert p == Path.home() / ".visage" / _LC_RUN_SCRIPT
     assert "LightSAGE" not in str(p)
+
+
+def test_lc_config_resyncs_stale_lightcone_dir(tmp_path, monkeypatch):
+    # A saved run_lightcone.sh can point at a checkout that no longer exists
+    # (moved, deleted, or cloned under an older folder-naming convention).
+    # LIGHTCONE_DIR is an environment fact with exactly one correct answer
+    # (unlike the ra/dec/z ranges, which are genuine user preferences), so
+    # loading a stale script must still resync it to whatever this session
+    # actually found and verified.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    lc = _make_checkout(tmp_path, name="LightSAGE")
+    (lc / "bin").mkdir()
+    (lc / "bin" / "sage2kdtree").write_text("")
+    (lc / "bin" / "cli_lightcone").write_text("")
+
+    stale_dir = tmp_path / "sage-lightcone"  # old alias; doesn't exist anymore
+    script_path = tmp_path / ".visage" / _LC_RUN_SCRIPT
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text(
+        _LC_RUN_SCRIPT_TEMPLATE.format(
+            lightcone_dir=str(stale_dir),
+            sage_output_dir="/x/out",
+            param_file="/x/m.par",
+            alist_file="/x/a_list",
+            outdir="/x/sage_outputs/lightcone",
+            python_exe="/usr/bin/python3",
+        )
+    )
+
+    c = _ctrl()
+    c._lc_dir = lc
+    asyncio.run(c._step_lc_config())
+
+    text = c._st.wiz_lc_script_text
+    assert f'LIGHTCONE_DIR="{lc}"' in text
+    assert str(stale_dir) not in text
 
 
 def test_lc_seed_script_prefills_sage_paths(tmp_path):

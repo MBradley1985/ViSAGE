@@ -2519,6 +2519,18 @@ class WizardController:
                 self._emit(f"Could not read {script}: {exc}", "err")
                 self._set_choices([self._back_choice("lc_back_scan")])
                 return
+            # LIGHTCONE_DIR isn't a user preference like the ra/dec/z ranges —
+            # it's an environment fact with exactly one correct answer. A
+            # saved script can point at a checkout that no longer exists
+            # (moved, deleted, or cloned under an older ViSAGE version's
+            # folder-naming convention), so always resync it to the checkout
+            # THIS session actually found and verified, rather than trusting
+            # whatever was on disk.
+            self._st.wiz_lc_script_text = _apply_params(
+                str(self._st.wiz_lc_script_text),
+                [{"key": "LIGHTCONE_DIR", "value": str(self._lc_dir)}],
+                "sh",
+            )
         else:
             self._st.wiz_lc_script_text = self._lc_seed_script()
             self._emit(f"Seeded a new run script at {script}.", "info")
