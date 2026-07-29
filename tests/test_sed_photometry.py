@@ -1,7 +1,10 @@
 """Tests for visage.sed (synthetic photometry for LightSAGE lightcones).
 
 FSPS/astropy are optional dependencies (pip install sage-viewer[sed]) — every
-test here skips cleanly if they're not installed rather than failing.
+test here skips cleanly if they're not installed (or, for fsps, installed but
+not configured — importing it raises RuntimeError rather than ImportError
+when the SPS_HOME env var pointing at its SSP data isn't set, e.g. in CI)
+rather than failing.
 """
 
 from __future__ import annotations
@@ -9,7 +12,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-fsps = pytest.importorskip("fsps")
+try:
+    import fsps
+except Exception as exc:  # ImportError (missing) or RuntimeError (no SPS_HOME)
+    pytest.skip(f"fsps unavailable: {exc}", allow_module_level=True)
 pytest.importorskip("astropy")
 
 from visage.sed.photometry import (  # noqa: E402
