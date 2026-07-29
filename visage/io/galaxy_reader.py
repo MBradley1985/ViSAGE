@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import h5py
@@ -69,6 +69,10 @@ class GalaxySnapshot:
     # ─────────────────────────────────────────────────────────────────
     sage_indices: np.ndarray  # (N,) int64 — row indices in raw HDF5 snap group
     snap_num: int
+    # ── Synthetic photometry (LightSAGE lightcones only) ────────────────
+    # key -> (N,) float32 AB magnitude, e.g. "mag_rest_sdss_g",
+    # "mag_obs_sdss_r". Empty for every non-SED-enabled snapshot/model.
+    sed_mags: dict = field(default_factory=dict)
 
     @property
     def count(self) -> int:

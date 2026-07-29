@@ -146,6 +146,18 @@ def test_lc_seed_script_falls_back_without_sage26():
     assert "../SAGE26/output/millennium" in text
 
 
+def test_lc_seed_script_outdir_uses_sage_outputs(tmp_path, monkeypatch):
+    # Output should land in ViSAGE's standard sage_outputs/ folder (same
+    # convention as screenshots/recordings/catalogues), not a scratch dir
+    # buried in ~/.visage.
+    monkeypatch.chdir(tmp_path)
+    c = _ctrl()
+    text = c._lc_seed_script()
+    expected = str(tmp_path / "sage_outputs" / "lightcone")
+    assert f'OUTDIR="{expected}"' in text
+    assert 'mkdir -p "$OUTDIR"' in text
+
+
 def test_run_template_formats_cleanly():
     # No stray braces that would break str.format on the shell body.
     s = _LC_RUN_SCRIPT_TEMPLATE.format(
@@ -153,6 +165,7 @@ def test_run_template_formats_cleanly():
         sage_output_dir="/x/out",
         param_file="/x/m.par",
         alist_file="/x/a_list",
+        outdir="/x/sage_outputs/lightcone",
         python_exe="/usr/bin/python3",
     )
     assert "sage2kdtree.sh" in s and "lightcone.sh" in s

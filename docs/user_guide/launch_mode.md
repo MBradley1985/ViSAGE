@@ -17,21 +17,20 @@ Then open the printed URL in your browser. The wizard launches directly into
 
 You can also enter Launch Mode from inside Explore Mode via the SAGE-logo
 dropdown (top-left of the toolbar) → **Setup Wizard**, or jump straight into
-one of the other two flows from the same dropdown (**Calibrate with
-SAGEswarm** / **Extract lightcone (LightSAGE)**) or their dedicated toolbar
-buttons.
+one of the other two flows from the same dropdown (**SAGEswarm** /
+**LightSAGE**) or their dedicated toolbar buttons.
 
 ## The three flows
 
 | Flow | What it does | Wizard menu entry |
 |---|---|---|
 | **SAGE26 setup** | Clone, compile, configure, and run SAGE26 | Setup Wizard |
-| **SAGEswarm** | Clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run a PSO calibration against a compiled SAGE binary — with a live plot gallery | Calibrate with SAGEswarm |
-| **LightSAGE** | Clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build its `sage2kdtree` / `cli_lightcone` tools, and run the two-stage lightcone-extraction pipeline against existing SAGE26 output | Extract lightcone (LightSAGE) |
+| **SAGEswarm** | Clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run a PSO calibration against a compiled SAGE binary — with a live plot gallery | SAGEswarm |
+| **LightSAGE** | Clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build its `sage2kdtree` / `cli_lightcone` tools, and run the two-stage lightcone-extraction pipeline against existing SAGE26 output — optionally followed by a third stage that synthesizes broadband photometry (SED) for every lightcone galaxy | LightSAGE |
 
 Each flow's header shows its own 6-step progress chips. From any flow's first
-step you can switch to another (e.g. "Switch to SAGE26 setup" from the
-SAGEswarm or LightSAGE scan step) without closing the wizard.
+step you can switch to another (e.g. click "Back" from the SAGEswarm or
+LightSAGE scan step to return to SAGE26 setup) without closing the wizard.
 
 ## Where visage looks for things
 
@@ -43,6 +42,7 @@ The working directory you launch from is the anchor for the entire session:
 | `.par` files | `<SAGE26>/input/` and `<CWD>/input/` |
 | Existing models | `<SAGE26>/output/`, `<CWD>/output/`, `<CWD>/sage_outputs/` |
 | Screenshots / recordings / exports | `<CWD>/sage_outputs/session_<timestamp>/` |
+| LightSAGE lightcone output | `<CWD>/sage_outputs/lightcone/` (editable in the run script's `OUTDIR`) |
 
 **First-time install (no SAGE26 yet):** run `visage` from the folder where you want SAGE26 to live, then use **Clone SAGE26** in the wizard. The wizard will ask which parent directory to clone into (defaulting to your home folder), and will use that cloned directory for the rest of the session.
 
@@ -98,11 +98,11 @@ LightSAGE turns existing SAGE26 HDF5 output into a lightcone catalogue — see
 1. **Scan** — reports whether an existing LightSAGE checkout is found, and whether its `sage2kdtree` / `cli_lightcone` tools are built.
 2. **Clone** — choose a parent directory; clones the upstream repo (`sage-home/sage-lightcone`) into a `LightSAGE/` folder inside it.
 3. **Build** — builds *only* the two C++ tools (`sage2kdtree`, `cli_lightcone`) — SAGE itself is never rebuilt, since ViSAGE feeds in your existing SAGE26 output. On macOS, if the active Apple-clang toolchain can't parse the default SDK's libc++ headers, the build automatically falls back to a compatible installed SDK.
-4. **Configure** — `run_lightcone.sh` opens as a [parameter form](#parameter-form): the SAGE output directory / `.par` / scale-factor list feeding stage 1 (`sage2kdtree`), and the sky/redshift bounds (`ra`, `dec`, `z`) and output path feeding stage 2 (`cli_lightcone`).
-5. **Run** — saves your edits and runs both pipeline stages in sequence, streamed to the terminal.
+4. **Configure** — `run_lightcone.sh` opens as a [parameter form](#parameter-form): the SAGE output directory / `.par` / scale-factor list feeding stage 1 (`sage2kdtree`), the sky/redshift bounds (`ra`, `dec`, `z`) and output path feeding stage 2 (`cli_lightcone`), and an optional stage 3 — check **SED_ENABLED** to synthesize broadband photometry (AB magnitudes, via FSPS) for every galaxy in the cone, choosing the filter bands (`SED_BANDS`) and frame (`SED_FRAME`: rest, observed, or both). Requires `pip install "sage-viewer[sed]"`.
+5. **Run** — saves your edits and runs the pipeline stages in sequence, streamed to the terminal.
 6. **Done** — once a run succeeds, click **Visualize lightcone** to relaunch ViSAGE directly into [Lightcone Mode](lightcone.md) on the output file, or **Run again**.
 
-All generated build/run scripts (and the LightSAGE checkout itself) live outside the ViSAGE repository — the build/run scripts specifically under `~/.visage/` — so nothing is ever written into the third-party checkout.
+All generated build/run scripts (and the LightSAGE checkout itself) live outside the ViSAGE repository — the build/run scripts specifically under `~/.visage/` — so nothing is ever written into the third-party checkout. The lightcone output itself is written to `<cwd>/sage_outputs/lightcone/` (the `OUTDIR` variable in `run_lightcone.sh`), alongside ViSAGE's other exports.
 
 ## Parameter form
 
@@ -124,6 +124,7 @@ The working directory you launch from is the anchor for the entire session:
 | `.par` files | `<SAGE26>/input/` and `<CWD>/input/` |
 | Existing models | `<SAGE26>/output/`, `<CWD>/output/`, `<CWD>/sage_outputs/` |
 | Screenshots / recordings / exports | `<CWD>/sage_outputs/session_<timestamp>/` |
+| LightSAGE lightcone output | `<CWD>/sage_outputs/lightcone/` (editable in the run script's `OUTDIR`) |
 
 **First-time install (no SAGE26 yet):** run `visage` from the folder where you want SAGE26 to live, then use **Clone SAGE26** in the wizard. The wizard will ask which parent directory to clone into (defaulting to your home folder), and will use that cloned directory for the rest of the session.
 

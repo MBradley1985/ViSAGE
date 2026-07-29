@@ -83,17 +83,17 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 
 ### Launch Mode wizard
 - Guided setup flow, accessible standalone (`visage` with no `--par`/`--lightcone`) or from the Launch-Mode dropdown (SAGE-logo button, top-left of the toolbar)
-- Three guided flows share the same wizard shell, switchable at any time ("Switch to SAGE26 setup" / dedicated toolbar buttons):
+- Three guided flows share the same wizard shell, switchable at any time ("Back" / dedicated toolbar buttons):
   - **SAGE26 setup** — clone, compile, configure, and run SAGE26
-  - **Calibrate with SAGEswarm** — clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run the PSO calibration with a live plot gallery
-  - **Extract lightcone (LightSAGE)** — clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build *only* the `sage2kdtree` / `cli_lightcone` tools (SAGE itself is never rebuilt — ViSAGE feeds it your existing SAGE26 output), configure and run the two-stage pipeline, then jump straight into **Lightcone Mode** on the result
+  - **SAGEswarm** — clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run the PSO calibration with a live plot gallery
+  - **LightSAGE** — clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build *only* the `sage2kdtree` / `cli_lightcone` tools (SAGE itself is never rebuilt — ViSAGE feeds it your existing SAGE26 output), configure and run the two-stage pipeline, then jump straight into **Lightcone Mode** on the result — with an optional third stage that synthesizes broadband photometry (SED) via FSPS (`pip install "sage-viewer[sed]"`)
 - Step chips in the header track progress per flow (cyan = current step, green = done, white = pending)
 - **Rescan** button re-runs the environment scan from scratch at any point
 - **Clone SAGE26** option clones the SAGE26 repository from GitHub — prompts for the parent directory (defaults to home folder) before cloning
 - **Create config file** option generates a new `.par` from a template pre-filled with paths for your SAGE26 directory; choose a custom filename before writing
 - Every editable config (`.par`, `run_pso.sh`, `run_lightcone.sh`) is shown as a **parameter form** — one labelled box per option, pre-filled with its default — instead of raw text; edits fold back into the file on Save & Run, preserving comments and layout
 - The LightSAGE build auto-detects a macOS Apple-clang/SDK mismatch and falls back to a compatible SDK; the generated build/run scripts live in `~/.visage/`, never inside the third-party checkout
-- Screenshots, recordings, and catalogue exports all save to `sage_outputs/` in the directory you launched from
+- Screenshots, recordings, catalogue exports, and LightSAGE lightcone output all save to `sage_outputs/` in the directory you launched from
 - Wizard always resets cleanly when reopened
 
 ### Lightcone Mode
@@ -254,7 +254,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 | Tab | Purpose |
 |---|---|
-| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar) |
+| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); in Lightcone Mode with SED data, a dedicated Synthetic Photometry section adds colour-by-band |
 | Filters    | Range sliders for halo and galaxy properties |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Target     | Halo / galaxy navigation, focus zoom, Galaxy Info, Highlight Galaxy |

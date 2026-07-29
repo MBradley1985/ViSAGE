@@ -146,6 +146,10 @@ class LightconeModel(Model):
             for ui_key, hdf_field in _OPTIONAL_FIELDS.items()
         }
         self.fields_available["mean_age"] = False
+        # Synthetic photometry bands present in this cone (empty if the
+        # lightcone wasn't run through the SED stage) — data-dependent, so
+        # this can't live in the fixed _OPTIONAL_FIELDS map.
+        self.sed_bands_available = sorted(lc.galaxies.sed_mags.keys())
 
         self._current_snap = -1
         self._offset = np.zeros(3, dtype=np.float64)

@@ -28,6 +28,15 @@ Unlike a SAGE box, where the slider selects one snapshot to display, in Lightcon
 
 Drag it inward from the maximum to peel away the near side of the cone and see what's left at higher redshift.
 
+## Synthetic photometry (SED)
+
+If the lightcone was run through the LightSAGE flow's optional SED stage (see
+[Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps)), the Structure
+panel gains a dedicated **Synthetic Photometry (SED)** section listing every
+computed magnitude band (e.g. `g (rest)`, `r (observed)`). Picking a band uses
+the same colour-by / colormap mechanism as every other property — it's just
+presented in its own section, and only appears for lightcones with SED data.
+
 ## Camera
 
 Resetting the camera frames the cone **horizontally, centred** in the viewport (rather than the cubic-box framing used for a SAGE box) — this is also the initial view on load.

@@ -268,6 +268,37 @@ def _cbar_style(gradient: str) -> str:
     return _CBAR_BASE + gradient
 
 
+def _sed_band_title(key: str) -> str:
+    """ "mag_rest_sdss_g" -> "g (rest)", "mag_obs_2mass_j" -> "j (observed)"."""
+    if key.startswith("mag_rest_"):
+        frame, filt = "rest", key[len("mag_rest_") :]
+    elif key.startswith("mag_obs_"):
+        frame, filt = "observed", key[len("mag_obs_") :]
+    else:
+        frame, filt = "?", key
+    label = filt[5:] if filt.startswith("sdss_") else filt.replace("_", " ")
+    return f"{label} ({frame})"
+
+
+def _sed_cbar_range(scene: Scene, band_key: str) -> tuple[str, str]:
+    """(bright, faint) magnitude labels for a SED colour-by band, computed
+    from the same percentile bounds GalaxyLayer uses to normalize it."""
+    import numpy as np
+
+    try:
+        _, galaxies = scene.active_model.loader.get(0)
+        mags = galaxies.sed_mags.get(band_key)
+        if mags is None:
+            return "—", "—"
+        finite = mags[np.isfinite(mags)]
+        if finite.size == 0:
+            return "—", "—"
+        bright, faint = np.percentile(finite, [2.0, 98.0])
+        return f"{bright:.1f}", f"{faint:.1f}"
+    except Exception:
+        return "—", "—"
+
+
 def build_navigation_panel(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
 
@@ -432,8 +463,18 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     def _rebuild_color_mode_lists() -> None:
         fields = dict(scene.active_model.fields_available)
+        sed_bands = getattr(scene.active_model, "sed_bands_available", [])
+        sed_modes = [
+            {"title": _sed_band_title(k), "value": f"sed:{k}"}
+            for k in sed_bands
+        ]
         state.halo_color_modes = _filter_modes(_HALO_MODES, fields)
+        # SED bands live only in the dedicated Synthetic Photometry section
+        # below, not in the general "Colour by" dropdown.
         state.galaxy_color_modes = _filter_modes(_GALAXY_MODES, fields)
+        state.sed_color_modes = sed_modes
+        state.has_sed_data = bool(sed_modes)
+        state.is_lightcone = scene.is_lightcone
 
     _rebuild_color_mode_lists()
 
@@ -895,13 +936,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
             galaxy_color_mode != "structure"
             and "galaxy_colormap" not in state.modified_keys
         ):
-            state.galaxy_colormap = _GAL_CMAP_DEFAULTS.get(
-                galaxy_color_mode, "viridis"
+            default_cmap = (
+                "plasma"
+                if galaxy_color_mode.startswith("sed:")
+                else _GAL_CMAP_DEFAULTS.get(galaxy_color_mode, "viridis")
             )
+            state.galaxy_colormap = default_cmap
         # Categorical / multi-layer modes (density, type, structure) don't have
-        # a single colormap range — fall back to a generic label.
+        # a single colormap range — fall back to a generic label. SED bands
+        # get a data-driven (percentile) range instead of a fixed lookup.
         if galaxy_color_mode in _GAL_CB:
             _, lo, hi = _GAL_CB[galaxy_color_mode]
+        elif galaxy_color_mode.startswith("sed:"):
+            lo, hi = _sed_cbar_range(scene, galaxy_color_mode[len("sed:") :])
         else:
             lo, hi = "—", "—"
         state.gal_cbar_min = lo
@@ -3946,6 +3993,57 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "{{ gal_cbar_max }}",
                             style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
                         )
+
+                with v3.VSheet(
+                    color="transparent",
+                    v_show=("is_lightcone && has_sed_data",),
+                ):
+                    v3.VDivider(style="margin:14px 0;")
+                    v3.VLabel(
+                        "SYNTHETIC PHOTOMETRY (SED)",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#7FDBFF;padding:6px 0 8px;display:block;"
+                        ),
+                    )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VSelect(
+                            v_model=("galaxy_color_mode",),
+                            items=("sed_color_modes",),
+                            label="Colour by band",
+                            hide_details=True,
+                            variant="outlined",
+                            color="#7FDBFF",
+                            density="compact",
+                        )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VSelect(
+                            v_model=("galaxy_colormap",),
+                            items=(_CMAPS,),
+                            label="Colormap",
+                            hide_details=True,
+                            variant="outlined",
+                            color="#7FDBFF",
+                            density="compact",
+                        )
+                    with v3.VSheet(
+                        color="transparent", style="padding:4px 0 8px;"
+                    ):
+                        with v3.VSheet(
+                            color="transparent",
+                            style="display:flex;align-items:center;gap:4px;",
+                        ):
+                            v3.VLabel(
+                                "{{ gal_cbar_min }}",
+                                style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            )
+                            v3.VSheet(
+                                style=("gal_cbar_style",), color="transparent"
+                            )
+                            v3.VLabel(
+                                "{{ gal_cbar_max }}",
+                                style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            )
 
                 v3.VDivider(style="margin:14px 0 10px;")
 

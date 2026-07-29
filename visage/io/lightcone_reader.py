@@ -140,6 +140,14 @@ def load_lightcone_snapshot(
         # Read every field we need at full length (None if absent).
         cols = {name: raw(name) for name in _RAW_FIELDS}
         cols["Posx"], cols["Posy"], cols["Posz"] = posx, posy, posz
+
+        # Synthetic photometry (visage.sed), if this cone has been run
+        # through it — dataset names are data-dependent (whichever bands/
+        # frames the user picked), so discover them rather than hardcode.
+        sed_names = sorted(
+            n for n in present if n.startswith(("mag_rest_", "mag_obs_"))
+        )
+        sed_cols = {name: raw(name, np.float32) for name in sed_names}
         stellar_raw = cols.get("StellarMass")
         stellar_mass_all = (
             stellar_raw * mfac if stellar_raw is not None else np.zeros(n_all)
@@ -240,6 +248,11 @@ def load_lightcone_snapshot(
         metals_cgm_gas=col("MetalsCGMgas", np.float32, mass=True),
         sage_indices=idx.astype(np.int64),
         snap_num=0,
+        sed_mags={
+            name: values[idx].astype(np.float32)
+            for name, values in sed_cols.items()
+            if values is not None
+        },
     )
 
     # Per-galaxy time/redshift (drives the "highlight shell" navigation).

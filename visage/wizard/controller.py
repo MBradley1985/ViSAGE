@@ -254,7 +254,7 @@ DECMIN=0                   # declination min (degrees)
 DECMAX=10                  # declination max (degrees)
 ZMIN=0                     # redshift min
 ZMAX=1                     # redshift max
-OUTDIR="./lightcone_output"
+OUTDIR="{outdir}"          # ViSAGE's standard output folder (see docs)
 OUTFILE="lightcone.h5"
 
 # -- Stage 3 (optional): synthetic photometry (SED synthesis) ---------------
@@ -273,6 +273,7 @@ echo "==> Stage 1/2: sage2kdtree"
   -o "$KDTREE_OUT"
 
 echo "==> Stage 2/2: cli_lightcone"
+mkdir -p "$OUTDIR"
 "$LIGHTCONE_DIR/scripts/lightcone.sh" \\
   -d "$KDTREE_OUT" \\
   --ramin "$RAMIN"   --ramax "$RAMAX" \\
@@ -2154,7 +2155,7 @@ class WizardController:
             )
             return m.group(1).strip() if m else default
 
-        outdir = _var("OUTDIR", "./lightcone_output")
+        outdir = _var("OUTDIR", str(Path.cwd() / "sage_outputs" / "lightcone"))
         outfile = _var("OUTFILE", "lightcone.h5")
         p = Path(outdir).expanduser()
         if not p.is_absolute():
@@ -2212,11 +2213,15 @@ class WizardController:
             sage_out = "../SAGE26/output/millennium"
             par = "../SAGE26/input/millennium.par"
             alist = "../SAGE26/input/millennium/trees/millennium.a_list"
+        # ViSAGE's standard output folder (same convention as screenshots,
+        # recordings, and exported catalogues — see docs/user_guide/launch_mode.md).
+        outdir = Path.cwd() / "sage_outputs" / "lightcone"
         return _LC_RUN_SCRIPT_TEMPLATE.format(
             lightcone_dir=lc,
             sage_output_dir=sage_out,
             param_file=par,
             alist_file=alist,
+            outdir=str(outdir),
             python_exe=sys.executable,
         )
 

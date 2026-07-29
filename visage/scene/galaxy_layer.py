@@ -52,6 +52,9 @@ ColorMode = Literal[
     "metals_ejected_mass",
     "metals_ics",
 ]
+# Plus, for LightSAGE lightcones with SED data: "sed:<key>" where <key> is a
+# GalaxySnapshot.sed_mags key (e.g. "sed:mag_rest_sdss_g") — not enumerable
+# ahead of time since it depends on which bands a given cone was run with.
 
 _RANGES = {
     "stellar_mass": (8.0, 12.5),  # log10(Msun)
@@ -356,6 +359,17 @@ class GalaxyLayer:
             v = getattr(snap, fld.name)
             if isinstance(v, np.ndarray) and len(v) == n:
                 v = v[mask]
+            elif isinstance(v, dict):
+                # e.g. sed_mags: dict[str, np.ndarray] — slice every array
+                # inside it too, so it stays aligned with the sliced snapshot.
+                v = {
+                    k: (
+                        arr[mask]
+                        if isinstance(arr, np.ndarray) and len(arr) == n
+                        else arr
+                    )
+                    for k, arr in v.items()
+                }
             kwargs[fld.name] = v
         return _GS(**kwargs)
 
@@ -607,6 +621,8 @@ class GalaxyLayer:
 
     def _compute_colors(self, snap: GalaxySnapshot) -> np.ndarray:
         m = self._color_mode
+        if m.startswith("sed:"):
+            return self._compute_sed_colors(snap, m[len("sed:") :])
         if m == "ssfr":
             return normalize_log(snap.ssfr, *_RANGES["ssfr"])
         if m == "sfr":
@@ -645,3 +661,28 @@ class GalaxyLayer:
                 np.maximum(getattr(snap, attr), floor), *_RANGES[m]
             )
         return normalize_log(snap.stellar_mass, *_RANGES["stellar_mass"])
+
+    @staticmethod
+    def _compute_sed_colors(snap: GalaxySnapshot, band_key: str) -> np.ndarray:
+        """Colour by a synthetic AB magnitude band (LightSAGE SED only).
+
+        Rest- and observed-frame magnitude scales differ enormously between
+        lightcones (depends on distance range, filter, etc.), so — unlike
+        every other mode — this uses data-driven percentile bounds rather
+        than a fixed _RANGES entry. Zero-mass galaxies carry NaN (no light);
+        they fall back to the low end of the scale rather than breaking the
+        percentile computation.
+        """
+        mags = snap.sed_mags.get(band_key)
+        if mags is None or len(mags) != snap.count:
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        finite = mags[np.isfinite(mags)]
+        if finite.size == 0:
+            return np.full(snap.count, 0.5, dtype=np.float32)
+        lo, hi = np.percentile(finite, [2.0, 98.0])
+        if hi <= lo:
+            hi = lo + 1.0
+        # Brighter (smaller/more negative mag) -> higher scalar value, so
+        # "bright" lands on the colormap's hot end like every other mode.
+        norm = np.clip((hi - mags) / (hi - lo), 0.0, 1.0)
+        return np.nan_to_num(norm, nan=0.0).astype(np.float32)

@@ -14,9 +14,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   the SAGE26 setup path — clone SAGEswarm → `pip install -r requirements.txt` →
   pick the compiled `./sage` binary + `.par` → set constraints (`-x`) + output
   dir (`-o`) → run `python main.py …`, streamed to the wizard terminal. Reachable
-  from the wizard menu ("Calibrate with SAGEswarm") and from a new toolbar button
-  beside the Launch Mode button. The header step chips are now flow-aware
-  (`wiz_steps` state var).
+  from the wizard menu ("SAGEswarm") and from a new toolbar button beside the
+  Launch Mode button. The header step chips are now flow-aware (`wiz_steps`
+  state var).
 - **Live PSO plot gallery.** While a SAGEswarm run is in progress, ViSAGE watches
   the SAGEswarm main folder (the run's cwd) for `*.png` diagnostics and shows
   them in a dedicated, right-docked gallery panel that refreshes as plots appear
@@ -32,8 +32,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   (Xcode's newest SDK ships libc++ headers newer LLVMs don't support) and
   falls back to a compatible installed SDK. All generated build/run scripts
   live under `~/.visage/`, never inside the third-party checkout. Reachable
-  from the wizard menu ("Extract lightcone (LightSAGE)") and a new toolbar
-  button beside the SAGEswarm one.
+  from the wizard menu ("LightSAGE") and a new toolbar button beside the
+  SAGEswarm one. The produced lightcone is written to `<cwd>/sage_outputs/
+  lightcone/` — ViSAGE's standard output folder, alongside screenshots,
+  recordings, and exported catalogues.
+
+- **Synthetic photometry (SED) for LightSAGE lightcones.** An optional third
+  pipeline stage forward-models broadband AB magnitudes for every lightcone
+  galaxy from its star-formation history, using
+  [python-fsps](https://github.com/dfm/python-fsps) (`pip install
+  "sage-viewer[sed]"`). Enabled via a checkbox in the LightSAGE run-script
+  parameter form (`SED_ENABLED`, `SED_BANDS`, `SED_FRAME`); computes rest-frame
+  (10 pc), observed-frame (luminosity-distance, K-corrected), or both, using
+  the simulation's own cosmology rather than an assumed one. Results are
+  written back into the lightcone HDF5 file as `mag_rest_<band>` /
+  `mag_obs_<band>` datasets. When present, a new **Synthetic Photometry
+  (SED)** section appears in the Structure panel (LightSAGE mode only),
+  letting you colour galaxies by any computed band via the same colour-by /
+  colormap mechanism as every other property.
 
 - **Lightcone Mode — the full Explore UI on a lightcone.** `visage --lightcone
   FILE` opens a `cli_lightcone` HDF5 output in the exact same toolbar,
@@ -77,6 +93,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **No galaxy display cap.** Every galaxy passing the mass floor now loads —
   there's no benefit to downsampling since all snapshots are preloaded up
   front. `--max-galaxies` is removed from the CLI.
+
+- **Flythrough tours groups and clusters continuously.** In both Explore and
+  Lightcone Mode, flythrough no longer ends by zooming out to orbit the whole
+  box/cone forever — it now keeps moving from one group/cluster to the next
+  indefinitely. Reset Camera in Lightcone Mode now correctly reframes the
+  cone (`Scene.is_lightcone`-aware) instead of using box-at-the-origin math.
+
+- **Launch-wizard menu cleanup.** The hamburger dropdown's "EXPLORE MODE"
+  heading is removed (the menu now serves both Explore and Lightcone Mode).
+  "Start Fresh" moved to the end of the setup-choice list, and both
+  "Switch to SAGE26 setup" buttons (in the SAGEswarm and LightSAGE flows) are
+  now labelled "Back".
 
 ### Removed
 
