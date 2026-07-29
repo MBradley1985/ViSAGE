@@ -257,6 +257,14 @@ ZMAX=1                     # redshift max
 OUTDIR="./lightcone_output"
 OUTFILE="lightcone.h5"
 
+# -- Stage 3 (optional): synthetic photometry (SED synthesis) ---------------
+# Forward-models AB magnitudes per galaxy from its star-formation history
+# using FSPS — see the ViSAGE docs for what this does and its simplifications
+# (single present-day metallicity, no dust). Requires: pip install "sage-viewer[sed]"
+SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
+SED_BANDS="sdss_u sdss_g sdss_r sdss_i sdss_z"   # space-separated FSPS filter names
+SED_FRAME="both"                       # rest | obs | both
+
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
   -s "$SAGE_OUTPUT_DIR" \\
@@ -274,6 +282,15 @@ echo "==> Stage 2/2: cli_lightcone"
   -o "$OUTFILE"
 
 echo "==> Lightcone written to $OUTDIR/$OUTFILE"
+
+if [ "$SED_ENABLED" = "1" ]; then
+  echo "==> Stage 3: synthetic photometry (SED synthesis)"
+  BANDS_CSV="$(echo "$SED_BANDS" | tr -s ' ' ',')"
+  "{python_exe}" -m visage.sed.photometry \\
+    --input "$OUTDIR/$OUTFILE" \\
+    --bands "$BANDS_CSV" \\
+    --frame "$SED_FRAME"
+fi
 """
 
 _MILLENNIUM_PAR_TEMPLATE = """\
@@ -718,11 +735,14 @@ class WizardController:
             self._st[f"wiz_pl_{i}"] = ""
             self._st[f"wiz_pv_{i}"] = ""
             self._st[f"wiz_ph_{i}"] = ""
+            self._st[f"wiz_pcb_{i}"] = False
         self._st.wiz_param_count = 0
 
     def _show_params(self, text: str, kind: str, target: str) -> None:
         """Populate the parameter form (labelled boxes) from a config's text.
-        Each option fills its own wiz_pl/pv/ph_<i> slot."""
+        Each option fills its own wiz_pl/pv/ph_<i> slot. Keys named
+        ``*_ENABLED`` render as a checkbox (true_value "1" / false_value "0")
+        instead of a text box — see ui.py."""
         params = _parse_params(text, kind)
         if len(params) > _MAX_PARAMS:
             self._emit(
@@ -739,10 +759,14 @@ class WizardController:
                 self._st[f"wiz_pl_{i}"] = params[i]["label"]
                 self._st[f"wiz_pv_{i}"] = params[i]["value"]
                 self._st[f"wiz_ph_{i}"] = params[i]["hint"]
+                self._st[f"wiz_pcb_{i}"] = params[i]["key"].endswith(
+                    "_ENABLED"
+                )
             else:
                 self._st[f"wiz_pl_{i}"] = ""
                 self._st[f"wiz_pv_{i}"] = ""
                 self._st[f"wiz_ph_{i}"] = ""
+                self._st[f"wiz_pcb_{i}"] = False
         self._st.wiz_param_count = len(params)
         self._st.flush()
 
@@ -2193,6 +2217,7 @@ class WizardController:
             sage_output_dir=sage_out,
             param_file=par,
             alist_file=alist,
+            python_exe=sys.executable,
         )
 
     async def _step_lc_scan(self) -> None:

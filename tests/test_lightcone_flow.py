@@ -153,9 +153,11 @@ def test_run_template_formats_cleanly():
         sage_output_dir="/x/out",
         param_file="/x/m.par",
         alist_file="/x/a_list",
+        python_exe="/usr/bin/python3",
     )
     assert "sage2kdtree.sh" in s and "lightcone.sh" in s
     assert "$LIGHTCONE_DIR" in s
+    assert "/usr/bin/python3" in s and "visage.sed.photometry" in s
 
 
 # ── Lightcone reader / output-format tests ────────────────────────────────

@@ -305,7 +305,23 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                         "white-space:nowrap;flex-shrink:0;"
                                     ),
                                 )
+                                # *_ENABLED keys render as a checkbox
+                                # (true/false mapped to text "1"/"0" so the
+                                # same wiz_pv_<i> string pool + fold-back
+                                # logic works unchanged); everything else is
+                                # a text box.
+                                v3.VCheckbox(
+                                    v_if=(f"wiz_pcb_{i}",),
+                                    v_model=(f"wiz_pv_{i}",),
+                                    true_value="1",
+                                    false_value="0",
+                                    density="compact",
+                                    hide_details=True,
+                                    color="cyan",
+                                    style="flex:0 0 auto;",
+                                )
                                 v3.VTextField(
+                                    v_if=(f"!wiz_pcb_{i}",),
                                     v_model=(f"wiz_pv_{i}",),
                                     variant="outlined",
                                     density="compact",

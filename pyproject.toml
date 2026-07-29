@@ -43,13 +43,19 @@ docs = [
     "mkdocstrings[python]>=0.24",
     "mkdocs-macros-plugin>=1.0",
 ]
+sed = [
+    # Synthetic photometry for LightSAGE lightcones (visage/sed/) — kept
+    # optional so the base viewer install stays lean.
+    "fsps>=0.4",
+    "astropy>=5.0",
+]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
     "ruff>=0.3",
     "black>=24.0",
     "pre-commit>=3.6",
-    "sage-viewer[docs]",
+    "sage-viewer[docs,sed]",
 ]
 
 [project.scripts]
@@ -89,3 +95,6 @@ target-version = ["py310", "py311", "py312"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "slow: runs a real FSPS SSP-grid build (~15-20s); still runs by default, filter with -m 'not slow' to skip",
+]
