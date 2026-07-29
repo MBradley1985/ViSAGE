@@ -263,9 +263,9 @@ OUTFILE="lightcone.h5"
 # (single present-day metallicity, no dust). Requires: pip install "sage-viewer[sed]"
 SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
 SED_FRAME="both"                       # rest | obs | both
-# Filter bands to compute — check any combination below. UV-optical-NIR is
-# checked by default; WISE (mid-IR) is available but off by default, since
-# its flux is dominated by dust emission this pipeline doesn't model.
+# Filter bands to compute — all checked by default; uncheck any you don't
+# need. Note WISE (mid-IR, W1-W4) flux is dominated by dust emission this
+# pipeline doesn't model, so treat those bands with that caveat in mind.
 BAND_GALEX_FUV_ENABLED=1
 BAND_GALEX_NUV_ENABLED=1
 BAND_SDSS_U_ENABLED=1
@@ -276,10 +276,10 @@ BAND_SDSS_Z_ENABLED=1
 BAND_2MASS_J_ENABLED=1
 BAND_2MASS_H_ENABLED=1
 BAND_2MASS_KS_ENABLED=1
-BAND_WISE_W1_ENABLED=0
-BAND_WISE_W2_ENABLED=0
-BAND_WISE_W3_ENABLED=0
-BAND_WISE_W4_ENABLED=0
+BAND_WISE_W1_ENABLED=1
+BAND_WISE_W2_ENABLED=1
+BAND_WISE_W3_ENABLED=1
+BAND_WISE_W4_ENABLED=1
 
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
@@ -2276,6 +2276,81 @@ class WizardController:
             python_exe=sys.executable,
         )
 
+    # Canonical (BAND_KEY, fsps filter name) pairs — used only to translate
+    # an old-format script's space-separated SED_BANDS list onto the current
+    # per-band checkboxes when migrating (see _lc_migrate_script below).
+    _LC_BAND_KEYS = [
+        ("BAND_GALEX_FUV_ENABLED", "galex_fuv"),
+        ("BAND_GALEX_NUV_ENABLED", "galex_nuv"),
+        ("BAND_SDSS_U_ENABLED", "sdss_u"),
+        ("BAND_SDSS_G_ENABLED", "sdss_g"),
+        ("BAND_SDSS_R_ENABLED", "sdss_r"),
+        ("BAND_SDSS_I_ENABLED", "sdss_i"),
+        ("BAND_SDSS_Z_ENABLED", "sdss_z"),
+        ("BAND_2MASS_J_ENABLED", "2mass_j"),
+        ("BAND_2MASS_H_ENABLED", "2mass_h"),
+        ("BAND_2MASS_KS_ENABLED", "2mass_ks"),
+        ("BAND_WISE_W1_ENABLED", "wise_w1"),
+        ("BAND_WISE_W2_ENABLED", "wise_w2"),
+        ("BAND_WISE_W3_ENABLED", "wise_w3"),
+        ("BAND_WISE_W4_ENABLED", "wise_w4"),
+    ]
+
+    def _lc_migrate_script(self, text: str) -> str:
+        """Upgrade a run_lightcone.sh saved by an older ViSAGE version to the
+        current template's structure.
+
+        The script is regenerated from scratch (correct structure, current
+        defaults) and every value the user could actually have customized —
+        paths, ra/dec/z, SED settings — is carried forward from the old
+        text. The old space-separated SED_BANDS list (pre-checkbox) maps
+        onto the new per-band checkboxes; OUTDIR only carries forward if the
+        user changed it away from the old hardcoded default, since ViSAGE's
+        own output-folder convention moved to sage_outputs/lightcone.
+
+        A no-op (returns text unchanged) once the script already has the
+        current structure — detected via BAND_GALEX_FUV_ENABLED, a canary
+        key only the current template defines.
+        """
+        if "BAND_GALEX_FUV_ENABLED" in text:
+            return text
+
+        old = {p["key"]: p["value"] for p in _parse_params(text, "sh")}
+        fresh = self._lc_seed_script()
+
+        carry = {
+            k: old[k]
+            for k in (
+                "SAGE_OUTPUT_DIR",
+                "PARAM_FILE",
+                "ALIST_FILE",
+                "KDTREE_OUT",
+                "RAMIN",
+                "RAMAX",
+                "DECMIN",
+                "DECMAX",
+                "ZMIN",
+                "ZMAX",
+                "OUTFILE",
+                "SED_ENABLED",
+                "SED_FRAME",
+            )
+            if k in old
+        }
+        old_outdir = old.get("OUTDIR")
+        if old_outdir and old_outdir != "./lightcone_output":
+            carry["OUTDIR"] = old_outdir
+
+        if "SED_BANDS" in old:
+            old_bands = set(old["SED_BANDS"].split())
+            for band_key, fsps_name in self._LC_BAND_KEYS:
+                carry[band_key] = "1" if fsps_name in old_bands else "0"
+        # else: no old SED_BANDS at all -> keep the fresh template's
+        # all-checked default rather than assuming "none selected".
+
+        params = [{"key": k, "value": v} for k, v in carry.items()]
+        return _apply_params(fresh, params, "sh")
+
     async def _step_lc_scan(self) -> None:
         self._flow = "sagelightcone"
         self._st.wiz_steps = list(_STEPS_SAGELIGHTCONE)
@@ -2519,6 +2594,24 @@ class WizardController:
                 self._emit(f"Could not read {script}: {exc}", "err")
                 self._set_choices([self._back_choice("lc_back_scan")])
                 return
+            # A script saved by an older ViSAGE version can predate features
+            # this one adds (e.g. per-band SED checkboxes replacing a single
+            # SED_BANDS text field, or the sage_outputs/ output-folder
+            # default) — regenerate its structure while carrying every
+            # value the user could have customized forward. No-op once the
+            # script already matches the current template.
+            migrated = self._lc_migrate_script(
+                str(self._st.wiz_lc_script_text)
+            )
+            if migrated != self._st.wiz_lc_script_text:
+                self._st.wiz_lc_script_text = migrated
+                self._emit(
+                    "Upgraded the saved run script to the current ViSAGE "
+                    "format (per-band SED checkboxes, sage_outputs/ output "
+                    "folder) — your paths, ranges, and SED choices were "
+                    "carried forward.",
+                    "info",
+                )
             # LIGHTCONE_DIR isn't a user preference like the ra/dec/z ranges —
             # it's an environment fact with exactly one correct answer. A
             # saved script can point at a checkout that no longer exists
