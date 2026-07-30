@@ -351,6 +351,20 @@ class CameraController:
                 (0.0, 1.0, 0.0),  # +Y up  → X axis horizontal
             ]
             self._pl.reset_camera()
+            # reset_camera fits the bounding SPHERE (radius ~ span/2) to the
+            # viewport's SHORTER axis. A lightcone is long and thin, so that
+            # leaves it a tiny sliver ringed by empty margin. Zoom so the
+            # cone's widest extent fills the viewport WIDTH instead — properly
+            # zoomed-in and centred, still showing the cone end to end.
+            try:
+                w, h = self._pl.window_size
+                if w and h:
+                    self._pl.camera.zoom(max(1.0, (w / h) * 0.9))
+                else:
+                    self._pl.camera.zoom(1.5)
+            except Exception:
+                self._pl.camera.zoom(1.5)
+            self._pl.renderer.ResetCameraClippingRange()
             return
         half = self._box_size / 2.0
         self._pl.camera_position = [
@@ -385,6 +399,31 @@ class CameraController:
             (cx, cy, cz),
             (0.0, 1.0, 0.0),
         ]
+
+    def go_to_lightcone_observer(self) -> None:
+        """Place the camera AT the observer (coordinate origin) looking
+        outward along the cone axis, with the sky spread horizontally — as if
+        standing at the observer and gazing out into the lightcone."""
+        self._clear_indicator()
+        if self._lc_bounds is None:
+            return
+        b = self._lc_bounds
+        center = (b[0] + b[1]) / 2.0
+        n = float(np.linalg.norm(center))
+        if n < 1e-9:
+            return
+        self._pl.camera.position = (0.0, 0.0, 0.0)
+        # Focal point AT the cone centre (not a unit step out): this keeps the
+        # focal distance ~half the cone depth, so the trackball orbits around
+        # the cone and VTK's clipping-range heuristic (which scales with the
+        # focal distance) stays sane. A focal point ~1 Mpc from the camera —
+        # as before — made the near plane collapse and geometry pop in/out of
+        # the far clip whenever the user rotated or panned.
+        self._pl.camera.focal_point = tuple(center)  # look outward at the cone
+        # +Z up puts the (wider) Y sky-extent left→right, so the cone opens
+        # out horizontally in front of the viewer.
+        self._pl.camera.up = (0.0, 0.0, 1.0)
+        self._pl.renderer.ResetCameraClippingRange()
 
     def go_to_box_center(
         self,

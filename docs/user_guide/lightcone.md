@@ -31,15 +31,40 @@ Drag it inward from the maximum to peel away the near side of the cone and see w
 ## Synthetic photometry (SED)
 
 If the lightcone was run through the LightSAGE flow's optional SED stage (see
-[Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps)), the Structure
-panel gains a dedicated **Synthetic Photometry (SED)** section listing every
-computed magnitude band (e.g. `g (rest)`, `r (observed)`). Picking a band uses
-the same colour-by / colormap mechanism as every other property — it's just
-presented in its own section, and only appears for lightcones with SED data.
+[Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps)), Lightcone Mode
+replaces the **Box** tab (a periodic box has no meaning for a cone) with a
+**Photometry** tab — a false-colour **image builder**.
+
+Photometry is its **own independent layer**, separate from the galaxies, with
+its own **Visible** checkbox and **Opacity** slider. It's hidden by default;
+ticking **Visible** shows it and hides the normal galaxies by default so the
+image reads cleanly (unticking it brings them back). Because it's a separate
+layer you can view it however you like — re-enable the galaxies (Structure
+tab) to overlay both, or keep them off for the photometry image on its own.
+Galaxies with no flux in the stacked filters are simply not drawn.
+
+When shown, it draws the galaxies as Rvir-sized gaussian splats painted from a
+**stack** of the filters you tick in the **Filters** dropdown. Each filter is
+tinted a representative colour — UV/`u` violet, `g` green, `r`/`i`/`z` and the
+near-/mid-IR bands (J, H, K, WISE) deepening reds — and scaled by the galaxy's
+brightness in that band; the ticked filters are summed into an additive
+false-colour composite. Tick one filter for a single-band image, or several to
+build a multi-band colour image; **mass-to-light** (`M*/L`) entries can be
+stacked the same way. A colour-swatch legend shows the current stack.
+
+The Photometry tab only appears for lightcones that actually carry SED data
+(otherwise it shows a short note explaining how to produce it).
 
 ## Camera
 
-Resetting the camera frames the cone **horizontally, centred** in the viewport (rather than the cubic-box framing used for a SAGE box) — this is also the initial view on load.
+Resetting the camera frames the cone **horizontally, centred and zoomed in**,
+showing it end to end (rather than the cubic-box framing used for a SAGE box) —
+this is also the initial view on load.
+
+The **go-to-centre** button (▶ centre icon) doesn't use a box centre in
+Lightcone Mode — instead it stands you at the **observer** (the coordinate
+origin) looking **outward** along the cone, with the sky spread horizontally,
+as if gazing out into the lightcone.
 
 ## Session models
 

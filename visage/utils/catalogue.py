@@ -69,6 +69,35 @@ def _read_snap_fields(
     return data, units
 
 
+def _read_flat_fields(
+    hdf5_path: Path,
+    sage_indices: np.ndarray,
+) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+    """Read ALL top-level fields from a flat ``cli_lightcone`` HDF5 file for
+    the given row indices — a lightcone has no ``Snap_N`` groups, its galaxy
+    columns (including any synthetic-photometry ``mag_rest_*`` / ``mag_obs_*``
+    datasets) live at the file root. Data is returned exactly as stored."""
+    data: dict[str, np.ndarray] = {}
+    units: dict[str, str] = {}
+
+    with h5py.File(str(hdf5_path), "r") as hf:
+        n_total = len(hf["Posx"]) if "Posx" in hf else None
+        for key in sorted(hf.keys()):
+            item = hf[key]
+            if not isinstance(item, h5py.Dataset):
+                continue  # skip header/metadata groups
+            raw = np.asarray(item)
+            if raw.ndim == 1 and (n_total is None or len(raw) == n_total):
+                data[key] = raw[sage_indices]
+                units[key] = _UNITS.get(key, "")
+            elif raw.ndim == 2 and key in _2D_KEYS:
+                if n_total is None or raw.shape[0] == n_total:
+                    data[key] = raw[sage_indices]
+                    units[key] = _UNITS.get(key, "")
+
+    return data, units
+
+
 def _scalar_only(data: dict) -> dict[str, np.ndarray]:
     return {k: v for k, v in data.items() if np.ndim(v) == 1}
 
@@ -170,17 +199,23 @@ def write_catalogue(
     scope_bounds: dict | None = None,
     cfg: SimConfig | None = None,
     snap_table: SnapshotTable | None = None,
+    flat: bool = False,
 ) -> str:
     """Export raw SAGE HDF5 galaxy rows to *out_path* in format *fmt*.
 
     No unit conversion is applied — values are exactly as stored by SAGE26.
+    ``flat=True`` reads a flat lightcone file (top-level datasets, no
+    ``Snap_N`` group), which also carries any synthetic-photometry columns.
     Returns the resolved output path string.
     """
     sage_indices = np.asarray(sage_indices, dtype=np.int64)
     if len(sage_indices) == 0:
         raise ValueError("No galaxies match the selected scope.")
 
-    data, units = _read_snap_fields(hdf5_path, snap_num, sage_indices)
+    if flat:
+        data, units = _read_flat_fields(hdf5_path, sage_indices)
+    else:
+        data, units = _read_snap_fields(hdf5_path, snap_num, sage_indices)
 
     meta = _build_metadata(
         snap_num=snap_num,

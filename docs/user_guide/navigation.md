@@ -51,6 +51,8 @@ Enter **X, Y, Z** in Mpc/h and a standoff distance, press **Go** to point the ca
 
 Enter an axis-aligned bounding box (Xmin, Xmax, Ymin, Ymax, Zmin, Zmax) in Mpc/h. Press **Zoom** to frame that region. With Focus active, the box also defines the masked region.
 
+> In **Lightcone Mode** the Box tab is replaced by a **Photometry** tab (a lightcone has no periodic sub-box to zoom to) — see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).
+
 ## Cam (camera bookmarks)
 
 | Control | Action |

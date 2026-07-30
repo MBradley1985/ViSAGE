@@ -72,7 +72,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Configurable FPS (1 – 60) and resolution (Native / 2× / 4× supersampled)
 - Optional user-typed label per capture; everything saves into `sage_outputs/session_<timestamp>/` in your current working directory
 - **Overlay compositing** — Galaxy Info, Group Info, console pop-out, and open Library cards are all composited into screenshots and recordings exactly as they appear on screen
-- Catalogue export (CSV, HDF5, FITS, TXT) for the current filter selection, target, or box region — saves to `sage_outputs/catalogues/`
+- Catalogue export (CSV, HDF5, FITS, TXT) for the current filter selection, target, or box region — or, in Lightcone Mode, the whole cone (including any synthetic-photometry columns) — saves to `sage_outputs/catalogues/`
 
 ### Story Mode
 - Play JSON-defined **stories** — ordered scenes of captured viewer state (snapshot, camera, layers, filters, focus) with text/media overlays — as full presentations over the live 3D view
@@ -100,8 +100,9 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - `visage --lightcone FILE` opens a `cli_lightcone` HDF5 output in the **exact same Explore UI** as a SAGE box — same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering
 - Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
 - The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
-- Camera reset frames the cone horizontally, centred in the viewport
-- Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, from the **Session Models** list (see below), or directly via `--lightcone`
+- **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
+- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
+- Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, the wizard's **Load Existing Lightcone** button, the **Session Models** list (see below), or directly via `--lightcone`
 
 ### Session models
 - The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
@@ -211,6 +212,14 @@ export PATH="$HOME/Library/Python/3.12/bin:$PATH"
 
 Movie recording in MOV format requires `ffmpeg` in your `PATH`.
 
+Synthetic photometry (SED synthesis for lightcones) is an optional extra — it pulls in FSPS + astropy, which the base install omits:
+
+```bash
+pip install "sage-viewer[sed]"
+```
+
+FSPS also needs its stellar-population data on disk, pointed at by the `SPS_HOME` environment variable (see the [python-fsps](https://github.com/dfm/python-fsps) docs). Nothing else in ViSAGE depends on it.
+
 ### From source
 
 ```bash
@@ -254,13 +263,13 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 | Tab | Purpose |
 |---|---|
-| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); in Lightcone Mode with SED data, a dedicated Synthetic Photometry section adds colour-by-band |
+| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar) |
 | Filters    | Range sliders for halo and galaxy properties |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Target     | Halo / galaxy navigation, focus zoom, Galaxy Info, Highlight Galaxy |
 | Environment| Halo selector, environment-class checkboxes, Group Info, Highlight Members |
 | Coords     | Fly to arbitrary (x, y, z) — "Use Current Position" populates from camera; **Draw Sphere** places an interactive two-handle sphere (drag centre ball to translate, drag edge ball to resize); **Lock Sphere** commits it as the focus region |
-| Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region |
+| Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region. *In Lightcone Mode this tab becomes **Photometry**: a separate false-colour image layer built from a stack of synthetic-photometry filters (own Visible/Opacity, independent of the galaxies)* |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
 | Library    | Browse stored screenshots / movies; double-click a row to open as a movable, resizable floating card over the viewport (multiple items open simultaneously); per-row delete button removes the file from disk immediately |
 

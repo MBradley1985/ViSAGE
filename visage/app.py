@@ -22,6 +22,11 @@ from visage.utils.discover import find_models
 # ──────────────────────────────────────────────────────────────────────────
 # UI palettes
 # ──────────────────────────────────────────────────────────────────────────
+# black versions disagree on how to wrap `dedent("""…""")` (24.x puts the
+# string on its own line, 26.x hugs the paren), which made every commit bounce
+# as the hook and a local black reformatted each other. Fence it (the directive
+# must be a bare `# fmt: off` on its own line) so no black version touches it.
+# fmt: off
 _THEME_CSS = dedent(
     """
 /* Force the page root to black so no theme colour bleeds through
@@ -118,6 +123,7 @@ html, body, .v-application { background: #000000 !important; }
 .v-theme--dos_blue .v-chip { border-radius: 0 !important; }
 """
 )
+# fmt: on
 from visage.ui.info_panel import build_info_panel
 from visage.ui.navigation_panel import build_navigation_panel
 from visage.ui.toolbar import build_toolbar
@@ -1131,13 +1137,8 @@ def create_app(
             build_story_hud(server)
 
             # ── Export catalogue dialog ────────────────────────────────────
-            _SCOPE_ITEMS = [
-                {"title": "Current Filters", "value": "filters"},
-                {"title": "Target Galaxy", "value": "target"},
-                {"title": "Group Members", "value": "group"},
-                {"title": "Coords Sphere", "value": "coords"},
-                {"title": "Box Region", "value": "box"},
-            ]
+            # Scope options are built in navigation_panel (state var) so the
+            # lightcone-only "Whole Lightcone" entry appears only in that mode.
             _FMT_ITEMS = [
                 {"title": "CSV", "value": "csv"},
                 {"title": "HDF5", "value": "hdf5"},
@@ -1188,7 +1189,7 @@ def create_app(
                         # Scope
                         v3.VSelect(
                             v_model=("export_scope",),
-                            items=(_SCOPE_ITEMS,),
+                            items=("export_scope_items",),
                             label="Selection scope",
                             variant="outlined",
                             density="compact",

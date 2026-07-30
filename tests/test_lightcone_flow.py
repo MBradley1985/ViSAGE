@@ -160,6 +160,35 @@ def test_lc_config_resyncs_stale_lightcone_dir(tmp_path, monkeypatch):
     assert str(stale_dir) not in text
 
 
+def test_lc_scan_offers_load_existing(tmp_path, monkeypatch):
+    # The LightSAGE scan step always offers "Load Existing Lightcone", and it
+    # discovers cli_lightcone .h5 files in the standard output folder so they
+    # can be opened without building/running anything.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)  # no legacy dir
+    monkeypatch.chdir(tmp_path)
+    lcdir = tmp_path / "sage_outputs" / "lightcone"
+    lcdir.mkdir(parents=True)
+    import numpy as _np
+    import h5py as _h5
+
+    cone = lcdir / "lightcone.h5"
+    with _h5.File(cone, "w") as f:
+        f["Posx"] = _np.zeros(3)
+        f["Posy"] = _np.zeros(3)
+        f["Posz"] = _np.zeros(3)
+
+    c = _ctrl()
+    found = c._discover_lightcones()
+    assert cone.resolve() in found
+
+    asyncio.run(c._step_lc_scan())
+    assert "lc_load" in [ch["value"] for ch in c._st.wiz_choices]
+
+    asyncio.run(c._step_lc_load())
+    vals = [ch["value"] for ch in c._st.wiz_choices]
+    assert any(v == f"lc_open:{cone.resolve()}" for v in vals)
+
+
 _OLD_FORMAT_LC_SCRIPT = """\
 #!/bin/bash
 set -e
@@ -335,6 +364,46 @@ def test_run_template_sed_bands_are_individual_checkboxes():
     assert "sed_bands" not in keys and "bands_csv" not in keys
 
 
+def test_run_template_has_metallicity_and_dust_options():
+    # Metallicity + dust are exposed as checkboxes (_ENABLED convention) plus
+    # a dust2 numeric field, and forwarded to visage.sed.photometry as flags.
+    s = _LC_RUN_SCRIPT_TEMPLATE.format(
+        lightcone_dir="/x/LightSAGE",
+        sage_output_dir="/x/out",
+        param_file="/x/m.par",
+        alist_file="/x/a_list",
+        outdir="/x/sage_outputs/lightcone",
+        python_exe="/usr/bin/python3",
+    )
+    from visage.wizard.controller import _parse_params
+
+    keys = [p["key"] for p in _parse_params(s, "sh")]
+    assert "SED_METALLICITY_ENABLED" in keys  # checkbox
+    assert "SED_DUST_ENABLED" in keys  # checkbox
+    assert "SED_DUST2" in keys  # numeric field
+    assert "SED_DUST_EMISSION_ENABLED" in keys  # checkbox
+    # forwarded to the CLI
+    assert "--no-metallicity" in s and "--dust" in s and "--dust2" in s
+    assert "--dust-emission" in s
+    # dust emission only forwarded together with dust attenuation
+    assert (
+        '[ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ]'
+        in s
+    )
+
+    # compute_photometry accepts the matching kwargs (imports without fsps)
+    import inspect
+    from visage.sed.photometry import compute_photometry
+
+    params = inspect.signature(compute_photometry).parameters
+    assert {
+        "use_metallicity",
+        "dust",
+        "dust2",
+        "dust_emission",
+    } <= set(params)
+
+
 def test_pretty_param_label_shortens_band_checkboxes():
     from visage.wizard.controller import WizardController
 
@@ -405,6 +474,37 @@ def test_reader_builds_galaxies_and_haloes(tmp_path):
     # bounds/extent sane
     assert lc.box_extent > 0
     assert "StellarMass" in lc.present_fields
+
+
+def test_catalogue_export_flat_lightcone_includes_sed(tmp_path):
+    # Exporting a lightcone must read the FLAT file (no Snap_N group) and
+    # carry its synthetic-photometry columns through.
+    from visage.utils.catalogue import write_catalogue
+
+    p = tmp_path / "lightcone.h5"
+    _make_lightcone(p, n=60)
+    with h5py.File(p, "a") as f:
+        f["mag_rest_sdss_g"] = np.linspace(-22, -16, 60).astype(np.float32)
+        f["mag_obs_sdss_r"] = np.linspace(18, 24, 60).astype(np.float32)
+
+    out = tmp_path / "cat.csv"
+    write_catalogue(
+        hdf5_path=p,
+        snap_num=0,
+        snap_label="lightcone",
+        sage_indices=np.arange(30, dtype=np.int64),
+        out_path=out,
+        fmt="csv",
+        scope_label="Whole Lightcone",
+        flat=True,
+    )
+    lines = [
+        ln for ln in out.read_text().splitlines() if not ln.startswith("#")
+    ]
+    header = lines[0].split(",")
+    assert "Posx" in header and "StellarMass" in header
+    assert "mag_rest_sdss_g" in header and "mag_obs_sdss_r" in header
+    assert len(lines) - 1 == 30  # 30 data rows
 
 
 def test_reader_mass_floor_and_downsample(tmp_path):

@@ -51,10 +51,10 @@ ColorMode = Literal[
     "metals_cgm_gas",
     "metals_ejected_mass",
     "metals_ics",
+    # LightSAGE photometry: a false-colour stack of the filters in
+    # self._sed_bands (see set_sed_bands / _render_sed_stack).
+    "sedstack",
 ]
-# Plus, for LightSAGE lightcones with SED data: "sed:<key>" where <key> is a
-# GalaxySnapshot.sed_mags key (e.g. "sed:mag_rest_sdss_g") — not enumerable
-# ahead of time since it depends on which bands a given cone was run with.
 
 _RANGES = {
     "stellar_mass": (8.0, 12.5),  # log10(Msun)
@@ -166,6 +166,22 @@ class GalaxyLayer:
         # Always render the disk/bulge inner stellar layers (normally focus-only)
         # — the lightcone enables these so galaxies look more defined.
         self._show_inner_layers: bool = False
+        # Synthetic-photometry stack (lightcone SED): the ordered list of
+        # sed_mags keys the "sedstack" colour mode composites into a false-
+        # colour image (each band tinted its representative colour, summed).
+        self._sed_bands: list[str] = []
+
+    # False-colour composite tuning (see _compute_sed_stack_rgb):
+    #   _SED_GAMMA      — power applied to each band's median-balanced flux to
+    #                     exaggerate the small real SED-shape ratios into
+    #                     visible hue differences.
+    #   _SED_SATURATION — how far to push the per-galaxy colour away from grey.
+    #   _SED_FLOOR      — minimum brightness for any galaxy that has light, so
+    #                     the faint end stays visible instead of being crushed
+    #                     away (every galaxy with flux renders).
+    _SED_GAMMA = 2.5
+    _SED_SATURATION = 2.0
+    _SED_FLOOR = 0.18
 
     # ------------------------------------------------------------------
     # Public API
@@ -231,6 +247,13 @@ class GalaxyLayer:
         """Lightcone redshift/time cut: keep only galaxies where mask is True
         (removes the rest from the render).  None disables the cut."""
         self._slice_mask = mask
+        if self._snapshot is not None:
+            self._redraw()
+
+    def set_sed_bands(self, bands: list[str]) -> None:
+        """Set the ordered sed_mags keys composited by the 'sedstack' colour
+        mode (a false-colour stack of one or more filters)."""
+        self._sed_bands = list(bands)
         if self._snapshot is not None:
             self._redraw()
 
@@ -328,6 +351,16 @@ class GalaxyLayer:
         for non-structure Colour-by modes, the outer property halo.  Shared by
         box Explore and the lightcone (dim full cone + bright shell) so both
         paths draw identical splats, layers and colormaps."""
+        if self._color_mode == "sedstack":
+            # Photometry is its own thing: a SINGLE Rvir-sized splat layer
+            # painted with the false-colour filter/M-L stack — NOT the nested
+            # structure composition. This is the "build an image from the
+            # filters" view, so it deliberately skips the CGM/Hot/cold/BH
+            # inner layers the other modes draw.
+            rgb = self._compute_sed_stack_rgb(snap)
+            if rgb is not None:
+                self._render_sed_stack(eff_pos, rgb, radii)
+            return
         self._render_structure(snap, radii, eff_pos)
         if self._color_mode == "type":
             mass_colors = normalize_log(
@@ -620,14 +653,8 @@ class GalaxyLayer:
         self._actors.append(actor)
 
     def _compute_colors(self, snap: GalaxySnapshot) -> np.ndarray:
+        # Photometry (sedstack) has its own RGB path and never reaches here.
         m = self._color_mode
-        if m.startswith("sed:"):
-            return self._compute_sed_colors(snap, m[len("sed:") :])
-        if m.startswith("sedcolor:"):
-            _, blue_key, red_key = m.split(":", 2)
-            return self._compute_sed_color_index(snap, blue_key, red_key)
-        if m.startswith("sedml:"):
-            return self._compute_sed_mass_to_light(snap, m[len("sedml:") :])
         if m == "ssfr":
             return normalize_log(snap.ssfr, *_RANGES["ssfr"])
         if m == "sfr":
@@ -667,86 +694,188 @@ class GalaxyLayer:
             )
         return normalize_log(snap.stellar_mass, *_RANGES["stellar_mass"])
 
-    @staticmethod
-    def _compute_sed_colors(snap: GalaxySnapshot, band_key: str) -> np.ndarray:
-        """Colour by a synthetic AB magnitude band (LightSAGE SED only).
+    def _sed_stack_amplitude(
+        self, snap: GalaxySnapshot, item: str
+    ) -> tuple[np.ndarray, str]:
+        """(linear amplitude, filter_name) for one stack item.
 
-        Rest- and observed-frame magnitude scales differ enormously between
-        lightcones (depends on distance range, filter, etc.), so — unlike
-        every other mode — this uses data-driven percentile bounds rather
-        than a fixed _RANGES entry. Zero-mass galaxies carry NaN (no light);
-        they fall back to the low end of the scale rather than breaking the
-        percentile computation.
-        """
-        mags = snap.sed_mags.get(band_key)
+        Filter band  -> relative flux f = 10**(-0.4*mag).
+        'ml:' item   -> mass-to-light ratio M*/L in that band.
+
+        The amplitude is then divided by its own median over the galaxies
+        that have it, so the *typical* galaxy sits at ~1 in every channel
+        (i.e. neutral/white) and it's the DEVIATIONS from typical — a galaxy
+        brighter than average in r, fainter in u — that show up as colour.
+        This is what makes combining filters produce reds / blues / yellows
+        instead of a flat white: the composite keeps the relative amplitudes
+        between bands (the real SED shape) rather than normalising each band
+        independently to the same range."""
+        key = item[len("ml:") :] if item.startswith("ml:") else item
+        filt = key
+        for pre in ("mag_rest_", "mag_obs_"):
+            if filt.startswith(pre):
+                filt = filt[len(pre) :]
+                break
+
+        mags = snap.sed_mags.get(key)
         if mags is None or len(mags) != snap.count:
-            return np.full(snap.count, 0.5, dtype=np.float32)
-        finite = mags[np.isfinite(mags)]
-        if finite.size == 0:
-            return np.full(snap.count, 0.5, dtype=np.float32)
-        lo, hi = np.percentile(finite, [2.0, 98.0])
-        if hi <= lo:
-            hi = lo + 1.0
-        # Brighter (smaller/more negative mag) -> higher scalar value, so
-        # "bright" lands on the colormap's hot end like every other mode.
-        norm = np.clip((hi - mags) / (hi - lo), 0.0, 1.0)
-        return np.nan_to_num(norm, nan=0.0).astype(np.float32)
+            return np.zeros(snap.count), filt
+        mags = np.asarray(mags, dtype=np.float64)
+        finite = np.isfinite(mags)
 
-    @staticmethod
-    def _normalize_percentile(
-        values: np.ndarray, n: int, lo_pct: float = 2.0, hi_pct: float = 98.0
-    ) -> np.ndarray:
-        """Clip-and-scale `values` to [0, 1] using data-driven percentile
-        bounds, falling back to a flat mid-grey when there's nothing finite
-        to compute bounds from (shared by every SED-derived colour mode)."""
-        if values is None or len(values) != n:
-            return np.full(n, 0.5, dtype=np.float32)
-        finite = values[np.isfinite(values)]
-        if finite.size == 0:
-            return np.full(n, 0.5, dtype=np.float32)
-        lo, hi = np.percentile(finite, [lo_pct, hi_pct])
-        if hi <= lo:
-            hi = lo + 1.0
-        norm = np.clip((values - lo) / (hi - lo), 0.0, 1.0)
-        return np.nan_to_num(norm, nan=0.5).astype(np.float32)
+        with np.errstate(over="ignore", invalid="ignore"):
+            if item.startswith("ml:"):
+                from visage.sed.filters import SOLAR_ABSMAG_AB
 
-    @staticmethod
-    def _compute_sed_color_index(
-        snap: GalaxySnapshot, blue_key: str, red_key: str
-    ) -> np.ndarray:
-        """Colour by a magnitude colour index (e.g. g-r): blue_key minus
-        red_key, both full sed_mags keys from the SAME frame. Larger (redder)
-        index -> higher scalar value, so a diverging colormap (e.g. coolwarm)
-        puts blue galaxies on the blue end and red galaxies on the red end."""
-        blue = snap.sed_mags.get(blue_key)
-        red = snap.sed_mags.get(red_key)
-        if (
-            blue is None
-            or red is None
-            or len(blue) != snap.count
-            or len(red) != snap.count
-        ):
-            return np.full(snap.count, 0.5, dtype=np.float32)
-        index = blue - red
-        return GalaxyLayer._normalize_percentile(index, snap.count)
+                m_sun = SOLAR_ABSMAG_AB.get(filt)
+                if m_sun is None:
+                    return np.zeros(snap.count), filt
+                lum = 10.0 ** (-0.4 * (mags - m_sun))  # L / Lsun
+                mass = np.maximum(snap.stellar_mass.astype(np.float64), 0.0)
+                amp = np.where(lum > 0, mass / lum, 0.0)
+            else:
+                amp = 10.0 ** (-0.4 * mags)  # relative flux
 
-    @staticmethod
-    def _compute_sed_mass_to_light(
-        snap: GalaxySnapshot, band_key: str
-    ) -> np.ndarray:
-        """Colour by log10(M*/L) in the given rest-frame band. Luminosity is
-        derived from the rest-frame absolute magnitude via the band's solar
-        AB magnitude (visage.sed.filters.SOLAR_ABSMAG_AB) — only bands listed
-        there are offered, so this never guesses a zeropoint."""
-        from visage.sed.filters import SOLAR_ABSMAG_AB
+        amp = np.where(finite & np.isfinite(amp), amp, 0.0)
+        good = amp[amp > 0]
+        if good.size:
+            med = float(np.median(good))
+            if med > 0:
+                amp = amp / med  # typical galaxy -> ~1 in this channel
+        return amp, filt
 
-        mags = snap.sed_mags.get(band_key)
-        filt = band_key[len("mag_rest_") :]
-        m_sun = SOLAR_ABSMAG_AB.get(filt)
-        if mags is None or len(mags) != snap.count or m_sun is None:
-            return np.full(snap.count, 0.5, dtype=np.float32)
-        mass = np.maximum(snap.stellar_mass, 1.0)
-        with np.errstate(invalid="ignore"):
-            log_l = -0.4 * (mags - m_sun)  # log10(L / Lsun)
-            log_ml = np.log10(mass) - log_l  # log10(M*/L) in Msun/Lsun
-        return GalaxyLayer._normalize_percentile(log_ml, snap.count)
+    def _compute_sed_stack_rgb(self, snap: GalaxySnapshot):
+        """Per-galaxy RGB (N, 3) in [0, 1] for the 'sedstack' mode — a proper
+        astronomical false-colour composite (à la Lupton et al. 2004).
+
+        Hue and brightness are computed separately so the two goals don't
+        fight each other:
+
+        * HUE — each item's median-balanced flux/M*L is raised to a power
+          (_SED_GAMMA) and tinted its representative colour; the per-galaxy
+          channel ratios then carry the (contrast-boosted, saturated) SED
+          shape, so galaxies read visibly blue / red / yellow.
+        * BRIGHTNESS — an asinh stretch of the RAW (un-boosted) luminance with
+          a floor, so EVERY galaxy that has light is visible. Brightness must
+          not use the gamma-boosted amplitude or the faint end gets crushed to
+          nothing and ~a quarter of the galaxies vanish.
+
+        Returns None if there's nothing to show."""
+        from visage.sed.filters import band_colour
+
+        n = snap.count
+        items = [
+            it
+            for it in self._sed_bands
+            if it.replace("ml:", "") in snap.sed_mags
+        ]
+        if n == 0 or not items:
+            return None
+
+        rgb_hue = np.zeros((n, 3), dtype=np.float64)  # gamma-boosted -> hue
+        lum = np.zeros(n, dtype=np.float64)  # raw flux sum -> brightness
+        for item in items:
+            amp, filt = self._sed_stack_amplitude(snap, item)
+            cr, cg, cb = band_colour(filt)
+            boosted = np.where(amp > 0, amp**self._SED_GAMMA, 0.0)
+            rgb_hue[:, 0] += boosted * cr
+            rgb_hue[:, 1] += boosted * cg
+            rgb_hue[:, 2] += boosted * cb
+            lum += amp
+
+        lit = lum > 0
+        if not lit.any():
+            return np.zeros((n, 3), dtype=np.float32)
+
+        # Hue: unit-ish colour, pushed away from grey so it reads vividly.
+        hmax = rgb_hue.max(axis=1)
+        hue = rgb_hue / np.maximum(hmax[:, None], 1e-12)
+        gray = hue.mean(axis=1, keepdims=True)
+        hue = np.clip(gray + self._SED_SATURATION * (hue - gray), 0.0, 1.0)
+
+        # Brightness: asinh stretch of the raw luminance, softened by the
+        # median so most galaxies sit in the mid-tones, then lifted off the
+        # floor so even the faintest galaxies with light stay visible.
+        soft = float(np.median(lum[lit])) or 1.0
+        stretched = np.arcsinh(lum / soft)
+        norm = float(np.percentile(stretched[lit], 99.0)) or 1.0
+        s_raw = np.clip(stretched / norm, 0.0, 1.0)
+        s = np.where(
+            lit, self._SED_FLOOR + (1.0 - self._SED_FLOOR) * s_raw, 0.0
+        )
+
+        out = hue * s[:, None]
+        return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+    # Nested gaussian shells for the photometry splat: (radius scale, alpha
+    # fraction). A sharply peaked profile — a small, near-opaque bright core
+    # inside a few smaller, progressively fainter haloes — gives each galaxy a
+    # crisp, defined point rather than a soft blob. The outer halo is kept
+    # well under the full Rvir so neighbouring splats stay distinct. The alpha
+    # fraction scales the per-galaxy brightness (see _render_sed_stack).
+    _SED_SHELLS = (
+        (0.60, 0.12),
+        (0.36, 0.25),
+        (0.20, 0.45),
+        (0.10, 0.75),
+        (0.05, 1.0),
+    )
+
+    def _render_sed_stack(
+        self,
+        positions: np.ndarray,
+        rgb: np.ndarray,
+        radii: np.ndarray,
+    ) -> None:
+        """The whole photometry view: an Rvir-sized gaussian splat per galaxy
+        painted with per-point RGBA directly (no colormap, no inner structure
+        layers) — a clean false-colour image built from the filter stack.
+
+        Each splat's ALPHA is its composite brightness (times the shell
+        weight), so a faint galaxy is *transparent* rather than an opaque dark
+        disk. That's what keeps dim galaxies in the foreground from painting
+        dark spots over brighter ones behind them, while a bright galaxy still
+        gets an opaque, defined core. The nested shells (small bright core +
+        fainter haloes) give the splats their peaked, defined profile."""
+        if len(positions) == 0:
+            return
+        rgb = np.clip(rgb, 0.0, 1.0)
+        brightness = rgb.max(axis=1)
+        keep = brightness > 0.01  # skip the truly-invisible; dim ones stay
+        if not keep.any():
+            return
+        pos = positions[keep]
+        rgb255 = (rgb[keep] * 255).astype(np.uint8)
+        base_a = brightness[keep]  # 0..1 per-galaxy opacity
+        rad = radii[keep]
+        first = True
+        for rscale, afrac in self._SED_SHELLS:
+            cloud = pv.PolyData(pos)
+            rgba = np.empty((len(pos), 4), dtype=np.uint8)
+            rgba[:, :3] = rgb255
+            rgba[:, 3] = np.clip(
+                base_a * afrac * self._opacity * 255.0, 0, 255
+            ).astype(np.uint8)
+            # VTK point-gaussian reads 0..255 uint8 RGBA as direct scalars.
+            cloud["sed_rgba"] = rgba
+            cloud["radius"] = (rad * rscale).astype(np.float32)
+            actor = self._pl.add_mesh(
+                cloud,
+                scalars="sed_rgba",
+                rgb=True,  # direct scalars; 4 components => RGBA
+                style="points_gaussian",
+                emissive=False,
+                opacity=1.0,  # per-point alpha carries the opacity
+                show_scalar_bar=False,
+                render=False,
+                reset_camera=False,
+            )
+            mp = actor.mapper
+            mp.SetScaleArray("radius")
+            mp.SetScaleFactor(1.0)
+            if not self._visible:
+                actor.SetVisibility(False)
+            if first:
+                self._cloud = cloud
+                first = False
+            self._actors.append(actor)

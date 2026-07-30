@@ -8,6 +8,85 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Synthetic Photometry (SED) is now a false-colour image builder on its
+  own layer.** In Lightcone Mode the **Box** tab is replaced by a
+  **Photometry** tab driving a completely separate galaxy-splat layer with
+  its own **Visible** / **Opacity** — so photometry can be shown with the
+  galaxies on, off, or on its own (turn the galaxies off and view the
+  photometry alone). It's hidden by default. When shown it paints a **stack**
+  of the ticked filters into a proper astronomical false-colour composite
+  (à la Lupton et al. 2004): each filter is tinted a representative colour
+  (u/UV → violet, g → green, r/i/z & JHK/WISE → deepening reds, …), and the
+  per-galaxy channel *ratios* carry the real SED shape (median-balanced,
+  contrast-boosted) so galaxies come out visibly blue / red / yellow by their
+  actual colours, with an asinh brightness stretch — rather than washing to
+  a flat white. It's a mock multi-band image, drawn as nested gaussian shells
+  (a small near-opaque core inside fainter haloes) so the splats read as
+  crisp, defined points. Each splat's alpha is its own brightness, so faint
+  galaxies are transparent rather than opaque dark disks — no dark spots
+  where a dim foreground galaxy overlaps brighter ones behind it.
+  Filters are multi-select (ticks show the stack) and mass-to-light (`M*/L`)
+  entries stack alongside them; a colour-swatch legend shows the active
+  stack. Switching photometry on hides the normal galaxies by default (and
+  switching it off brings them back) so the image reads cleanly; re-enable
+  the galaxies to overlay both.
+- **Load Existing Lightcone.** The LightSAGE wizard's scan step offers a
+  **Load Existing Lightcone** button that lists any `cli_lightcone` `.h5`
+  files already in `sage_outputs/lightcone/` (or the legacy
+  `~/.visage/lightcone_output/`, or recent session models) and opens the
+  chosen one straight into Lightcone Mode — no clone/build/run needed.
+- **SED synthesis: metallicity + dust options.** The LightSAGE run-script
+  SED stage gains checkboxes: **metallicity** (on by default — uses each
+  galaxy's own mass-weighted stellar Z = `MetalsStellarMass/StellarMass`,
+  binned; uncheck to force solar for everyone), **dust** (off by default — a
+  Calzetti starburst attenuation of configurable V-band optical depth
+  `SED_DUST2`, which reddens the galaxies), and **dust emission** (off; when
+  dust is on, re-emits the absorbed energy in the IR via Draine & Li 2007, so
+  the mid-IR WISE bands become physical rather than caveated). All are also
+  exposed on the `visage-sed` CLI (`--no-metallicity`, `--dust`, `--dust2`,
+  `--dust-emission`).
+- **Catalogue export supports lightcones.** Export now reads a flat
+  `cli_lightcone` file directly (no `Snap_N` group) — so its columns,
+  including any synthetic-photometry `mag_rest_*` / `mag_obs_*` datasets,
+  come through — and a **Whole Lightcone** scope (the default in Lightcone
+  Mode) exports every galaxy in the cone.
+
+### Changed
+
+- **Lightcone camera framing.** Reset / default view now zooms in on the
+  cone (filling the viewport width rather than fitting the bounding sphere
+  to the shorter axis, which left it a tiny sliver), kept horizontal and
+  centred end to end. The **go-to-centre** button in Lightcone Mode now
+  stands at the observer (coordinate origin) looking outward along the
+  cone, sky spread horizontally, instead of using box-centre math.
+- **Colourbar limit labels lightened** in the Structure panel (`#6b7280` →
+  `#a3adbb`) so the min/max values are legible.
+- **Lightcone flythrough — gentler first zoom.** The first move (from the
+  whole-cone framing into the nearest group) is now distance-scaled to fly
+  at the same linear speed as Box Mode's approach, instead of swooping the
+  much larger distance in the same fixed time.
+
+### Fixed
+
+- **Lightcone galaxies popped in and out when rotating/panning from the
+  observer view.** The go-to-observer camera parked its focal point ~1 Mpc
+  from the eye, so VTK's clipping-range heuristic (which scales with the
+  focal distance) collapsed the near plane and clipped the deep cone as the
+  camera moved. The focal point now sits at the cone centre, so the whole
+  cone stays rendered while you orbit or pan.
+- **Photometry is fully decoupled from the Galaxies section.** It's now its
+  own layer with its own controls, so nothing about it touches (or is touched
+  by) the galaxy colour-by / colormap.
+- **`./bin/visage` could silently run a pip-installed copy instead of the
+  checkout.** The launcher used `python -m visage.cli`, which resolves
+  `visage` against the current directory — so launching from anywhere other
+  than the repo root picked up an installed `sage-viewer` in site-packages,
+  making local code edits appear to do nothing. It now prepends the repo
+  root to `PYTHONPATH` (so the checkout always wins) and prints a one-line
+  banner showing which `visage` file and version is actually running.
+
 ## [2.1.3] — 2026-07-29
 
 ### Fixed
