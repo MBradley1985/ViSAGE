@@ -16,16 +16,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   its own **Visible** / **Opacity** — so photometry can be shown with the
   galaxies on, off, or on its own (turn the galaxies off and view the
   photometry alone). It's hidden by default. When shown it paints a **stack**
-  of the ticked filters: each filter is tinted a representative colour (u/UV →
-  violet, g → green, r/i/z & JHK/WISE → deepening reds, …) and scaled by the
-  galaxy's brightness, summed into a false-colour composite — a mock
-  multi-band image, drawn as nested gaussian shells so the splats stay
-  defined. Galaxies with no flux in the stack are skipped (no black blobs).
+  of the ticked filters into a proper astronomical false-colour composite
+  (à la Lupton et al. 2004): each filter is tinted a representative colour
+  (u/UV → violet, g → green, r/i/z & JHK/WISE → deepening reds, …), and the
+  per-galaxy channel *ratios* carry the real SED shape (median-balanced,
+  contrast-boosted) so galaxies come out visibly blue / red / yellow by their
+  actual colours, with an asinh brightness stretch — rather than washing to
+  a flat white. It's a mock multi-band image, drawn as nested gaussian shells
+  so the splats stay defined. Galaxies with no flux in the stack are skipped
+  (no black blobs).
   Filters are multi-select (ticks show the stack) and mass-to-light (`M*/L`)
   entries stack alongside them; a colour-swatch legend shows the active
   stack. Switching photometry on hides the normal galaxies by default (and
   switching it off brings them back) so the image reads cleanly; re-enable
   the galaxies to overlay both.
+- **Load Existing Lightcone.** The LightSAGE wizard's scan step offers a
+  **Load Existing Lightcone** button that lists any `cli_lightcone` `.h5`
+  files already in `sage_outputs/lightcone/` (or the legacy
+  `~/.visage/lightcone_output/`, or recent session models) and opens the
+  chosen one straight into Lightcone Mode — no clone/build/run needed.
 - **Catalogue export supports lightcones.** Export now reads a flat
   `cli_lightcone` file directly (no `Snap_N` group) — so its columns,
   including any synthetic-photometry `mag_rest_*` / `mag_obs_*` datasets,

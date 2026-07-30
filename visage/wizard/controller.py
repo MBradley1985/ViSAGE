@@ -1202,6 +1202,12 @@ class WizardController:
         elif value == "lc_visualize":
             await self._launch_lightcone_viewer()
 
+        elif value == "lc_load":
+            await self._step_lc_load()
+
+        elif value.startswith("lc_open:"):
+            await self._launch_lightcone_viewer(value[len("lc_open:") :])
+
         elif value == "lc_back_scan":
             self._emit("", "info")
             await self._step_lc_scan()
@@ -2213,10 +2219,73 @@ class WizardController:
             p = script_dir / p
         return p / outfile
 
-    async def _launch_lightcone_viewer(self) -> None:
-        """Relaunch ViSAGE in Lightcone Mode on the produced HDF5 — mirrors the
-        Explore-mode launch (os.execv), but with --lightcone."""
-        out = self._lc_output_file()
+    def _discover_lightcones(self) -> list[Path]:
+        """Existing lightcone HDF5 files the user could open — ViSAGE's
+        standard output folder, the legacy run dir, and any lightcones in the
+        session-models registry. De-duplicated, most-obvious first."""
+        seen: set[Path] = set()
+        out: list[Path] = []
+
+        def _add(pth: Path) -> None:
+            try:
+                rp = pth.expanduser().resolve()
+            except OSError:
+                return
+            if rp.is_file() and rp not in seen:
+                seen.add(rp)
+                out.append(rp)
+
+        for d in (
+            Path.cwd() / "sage_outputs" / "lightcone",
+            Path.home() / ".visage" / "lightcone_output",
+        ):
+            if d.is_dir():
+                for f in sorted(d.glob("*.h5")):
+                    _add(f)
+        try:
+            from visage.utils import recent_models
+
+            for e in recent_models.load():
+                if e.get("kind") == "lightcone":
+                    _add(Path(e.get("path", "")))
+        except Exception:
+            pass
+        return out
+
+    async def _step_lc_load(self) -> None:
+        """Offer any already-created lightcone HDF5 files to open directly —
+        no build/run needed."""
+        self._emit("", "info")
+        self._emit("Looking for existing lightcone files...", "info")
+        found = self._discover_lightcones()
+        if not found:
+            self._emit(
+                "  None found in sage_outputs/lightcone/ or "
+                "~/.visage/lightcone_output/. Build & run one first, or place "
+                "a cli_lightcone .h5 there.",
+                "warn",
+            )
+            self._set_choices([self._back_choice("lc_back_scan")])
+            return
+        self._emit(f"  Found {len(found)} lightcone file(s).", "ok")
+        choices = [
+            {
+                # Show the containing folder so same-named files are distinct.
+                "label": f"{f.parent.name}/{f.name}",
+                "value": f"lc_open:{f}",
+                "icon": "mdi-telescope",
+                "disabled": False,
+            }
+            for f in found
+        ]
+        choices.append(self._back_choice("lc_back_scan"))
+        self._set_choices(choices)
+
+    async def _launch_lightcone_viewer(self, path: Path | str | None = None):
+        """Relaunch ViSAGE in Lightcone Mode on a produced/existing HDF5 —
+        mirrors the Explore-mode launch (os.execv), but with --lightcone.
+        With no path, uses the output the current run script points at."""
+        out = Path(path) if path is not None else self._lc_output_file()
         if out is None or not out.is_file():
             self._emit(
                 f"Lightcone output not found (looked for {out}).", "err"
@@ -2428,6 +2497,23 @@ class WizardController:
                     "disabled": False,
                 }
             )
+        # Viewing an already-built lightcone needs no checkout/tools, so this
+        # is always offered. Note how many are lying around ready to open.
+        _existing = self._discover_lightcones()
+        if _existing:
+            self._emit(
+                f"  Existing cones  : {len(_existing)} ready to open "
+                "(Load Existing Lightcone)",
+                "ok",
+            )
+        choices.append(
+            {
+                "label": "Load Existing Lightcone",
+                "value": "lc_load",
+                "icon": "mdi-folder-open",
+                "disabled": False,
+            }
+        )
         choices.append(
             {
                 "label": "Back",

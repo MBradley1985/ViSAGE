@@ -160,6 +160,35 @@ def test_lc_config_resyncs_stale_lightcone_dir(tmp_path, monkeypatch):
     assert str(stale_dir) not in text
 
 
+def test_lc_scan_offers_load_existing(tmp_path, monkeypatch):
+    # The LightSAGE scan step always offers "Load Existing Lightcone", and it
+    # discovers cli_lightcone .h5 files in the standard output folder so they
+    # can be opened without building/running anything.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)  # no legacy dir
+    monkeypatch.chdir(tmp_path)
+    lcdir = tmp_path / "sage_outputs" / "lightcone"
+    lcdir.mkdir(parents=True)
+    import numpy as _np
+    import h5py as _h5
+
+    cone = lcdir / "lightcone.h5"
+    with _h5.File(cone, "w") as f:
+        f["Posx"] = _np.zeros(3)
+        f["Posy"] = _np.zeros(3)
+        f["Posz"] = _np.zeros(3)
+
+    c = _ctrl()
+    found = c._discover_lightcones()
+    assert cone.resolve() in found
+
+    asyncio.run(c._step_lc_scan())
+    assert "lc_load" in [ch["value"] for ch in c._st.wiz_choices]
+
+    asyncio.run(c._step_lc_load())
+    vals = [ch["value"] for ch in c._st.wiz_choices]
+    assert any(v == f"lc_open:{cone.resolve()}" for v in vals)
+
+
 _OLD_FORMAT_LC_SCRIPT = """\
 #!/bin/bash
 set -e
