@@ -125,6 +125,36 @@ def _mag_from_fnu(f_nu: np.ndarray) -> np.ndarray:
     return mag.astype(np.float32)
 
 
+def _resolve_alist(
+    header_val: str,
+    override: str | Path | None,
+    lightcone_path: Path,
+) -> Path | None:
+    """Find the scale-factor list. An explicit ``override`` (the absolute
+    ALIST_FILE the wizard already has) wins; otherwise the header value is
+    tried as-is (absolute or CWD-relative) and, if relative, resolved against
+    the lightcone file's directory and its ancestors — since the header path
+    is relative to the original SAGE run dir, not wherever we run now.
+    Returns the first existing path, or None."""
+    candidates: list[Path] = []
+    if override:
+        candidates.append(Path(override).expanduser())
+    hv = Path(str(header_val)).expanduser()
+    candidates.append(hv)
+    if not hv.is_absolute():
+        base = lightcone_path.resolve().parent
+        for anc in [base, *base.parents]:
+            candidates.append(anc / hv)
+        candidates.append(base / hv.name)  # last resort: basename only
+    for c in candidates:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            continue
+    return None
+
+
 def compute_photometry(
     path: str | Path,
     bands: tuple[str, ...] = DEFAULT_BANDS,
@@ -134,9 +164,15 @@ def compute_photometry(
     dust: bool = False,
     dust2: float = 0.3,
     dust_emission: bool = False,
+    alist: str | Path | None = None,
     progress_cb: ProgressCB | None = None,
 ) -> dict[str, np.ndarray]:
     """Compute AB magnitudes for every galaxy in a lightcone HDF5 file.
+
+    ``alist`` overrides the scale-factor list. If omitted, the path recorded
+    in the lightcone header (``FileWithSnapList``) is used — but that can be a
+    relative path (relative to the original SAGE run dir) that no longer
+    resolves, so passing the absolute a_list here is more reliable.
 
     ``use_metallicity`` (default True) uses each galaxy's own stellar
     metallicity (Z = MetalsStellarMass / StellarMass), binned into ``n_zbins``
@@ -187,14 +223,18 @@ def compute_photometry(
         hubble_h = float(sim["hubble_h"])
         omega_m = float(sim["omega_matter"])
         omega_l = float(sim["omega_lambda"])
-        alist_path = sim["FileWithSnapList"]
-        if isinstance(alist_path, bytes):
-            alist_path = alist_path.decode()
+        header_alist = sim["FileWithSnapList"]
+        if isinstance(header_alist, bytes):
+            header_alist = header_alist.decode()
 
-    if not Path(alist_path).is_file():
+    alist_path = _resolve_alist(header_alist, alist, path)
+    if alist_path is None:
+        tried = [alist, header_alist] if alist else [header_alist]
         raise FileNotFoundError(
-            f"Scale-factor list not found: {alist_path} "
-            "(needed to convert SFH bins to stellar ages)"
+            "Scale-factor list not found (needed to convert SFH bins to "
+            "stellar ages). The lightcone header records it as a relative "
+            f"path ({header_alist!r}); pass --alist with its absolute path. "
+            f"Tried: {', '.join(str(t) for t in tried if t)}"
         )
 
     mfac = 1.0e10 / max(hubble_h, 1e-6)
@@ -405,6 +445,13 @@ def main(argv: list[str] | None = None) -> None:
         help="Also re-emit absorbed energy in the IR (Draine & Li), making "
         "the mid/far-IR bands (WISE) physical. Needs --dust.",
     )
+    p.add_argument(
+        "--alist",
+        default=None,
+        metavar="FILE",
+        help="Scale-factor list (a_list). Overrides the path recorded in the "
+        "lightcone header, which may be relative and fail to resolve.",
+    )
     args = p.parse_args(argv)
 
     bands = tuple(b.strip() for b in args.bands.split(",") if b.strip())
@@ -445,6 +492,7 @@ def main(argv: list[str] | None = None) -> None:
         dust=args.dust,
         dust2=args.dust2,
         dust_emission=args.dust_emission,
+        alist=args.alist,
         progress_cb=_progress,
     )
     write_photometry(args.input, results)

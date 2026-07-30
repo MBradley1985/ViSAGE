@@ -272,6 +272,47 @@ def test_lc_migrate_script_is_noop_for_current_format():
     assert c._lc_migrate_script(current) == current
 
 
+def test_lc_migrate_adds_alist_and_keeps_choices(tmp_path, monkeypatch):
+    # A 2.2.0-era script has the band checkboxes but predates --alist. Loading
+    # it must upgrade the SED call to pass --alist (so relative header a_list
+    # paths resolve) while preserving the user's band + dust choices.
+    from visage.wizard.controller import _LC_RUN_SCRIPT_TEMPLATE
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    lc = _make_checkout(tmp_path, name="LightSAGE")
+    (lc / "bin").mkdir()
+    (lc / "bin" / "sage2kdtree").write_text("")
+    (lc / "bin" / "cli_lightcone").write_text("")
+
+    # Simulate a pre-alist script: current template with the --alist line and
+    # a couple of choices changed.
+    text = _LC_RUN_SCRIPT_TEMPLATE.format(
+        lightcone_dir=str(lc),
+        sage_output_dir="/x/out",
+        param_file="/x/m.par",
+        alist_file="/x/trees/a_list",
+        outdir="/x/sage_outputs/lightcone",
+        python_exe="/usr/bin/python3",
+    )
+    text = text.replace('\\\n      --alist "$ALIST_FILE"', "")  # drop --alist
+    text = text.replace("BAND_WISE_W4_ENABLED=1", "BAND_WISE_W4_ENABLED=0")
+    text = text.replace("SED_DUST_ENABLED=0", "SED_DUST_ENABLED=1")
+    assert "--alist" not in text  # precondition
+
+    script_path = tmp_path / ".visage" / _LC_RUN_SCRIPT
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text(text)
+
+    c = _ctrl()
+    c._lc_dir = lc
+    asyncio.run(c._step_lc_config())
+    out = c._st.wiz_lc_script_text
+
+    assert '--alist "$ALIST_FILE"' in out  # upgraded
+    assert "BAND_WISE_W4_ENABLED=0" in out  # user's unticked band preserved
+    assert "SED_DUST_ENABLED=1" in out  # user's dust choice preserved
+
+
 def test_lc_seed_script_prefills_sage_paths(tmp_path):
     c = _ctrl()
     c._lc_dir = tmp_path / "LightSAGE"
@@ -402,6 +443,39 @@ def test_run_template_has_metallicity_and_dust_options():
         "dust2",
         "dust_emission",
     } <= set(params)
+
+
+def test_run_template_forwards_alist_to_sed():
+    # The SED stage must be handed the absolute ALIST_FILE explicitly — the
+    # path in the lightcone header is relative to the original SAGE run dir
+    # (e.g. microUchuu's) and won't resolve from where the SED step runs.
+    s = _LC_RUN_SCRIPT_TEMPLATE.format(
+        lightcone_dir="/x/LightSAGE",
+        sage_output_dir="/x/out",
+        param_file="/x/m.par",
+        alist_file="/x/trees/a_list",
+        outdir="/x/sage_outputs/lightcone",
+        python_exe="/usr/bin/python3",
+    )
+    assert '--alist "$ALIST_FILE"' in s
+
+
+def test_resolve_alist(tmp_path):
+    from visage.sed.photometry import _resolve_alist
+
+    lc = tmp_path / "sage_outputs" / "lightcone" / "lc.h5"
+    lc.parent.mkdir(parents=True)
+    al = tmp_path / "trees" / "scale.txt"
+    al.parent.mkdir(parents=True)
+    al.write_text("1.0\n")
+
+    # explicit override wins even when the header value is bogus
+    assert _resolve_alist("bogus/rel.txt", str(al), lc) == al
+    # relative header path resolves against an ancestor of the lightcone dir
+    got = _resolve_alist("trees/scale.txt", None, lc)
+    assert got is not None and got.samefile(al)
+    # genuinely missing -> None (caller raises a helpful error)
+    assert _resolve_alist("nope/missing.txt", None, lc) is None
 
 
 def test_pretty_param_label_shortens_band_checkboxes():

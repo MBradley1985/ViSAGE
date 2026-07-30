@@ -339,7 +339,8 @@ if [ "$SED_ENABLED" = "1" ]; then
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\
-      --frame "$SED_FRAME" $sed_extra
+      --frame "$SED_FRAME" \\
+      --alist "$ALIST_FILE" $sed_extra
   fi
 fi
 """
@@ -2389,11 +2390,14 @@ class WizardController:
         user changed it away from the old hardcoded default, since ViSAGE's
         own output-folder convention moved to sage_outputs/lightcone.
 
-        A no-op (returns text unchanged) once the script already has the
-        current structure — detected via BAND_GALEX_FUV_ENABLED, a canary
-        key only the current template defines.
+        A no-op (returns text unchanged) once the script already has every
+        structural feature of the current template. Each canary marks a
+        feature added over time: BAND_*_ENABLED (per-band checkboxes) and
+        ``--alist`` (explicit scale-factor list passed to the SED stage, so
+        relative header paths like microUchuu's still resolve). A script
+        missing any of them is regenerated, carrying the user's values over.
         """
-        if "BAND_GALEX_FUV_ENABLED" in text:
+        if "BAND_GALEX_FUV_ENABLED" in text and "--alist" in text:
             return text
 
         old = {p["key"]: p["value"] for p in _parse_params(text, "sh")}
@@ -2415,6 +2419,11 @@ class WizardController:
                 "OUTFILE",
                 "SED_ENABLED",
                 "SED_FRAME",
+                # SED physics switches (may be absent in older scripts).
+                "SED_METALLICITY_ENABLED",
+                "SED_DUST_ENABLED",
+                "SED_DUST2",
+                "SED_DUST_EMISSION_ENABLED",
             )
             if k in old
         }
@@ -2423,11 +2432,18 @@ class WizardController:
             carry["OUTDIR"] = old_outdir
 
         if "SED_BANDS" in old:
+            # Pre-checkbox script: map the old space-separated list onto the
+            # new per-band checkboxes.
             old_bands = set(old["SED_BANDS"].split())
             for band_key, fsps_name in self._LC_BAND_KEYS:
                 carry[band_key] = "1" if fsps_name in old_bands else "0"
-        # else: no old SED_BANDS at all -> keep the fresh template's
-        # all-checked default rather than assuming "none selected".
+        else:
+            # Already has per-band checkboxes (e.g. a 2.2.0 script missing only
+            # --alist): preserve whatever the user ticked. Absent -> fresh
+            # template's all-on default.
+            for band_key, _ in self._LC_BAND_KEYS:
+                if band_key in old:
+                    carry[band_key] = old[band_key]
 
         params = [{"key": k, "value": v} for k, v in carry.items()]
         return _apply_params(fresh, params, "sh")

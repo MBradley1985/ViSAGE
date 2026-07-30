@@ -8,6 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-07-30
+
+### Fixed
+
+- **SED synthesis failed on lightcones whose scale-factor list is a relative
+  path** (e.g. microUchuu's `input/microuchuu/trees/Uchuu100_scalefactor.txt`).
+  The stage read `FileWithSnapList` from the lightcone header, which SAGE
+  stores relative to its *own* run directory — so it didn't resolve from where
+  the SED step runs and the pipeline aborted with a `FileNotFoundError`. The
+  run script now passes the absolute `ALIST_FILE` to the SED stage via a new
+  `--alist` flag; relative header paths are also resolved against the lightcone
+  file's own directory as a fallback, and the error message now says to pass
+  `--alist`. Existing cached `run_lightcone.sh` scripts are auto-upgraded on
+  load to include the flag (band and dust/metallicity choices preserved).
+
 ## [2.2.0] — 2026-07-30
 
 ### Added
