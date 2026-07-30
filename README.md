@@ -100,8 +100,9 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - `visage --lightcone FILE` opens a `cli_lightcone` HDF5 output in the **exact same Explore UI** as a SAGE box — same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering
 - Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
 - The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
-- Camera reset frames the cone horizontally, centred in the viewport
-- Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, from the **Session Models** list (see below), or directly via `--lightcone`
+- **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
+- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
+- Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, the wizard's **Load Existing Lightcone** button, the **Session Models** list (see below), or directly via `--lightcone`
 
 ### Session models
 - The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
@@ -210,6 +211,14 @@ export PATH="$HOME/Library/Python/3.12/bin:$PATH"
 ```
 
 Movie recording in MOV format requires `ffmpeg` in your `PATH`.
+
+Synthetic photometry (SED synthesis for lightcones) is an optional extra — it pulls in FSPS + astropy, which the base install omits:
+
+```bash
+pip install "sage-viewer[sed]"
+```
+
+FSPS also needs its stellar-population data on disk, pointed at by the `SPS_HOME` environment variable (see the [python-fsps](https://github.com/dfm/python-fsps) docs). Nothing else in ViSAGE depends on it.
 
 ### From source
 

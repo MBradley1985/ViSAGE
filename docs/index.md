@@ -19,7 +19,7 @@ ViSAGE renders dark matter haloes and SAGE galaxies together in a browser-based 
 | Double-click any point | Populates Target halo + galaxy IDs and (if Focus is active) carries the camera to the selection |
 | Point picking | Double-click anywhere in the viewport — works on every tab |
 | Multi-model | Switch between SAGE flavours of the same sim; overlay two compatible models simultaneously |
-| Lightcone Mode | Open a LightSAGE lightcone output in the same Explore UI; the snapshot slider becomes a redshift/time cut over the cone |
+| Lightcone Mode | Open a LightSAGE lightcone output in the same Explore UI; the snapshot slider becomes a redshift/time cut over the cone, plus an optional false-colour synthetic-photometry (SED) imaging layer |
 | Launch Mode wizard | Guided flows to clone/build/configure/run SAGE26, SAGEswarm, or LightSAGE, with a labelled parameter form for every config file |
 | Story Mode | Author JSON "stories" and play them back as full presentations over the live 3D view — text/media/equation overlays, camera motions, time sweeps |
 | Embedded console | Real shell terminal + Python REPL + natural-language SAGE commands in one tab, with multi-session tabs, script loading, and a pop-out window |

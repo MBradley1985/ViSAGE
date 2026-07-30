@@ -13,6 +13,21 @@ cd ViSAGE
 pip install -e ".[dev]"
 ```
 
+## Optional: synthetic photometry (SED)
+
+The LightSAGE synthetic-photometry stage (forward-modelling AB magnitudes for
+lightcone galaxies, used by [Lightcone Mode](../user_guide/lightcone.md)'s
+Photometry tab) needs [FSPS](https://github.com/dfm/python-fsps) and astropy,
+which are **not** installed by default:
+
+```bash
+pip install "sage-viewer[sed]"      # or, from source:  pip install -e ".[sed]"
+```
+
+`python-fsps` also requires its stellar-population data — set the `SPS_HOME`
+environment variable to point at it (see the python-fsps install docs). Nothing
+else in ViSAGE depends on FSPS; the viewer and every other flow run without it.
+
 ## Verifying the install
 
 ```bash
@@ -63,3 +78,4 @@ ssh -L 8080:localhost:8080 user@cluster
 | numpy | Array operations |
 | scipy | KDE density computation, KDTree navigation |
 | joblib | Parallel halo file loading |
+| fsps, astropy | *Optional* (`[sed]`) — synthetic photometry / SED synthesis |
