@@ -651,7 +651,7 @@ def build_toolbar(server, scene: Scene) -> None:
     # ------------------------------------------------------------------
 
     _FT_FPS = 15  # render rate during fly-through
-    _FT_APPROACH_SECS = 10.0  # fly-in duration (reset → starting viewpoint)
+    _FT_APPROACH_SECS = 8.0  # fly-in duration (reset → starting viewpoint)
     _FT_GROUP_RADIUS = 15.0  # standoff radius for group spin
     _FT_CLUSTER_RADIUS = 30.0  # standoff radius for cluster spin
     _FT_GROUP_DPS = 10.0  # group spin speed deg/s
@@ -776,11 +776,11 @@ def build_toolbar(server, scene: Scene) -> None:
                     await asyncio.sleep(interval)
                     continue
                 pos, radius, dps = targets[i % len(targets)]
-                approach_secs = 10.0 if radius == _FT_CLUSTER_RADIUS else 8.0
+                approach_secs = 8.0 if radius == _FT_CLUSTER_RADIUS else 6.5
                 # Lightcone Mode skips the establishing approach, so its FIRST
                 # move flies all the way from the whole-cone reset framing into
                 # the nearest group — a far larger distance than any box-mode
-                # move. At the fixed 8-10 s that reads as a fast swoop. Scale
+                # move. At the fixed 6.5-8 s that reads as a fast swoop. Scale
                 # the first move's duration by distance so its linear speed
                 # matches box mode's gentle approach (≈ span / approach_secs).
                 if is_lc and i == 0:
@@ -795,7 +795,7 @@ def build_toolbar(server, scene: Scene) -> None:
                     span = float(getattr(scene._cfg, "box_size", 0.0)) or 1.0
                     ref_speed = span / _FT_APPROACH_SECS
                     approach_secs = float(
-                        _np.clip(dist / ref_speed, _FT_APPROACH_SECS, 24.0)
+                        _np.clip(dist / ref_speed, _FT_APPROACH_SECS, 18.0)
                     )
                 if not await _fly_to_orbit(pos, radius, approach_secs):
                     return

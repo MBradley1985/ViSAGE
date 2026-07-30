@@ -409,13 +409,17 @@ class CameraController:
             return
         b = self._lc_bounds
         center = (b[0] + b[1]) / 2.0
-        view = center  # observer is at the origin, so view = centre - origin
-        n = float(np.linalg.norm(view))
+        n = float(np.linalg.norm(center))
         if n < 1e-9:
             return
-        view = view / n
         self._pl.camera.position = (0.0, 0.0, 0.0)
-        self._pl.camera.focal_point = tuple(view)  # look outward
+        # Focal point AT the cone centre (not a unit step out): this keeps the
+        # focal distance ~half the cone depth, so the trackball orbits around
+        # the cone and VTK's clipping-range heuristic (which scales with the
+        # focal distance) stays sane. A focal point ~1 Mpc from the camera —
+        # as before — made the near plane collapse and geometry pop in/out of
+        # the far clip whenever the user rotated or panned.
+        self._pl.camera.focal_point = tuple(center)  # look outward at the cone
         # +Z up puts the (wider) Y sky-extent left→right, so the cone opens
         # out horizontally in front of the viewer.
         self._pl.camera.up = (0.0, 0.0, 1.0)

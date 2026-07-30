@@ -79,3 +79,42 @@ SOLAR_ABSMAG_AB = {
     "sdss_i": 4.53,
     "sdss_z": 4.50,
 }
+
+# Representative display colour (linear-sRGB, 0..1) for each filter, chosen to
+# read as the band's own light: UV → violet, optical U/B/g/V/r → its hue,
+# and the redward/IR bands (i, z, JHK, WISE) as deepening reds since the eye
+# has no colour there. Used both for the single-band colourmap (black → this
+# colour) and for stacking several bands into an additive false-colour
+# composite ("mock image"). Keyed by the bare FSPS filter name.
+BAND_COLOUR = {
+    # ── UV (GALEX) ──
+    "galex_fuv": (0.40, 0.00, 0.90),  # far-UV → deep violet
+    "galex_nuv": (0.55, 0.20, 0.95),  # near-UV → violet
+    # ── SDSS optical/NIR ──
+    "sdss_u": (0.50, 0.10, 0.90),  # u → violet-blue
+    "sdss_g": (0.10, 0.85, 0.25),  # g → green
+    "sdss_r": (0.95, 0.20, 0.15),  # r → red
+    "sdss_i": (0.80, 0.10, 0.08),  # i → deep red (near-IR)
+    "sdss_z": (0.60, 0.06, 0.06),  # z → dark red (IR)
+    # ── Johnson–Cousins optical/NIR ──
+    "u": (0.50, 0.10, 0.90),
+    "b": (0.10, 0.35, 1.00),  # B → blue
+    "v": (0.65, 0.90, 0.15),  # V → green-yellow
+    "r": (0.95, 0.20, 0.15),
+    "i": (0.80, 0.10, 0.08),
+    # ── 2MASS near-IR ──
+    "2mass_j": (0.75, 0.15, 0.10),
+    "2mass_h": (0.62, 0.10, 0.09),
+    "2mass_ks": (0.52, 0.08, 0.07),
+    # ── WISE mid-IR ──
+    "wise_w1": (0.60, 0.18, 0.10),
+    "wise_w2": (0.55, 0.22, 0.14),
+    "wise_w3": (0.50, 0.28, 0.20),
+    "wise_w4": (0.45, 0.30, 0.26),
+}
+
+
+def band_colour(name: str) -> tuple[float, float, float]:
+    """Representative sRGB colour for a filter (bare name, e.g. "sdss_g").
+    Falls back to a neutral warm grey for any band not tabulated above."""
+    return BAND_COLOUR.get(name, (0.8, 0.75, 0.7))

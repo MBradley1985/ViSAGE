@@ -291,115 +291,6 @@ def _sed_band_title(key: str) -> str:
     return f"{_sed_short_label(filt)} ({frame})"
 
 
-def _sed_extra_modes(sed_bands: list[str]) -> list[dict]:
-    """Colour-index (e.g. "g - r") and mass-to-light entries derived from
-    whatever SED bands are present, ordered blue-to-red within each frame."""
-    from visage.sed.filters import EFFECTIVE_WAVELENGTH_A, SOLAR_ABSMAG_AB
-
-    by_frame: dict[str, list[tuple[float, str, str]]] = {
-        "rest": [],
-        "observed": [],
-    }
-    for key in sed_bands:
-        frame, filt = _sed_split_key(key)
-        if frame in by_frame:
-            by_frame[frame].append(
-                (EFFECTIVE_WAVELENGTH_A.get(filt, 1.0e9), filt, key)
-            )
-
-    modes: list[dict] = []
-    for frame, entries in by_frame.items():
-        entries.sort(key=lambda e: e[0])
-        pairs = [(entries[i], entries[i + 1]) for i in range(len(entries) - 1)]
-        if len(entries) >= 3:
-            pairs.append((entries[0], entries[-1]))  # broadest span too
-        for (_, blue_filt, blue_key), (_, red_filt, red_key) in pairs:
-            modes.append(
-                {
-                    "title": (
-                        f"{_sed_short_label(blue_filt)} - "
-                        f"{_sed_short_label(red_filt)} ({frame})"
-                    ),
-                    "value": f"sedcolor:{blue_key}:{red_key}",
-                }
-            )
-
-    for key in sed_bands:
-        frame, filt = _sed_split_key(key)
-        if frame == "rest" and filt in SOLAR_ABSMAG_AB:
-            modes.append(
-                {
-                    "title": f"M*/L ({_sed_short_label(filt)}, rest)",
-                    "value": f"sedml:{key}",
-                }
-            )
-    return modes
-
-
-def _is_sed_mode(mode: str) -> bool:
-    return mode.startswith(("sed:", "sedcolor:", "sedml:"))
-
-
-def _sed_default_cmap(mode: str) -> str:
-    """Default colormap for a SED colour-by mode — a diverging map for
-    colour indices (so blue/red galaxies land on the matching colormap end),
-    a mass-like map for M*/L, and a frame-distinct sequential map for a raw
-    band (so the colorbar itself hints which frame is active)."""
-    if mode.startswith("sedcolor:"):
-        return "coolwarm"  # low(bluer)->blue end, high(redder)->red end
-    if mode.startswith("sedml:"):
-        return "cividis"  # matches the other mass-like modes (bh/bulge mass)
-    frame, _ = _sed_split_key(mode[len("sed:") :])
-    return "magma" if frame == "observed" else "viridis"
-
-
-def _sed_cbar_range(scene: Scene, mode: str) -> tuple[str, str]:
-    """(value-at-norm-0, value-at-norm-1) labels for a SED colour-by mode —
-    matches whichever direction GalaxyLayer._compute_colors actually maps to
-    the colormap, so the bar's low/high ends agree with their labels."""
-    import numpy as np
-
-    try:
-        _, galaxies = scene.active_model.loader.get(0)
-        if mode.startswith("sedcolor:"):
-            _, blue_key, red_key = mode.split(":", 2)
-            blue = galaxies.sed_mags.get(blue_key)
-            red = galaxies.sed_mags.get(red_key)
-            if blue is None or red is None:
-                return "—", "—"
-            values = blue - red  # ascending index -> ascending norm
-            fmt = "{:+.2f}".format
-        elif mode.startswith("sedml:"):
-            from visage.sed.filters import SOLAR_ABSMAG_AB
-
-            band_key = mode[len("sedml:") :]
-            mags = galaxies.sed_mags.get(band_key)
-            filt = band_key[len("mag_rest_") :]
-            m_sun = SOLAR_ABSMAG_AB.get(filt)
-            if mags is None or m_sun is None:
-                return "—", "—"
-            mass = np.maximum(galaxies.stellar_mass, 1.0)
-            with np.errstate(invalid="ignore"):
-                values = np.log10(mass) + 0.4 * (mags - m_sun)
-            fmt = "{:.1f}".format
-        else:
-            band_key = mode[len("sed:") :]
-            mags = galaxies.sed_mags.get(band_key)
-            if mags is None:
-                return "—", "—"
-            # Brighter (smaller mag) -> higher norm, so negate before taking
-            # percentiles and negate back when formatting for display.
-            values = -mags
-            fmt = lambda v: f"{-v:.1f}"  # noqa: E731
-        finite = values[np.isfinite(values)]
-        if finite.size == 0:
-            return "—", "—"
-        lo, hi = np.percentile(finite, [2.0, 98.0])
-        return fmt(lo), fmt(hi)
-    except Exception:
-        return "—", "—"
-
-
 def build_navigation_panel(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
 
@@ -562,24 +453,38 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.halo_colormap = scene.halo_layer.colormap
     state.galaxy_colormap = scene.galaxy_layer.colormap
 
-    # ── Synthetic Photometry (SED) section — fully independent state so it
-    #    never mirrors the GALAXIES section.  Both drive the one galaxy layer,
-    #    but each menu keeps its own selection/colormap/colourbar and whichever
-    #    the user touches last wins.  Populated for real (with a default band
-    #    selected + applied) after the mode lists are built, below.
-    state.sed_galaxy_color_mode = ""
-    state.sed_galaxy_colormap = scene.galaxy_layer.colormap
-    state.sed_gal_cbar_style = state.gal_cbar_style
-    state.sed_gal_cbar_min = "—"
-    state.sed_gal_cbar_max = "—"
+    # ── Synthetic Photometry — its OWN independent layer (scene.sed_layer),
+    #    shown in a dedicated Photometry tab (Lightcone Mode only). Completely
+    #    separate from the galaxies: their own Visible/Opacity, so you can show
+    #    photometry with the galaxies on, off, or on their own. When visible it
+    #    paints a false-colour STACK of the ticked filter bands (each tinted
+    #    its representative colour).
+    state.photometry_visible = False
+    state.photometry_opacity = 1.0
+    state.sed_galaxy_bands = []  # ticked filter keys (multi-select stack)
+    state.sed_legend = []  # [{title, color}] swatches for the ticked bands
 
     def _rebuild_color_mode_lists() -> None:
         fields = dict(scene.active_model.fields_available)
         sed_bands = getattr(scene.active_model, "sed_bands_available", [])
+        # Each ticked item contributes its own representative colour to the
+        # stack (multi-select). Items are raw filter bands (brightness) plus,
+        # for rest-frame bands with a known solar magnitude, a mass-to-light
+        # entry — all stackable together in any combination.
+        from visage.sed.filters import SOLAR_ABSMAG_AB
+
         sed_modes = [
-            {"title": _sed_band_title(k), "value": f"sed:{k}"}
-            for k in sed_bands
-        ] + _sed_extra_modes(sed_bands)
+            {"title": _sed_band_title(k), "value": k} for k in sed_bands
+        ]
+        for k in sed_bands:
+            frame, filt = _sed_split_key(k)
+            if frame == "rest" and filt in SOLAR_ABSMAG_AB:
+                sed_modes.append(
+                    {
+                        "title": f"M*/L ({_sed_short_label(filt)}, rest)",
+                        "value": f"ml:{k}",
+                    }
+                )
         state.halo_color_modes = _filter_modes(_HALO_MODES, fields)
         # SED bands live only in the dedicated Synthetic Photometry section
         # below, not in the general "Colour by" dropdown.
@@ -590,22 +495,39 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     _rebuild_color_mode_lists()
 
-    # In lightcone mode with SED data, start the galaxy layer coloured by the
-    # first synthetic-photometry band, so the SED section loads with a real
-    # selection AND applied colouring — like every other Structure section,
-    # not a blank dropdown.  (The GALAXIES section keeps its own default mode
-    # as an independent, inactive selection until the user picks it.)
+    def _sed_legend(items: list) -> list:
+        """Colour-swatch legend for the ticked stack items (name + CSS
+        colour). Handles both filter bands and 'ml:'-prefixed M/L items."""
+        from visage.sed.filters import band_colour
+
+        out = []
+        for item in items:
+            is_ml = item.startswith("ml:")
+            key = item[len("ml:") :] if is_ml else item
+            filt = key
+            for pre in ("mag_rest_", "mag_obs_"):
+                if filt.startswith(pre):
+                    filt = filt[len(pre) :]
+                    break
+            r, g, b = band_colour(filt)
+            title = _sed_band_title(key)
+            if is_ml:
+                title = f"M*/L · {title}"
+            out.append(
+                {
+                    "title": title,
+                    "color": f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})",
+                }
+            )
+        return out
+
+    # Pre-tick the first band so the photometry layer has something to show
+    # the moment it's switched on. The layer itself starts hidden (built in
+    # LightconeModel with visible=False), so this doesn't change the initial
+    # view — the galaxies keep their normal colouring.
     if state.has_sed_data and state.sed_color_modes:
-        _first_sed = state.sed_color_modes[0]["value"]
-        _first_cmap = _sed_default_cmap(_first_sed)
-        state.sed_galaxy_color_mode = _first_sed
-        state.sed_galaxy_colormap = _first_cmap
-        scene.galaxy_layer.color_mode = _first_sed
-        scene.galaxy_layer.colormap = _first_cmap
-        _lo0, _hi0 = _sed_cbar_range(scene, _first_sed)
-        state.sed_gal_cbar_min = _lo0
-        state.sed_gal_cbar_max = _hi0
-        state.sed_gal_cbar_style = _cbar_style(cmap_css_gradient(_first_cmap))
+        state.sed_galaxy_bands = [state.sed_color_modes[0]["value"]]
+        state.sed_legend = _sed_legend(state.sed_galaxy_bands)
 
     def _push():
         if hasattr(server.controller, "view_update"):
@@ -1052,10 +974,49 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.halo_cbar_max = hi
         _push()
 
+    def _sed_layer():
+        """The photometry layer for the active model (None outside lightcones)."""
+        return getattr(scene.active_model, "sed_layer", None)
+
+    @state.change("photometry_visible")
+    def on_photometry_visible(photometry_visible, **_):
+        # Photometry is its own layer, but it's a distinct *view*: turning it
+        # on hides the normal galaxies by default so the photometry image
+        # reads cleanly (and turning it off brings them back). The user can
+        # still re-enable galaxies manually to overlay both.
+        layer = _sed_layer()
+        if layer is not None:
+            # Make sure the current stack is applied before showing it.
+            bands = list(state.sed_galaxy_bands or [])
+            if bands:
+                layer.set_sed_bands(bands)
+                layer.color_mode = "sedstack"
+            layer.visible = bool(photometry_visible)
+        # Swap the galaxies out for the photometry image (and back).
+        state.galaxies_visible = not bool(photometry_visible)
+        _push()
+
+    @state.change("photometry_opacity")
+    def on_photometry_opacity(photometry_opacity, **_):
+        layer = _sed_layer()
+        if layer is not None:
+            layer.opacity = float(photometry_opacity)
+        _push()
+
+    @state.change("sed_galaxy_bands")
+    def on_sed_bands(sed_galaxy_bands, **_):
+        # Ticking/unticking filters restyles the stack legend and recomposites
+        # the photometry layer (if it exists / is showing).
+        bands = list(sed_galaxy_bands or [])
+        state.sed_legend = _sed_legend(bands)
+        layer = _sed_layer()
+        if layer is not None and bands:
+            layer.set_sed_bands(bands)
+            layer.color_mode = "sedstack"
+            _push()
+
     @state.change("galaxy_color_mode")
     def on_galaxy_mode(galaxy_color_mode, **_):
-        # The GALAXIES section only ever holds normal (non-SED) modes now —
-        # SED bands live entirely in the independent SED section below.
         scene.galaxy_layer.color_mode = galaxy_color_mode
         # Snap to the property's default colormap — unless the same update
         # also set the colormap explicitly (story scenes, console commands).
@@ -1070,43 +1031,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
             state.galaxy_colormap = _GAL_CMAP_DEFAULTS.get(
                 galaxy_color_mode, "viridis"
             )
-        # Whichever section the user touches last drives the render: picking a
-        # galaxy property here applies its colormap so it takes over from any
-        # SED colouring that was active.
-        scene.galaxy_layer.colormap = state.galaxy_colormap
         if galaxy_color_mode in _GAL_CB:
             _, lo, hi = _GAL_CB[galaxy_color_mode]
         else:
             lo, hi = "—", "—"
         state.gal_cbar_min = lo
         state.gal_cbar_max = hi
-        state.gal_cbar_style = _cbar_style(
-            cmap_css_gradient(state.galaxy_colormap)
-        )
-        _push()
-
-    @state.change("sed_galaxy_color_mode")
-    def on_sed_galaxy_mode(sed_galaxy_color_mode, **_):
-        # Independent of the GALAXIES section — picking a band here colours the
-        # (single) galaxy layer by that band and takes over as the active
-        # colour source.  Empty means "nothing selected" (only at startup in
-        # non-lightcone mode); don't touch the layer then.
-        if not sed_galaxy_color_mode:
-            return
-        # Snap to the band's default colormap unless the user is setting the
-        # SED colormap explicitly in the same update.
-        if "sed_galaxy_colormap" not in state.modified_keys:
-            state.sed_galaxy_colormap = _sed_default_cmap(
-                sed_galaxy_color_mode
-            )
-        scene.galaxy_layer.color_mode = sed_galaxy_color_mode
-        scene.galaxy_layer.colormap = state.sed_galaxy_colormap
-        lo, hi = _sed_cbar_range(scene, sed_galaxy_color_mode)
-        state.sed_gal_cbar_min = lo
-        state.sed_gal_cbar_max = hi
-        state.sed_gal_cbar_style = _cbar_style(
-            cmap_css_gradient(state.sed_galaxy_colormap)
-        )
         _push()
 
     @state.change("halo_colormap")
@@ -1119,29 +1049,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @state.change("galaxy_colormap")
     def on_galaxy_cmap(galaxy_colormap, **_):
+        scene.galaxy_layer.colormap = galaxy_colormap
         from visage.utils.colormap import cmap_css_gradient
 
-        # Only drive the layer when a GALAXIES (non-SED) mode is the active
-        # colour source; otherwise this is just the GALAXIES section's own
-        # (inactive) colourbar being restyled and must not disturb the SED
-        # colouring currently on screen.
-        if not _is_sed_mode(scene.galaxy_layer.color_mode):
-            scene.galaxy_layer.colormap = galaxy_colormap
-            _push()
         state.gal_cbar_style = _cbar_style(cmap_css_gradient(galaxy_colormap))
-
-    @state.change("sed_galaxy_colormap")
-    def on_sed_galaxy_cmap(sed_galaxy_colormap, **_):
-        from visage.utils.colormap import cmap_css_gradient
-
-        # Symmetric to on_galaxy_cmap: only touch the layer while a SED mode
-        # is the active colour source.
-        if _is_sed_mode(scene.galaxy_layer.color_mode):
-            scene.galaxy_layer.colormap = sed_galaxy_colormap
-            _push()
-        state.sed_gal_cbar_style = _cbar_style(
-            cmap_css_gradient(sed_galaxy_colormap)
-        )
+        _push()
 
     # ------------------------------------------------------------------
     # Interactive draw-widget storage (one slot each; only one active at a time)
@@ -4014,6 +3926,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "height:auto;min-height:118px;padding-bottom:6px;"
             ),
         ):
+            # A lightcone has no periodic box to zoom to, but it does have
+            # synthetic photometry — so swap the Box tab for a Photometry tab.
+            _box_or_phot = (
+                ("Photometry", "photometry")
+                if scene.is_lightcone
+                else ("Box", "box")
+            )
             for label, value in [
                 ("Structure", "layers"),
                 ("Filters", "filters"),
@@ -4021,7 +3940,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ("Target", "target"),
                 ("Environment", "environment"),
                 ("Coords", "coords"),
-                ("Box", "box"),
+                _box_or_phot,
                 ("Console", "console"),
                 ("Library", "library"),
             ]:
@@ -4199,66 +4118,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "{{ gal_cbar_max }}",
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
-
-                with v3.VSheet(
-                    color="transparent",
-                    v_show=("is_lightcone && has_sed_data",),
-                ):
-                    v3.VDivider(style="margin:14px 0;")
-                    v3.VLabel(
-                        "SYNTHETIC PHOTOMETRY (SED)",
-                        style=(
-                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                            "color:#7FDBFF;padding:6px 0 8px;display:block;"
-                        ),
-                    )
-                    with v3.VSheet(color="transparent", style=_FIELD):
-                        v3.VCheckbox(
-                            v_model=("galaxies_visible",),
-                            label="Visible",
-                            color="#7FDBFF",
-                            hide_details=True,
-                            density="compact",
-                        )
-                    with v3.VSheet(color="transparent", style=_FIELD):
-                        v3.VSelect(
-                            v_model=("sed_galaxy_color_mode",),
-                            items=("sed_color_modes",),
-                            label="Colour by band",
-                            hide_details=True,
-                            variant="outlined",
-                            color="#7FDBFF",
-                            density="compact",
-                        )
-                    with v3.VSheet(color="transparent", style=_FIELD):
-                        v3.VSelect(
-                            v_model=("sed_galaxy_colormap",),
-                            items=(_CMAPS,),
-                            label="Colormap",
-                            hide_details=True,
-                            variant="outlined",
-                            color="#7FDBFF",
-                            density="compact",
-                        )
-                    with v3.VSheet(
-                        color="transparent", style="padding:4px 0 8px;"
-                    ):
-                        with v3.VSheet(
-                            color="transparent",
-                            style="display:flex;align-items:center;gap:4px;",
-                        ):
-                            v3.VLabel(
-                                "{{ sed_gal_cbar_min }}",
-                                style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
-                            )
-                            v3.VSheet(
-                                style=("sed_gal_cbar_style",),
-                                color="transparent",
-                            )
-                            v3.VLabel(
-                                "{{ sed_gal_cbar_max }}",
-                                style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
-                            )
 
                 v3.VDivider(style="margin:14px 0 10px;")
 
@@ -4662,6 +4521,92 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         title="Clear box widget, zoom indicator and focus region",
                         v_show=("draw_box_active || focus_active",),
                     )
+
+            # Photometry (Lightcone Mode only — replaces the Box tab). Its own
+            # independent splat layer: a false-colour image built from the
+            # ticked filter/M-L stack, shown on top of (or instead of) the
+            # normal galaxies.
+            with v3.VSheet(
+                color="transparent",
+                v_show=("nav_active_tab === 'photometry'",),
+            ):
+                v3.VLabel(
+                    "SYNTHETIC PHOTOMETRY (SED)",
+                    style=(
+                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                        "color:#7FDBFF;padding:2px 0 8px;display:block;"
+                    ),
+                )
+                # No SED data → just say so (the LightSAGE run had SED off).
+                html.Div(
+                    "This lightcone was built without synthetic photometry. "
+                    "Re-run the LightSAGE flow with SED enabled to use this.",
+                    v_show=("!has_sed_data",),
+                    style="font-size:0.72rem;color:#9ca3af;line-height:1.4;",
+                )
+                with html.Div(v_show=("has_sed_data",)):
+                    html.Div(
+                        "A false-colour image built from the filters you tick "
+                        "— each tinted its own colour, stacked. A completely "
+                        "separate layer from the galaxies: show it with the "
+                        "galaxies on, off, or on its own.",
+                        style="font-size:0.66rem;color:#8b98a5;padding:0 0 8px;line-height:1.35;",
+                    )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VCheckbox(
+                            v_model=("photometry_visible",),
+                            label="Visible",
+                            color="#7FDBFF",
+                            hide_details=True,
+                            density="compact",
+                        )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VSlider(
+                            v_model=("photometry_opacity",),
+                            label="Opacity",
+                            min=0.0,
+                            max=1.0,
+                            step=0.01,
+                            thumb_label=True,
+                            color="#7FDBFF",
+                            hide_details=True,
+                        )
+                    with v3.VSheet(color="transparent", style=_FIELD):
+                        # Multi-select: ticking several filters stacks them
+                        # into the composite. Ticks show the current stack.
+                        v3.VSelect(
+                            v_model=("sed_galaxy_bands",),
+                            items=("sed_color_modes",),
+                            label="Filters (tick to stack)",
+                            multiple=True,
+                            chips=True,
+                            closable_chips=True,
+                            hide_details=True,
+                            variant="outlined",
+                            color="#7FDBFF",
+                            density="compact",
+                        )
+                    # Legend: one swatch per ticked filter, in its own colour.
+                    with v3.VSheet(
+                        color="transparent",
+                        style="padding:8px 0 0;display:flex;flex-wrap:wrap;gap:6px 12px;",
+                        v_show=("sed_legend.length > 0",),
+                    ):
+                        with html.Div(
+                            v_for=("s in sed_legend",),
+                            key=("s.title",),
+                            style="display:flex;align-items:center;gap:5px;",
+                        ):
+                            html.Div(
+                                style=(
+                                    "'width:11px;height:11px;border-radius:2px;"
+                                    "flex-shrink:0;background:' + s.color",
+                                )
+                            )
+                            html.Span(
+                                "{{ s.title }}",
+                                style="font-size:0.62rem;color:#a3adbb;white-space:nowrap;",
+                            )
 
             # ── CONSOLE tab — multi-session REPL ────────────────────
             # Layout: heading + tab strip pinned to the top, history

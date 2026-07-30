@@ -2,8 +2,23 @@
 # Launcher — finds whichever Python has trame installed and uses that.
 # Needed on macOS where multiple Python versions coexist and the shell's
 # default python3 may differ from the one pip used.
+#
+# Always runs THIS checkout's copy of visage, regardless of the current
+# directory or any pip-installed copy in site-packages: prepend the repo
+# root (the dir holding the `visage` package, i.e. this script's parent's
+# parent) to PYTHONPATH so it shadows an installed `sage-viewer`. Without
+# this, launching from a non-repo directory silently runs the installed
+# (possibly stale) copy instead — code edits then appear to do nothing.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
 for _py in python3.12 python3.13 python3.11 python3.10 python3 python; do
     if command -v "$_py" >/dev/null 2>&1 && "$_py" -c "import trame" 2>/dev/null; then
+        # One-line banner so it's obvious which copy is actually running.
+        "$_py" - <<'PYEOF' >&2
+import visage
+print(f"[visage] running {visage.__file__} (v{visage.__version__})")
+PYEOF
         exec "$_py" -m visage.cli "$@"
     fi
 done

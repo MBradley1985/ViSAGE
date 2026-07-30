@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Synthetic Photometry (SED) is now a false-colour image builder on its
+  own layer.** In Lightcone Mode the **Box** tab is replaced by a
+  **Photometry** tab driving a completely separate galaxy-splat layer with
+  its own **Visible** / **Opacity** — so photometry can be shown with the
+  galaxies on, off, or on its own (turn the galaxies off and view the
+  photometry alone). It's hidden by default. When shown it paints a **stack**
+  of the ticked filters: each filter is tinted a representative colour (u/UV →
+  violet, g → green, r/i/z & JHK/WISE → deepening reds, …) and scaled by the
+  galaxy's brightness, summed into a false-colour composite — a mock
+  multi-band image, drawn as nested gaussian shells so the splats stay
+  defined. Galaxies with no flux in the stack are skipped (no black blobs).
+  Filters are multi-select (ticks show the stack) and mass-to-light (`M*/L`)
+  entries stack alongside them; a colour-swatch legend shows the active
+  stack. Switching photometry on hides the normal galaxies by default (and
+  switching it off brings them back) so the image reads cleanly; re-enable
+  the galaxies to overlay both.
 - **Catalogue export supports lightcones.** Export now reads a flat
   `cli_lightcone` file directly (no `Snap_N` group) — so its columns,
   including any synthetic-photometry `mag_rest_*` / `mag_obs_*` datasets,
@@ -18,13 +34,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **The Structure panel's Synthetic Photometry (SED) section is now fully
-  independent of the GALAXIES section.** It has its own colormap and
-  colourbar state, so changing one section no longer mirrors into the
-  other; both still colour the single galaxy layer, with whichever you
-  touched last driving the render. The SED section also gains a **Visible**
-  checkbox and loads with a band already selected and applied (instead of a
-  blank dropdown), mirroring the other Structure sections.
 - **Lightcone camera framing.** Reset / default view now zooms in on the
   cone (filling the viewport width rather than fitting the bounding sphere
   to the shorter axis, which left it a tiny sliver), kept horizontal and
@@ -40,10 +49,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **SED colormaps sometimes didn't apply.** Because the SED colormap shared
-  state with the GALAXIES section, switching bands could reset a colormap
-  you'd just picked; with the sections decoupled, SED colormap changes
-  always take effect.
+- **Lightcone galaxies popped in and out when rotating/panning from the
+  observer view.** The go-to-observer camera parked its focal point ~1 Mpc
+  from the eye, so VTK's clipping-range heuristic (which scales with the
+  focal distance) collapsed the near plane and clipped the deep cone as the
+  camera moved. The focal point now sits at the cone centre, so the whole
+  cone stays rendered while you orbit or pan.
+- **Photometry is fully decoupled from the Galaxies section.** It's now its
+  own layer with its own controls, so nothing about it touches (or is touched
+  by) the galaxy colour-by / colormap.
+- **`./bin/visage` could silently run a pip-installed copy instead of the
+  checkout.** The launcher used `python -m visage.cli`, which resolves
+  `visage` against the current directory — so launching from anywhere other
+  than the repo root picked up an installed `sage-viewer` in site-packages,
+  making local code edits appear to do nothing. It now prepends the repo
+  root to `PYTHONPATH` (so the checkout always wins) and prints a one-line
+  banner showing which `visage` file and version is actually running.
 
 ## [2.1.3] — 2026-07-29
 

@@ -140,6 +140,11 @@ class LightconeModel(Model):
 
         self.halo_layer = HaloLayer(plotter)
         self.galaxy_layer = GalaxyLayer(plotter)
+        # A SECOND, fully independent galaxy layer for synthetic photometry:
+        # renders the same galaxies as a false-colour SED stack with its own
+        # visibility, so the user can show photometry with the normal
+        # galaxies on, off, or on their own. Hidden until switched on.
+        self.sed_layer = GalaxyLayer(plotter)
 
         self.fields_available = {
             ui_key: (hdf_field in lc.present_fields)
@@ -168,6 +173,17 @@ class LightconeModel(Model):
         self.galaxy_layer.update(lc.galaxies)
         self.halo_layer.update(lc.halos)
 
+        # Configure the photometry layer to match the galaxy layer's sizing,
+        # default it to a false-colour stack of the first available band, and
+        # keep it hidden until the user turns photometry on.
+        self.sed_layer.set_radius_scale(1.0)
+        self.sed_layer.set_show_inner_layers(True)
+        if self.sed_bands_available:
+            self.sed_layer.set_sed_bands([self.sed_bands_available[0]])
+            self.sed_layer.color_mode = "sedstack"
+        self.sed_layer.visible = False
+        self.sed_layer.update(lc.galaxies)
+
     # ── snapshot slider bounds (only the snapshots present in the cone) ──
     @property
     def snap_min(self) -> int:
@@ -186,7 +202,9 @@ class LightconeModel(Model):
         gkeep = self._snapnum_per_gal <= snap_num
         hkeep = self._snapnum_per_halo <= snap_num
         # None when nothing is cut, so the render path is identical to Explore.
-        self.galaxy_layer.set_slice_mask(None if gkeep.all() else gkeep)
+        gmask = None if gkeep.all() else gkeep
+        self.galaxy_layer.set_slice_mask(gmask)
+        self.sed_layer.set_slice_mask(gmask)  # photometry follows the same cut
         self.halo_layer.set_slice_mask(None if hkeep.all() else hkeep)
 
     @property

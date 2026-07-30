@@ -254,13 +254,13 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 | Tab | Purpose |
 |---|---|
-| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); in Lightcone Mode with SED data, a dedicated Synthetic Photometry section adds colour-by-band |
+| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar) |
 | Filters    | Range sliders for halo and galaxy properties |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Target     | Halo / galaxy navigation, focus zoom, Galaxy Info, Highlight Galaxy |
 | Environment| Halo selector, environment-class checkboxes, Group Info, Highlight Members |
 | Coords     | Fly to arbitrary (x, y, z) — "Use Current Position" populates from camera; **Draw Sphere** places an interactive two-handle sphere (drag centre ball to translate, drag edge ball to resize); **Lock Sphere** commits it as the focus region |
-| Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region |
+| Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region. *In Lightcone Mode this tab becomes **Photometry**: a separate false-colour image layer built from a stack of synthetic-photometry filters (own Visible/Opacity, independent of the galaxies)* |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
 | Library    | Browse stored screenshots / movies; double-click a row to open as a movable, resizable floating card over the viewport (multiple items open simultaneously); per-row delete button removes the file from disk immediately |
 
