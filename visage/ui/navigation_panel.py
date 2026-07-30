@@ -559,18 +559,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.galaxy_opacity = scene.galaxy_layer.opacity
     state.halo_color_mode = scene.halo_layer.color_mode
     state.galaxy_color_mode = scene.galaxy_layer.color_mode
-    # Mirrors galaxy_color_mode ONLY when it's a SED mode, else "" — the SED
-    # section's own "Colour by band" picker binds to this (not
-    # galaxy_color_mode directly) so it shows its placeholder instead of a
-    # non-SED mode's raw value (e.g. "structure") when nothing SED-related
-    # is selected.
-    state.sed_galaxy_color_mode = (
-        scene.galaxy_layer.color_mode
-        if _is_sed_mode(scene.galaxy_layer.color_mode)
-        else ""
-    )
     state.halo_colormap = scene.halo_layer.colormap
     state.galaxy_colormap = scene.galaxy_layer.colormap
+
+    # ── Synthetic Photometry (SED) section — fully independent state so it
+    #    never mirrors the GALAXIES section.  Both drive the one galaxy layer,
+    #    but each menu keeps its own selection/colormap/colourbar and whichever
+    #    the user touches last wins.  Populated for real (with a default band
+    #    selected + applied) after the mode lists are built, below.
+    state.sed_galaxy_color_mode = ""
+    state.sed_galaxy_colormap = scene.galaxy_layer.colormap
+    state.sed_gal_cbar_style = state.gal_cbar_style
+    state.sed_gal_cbar_min = "—"
+    state.sed_gal_cbar_max = "—"
 
     def _rebuild_color_mode_lists() -> None:
         fields = dict(scene.active_model.fields_available)
@@ -588,6 +589,23 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.is_lightcone = scene.is_lightcone
 
     _rebuild_color_mode_lists()
+
+    # In lightcone mode with SED data, start the galaxy layer coloured by the
+    # first synthetic-photometry band, so the SED section loads with a real
+    # selection AND applied colouring — like every other Structure section,
+    # not a blank dropdown.  (The GALAXIES section keeps its own default mode
+    # as an independent, inactive selection until the user picks it.)
+    if state.has_sed_data and state.sed_color_modes:
+        _first_sed = state.sed_color_modes[0]["value"]
+        _first_cmap = _sed_default_cmap(_first_sed)
+        state.sed_galaxy_color_mode = _first_sed
+        state.sed_galaxy_colormap = _first_cmap
+        scene.galaxy_layer.color_mode = _first_sed
+        scene.galaxy_layer.colormap = _first_cmap
+        _lo0, _hi0 = _sed_cbar_range(scene, _first_sed)
+        state.sed_gal_cbar_min = _lo0
+        state.sed_gal_cbar_max = _hi0
+        state.sed_gal_cbar_style = _cbar_style(cmap_css_gradient(_first_cmap))
 
     def _push():
         if hasattr(server.controller, "view_update"):
@@ -1036,6 +1054,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @state.change("galaxy_color_mode")
     def on_galaxy_mode(galaxy_color_mode, **_):
+        # The GALAXIES section only ever holds normal (non-SED) modes now —
+        # SED bands live entirely in the independent SED section below.
         scene.galaxy_layer.color_mode = galaxy_color_mode
         # Snap to the property's default colormap — unless the same update
         # also set the colormap explicitly (story scenes, console commands).
@@ -1047,44 +1067,47 @@ def build_navigation_panel(server, scene: Scene) -> None:
             galaxy_color_mode != "structure"
             and "galaxy_colormap" not in state.modified_keys
         ):
-            default_cmap = (
-                _sed_default_cmap(galaxy_color_mode)
-                if _is_sed_mode(galaxy_color_mode)
-                else _GAL_CMAP_DEFAULTS.get(galaxy_color_mode, "viridis")
+            state.galaxy_colormap = _GAL_CMAP_DEFAULTS.get(
+                galaxy_color_mode, "viridis"
             )
-            state.galaxy_colormap = default_cmap
-        # Categorical / multi-layer modes (density, type, structure) don't have
-        # a single colormap range — fall back to a generic label. SED bands
-        # get a data-driven (percentile) range instead of a fixed lookup.
+        # Whichever section the user touches last drives the render: picking a
+        # galaxy property here applies its colormap so it takes over from any
+        # SED colouring that was active.
+        scene.galaxy_layer.colormap = state.galaxy_colormap
         if galaxy_color_mode in _GAL_CB:
             _, lo, hi = _GAL_CB[galaxy_color_mode]
-        elif _is_sed_mode(galaxy_color_mode):
-            lo, hi = _sed_cbar_range(scene, galaxy_color_mode)
         else:
             lo, hi = "—", "—"
         state.gal_cbar_min = lo
         state.gal_cbar_max = hi
-        # Keep the SED section's own picker in sync: show the mode there
-        # only when it's actually a SED mode, else clear it back to its
-        # placeholder (rather than displaying e.g. "structure").
-        new_sed_val = (
-            galaxy_color_mode if _is_sed_mode(galaxy_color_mode) else ""
+        state.gal_cbar_style = _cbar_style(
+            cmap_css_gradient(state.galaxy_colormap)
         )
-        if state.sed_galaxy_color_mode != new_sed_val:
-            state.sed_galaxy_color_mode = new_sed_val
         _push()
 
     @state.change("sed_galaxy_color_mode")
     def on_sed_galaxy_mode(sed_galaxy_color_mode, **_):
-        # Forward-only: picking a SED mode here drives the real state
-        # (galaxy_color_mode), which in turn clears/sets this var back via
-        # on_galaxy_mode above. Never forward an empty clear — on_galaxy_mode
-        # is the one that produces those, not the other way around.
-        if (
-            sed_galaxy_color_mode
-            and sed_galaxy_color_mode != state.galaxy_color_mode
-        ):
-            state.galaxy_color_mode = sed_galaxy_color_mode
+        # Independent of the GALAXIES section — picking a band here colours the
+        # (single) galaxy layer by that band and takes over as the active
+        # colour source.  Empty means "nothing selected" (only at startup in
+        # non-lightcone mode); don't touch the layer then.
+        if not sed_galaxy_color_mode:
+            return
+        # Snap to the band's default colormap unless the user is setting the
+        # SED colormap explicitly in the same update.
+        if "sed_galaxy_colormap" not in state.modified_keys:
+            state.sed_galaxy_colormap = _sed_default_cmap(
+                sed_galaxy_color_mode
+            )
+        scene.galaxy_layer.color_mode = sed_galaxy_color_mode
+        scene.galaxy_layer.colormap = state.sed_galaxy_colormap
+        lo, hi = _sed_cbar_range(scene, sed_galaxy_color_mode)
+        state.sed_gal_cbar_min = lo
+        state.sed_gal_cbar_max = hi
+        state.sed_gal_cbar_style = _cbar_style(
+            cmap_css_gradient(state.sed_galaxy_colormap)
+        )
+        _push()
 
     @state.change("halo_colormap")
     def on_halo_cmap(halo_colormap, **_):
@@ -1096,11 +1119,29 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @state.change("galaxy_colormap")
     def on_galaxy_cmap(galaxy_colormap, **_):
-        scene.galaxy_layer.colormap = galaxy_colormap
         from visage.utils.colormap import cmap_css_gradient
 
+        # Only drive the layer when a GALAXIES (non-SED) mode is the active
+        # colour source; otherwise this is just the GALAXIES section's own
+        # (inactive) colourbar being restyled and must not disturb the SED
+        # colouring currently on screen.
+        if not _is_sed_mode(scene.galaxy_layer.color_mode):
+            scene.galaxy_layer.colormap = galaxy_colormap
+            _push()
         state.gal_cbar_style = _cbar_style(cmap_css_gradient(galaxy_colormap))
-        _push()
+
+    @state.change("sed_galaxy_colormap")
+    def on_sed_galaxy_cmap(sed_galaxy_colormap, **_):
+        from visage.utils.colormap import cmap_css_gradient
+
+        # Symmetric to on_galaxy_cmap: only touch the layer while a SED mode
+        # is the active colour source.
+        if _is_sed_mode(scene.galaxy_layer.color_mode):
+            scene.galaxy_layer.colormap = sed_galaxy_colormap
+            _push()
+        state.sed_gal_cbar_style = _cbar_style(
+            cmap_css_gradient(sed_galaxy_colormap)
+        )
 
     # ------------------------------------------------------------------
     # Interactive draw-widget storage (one slot each; only one active at a time)
@@ -1507,7 +1548,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # ------------------------------------------------------------------
 
     state.export_dialog_show = False
-    state.export_scope = "filters"  # filters|target|group|coords|box
+    # lightcone|filters|target|group|coords|box  ("lightcone" only offered in
+    # Lightcone Mode; default to it there so export works out of the box).
+    state.export_scope = "lightcone" if scene.is_lightcone else "filters"
+    state.export_scope_items = (
+        [{"title": "Whole Lightcone", "value": "lightcone"}]
+        if scene.is_lightcone
+        else []
+    ) + [
+        {"title": "Current Filters", "value": "filters"},
+        {"title": "Target Galaxy", "value": "target"},
+        {"title": "Group Members", "value": "group"},
+        {"title": "Coords Sphere", "value": "coords"},
+        {"title": "Box Region", "value": "box"},
+    ]
     state.export_format = "csv"  # csv|hdf5|fits|txt
     state.export_filename = ""  # optional custom stem
     state.export_status = ""  # last result path or error
@@ -1520,6 +1574,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _, galaxies = scene.active_model.loader.get(scene.current_snap)
         if galaxies.count == 0:
             raise ValueError("No galaxies loaded.")
+
+        if scope == "lightcone":
+            return (
+                np.arange(galaxies.count, dtype=np.int64),
+                {"lightcone": "all galaxies in the cone"},
+            )
 
         if scope == "target":
             idx = int(state.nav_gal_idx)
@@ -1623,6 +1683,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         return gal_indices, bounds
 
     _SCOPE_LABELS = {
+        "lightcone": "Whole Lightcone",
         "filters": "Current Filters",
         "target": "Target Galaxy",
         "group": "Group Members",
@@ -1648,8 +1709,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
             cfg = scene.primary.cfg
             snap_tbl = scene.primary.snap_table
-            hdf5_path = cfg.hdf5_path
             snap_num = scene.current_snap
+            # A lightcone is a flat file (no Snap_N group); read its top-level
+            # columns — which also include the synthetic-photometry mags —
+            # straight from the cone source file rather than a SAGE snapshot.
+            is_lc = scene.is_lightcone
+            if is_lc:
+                hdf5_path = getattr(scene.active_model, "path", cfg.hdf5_path)
+            else:
+                hdf5_path = cfg.hdf5_path
             snap_lbl = (
                 str(state.snap_label)
                 if hasattr(state, "snap_label")
@@ -1684,6 +1752,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     scope_bounds=scope_bounds,
                     cfg=cfg,
                     snap_table=snap_tbl,
+                    flat=is_lc,
                 ),
             )
             n = len(sage_idx)
@@ -3110,6 +3179,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("center_camera")
     def on_center_camera():
+        if scene.is_lightcone:
+            # No box centre in a lightcone — stand at the observer (origin)
+            # and look outward along the cone.
+            scene.camera.go_to_lightcone_observer()
+            _push()
+            return
         active = scene.active_model
         off = tuple(float(v) for v in active.offset)
         scene.camera.go_to_box_center(offset=off, box_size=active.box_size)
@@ -4039,14 +4114,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ):
                         v3.VLabel(
                             "{{ halo_cbar_min }}",
-                            style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
                         v3.VSheet(
                             style=("halo_cbar_style",), color="transparent"
                         )
                         v3.VLabel(
                             "{{ halo_cbar_max }}",
-                            style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
 
                 v3.VDivider(style="margin:14px 0;")
@@ -4115,14 +4190,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ):
                         v3.VLabel(
                             "{{ gal_cbar_min }}",
-                            style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
                         v3.VSheet(
                             style=("gal_cbar_style",), color="transparent"
                         )
                         v3.VLabel(
                             "{{ gal_cbar_max }}",
-                            style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                            style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
 
                 with v3.VSheet(
@@ -4138,6 +4213,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                     )
                     with v3.VSheet(color="transparent", style=_FIELD):
+                        v3.VCheckbox(
+                            v_model=("galaxies_visible",),
+                            label="Visible",
+                            color="#7FDBFF",
+                            hide_details=True,
+                            density="compact",
+                        )
+                    with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VSelect(
                             v_model=("sed_galaxy_color_mode",),
                             items=("sed_color_modes",),
@@ -4149,7 +4232,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         )
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VSelect(
-                            v_model=("galaxy_colormap",),
+                            v_model=("sed_galaxy_colormap",),
                             items=(_CMAPS,),
                             label="Colormap",
                             hide_details=True,
@@ -4165,15 +4248,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="display:flex;align-items:center;gap:4px;",
                         ):
                             v3.VLabel(
-                                "{{ gal_cbar_min }}",
-                                style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                                "{{ sed_gal_cbar_min }}",
+                                style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                             )
                             v3.VSheet(
-                                style=("gal_cbar_style",), color="transparent"
+                                style=("sed_gal_cbar_style",),
+                                color="transparent",
                             )
                             v3.VLabel(
-                                "{{ gal_cbar_max }}",
-                                style="font-size:0.6rem;color:#6b7280;white-space:nowrap;flex-shrink:0;",
+                                "{{ sed_gal_cbar_max }}",
+                                style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                             )
 
                 v3.VDivider(style="margin:14px 0 10px;")

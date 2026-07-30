@@ -1131,13 +1131,8 @@ def create_app(
             build_story_hud(server)
 
             # ── Export catalogue dialog ────────────────────────────────────
-            _SCOPE_ITEMS = [
-                {"title": "Current Filters", "value": "filters"},
-                {"title": "Target Galaxy", "value": "target"},
-                {"title": "Group Members", "value": "group"},
-                {"title": "Coords Sphere", "value": "coords"},
-                {"title": "Box Region", "value": "box"},
-            ]
+            # Scope options are built in navigation_panel (state var) so the
+            # lightcone-only "Whole Lightcone" entry appears only in that mode.
             _FMT_ITEMS = [
                 {"title": "CSV", "value": "csv"},
                 {"title": "HDF5", "value": "hdf5"},
@@ -1188,7 +1183,7 @@ def create_app(
                         # Scope
                         v3.VSelect(
                             v_model=("export_scope",),
-                            items=(_SCOPE_ITEMS,),
+                            items=("export_scope_items",),
                             label="Selection scope",
                             variant="outlined",
                             density="compact",

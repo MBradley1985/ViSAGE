@@ -351,6 +351,20 @@ class CameraController:
                 (0.0, 1.0, 0.0),  # +Y up  → X axis horizontal
             ]
             self._pl.reset_camera()
+            # reset_camera fits the bounding SPHERE (radius ~ span/2) to the
+            # viewport's SHORTER axis. A lightcone is long and thin, so that
+            # leaves it a tiny sliver ringed by empty margin. Zoom so the
+            # cone's widest extent fills the viewport WIDTH instead — properly
+            # zoomed-in and centred, still showing the cone end to end.
+            try:
+                w, h = self._pl.window_size
+                if w and h:
+                    self._pl.camera.zoom(max(1.0, (w / h) * 0.9))
+                else:
+                    self._pl.camera.zoom(1.5)
+            except Exception:
+                self._pl.camera.zoom(1.5)
+            self._pl.renderer.ResetCameraClippingRange()
             return
         half = self._box_size / 2.0
         self._pl.camera_position = [
@@ -385,6 +399,27 @@ class CameraController:
             (cx, cy, cz),
             (0.0, 1.0, 0.0),
         ]
+
+    def go_to_lightcone_observer(self) -> None:
+        """Place the camera AT the observer (coordinate origin) looking
+        outward along the cone axis, with the sky spread horizontally — as if
+        standing at the observer and gazing out into the lightcone."""
+        self._clear_indicator()
+        if self._lc_bounds is None:
+            return
+        b = self._lc_bounds
+        center = (b[0] + b[1]) / 2.0
+        view = center  # observer is at the origin, so view = centre - origin
+        n = float(np.linalg.norm(view))
+        if n < 1e-9:
+            return
+        view = view / n
+        self._pl.camera.position = (0.0, 0.0, 0.0)
+        self._pl.camera.focal_point = tuple(view)  # look outward
+        # +Z up puts the (wider) Y sky-extent left→right, so the cone opens
+        # out horizontally in front of the viewer.
+        self._pl.camera.up = (0.0, 0.0, 1.0)
+        self._pl.renderer.ResetCameraClippingRange()
 
     def go_to_box_center(
         self,

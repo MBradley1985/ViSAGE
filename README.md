@@ -72,7 +72,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Configurable FPS (1 – 60) and resolution (Native / 2× / 4× supersampled)
 - Optional user-typed label per capture; everything saves into `sage_outputs/session_<timestamp>/` in your current working directory
 - **Overlay compositing** — Galaxy Info, Group Info, console pop-out, and open Library cards are all composited into screenshots and recordings exactly as they appear on screen
-- Catalogue export (CSV, HDF5, FITS, TXT) for the current filter selection, target, or box region — saves to `sage_outputs/catalogues/`
+- Catalogue export (CSV, HDF5, FITS, TXT) for the current filter selection, target, or box region — or, in Lightcone Mode, the whole cone (including any synthetic-photometry columns) — saves to `sage_outputs/catalogues/`
 
 ### Story Mode
 - Play JSON-defined **stories** — ordered scenes of captured viewer state (snapshot, camera, layers, filters, focus) with text/media overlays — as full presentations over the live 3D view

@@ -32,14 +32,32 @@ Drag it inward from the maximum to peel away the near side of the cone and see w
 
 If the lightcone was run through the LightSAGE flow's optional SED stage (see
 [Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps)), the Structure
-panel gains a dedicated **Synthetic Photometry (SED)** section listing every
-computed magnitude band (e.g. `g (rest)`, `r (observed)`). Picking a band uses
-the same colour-by / colormap mechanism as every other property — it's just
-presented in its own section, and only appears for lightcones with SED data.
+panel gains a dedicated **Synthetic Photometry (SED)** section. It behaves like
+the other Structure sections — a **Visible** checkbox, a **Colour by band**
+dropdown (loaded with a band already selected, not blank), a **Colormap**
+picker, and a colourbar — and it's fully independent of the GALAXIES section:
+changing one never mirrors into the other. Both colour the single galaxy layer,
+and whichever section you touched last drives what's on screen.
+
+The **Colour by band** dropdown lists every computed magnitude band (e.g.
+`g (rest)`, `r (observed)`), plus derived quantities: colour indices between
+bands in a frame (e.g. `g - r (rest)`) and mass-to-light ratios (`M*/L`) for
+bands with a known solar magnitude. Each mode gets a sensible default colormap
+(diverging for colour indices, a mass-like map for `M*/L`, frame-distinct
+sequential maps for raw bands), which you can override with the Colormap picker.
+
+The section only appears for lightcones that actually carry SED data.
 
 ## Camera
 
-Resetting the camera frames the cone **horizontally, centred** in the viewport (rather than the cubic-box framing used for a SAGE box) — this is also the initial view on load.
+Resetting the camera frames the cone **horizontally, centred and zoomed in**,
+showing it end to end (rather than the cubic-box framing used for a SAGE box) —
+this is also the initial view on load.
+
+The **go-to-centre** button (▶ centre icon) doesn't use a box centre in
+Lightcone Mode — instead it stands you at the **observer** (the coordinate
+origin) looking **outward** along the cone, with the sky spread horizontally,
+as if gazing out into the lightcone.
 
 ## Session models
 

@@ -36,8 +36,10 @@ def _make_sed_lightcone(path, n=30, seed=2):
 
 @pytest.fixture
 def sed_panel(tmp_path):
-    """A real (server, state) pair with the nav panel built against a
-    lightcone that has SED data, ready for reactive state changes."""
+    """A real (scene, state) pair with the nav panel built against a
+    lightcone that has SED data, ready for reactive state changes. Returns
+    a small holder so tests can assert on both the trame state and the
+    galaxy layer the two Structure sections drive."""
     import pyvista as pv
     from trame.app import get_server
     from trame.ui.vuetify3 import SinglePageLayout
@@ -59,61 +61,113 @@ def sed_panel(tmp_path):
 
     state = server.state
     state.ready()
-    return state
+
+    class _Holder:
+        def __init__(self, state, scene):
+            self.state = state
+            self.scene = scene
+
+        @property
+        def layer_mode(self):
+            return self.scene.galaxy_layer.color_mode
+
+        @property
+        def layer_cmap(self):
+            return self.scene.galaxy_layer.colormap
+
+    return _Holder(state, scene)
 
 
 def test_sed_modes_include_colour_index_and_mass_to_light(sed_panel):
-    modes = [m["value"] for m in sed_panel.sed_color_modes]
+    modes = [m["value"] for m in sed_panel.state.sed_color_modes]
     assert any(m.startswith("sed:") for m in modes)
     assert any(m.startswith("sedcolor:") for m in modes)
     assert any(m.startswith("sedml:") for m in modes)
 
 
-def test_sed_picker_starts_blank_not_showing_structure(sed_panel):
-    assert sed_panel.galaxy_color_mode == "structure"
-    assert sed_panel.sed_galaxy_color_mode == ""
+def test_sed_picker_starts_with_a_band_selected(sed_panel):
+    # Mimics the other Structure sections: the SED dropdown loads with a
+    # real selection (not blank) and that selection is actually applied to
+    # the galaxy layer. The GALAXIES section keeps its own default mode as
+    # an independent, inactive selection.
+    st = sed_panel.state
+    assert st.sed_galaxy_color_mode  # non-empty
+    assert st.sed_galaxy_color_mode == st.sed_color_modes[0]["value"]
+    assert sed_panel.layer_mode == st.sed_galaxy_color_mode
+    assert st.galaxy_color_mode == "structure"
 
 
 def test_selecting_raw_band_sets_frame_appropriate_colormap(sed_panel):
-    with sed_panel:
-        sed_panel.sed_galaxy_color_mode = "sed:mag_rest_sdss_g"
-    assert sed_panel.galaxy_color_mode == "sed:mag_rest_sdss_g"
-    assert sed_panel.galaxy_colormap == "viridis"
-    assert sed_panel.gal_cbar_min != "—"
+    st = sed_panel.state
+    with st:
+        st.sed_galaxy_color_mode = "sed:mag_rest_sdss_g"
+    assert sed_panel.layer_mode == "sed:mag_rest_sdss_g"
+    assert st.sed_galaxy_colormap == "viridis"  # rest frame
+    assert sed_panel.layer_cmap == "viridis"
+    assert st.sed_gal_cbar_min != "—"
 
-    with sed_panel:
-        sed_panel.sed_galaxy_color_mode = "sed:mag_obs_sdss_r"
-    assert sed_panel.galaxy_colormap == "magma"
+    with st:
+        st.sed_galaxy_color_mode = "sed:mag_obs_sdss_r"
+    assert st.sed_galaxy_colormap == "magma"  # observed frame
+    assert sed_panel.layer_cmap == "magma"
 
 
 def test_selecting_colour_index_sets_diverging_colormap(sed_panel):
-    modes = [m["value"] for m in sed_panel.sed_color_modes]
-    color_mode = next(m for m in modes if m.startswith("sedcolor:"))
-    with sed_panel:
-        sed_panel.sed_galaxy_color_mode = color_mode
-    assert sed_panel.galaxy_color_mode == color_mode
-    assert sed_panel.galaxy_colormap == "coolwarm"
-    assert sed_panel.gal_cbar_min != "—" and sed_panel.gal_cbar_max != "—"
+    st = sed_panel.state
+    mode = next(
+        m["value"]
+        for m in st.sed_color_modes
+        if m["value"].startswith("sedcolor:")
+    )
+    with st:
+        st.sed_galaxy_color_mode = mode
+    assert sed_panel.layer_mode == mode
+    assert st.sed_galaxy_colormap == "coolwarm"
+    assert st.sed_gal_cbar_min != "—" and st.sed_gal_cbar_max != "—"
 
 
 def test_selecting_mass_to_light_sets_mass_colormap(sed_panel):
-    modes = [m["value"] for m in sed_panel.sed_color_modes]
-    ml_mode = next(m for m in modes if m.startswith("sedml:"))
-    with sed_panel:
-        sed_panel.sed_galaxy_color_mode = ml_mode
-    assert sed_panel.galaxy_color_mode == ml_mode
-    assert sed_panel.galaxy_colormap == "cividis"
-    assert sed_panel.gal_cbar_min != "—" and sed_panel.gal_cbar_max != "—"
+    st = sed_panel.state
+    mode = next(
+        m["value"]
+        for m in st.sed_color_modes
+        if m["value"].startswith("sedml:")
+    )
+    with st:
+        st.sed_galaxy_color_mode = mode
+    assert sed_panel.layer_mode == mode
+    assert st.sed_galaxy_colormap == "cividis"
+    assert st.sed_gal_cbar_min != "—" and st.sed_gal_cbar_max != "—"
 
 
-def test_switching_main_dropdown_clears_sed_picker(sed_panel):
-    with sed_panel:
-        sed_panel.sed_galaxy_color_mode = "sed:mag_rest_sdss_g"
-    assert sed_panel.sed_galaxy_color_mode != ""
+def test_sections_are_decoupled(sed_panel):
+    # The two menus must not mirror each other. Changing the GALAXIES section
+    # leaves the SED section's own selection/colormap untouched (and vice
+    # versa) — whichever was touched last just drives the shared layer.
+    st = sed_panel.state
+    with st:
+        st.sed_galaxy_color_mode = "sed:mag_rest_sdss_g"
+        st.sed_galaxy_colormap = "turbo"
+    assert sed_panel.layer_mode == "sed:mag_rest_sdss_g"
+    assert sed_panel.layer_cmap == "turbo"
 
-    with sed_panel:
-        sed_panel.galaxy_color_mode = "stellar_mass"
-    assert sed_panel.sed_galaxy_color_mode == ""
+    # Switch the GALAXIES section — SED section keeps its selection/colormap.
+    with st:
+        st.galaxy_color_mode = "stellar_mass"
+    assert st.sed_galaxy_color_mode == "sed:mag_rest_sdss_g"
+    assert st.sed_galaxy_colormap == "turbo"
+    # ...and the galaxy property is now what drives the layer (last touched).
+    assert sed_panel.layer_mode == "stellar_mass"
+
+    # Fiddling the GALAXIES colormap now must NOT disturb the SED section.
+    with st:
+        st.galaxy_colormap = "plasma"
+    assert st.sed_galaxy_colormap == "turbo"
+
+    # Re-select the SED band — it takes back over, its colormap intact.
+    with st:
+        st.sed_galaxy_color_mode = "sed:mag_rest_sdss_r"
+    assert sed_panel.layer_mode == "sed:mag_rest_sdss_r"
 
 
 # ── Derived (colour-index / mass-to-light) modes scale to a partial band

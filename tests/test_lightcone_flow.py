@@ -407,6 +407,37 @@ def test_reader_builds_galaxies_and_haloes(tmp_path):
     assert "StellarMass" in lc.present_fields
 
 
+def test_catalogue_export_flat_lightcone_includes_sed(tmp_path):
+    # Exporting a lightcone must read the FLAT file (no Snap_N group) and
+    # carry its synthetic-photometry columns through.
+    from visage.utils.catalogue import write_catalogue
+
+    p = tmp_path / "lightcone.h5"
+    _make_lightcone(p, n=60)
+    with h5py.File(p, "a") as f:
+        f["mag_rest_sdss_g"] = np.linspace(-22, -16, 60).astype(np.float32)
+        f["mag_obs_sdss_r"] = np.linspace(18, 24, 60).astype(np.float32)
+
+    out = tmp_path / "cat.csv"
+    write_catalogue(
+        hdf5_path=p,
+        snap_num=0,
+        snap_label="lightcone",
+        sage_indices=np.arange(30, dtype=np.int64),
+        out_path=out,
+        fmt="csv",
+        scope_label="Whole Lightcone",
+        flat=True,
+    )
+    lines = [
+        ln for ln in out.read_text().splitlines() if not ln.startswith("#")
+    ]
+    header = lines[0].split(",")
+    assert "Posx" in header and "StellarMass" in header
+    assert "mag_rest_sdss_g" in header and "mag_obs_sdss_r" in header
+    assert len(lines) - 1 == 30  # 30 data rows
+
+
 def test_reader_mass_floor_and_downsample(tmp_path):
     from visage.io.lightcone_reader import load_lightcone_snapshot
 

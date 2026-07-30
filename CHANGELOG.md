@@ -8,6 +8,43 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Catalogue export supports lightcones.** Export now reads a flat
+  `cli_lightcone` file directly (no `Snap_N` group) — so its columns,
+  including any synthetic-photometry `mag_rest_*` / `mag_obs_*` datasets,
+  come through — and a **Whole Lightcone** scope (the default in Lightcone
+  Mode) exports every galaxy in the cone.
+
+### Changed
+
+- **The Structure panel's Synthetic Photometry (SED) section is now fully
+  independent of the GALAXIES section.** It has its own colormap and
+  colourbar state, so changing one section no longer mirrors into the
+  other; both still colour the single galaxy layer, with whichever you
+  touched last driving the render. The SED section also gains a **Visible**
+  checkbox and loads with a band already selected and applied (instead of a
+  blank dropdown), mirroring the other Structure sections.
+- **Lightcone camera framing.** Reset / default view now zooms in on the
+  cone (filling the viewport width rather than fitting the bounding sphere
+  to the shorter axis, which left it a tiny sliver), kept horizontal and
+  centred end to end. The **go-to-centre** button in Lightcone Mode now
+  stands at the observer (coordinate origin) looking outward along the
+  cone, sky spread horizontally, instead of using box-centre math.
+- **Colourbar limit labels lightened** in the Structure panel (`#6b7280` →
+  `#a3adbb`) so the min/max values are legible.
+- **Lightcone flythrough — gentler first zoom.** The first move (from the
+  whole-cone framing into the nearest group) is now distance-scaled to fly
+  at the same linear speed as Box Mode's approach, instead of swooping the
+  much larger distance in the same fixed time.
+
+### Fixed
+
+- **SED colormaps sometimes didn't apply.** Because the SED colormap shared
+  state with the GALAXIES section, switching bands could reset a colormap
+  you'd just picked; with the sections decoupled, SED colormap changes
+  always take effect.
+
 ## [2.1.3] — 2026-07-29
 
 ### Fixed

@@ -777,6 +777,26 @@ def build_toolbar(server, scene: Scene) -> None:
                     continue
                 pos, radius, dps = targets[i % len(targets)]
                 approach_secs = 10.0 if radius == _FT_CLUSTER_RADIUS else 8.0
+                # Lightcone Mode skips the establishing approach, so its FIRST
+                # move flies all the way from the whole-cone reset framing into
+                # the nearest group — a far larger distance than any box-mode
+                # move. At the fixed 8-10 s that reads as a fast swoop. Scale
+                # the first move's duration by distance so its linear speed
+                # matches box mode's gentle approach (≈ span / approach_secs).
+                if is_lc and i == 0:
+                    dest = orbit_start_position(
+                        cam, _np.array(pos, dtype=float), radius
+                    )
+                    dist = float(
+                        _np.linalg.norm(
+                            dest - _np.array(cam.position, dtype=float)
+                        )
+                    )
+                    span = float(getattr(scene._cfg, "box_size", 0.0)) or 1.0
+                    ref_speed = span / _FT_APPROACH_SECS
+                    approach_secs = float(
+                        _np.clip(dist / ref_speed, _FT_APPROACH_SECS, 24.0)
+                    )
                 if not await _fly_to_orbit(pos, radius, approach_secs):
                     return
                 # Focus ON — render one stationary frame so focus is visible
