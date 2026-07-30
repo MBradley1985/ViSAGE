@@ -22,6 +22,11 @@ from visage.utils.discover import find_models
 # ──────────────────────────────────────────────────────────────────────────
 # UI palettes
 # ──────────────────────────────────────────────────────────────────────────
+# black versions disagree on how to wrap `dedent("""…""")` (24.x puts the
+# string on its own line, 26.x hugs the paren), which made every commit bounce
+# as the hook and a local black reformatted each other. Fence it (the directive
+# must be a bare `# fmt: off` on its own line) so no black version touches it.
+# fmt: off
 _THEME_CSS = dedent(
     """
 /* Force the page root to black so no theme colour bleeds through
@@ -118,6 +123,7 @@ html, body, .v-application { background: #000000 !important; }
 .v-theme--dos_blue .v-chip { border-radius: 0 !important; }
 """
 )
+# fmt: on
 from visage.ui.info_panel import build_info_panel
 from visage.ui.navigation_panel import build_navigation_panel
 from visage.ui.toolbar import build_toolbar
