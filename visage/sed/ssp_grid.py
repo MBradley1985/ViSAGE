@@ -18,14 +18,20 @@ class SSPGrid:
     determined by the requested age or spectrum), so it's exposed once here.
     """
 
-    def __init__(self, logzsol: float) -> None:
+    def __init__(
+        self, logzsol: float, dust: bool = False, dust2: float = 0.3
+    ) -> None:
         import fsps
 
+        # dust: a Calzetti (2000) starburst attenuation curve (dust_type=2)
+        # with diffuse V-band optical depth `dust2`. Off by default —
+        # dust_type=0 is a pure, unattenuated stellar SED.
         self._sp = fsps.StellarPopulation(
             zcontinuous=1,
             sfh=0,  # SSP mode: single-age burst, 1 Msun formed
             logzsol=float(logzsol),
-            dust_type=0,
+            dust_type=2 if dust else 0,
+            dust2=float(dust2) if dust else 0.0,
             add_dust_emission=False,
         )
         self.logzsol = float(logzsol)

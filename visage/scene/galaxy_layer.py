@@ -176,8 +176,12 @@ class GalaxyLayer:
     #                     exaggerate the small real SED-shape ratios into
     #                     visible hue differences.
     #   _SED_SATURATION — how far to push the per-galaxy colour away from grey.
+    #   _SED_FLOOR      — minimum brightness for any galaxy that has light, so
+    #                     the faint end stays visible instead of being crushed
+    #                     away (every galaxy with flux renders).
     _SED_GAMMA = 2.5
     _SED_SATURATION = 2.0
+    _SED_FLOOR = 0.18
 
     # ------------------------------------------------------------------
     # Public API
@@ -738,23 +742,23 @@ class GalaxyLayer:
             med = float(np.median(good))
             if med > 0:
                 amp = amp / med  # typical galaxy -> ~1 in this channel
-        # Expand the band-to-band contrast: the real SED-shape differences are
-        # only ~20-50% in flux, which would give barely-perceptible hue
-        # shifts. Raising the balanced amplitude to a power exaggerates those
-        # ratios so a galaxy a little brighter in r really does read as red.
-        amp = np.where(amp > 0, amp**self._SED_GAMMA, 0.0)
         return amp, filt
 
     def _compute_sed_stack_rgb(self, snap: GalaxySnapshot):
         """Per-galaxy RGB (N, 3) in [0, 1] for the 'sedstack' mode — a proper
-        astronomical false-colour composite (à la Lupton et al. 2004):
+        astronomical false-colour composite (à la Lupton et al. 2004).
 
-        * each stacked item contributes its representative colour weighted by
-          the galaxy's (median-balanced) flux / M*L in that band, so the
-          per-galaxy channel RATIOS carry the real SED shape (→ hue);
-        * the brightness is then set by an asinh stretch of the luminance,
-          applied so the hue is preserved — faint galaxies become visible and
-          bright ones don't wash to white.
+        Hue and brightness are computed separately so the two goals don't
+        fight each other:
+
+        * HUE — each item's median-balanced flux/M*L is raised to a power
+          (_SED_GAMMA) and tinted its representative colour; the per-galaxy
+          channel ratios then carry the (contrast-boosted, saturated) SED
+          shape, so galaxies read visibly blue / red / yellow.
+        * BRIGHTNESS — an asinh stretch of the RAW (un-boosted) luminance with
+          a floor, so EVERY galaxy that has light is visible. Brightness must
+          not use the gamma-boosted amplitude or the faint end gets crushed to
+          nothing and ~a quarter of the galaxies vanish.
 
         Returns None if there's nothing to show."""
         from visage.sed.filters import band_colour
@@ -768,30 +772,38 @@ class GalaxyLayer:
         if n == 0 or not items:
             return None
 
-        rgb = np.zeros((n, 3), dtype=np.float64)
+        rgb_hue = np.zeros((n, 3), dtype=np.float64)  # gamma-boosted -> hue
+        lum = np.zeros(n, dtype=np.float64)  # raw flux sum -> brightness
         for item in items:
             amp, filt = self._sed_stack_amplitude(snap, item)
             cr, cg, cb = band_colour(filt)
-            rgb[:, 0] += amp * cr
-            rgb[:, 1] += amp * cg
-            rgb[:, 2] += amp * cb
+            boosted = np.where(amp > 0, amp**self._SED_GAMMA, 0.0)
+            rgb_hue[:, 0] += boosted * cr
+            rgb_hue[:, 1] += boosted * cg
+            rgb_hue[:, 2] += boosted * cb
+            lum += amp
 
-        # Luminance drives brightness; the RGB direction (hue) is preserved.
-        lum = rgb.max(axis=1)
         lit = lum > 0
         if not lit.any():
             return np.zeros((n, 3), dtype=np.float32)
-        # hue (unit-ish colour), then push it away from grey so the colour
-        # differences are vivid rather than washed toward white.
-        hue = rgb / np.maximum(lum[:, None], 1e-12)
+
+        # Hue: unit-ish colour, pushed away from grey so it reads vividly.
+        hmax = rgb_hue.max(axis=1)
+        hue = rgb_hue / np.maximum(hmax[:, None], 1e-12)
         gray = hue.mean(axis=1, keepdims=True)
         hue = np.clip(gray + self._SED_SATURATION * (hue - gray), 0.0, 1.0)
-        # asinh stretch: soften by the median luminance so most galaxies land
-        # in the mid-tones (where colour reads), normalise to the 99th pct.
+
+        # Brightness: asinh stretch of the raw luminance, softened by the
+        # median so most galaxies sit in the mid-tones, then lifted off the
+        # floor so even the faintest galaxies with light stay visible.
         soft = float(np.median(lum[lit])) or 1.0
         stretched = np.arcsinh(lum / soft)
         norm = float(np.percentile(stretched[lit], 99.0)) or 1.0
-        s = np.clip(stretched / norm, 0.0, 1.0)
+        s_raw = np.clip(stretched / norm, 0.0, 1.0)
+        s = np.where(
+            lit, self._SED_FLOOR + (1.0 - self._SED_FLOOR) * s_raw, 0.0
+        )
+
         out = hue * s[:, None]
         return np.clip(out, 0.0, 1.0).astype(np.float32)
 

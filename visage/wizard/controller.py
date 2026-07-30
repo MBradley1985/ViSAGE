@@ -259,10 +259,15 @@ OUTFILE="lightcone.h5"
 
 # -- Stage 3 (optional): synthetic photometry (SED synthesis) ---------------
 # Forward-models AB magnitudes per galaxy from its star-formation history
-# using FSPS — see the ViSAGE docs for what this does and its simplifications
-# (single present-day metallicity, no dust). Requires: pip install "sage-viewer[sed]"
+# using FSPS. Requires: pip install "sage-viewer[sed]"
 SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
 SED_FRAME="both"                       # rest | obs | both
+# Use each galaxy's own mass-weighted stellar metallicity
+# (MetalsStellarMass/StellarMass); uncheck to force solar for everyone.
+SED_METALLICITY_ENABLED=1
+# Apply Calzetti starburst dust attenuation to the SEDs (reddens galaxies).
+SED_DUST_ENABLED=0
+SED_DUST2=0.3                          # diffuse V-band optical depth when dust is on
 # Filter bands to compute — all checked by default; uncheck any you don't
 # need. Note WISE (mid-IR, W1-W4) flux is dominated by dust emission this
 # pipeline doesn't model, so treat those bands with that caveat in mind.
@@ -324,10 +329,13 @@ if [ "$SED_ENABLED" = "1" ]; then
     echo "No bands checked — skipping SED synthesis."
   else
     bands_csv="$(echo "$sed_bands" | tr -s ' ' ',' | sed 's/^,//')"
+    sed_extra=""
+    [ "$SED_METALLICITY_ENABLED" != "1" ] && sed_extra="$sed_extra --no-metallicity"
+    [ "$SED_DUST_ENABLED" = "1" ] && sed_extra="$sed_extra --dust --dust2 $SED_DUST2"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\
-      --frame "$SED_FRAME"
+      --frame "$SED_FRAME" $sed_extra
   fi
 fi
 """

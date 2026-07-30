@@ -130,9 +130,18 @@ def compute_photometry(
     bands: tuple[str, ...] = DEFAULT_BANDS,
     frame: str = "both",  # "rest" | "obs" | "both"
     n_zbins: int = 6,
+    use_metallicity: bool = True,
+    dust: bool = False,
+    dust2: float = 0.3,
     progress_cb: ProgressCB | None = None,
 ) -> dict[str, np.ndarray]:
     """Compute AB magnitudes for every galaxy in a lightcone HDF5 file.
+
+    ``use_metallicity`` (default True) uses each galaxy's own stellar
+    metallicity (Z = MetalsStellarMass / StellarMass), binned into ``n_zbins``
+    bins; set False to force solar metallicity for every galaxy.
+    ``dust`` (default False) applies a Calzetti starburst attenuation of
+    V-band optical depth ``dust2`` to the synthesized spectra.
 
     Returns a dict of ``mag_rest_<band>`` / ``mag_obs_<band>`` -> (N,)
     float32 arrays, aligned to the file's row order (does not write anything;
@@ -199,14 +208,21 @@ def compute_photometry(
     # to re-metallicity-switch; see ssp_grid.py).
     import fsps
 
-    zsun = fsps.StellarPopulation(zcontinuous=1, sfh=0).solar_metallicity
-    z_frac = np.where(
-        stellar_mass > 0, metals_mass / np.maximum(stellar_mass, 1e-30), 0.0
-    )
-    z_frac = np.clip(z_frac, 1e-6, 0.1)
-    logzsol_all = np.log10(z_frac / zsun)
-    edges = metallicity_bin_edges(n_zbins)
-    zbin_idx, zbin_centers = assign_metallicity_bins(logzsol_all, edges)
+    if use_metallicity:
+        zsun = fsps.StellarPopulation(zcontinuous=1, sfh=0).solar_metallicity
+        z_frac = np.where(
+            stellar_mass > 0,
+            metals_mass / np.maximum(stellar_mass, 1e-30),
+            0.0,
+        )
+        z_frac = np.clip(z_frac, 1e-6, 0.1)
+        logzsol_all = np.log10(z_frac / zsun)
+        edges = metallicity_bin_edges(n_zbins)
+        zbin_idx, zbin_centers = assign_metallicity_bins(logzsol_all, edges)
+    else:
+        # One solar-metallicity bin for everyone.
+        zbin_idx = np.zeros(n, dtype=np.int64)
+        zbin_centers = np.array([0.0])
 
     a_list = np.loadtxt(alist_path)[:n_bins]
 
@@ -244,7 +260,8 @@ def compute_photometry(
 
     for zi in present_zbins:
         z_mask_bin = zbin_idx == zi
-        grid = SSPGrid(zbin_centers[zi])  # ~18s one-time cost per Zbin
+        # ~18s one-time cost per Zbin (per dust setting).
+        grid = SSPGrid(zbin_centers[zi], dust=dust, dust2=dust2)
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
 
         for snap in unique_snaps:
@@ -354,6 +371,24 @@ def main(argv: list[str] | None = None) -> None:
         default=6,
         help="Metallicity bin count (default: 6)",
     )
+    p.add_argument(
+        "--no-metallicity",
+        dest="metallicity",
+        action="store_false",
+        help="Force solar metallicity for every galaxy instead of using its "
+        "own mass-weighted stellar Z (MetalsStellarMass/StellarMass).",
+    )
+    p.add_argument(
+        "--dust",
+        action="store_true",
+        help="Apply Calzetti starburst dust attenuation to the SEDs.",
+    )
+    p.add_argument(
+        "--dust2",
+        type=float,
+        default=0.3,
+        help="Diffuse V-band optical depth when --dust is set (default: 0.3)",
+    )
     args = p.parse_args(argv)
 
     bands = tuple(b.strip() for b in args.bands.split(",") if b.strip())
@@ -374,14 +409,20 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     print(f"Computing synthetic photometry for {args.input} ...")
+    _zdesc = f"per-galaxy ({args.zbins} bins)" if args.metallicity else "solar"
+    _ddesc = f"on (dust2={args.dust2})" if args.dust else "off"
     print(
-        f"  bands: {', '.join(bands)}  frame: {args.frame}  Zbins: {args.zbins}"
+        f"  bands: {', '.join(bands)}  frame: {args.frame}  "
+        f"metallicity: {_zdesc}  dust: {_ddesc}"
     )
     results = compute_photometry(
         args.input,
         bands=bands,
         frame=args.frame,
         n_zbins=args.zbins,
+        use_metallicity=args.metallicity,
+        dust=args.dust,
+        dust2=args.dust2,
         progress_cb=_progress,
     )
     write_photometry(args.input, results)

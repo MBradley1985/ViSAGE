@@ -364,6 +364,34 @@ def test_run_template_sed_bands_are_individual_checkboxes():
     assert "sed_bands" not in keys and "bands_csv" not in keys
 
 
+def test_run_template_has_metallicity_and_dust_options():
+    # Metallicity + dust are exposed as checkboxes (_ENABLED convention) plus
+    # a dust2 numeric field, and forwarded to visage.sed.photometry as flags.
+    s = _LC_RUN_SCRIPT_TEMPLATE.format(
+        lightcone_dir="/x/LightSAGE",
+        sage_output_dir="/x/out",
+        param_file="/x/m.par",
+        alist_file="/x/a_list",
+        outdir="/x/sage_outputs/lightcone",
+        python_exe="/usr/bin/python3",
+    )
+    from visage.wizard.controller import _parse_params
+
+    keys = [p["key"] for p in _parse_params(s, "sh")]
+    assert "SED_METALLICITY_ENABLED" in keys  # checkbox
+    assert "SED_DUST_ENABLED" in keys  # checkbox
+    assert "SED_DUST2" in keys  # numeric field
+    # forwarded to the CLI
+    assert "--no-metallicity" in s and "--dust" in s and "--dust2" in s
+
+    # compute_photometry accepts the matching kwargs (imports without fsps)
+    import inspect
+    from visage.sed.photometry import compute_photometry
+
+    params = inspect.signature(compute_photometry).parameters
+    assert {"use_metallicity", "dust", "dust2"} <= set(params)
+
+
 def test_pretty_param_label_shortens_band_checkboxes():
     from visage.wizard.controller import WizardController
 
