@@ -38,12 +38,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `~/.visage/lightcone_output/`, or recent session models) and opens the
   chosen one straight into Lightcone Mode — no clone/build/run needed.
 - **SED synthesis: metallicity + dust options.** The LightSAGE run-script
-  SED stage gains two checkboxes: **metallicity** (on by default — uses each
+  SED stage gains checkboxes: **metallicity** (on by default — uses each
   galaxy's own mass-weighted stellar Z = `MetalsStellarMass/StellarMass`,
-  binned; uncheck to force solar for everyone) and **dust** (off by default —
-  a Calzetti starburst attenuation with a configurable V-band optical depth
-  `SED_DUST2`, which reddens the galaxies). Both are also exposed on the
-  `visage-sed` CLI (`--no-metallicity`, `--dust`, `--dust2`).
+  binned; uncheck to force solar for everyone), **dust** (off by default — a
+  Calzetti starburst attenuation of configurable V-band optical depth
+  `SED_DUST2`, which reddens the galaxies), and **dust emission** (off; when
+  dust is on, re-emits the absorbed energy in the IR via Draine & Li 2007, so
+  the mid-IR WISE bands become physical rather than caveated). All are also
+  exposed on the `visage-sed` CLI (`--no-metallicity`, `--dust`, `--dust2`,
+  `--dust-emission`).
 - **Catalogue export supports lightcones.** Export now reads a flat
   `cli_lightcone` file directly (no `Snap_N` group) — so its columns,
   including any synthetic-photometry `mag_rest_*` / `mag_obs_*` datasets,

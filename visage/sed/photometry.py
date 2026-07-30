@@ -133,6 +133,7 @@ def compute_photometry(
     use_metallicity: bool = True,
     dust: bool = False,
     dust2: float = 0.3,
+    dust_emission: bool = False,
     progress_cb: ProgressCB | None = None,
 ) -> dict[str, np.ndarray]:
     """Compute AB magnitudes for every galaxy in a lightcone HDF5 file.
@@ -142,6 +143,9 @@ def compute_photometry(
     bins; set False to force solar metallicity for every galaxy.
     ``dust`` (default False) applies a Calzetti starburst attenuation of
     V-band optical depth ``dust2`` to the synthesized spectra.
+    ``dust_emission`` (default False) additionally re-emits the absorbed
+    energy in the IR (Draine & Li 2007), making the mid/far-IR bands (e.g.
+    WISE) physical — only takes effect when ``dust`` is also on.
 
     Returns a dict of ``mag_rest_<band>`` / ``mag_obs_<band>`` -> (N,)
     float32 arrays, aligned to the file's row order (does not write anything;
@@ -261,7 +265,12 @@ def compute_photometry(
     for zi in present_zbins:
         z_mask_bin = zbin_idx == zi
         # ~18s one-time cost per Zbin (per dust setting).
-        grid = SSPGrid(zbin_centers[zi], dust=dust, dust2=dust2)
+        grid = SSPGrid(
+            zbin_centers[zi],
+            dust=dust,
+            dust2=dust2,
+            dust_emission=dust_emission,
+        )
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
 
         for snap in unique_snaps:
@@ -389,6 +398,13 @@ def main(argv: list[str] | None = None) -> None:
         default=0.3,
         help="Diffuse V-band optical depth when --dust is set (default: 0.3)",
     )
+    p.add_argument(
+        "--dust-emission",
+        dest="dust_emission",
+        action="store_true",
+        help="Also re-emit absorbed energy in the IR (Draine & Li), making "
+        "the mid/far-IR bands (WISE) physical. Needs --dust.",
+    )
     args = p.parse_args(argv)
 
     bands = tuple(b.strip() for b in args.bands.split(",") if b.strip())
@@ -410,7 +426,12 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Computing synthetic photometry for {args.input} ...")
     _zdesc = f"per-galaxy ({args.zbins} bins)" if args.metallicity else "solar"
-    _ddesc = f"on (dust2={args.dust2})" if args.dust else "off"
+    if args.dust:
+        _ddesc = f"on (dust2={args.dust2}" + (
+            ", +emission)" if args.dust_emission else ")"
+        )
+    else:
+        _ddesc = "off"
     print(
         f"  bands: {', '.join(bands)}  frame: {args.frame}  "
         f"metallicity: {_zdesc}  dust: {_ddesc}"
@@ -423,6 +444,7 @@ def main(argv: list[str] | None = None) -> None:
         use_metallicity=args.metallicity,
         dust=args.dust,
         dust2=args.dust2,
+        dust_emission=args.dust_emission,
         progress_cb=_progress,
     )
     write_photometry(args.input, results)

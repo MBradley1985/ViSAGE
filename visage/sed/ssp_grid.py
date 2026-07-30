@@ -19,20 +19,29 @@ class SSPGrid:
     """
 
     def __init__(
-        self, logzsol: float, dust: bool = False, dust2: float = 0.3
+        self,
+        logzsol: float,
+        dust: bool = False,
+        dust2: float = 0.3,
+        dust_emission: bool = False,
     ) -> None:
         import fsps
 
         # dust: a Calzetti (2000) starburst attenuation curve (dust_type=2)
         # with diffuse V-band optical depth `dust2`. Off by default —
         # dust_type=0 is a pure, unattenuated stellar SED.
+        # dust_emission: re-emit the absorbed energy in the IR (Draine & Li
+        # 2007), energy-balanced per SSP. Only meaningful WITH attenuation —
+        # with nothing absorbed there is nothing to re-emit — so it's forced
+        # off unless dust is on. Extends the wavelength grid into the far-IR,
+        # which is what makes the mid-IR (WISE) bands physical.
         self._sp = fsps.StellarPopulation(
             zcontinuous=1,
             sfh=0,  # SSP mode: single-age burst, 1 Msun formed
             logzsol=float(logzsol),
             dust_type=2 if dust else 0,
             dust2=float(dust2) if dust else 0.0,
-            add_dust_emission=False,
+            add_dust_emission=bool(dust and dust_emission),
         )
         self.logzsol = float(logzsol)
         self._cache: dict[float, np.ndarray] = {}

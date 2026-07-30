@@ -381,15 +381,27 @@ def test_run_template_has_metallicity_and_dust_options():
     assert "SED_METALLICITY_ENABLED" in keys  # checkbox
     assert "SED_DUST_ENABLED" in keys  # checkbox
     assert "SED_DUST2" in keys  # numeric field
+    assert "SED_DUST_EMISSION_ENABLED" in keys  # checkbox
     # forwarded to the CLI
     assert "--no-metallicity" in s and "--dust" in s and "--dust2" in s
+    assert "--dust-emission" in s
+    # dust emission only forwarded together with dust attenuation
+    assert (
+        '[ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ]'
+        in s
+    )
 
     # compute_photometry accepts the matching kwargs (imports without fsps)
     import inspect
     from visage.sed.photometry import compute_photometry
 
     params = inspect.signature(compute_photometry).parameters
-    assert {"use_metallicity", "dust", "dust2"} <= set(params)
+    assert {
+        "use_metallicity",
+        "dust",
+        "dust2",
+        "dust_emission",
+    } <= set(params)
 
 
 def test_pretty_param_label_shortens_band_checkboxes():

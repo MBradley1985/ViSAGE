@@ -268,9 +268,12 @@ SED_METALLICITY_ENABLED=1
 # Apply Calzetti starburst dust attenuation to the SEDs (reddens galaxies).
 SED_DUST_ENABLED=0
 SED_DUST2=0.3                          # diffuse V-band optical depth when dust is on
+# Also re-emit the absorbed energy in the IR (Draine & Li) — makes the mid-IR
+# (WISE) bands physical. Only has an effect when dust (above) is on.
+SED_DUST_EMISSION_ENABLED=0
 # Filter bands to compute — all checked by default; uncheck any you don't
-# need. Note WISE (mid-IR, W1-W4) flux is dominated by dust emission this
-# pipeline doesn't model, so treat those bands with that caveat in mind.
+# need. WISE (mid-IR, W1-W4) flux is dominated by dust emission — enable
+# SED_DUST_ENABLED + SED_DUST_EMISSION_ENABLED above for those to be physical.
 BAND_GALEX_FUV_ENABLED=1
 BAND_GALEX_NUV_ENABLED=1
 BAND_SDSS_U_ENABLED=1
@@ -332,6 +335,7 @@ if [ "$SED_ENABLED" = "1" ]; then
     sed_extra=""
     [ "$SED_METALLICITY_ENABLED" != "1" ] && sed_extra="$sed_extra --no-metallicity"
     [ "$SED_DUST_ENABLED" = "1" ] && sed_extra="$sed_extra --dust --dust2 $SED_DUST2"
+    [ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ] && sed_extra="$sed_extra --dust-emission"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\
