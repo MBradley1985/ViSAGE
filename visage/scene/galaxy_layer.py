@@ -795,17 +795,18 @@ class GalaxyLayer:
         out = hue * s[:, None]
         return np.clip(out, 0.0, 1.0).astype(np.float32)
 
-    # Nested gaussian shells for the photometry splat: (radius scale, opacity
-    # fraction). A sharply peaked profile — a small, opaque bright core inside
-    # a few smaller, fainter haloes — gives each galaxy a crisp, defined point
-    # rather than a soft blob. The outer halo is deliberately kept well under
-    # the full Rvir so neighbouring splats stay distinct instead of merging.
+    # Nested gaussian shells for the photometry splat: (radius scale, alpha
+    # fraction). A sharply peaked profile — a small, near-opaque bright core
+    # inside a few smaller, progressively fainter haloes — gives each galaxy a
+    # crisp, defined point rather than a soft blob. The outer halo is kept
+    # well under the full Rvir so neighbouring splats stay distinct. The alpha
+    # fraction scales the per-galaxy brightness (see _render_sed_stack).
     _SED_SHELLS = (
-        (0.75, 0.14),
-        (0.45, 0.28),
-        (0.26, 0.5),
-        (0.13, 0.85),
-        (0.06, 1.0),
+        (0.60, 0.12),
+        (0.36, 0.25),
+        (0.20, 0.45),
+        (0.10, 0.75),
+        (0.05, 1.0),
     )
 
     def _render_sed_stack(
@@ -815,38 +816,44 @@ class GalaxyLayer:
         radii: np.ndarray,
     ) -> None:
         """The whole photometry view: an Rvir-sized gaussian splat per galaxy
-        painted with per-point RGB directly (no colormap, no inner structure
+        painted with per-point RGBA directly (no colormap, no inner structure
         layers) — a clean false-colour image built from the filter stack.
 
-        Only galaxies with some flux in the stack are drawn — the faint /
-        zero-flux ones would otherwise render as solid black disks (the dark
-        blobs), so they're simply skipped. A few nested shells keep the splats
-        defined (bright core, faint halo)."""
+        Each splat's ALPHA is its composite brightness (times the shell
+        weight), so a faint galaxy is *transparent* rather than an opaque dark
+        disk. That's what keeps dim galaxies in the foreground from painting
+        dark spots over brighter ones behind them, while a bright galaxy still
+        gets an opaque, defined core. The nested shells (small bright core +
+        fainter haloes) give the splats their peaked, defined profile."""
         if len(positions) == 0:
             return
         rgb = np.clip(rgb, 0.0, 1.0)
-        # Drop galaxies with essentially no flux in the stack: a black splat
-        # would paint an opaque dark blob over the scene, and it carries no
-        # information anyway.
-        bright = rgb.max(axis=1) > 0.02
-        if not bright.any():
+        brightness = rgb.max(axis=1)
+        keep = brightness > 0.01  # skip the truly-invisible; dim ones stay
+        if not keep.any():
             return
-        pos = positions[bright]
-        rgb_u8 = (rgb[bright] * 255).astype(np.uint8)
-        rad = radii[bright]
+        pos = positions[keep]
+        rgb255 = (rgb[keep] * 255).astype(np.uint8)
+        base_a = brightness[keep]  # 0..1 per-galaxy opacity
+        rad = radii[keep]
         first = True
-        for rscale, ofrac in self._SED_SHELLS:
+        for rscale, afrac in self._SED_SHELLS:
             cloud = pv.PolyData(pos)
-            # VTK point-gaussian reads 0..255 uint8 RGB as direct scalars.
-            cloud["sed_rgb"] = rgb_u8
+            rgba = np.empty((len(pos), 4), dtype=np.uint8)
+            rgba[:, :3] = rgb255
+            rgba[:, 3] = np.clip(
+                base_a * afrac * self._opacity * 255.0, 0, 255
+            ).astype(np.uint8)
+            # VTK point-gaussian reads 0..255 uint8 RGBA as direct scalars.
+            cloud["sed_rgba"] = rgba
             cloud["radius"] = (rad * rscale).astype(np.float32)
             actor = self._pl.add_mesh(
                 cloud,
-                scalars="sed_rgb",
-                rgb=True,
+                scalars="sed_rgba",
+                rgb=True,  # direct scalars; 4 components => RGBA
                 style="points_gaussian",
                 emissive=False,
-                opacity=max(0.0, min(1.0, self._opacity * ofrac)),
+                opacity=1.0,  # per-point alpha carries the opacity
                 show_scalar_bar=False,
                 render=False,
                 reset_camera=False,

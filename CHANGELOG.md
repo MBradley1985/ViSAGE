@@ -23,8 +23,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   contrast-boosted) so galaxies come out visibly blue / red / yellow by their
   actual colours, with an asinh brightness stretch — rather than washing to
   a flat white. It's a mock multi-band image, drawn as nested gaussian shells
-  so the splats stay defined. Galaxies with no flux in the stack are skipped
-  (no black blobs).
+  (a small near-opaque core inside fainter haloes) so the splats read as
+  crisp, defined points. Each splat's alpha is its own brightness, so faint
+  galaxies are transparent rather than opaque dark disks — no dark spots
+  where a dim foreground galaxy overlaps brighter ones behind it.
   Filters are multi-select (ticks show the stack) and mass-to-light (`M*/L`)
   entries stack alongside them; a colour-swatch legend shows the active
   stack. Switching photometry on hides the normal galaxies by default (and
