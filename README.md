@@ -104,6 +104,8 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
 - Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, the wizard's **Load Existing Lightcone** button, the **Session Models** list (see below), or directly via `--lightcone`
 
+![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone.png)
+
 ### Session models
 - The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
 - Click any entry to jump straight back to it (a quick relaunch on the same port) — so loading a box after a lightcone (or vice versa) never loses track of what you had open

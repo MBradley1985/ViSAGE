@@ -10,6 +10,7 @@ repos:
         exclude: ^docs/mkdocs\.yml$
       - id: check-added-large-files
         args: ['--maxkb=1000']
+        exclude: '^docs/images/'
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
