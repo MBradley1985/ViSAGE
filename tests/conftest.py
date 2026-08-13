@@ -57,6 +57,50 @@ def mini_tree_tophat_path(tmp_path_factory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def mini_hdf5_tree_path(tmp_path_factory) -> Path:
+    """A miniature ``lhalo_hdf5`` tree file, shaped like the real ones.
+
+    Mirrors what SAGE's lhalo_hdf5 reader expects (and what e.g. The300
+    trees contain): no ``Mvir`` dataset at all, the mass in
+    ``Group_M_Crit200`` with the other two ``Group_M_*`` columns present but
+    zero, positions in kpc/h, and satellites carrying mass too — so a
+    FOF-central filter is the only thing that isolates host haloes.
+    """
+    out = tmp_path_factory.mktemp("hdf5_trees") / "trees_300.0.hdf5"
+    rng = np.random.default_rng(7)
+    box_kpc = 62.5 * 1000.0
+
+    with h5py.File(out, "w") as f:
+        hdr = f.create_group("Header")
+        hdr.create_dataset("TreeNHalos", data=np.array([12, 12], np.int32))
+        for tree in range(2):
+            g = f.create_group(f"Tree{tree}")
+            n = 12
+            # Halo 0 and 6 are FOF centrals; the rest are their satellites.
+            fof = np.array([0] * 6 + [6] * 6, dtype=np.int32)
+            g.create_dataset("FirstHaloInFOFGroup", data=fof)
+            g.create_dataset(
+                "SnapNum", data=np.array([61, 62, 63] * 4, dtype=np.int32)
+            )
+            g.create_dataset(
+                "Group_M_Crit200",
+                data=rng.uniform(1.0, 100.0, n).astype(np.float32),
+            )
+            # Present but never populated — the reader must skip past these.
+            g.create_dataset("Group_M_Mean200", data=np.zeros(n, np.float32))
+            g.create_dataset("Group_M_TopHat200", data=np.zeros(n, np.float32))
+            g.create_dataset(
+                "SubhaloPos",
+                data=rng.uniform(0, box_kpc, (n, 3)).astype(np.float32),
+            )
+            g.create_dataset(
+                "SubhaloVMax",
+                data=rng.uniform(50, 500, n).astype(np.float32),
+            )
+    return out
+
+
+@pytest.fixture(scope="session")
 def mini_hdf5_path(tmp_path_factory) -> Path:
     """Synthetic SAGE HDF5 file with 3 snapshots, 30 galaxies each."""
     out = tmp_path_factory.mktemp("galaxies") / "model_0.hdf5"

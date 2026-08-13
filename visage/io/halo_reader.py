@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import numpy as np
 from joblib import Parallel, delayed
 
@@ -102,6 +103,29 @@ class HaloSnapshot:
         )
 
 
+# Suffixes to try for "TreeName.n": bare (lhalo_binary) then the HDF5 ones
+# SAGE writes for lhalo_hdf5 / consistentrees_hdf5 trees.
+TREE_SUFFIXES = ("", ".hdf5", ".h5")
+
+
+def _resolve_tree_files(
+    tree_dir: Path, tree_name: str, first_file: int, last_file: int
+) -> list[Path]:
+    """Existing tree files for the file-number range.
+
+    The par file's TreeName has no extension, so "TreeName.n" may be a bare
+    binary file or an HDF5 one written as "TreeName.n.hdf5".
+    """
+    found = []
+    for i in range(first_file, last_file + 1):
+        for suffix in TREE_SUFFIXES:
+            path = tree_dir / f"{tree_name}.{i}{suffix}"
+            if path.exists():
+                found.append(path)
+                break
+    return found
+
+
 def _empty_result() -> tuple:
     """(positions, masses, vmax, rvir, vvir, mass_field) for "nothing here"."""
     return (
@@ -193,21 +217,47 @@ def load_halo_snapshot(
     load correctly instead of coming back empty.
     """
     tree_dir = Path(tree_dir)
-    tree_files = [
-        tree_dir / f"{tree_name}.{i}" for i in range(first_file, last_file + 1)
-    ]
+    tree_files = _resolve_tree_files(
+        tree_dir, tree_name, first_file, last_file
+    )
+    if not tree_files:
+        # Worth its own message: an unreadable/misnamed tree path used to look
+        # exactly like a mass cut that filtered everything out.
+        if VERBOSE:
+            print(
+                f"  Haloes: no tree files found matching "
+                f"{tree_dir / tree_name}.{{{first_file}..{last_file}}}"
+                f"[{'|'.join(TREE_SUFFIXES[1:])}]"
+            )
+        return HaloSnapshot.empty(snap_num)
+
     n_files = len(tree_files)
     if VERBOSE:
         print(
             f"  Haloes: reading {n_files} tree file(s) in parallel (snap {snap_num})..."
         )
 
-    # prefer="threads": file I/O releases the GIL so threads are fully parallel
-    # and avoid the semaphore / mmap leak that loky process pools produce
-    results = Parallel(n_jobs=n_jobs, prefer="threads")(
-        delayed(_read_tree_file)(tf, snap_num, mass_cut, hubble_h, box_size)
-        for tf in tree_files
-    )
+    hdf5_files = [tf for tf in tree_files if h5py.is_hdf5(tf)]
+    if hdf5_files:
+        # HDF5 trees (SAGE's lhalo_hdf5): read serially — h5py serialises the
+        # per-tree reads anyway, and each file is scanned once then cached.
+        from visage.io import hdf5_tree_reader
+
+        results = [
+            hdf5_tree_reader.read_snapshot(
+                tf, snap_num, mass_cut, hubble_h, box_size
+            )
+            for tf in hdf5_files
+        ]
+    else:
+        # prefer="threads": file I/O releases the GIL so threads are fully parallel
+        # and avoid the semaphore / mmap leak that loky process pools produce
+        results = Parallel(n_jobs=n_jobs, prefer="threads")(
+            delayed(_read_tree_file)(
+                tf, snap_num, mass_cut, hubble_h, box_size
+            )
+            for tf in tree_files
+        )
 
     results = [r for r in results if len(r[0]) > 0]
     if not results:

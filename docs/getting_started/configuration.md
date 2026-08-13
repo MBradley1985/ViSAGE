@@ -26,7 +26,7 @@ ViSAGE reads the following fields from the `.par` file:
 | `OutputDir` | Locating SAGE HDF5 galaxy output |
 | `FileNameGalaxies` | Galaxy output file base name |
 | `FirstFile` / `LastFile` | Range of tree files to read |
-| `SimulationDir` | Directory containing lhalo_binary tree files |
+| `SimulationDir` | Directory containing the merger tree files (lhalo_binary or lhalo_hdf5) |
 | `TreeName` | Base name of tree files (e.g. `trees_063`) |
 | `FileWithSnapList` | Scale factor list file |
 | `LastSnapShotNr` | Number of snapshots |

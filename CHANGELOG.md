@@ -8,6 +8,54 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-08-13
+
+### Added
+
+- **HDF5 merger trees (`TreeType lhalo_hdf5`) are now read.** Boxes whose trees
+  are HDF5 — The300 among them — previously showed no haloes at all, because
+  the reader only understood the packed lhalo_binary struct and silently
+  parsed the HDF5 header bytes as halo counts. The format is now detected from
+  the file itself (no new configuration), and `TreeName.N.hdf5` is found as
+  well as a bare `TreeName.N`. Field names are resolved by alias, since these
+  files use the Illustris/LHaloTree spelling rather than the struct's:
+  `SubhaloPos`, `SubhaloVMax`, `FirstHaloInFOFGroup`, and — for the mass —
+  whichever `Group_M_*` column is populated (see below). Positions stored in
+  kpc/h are converted to Mpc/h, detected by comparing against `BoxSize`.
+  Verified against SAGE's own output for The300 at z=0: 79,890 host haloes,
+  matching its `Type == 0` count exactly, with identical masses and positions.
+- **A tree file that can't be found now says so**, instead of reporting
+  `none found above mass cut` as though the mass floor had filtered
+  everything out.
+
+### Fixed
+
+- **Haloes came back empty on tree files that don't carry the mass in `Mvir`.**
+  Tree sets disagree on which column holds the halo mass, so ViSAGE now tries
+  several and takes the first that is actually populated — `Mvir`, `M_TopHat`,
+  `M_Mean200` for lhalo_binary; those plus `Group_M_Crit200` /
+  `Group_M_TopHat200` / `Group_M_Mean200` and other common spellings for
+  lhalo_hdf5 (SAGE itself maps `Group_M_Crit200` onto `Mvir`). Columns that
+  are present but all zero are skipped. Preference order is strict, so trees
+  that do populate `Mvir` are read exactly as before, and `Rvir`/`Vvir`, the
+  mass cut, colouring and filtering all follow the chosen column. The load
+  line names the column when it isn't `Mvir`.
+- **Only FOF centrals are rendered as host haloes on HDF5 trees.** Their mass
+  columns are populated for satellites too, so — unlike lhalo_binary, where
+  satellites carry `Mvir = 0` and the mass floor excludes them — centrals are
+  now selected explicitly via `FirstHaloInFOFGroup`.
+
+### Performance
+
+- **HDF5 tree files are scanned once, not once per snapshot.** h5py serialises
+  the per-tree reads and parallelising doesn't help (threads gained nothing,
+  processes were ~4× slower), so a naive per-snapshot read of The300's 152k
+  trees would have cost ~65 s × 129 snapshots. Each file is now indexed once
+  into memory (~40 s for 5.5M host haloes across 118 snapshots) and every
+  snapshot is served from that index in milliseconds, so preloading the whole
+  run costs no further I/O. The build is locked per file, so the snapshot
+  loader's threads share one scan rather than duplicating it.
+
 ## [2.2.2] — 2026-08-13
 
 ### Fixed
