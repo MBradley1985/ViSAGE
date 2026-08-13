@@ -8,6 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.2] — 2026-08-13
+
+### Fixed
+
+- **Haloes came back empty on tree files that don't carry the mass in `Mvir`.**
+  The lhalo_binary struct has three mass columns (`Mvir`, `M_TopHat`,
+  `M_Mean200`) and tree sets from different simulations / converters populate
+  different ones; ViSAGE only ever read `Mvir`, so trees that leave it at zero
+  rendered no haloes at all (`Haloes: none found above mass cut`). The reader
+  now takes the mass from the first of those columns that is actually
+  populated, per tree file and snapshot, and says which one it used when it
+  isn't `Mvir`. Preference order is strict, so trees that do populate `Mvir`
+  are read exactly as before — and Rvir/Vvir, the mass cut, colouring and
+  filtering all follow the chosen column.
+
 ## [2.2.1] — 2026-07-30
 
 ### Fixed

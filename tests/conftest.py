@@ -14,18 +14,19 @@ from visage.io.halo_reader import HALO_DTYPE
 FIXTURE_DIR = Path(__file__).parent / "data"
 
 
-@pytest.fixture(scope="session")
-def mini_tree_path(tmp_path_factory) -> Path:
-    """One synthetic lhalo_binary tree file with 3 snapshots, 90 haloes."""
-    out = tmp_path_factory.mktemp("trees") / "trees_063.0"
+def _write_mini_tree(out: Path, mass_field: str = "Mvir") -> Path:
+    """Write one lhalo_binary tree file: 3 snapshots, 90 haloes.
 
+    mass_field picks which struct column carries the halo mass — tree sets
+    differ on this, see visage.io.halo_reader.MASS_FIELDS.
+    """
     rng = np.random.default_rng(0)
     n_forests = 3
     n_halos = 90
     halos_per_forest = np.array([30, 30, 30], dtype=np.int32)
 
     halos = np.zeros(n_halos, dtype=HALO_DTYPE)
-    halos["Mvir"] = rng.uniform(0.01, 10.0, n_halos)  # in 1e10 Msun/h
+    halos[mass_field] = rng.uniform(0.01, 10.0, n_halos)  # in 1e10 Msun/h
     halos["Pos"] = rng.uniform(0, 62.5, (n_halos, 3)).astype(np.float32)
     # Assign each forest a different SnapNum: 61, 62, 63
     for i, snap in enumerate([61, 62, 63]):
@@ -38,6 +39,21 @@ def mini_tree_path(tmp_path_factory) -> Path:
         halos.tofile(f)
 
     return out
+
+
+@pytest.fixture(scope="session")
+def mini_tree_path(tmp_path_factory) -> Path:
+    """One synthetic lhalo_binary tree file with 3 snapshots, 90 haloes."""
+    return _write_mini_tree(tmp_path_factory.mktemp("trees") / "trees_063.0")
+
+
+@pytest.fixture(scope="session")
+def mini_tree_tophat_path(tmp_path_factory) -> Path:
+    """Same tree, but with Mvir left at zero and the mass in M_TopHat."""
+    return _write_mini_tree(
+        tmp_path_factory.mktemp("trees_tophat") / "trees_063.0",
+        mass_field="M_TopHat",
+    )
 
 
 @pytest.fixture(scope="session")

@@ -35,6 +35,15 @@ HALO_DTYPE = np.dtype(
 _RHOCRIT0 = 27.75  # critical density at z=0, units: 10^10 Msun/h per (Mpc/h)^3
 _DELTA = 200.0  # virial overdensity
 
+# Halo-mass columns of the lhalo_binary struct, in order of preference.
+# The struct layout is fixed, but which of its mass columns actually carries
+# the halo mass varies between tree sets: Mvir is the canonical choice and
+# what SAGE itself reads, yet trees from some simulations / converters leave
+# it at zero and store the mass in M_TopHat (tophat-overdensity mass) or
+# M_Mean200 instead. Rather than render nothing in that case, fall back to
+# the first column that is actually populated.
+MASS_FIELDS = ("Mvir", "M_TopHat", "M_Mean200")
+
 # Per-snapshot load chatter is silenced (e.g. during background preload) by
 # flipping this off, so the startup browser URL isn't buried in the terminal.
 VERBOSE = True
@@ -45,6 +54,20 @@ def _compute_rvir(mvir_tree: np.ndarray) -> np.ndarray:
     return (mvir_tree / (4.0 / 3.0 * np.pi * _DELTA * _RHOCRIT0)) ** (
         1.0 / 3.0
     )
+
+
+def _pick_mass_field(halos: np.ndarray) -> str:
+    """Return the first column of MASS_FIELDS that carries a real halo mass.
+
+    "Populated" means at least one finite, positive value — so a tree set that
+    zeroes Mvir falls through to M_TopHat / M_Mean200. Preference order is
+    strict, so files that do populate Mvir are read exactly as before.
+    """
+    for name in MASS_FIELDS:
+        col = halos[name]
+        if np.any(np.isfinite(col) & (col > 0.0)):
+            return name
+    return MASS_FIELDS[0]
 
 
 def _compute_vvir(rvir: np.ndarray) -> np.ndarray:
@@ -79,21 +102,34 @@ class HaloSnapshot:
         )
 
 
+def _empty_result() -> tuple:
+    """(positions, masses, vmax, rvir, vvir, mass_field) for "nothing here"."""
+    return (
+        np.empty((0, 3), dtype=np.float32),
+        np.empty(0, dtype=np.float32),
+        np.empty(0, dtype=np.float32),
+        np.empty(0, dtype=np.float32),
+        np.empty(0, dtype=np.float32),
+        "",
+    )
+
+
 def _read_tree_file(
     tree_file: Path,
     snap_num: int,
     mass_cut_msun: float,
     hubble_h: float,
     box_size: float = 0.0,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Read one lhalo_binary tree file and return (positions, masses) for snap_num."""
-    if not tree_file.exists():
-        return np.empty((0, 3), dtype=np.float32), np.empty(
-            0, dtype=np.float32
-        )
+) -> tuple:
+    """Read one lhalo_binary tree file and return the halo columns for snap_num.
 
-    _empty = np.empty((0, 3), dtype=np.float32)
-    _empty_ret = (_empty, _empty, _empty, _empty, _empty)
+    Returns (positions, masses, vmax, rvir, vvir, mass_field) — mass_field is
+    the struct column the mass was taken from (see MASS_FIELDS).
+    """
+    if not tree_file.exists():
+        return _empty_result()
+
+    _empty_ret = _empty_result()
     with open(tree_file, "rb") as f:
         nforests = np.fromfile(f, dtype=np.int32, count=1)[0]
         nhalos_total = np.fromfile(f, dtype=np.int32, count=1)[0]
@@ -111,9 +147,11 @@ def _read_tree_file(
         return _empty_ret
     snap_halos = halos[snap_glob]
 
-    # Mvir in tree files is in units of 1e10 Msun/h. Satellites carry Mvir=0,
-    # so the mass cut keeps only FOF centrals (what we render as splats).
-    mvir_tree = snap_halos["Mvir"].astype(np.float32)  # 10^10 Msun/h
+    # Halo mass in tree files is in units of 1e10 Msun/h, whichever column
+    # holds it. Satellites carry Mvir=0, so the mass cut keeps only FOF
+    # centrals (what we render as splats).
+    mass_field = _pick_mass_field(snap_halos)
+    mvir_tree = snap_halos[mass_field].astype(np.float32)  # 10^10 Msun/h
     masses = mvir_tree * 1.0e10 / hubble_h  # Msun
     mass_mask = masses > mass_cut_msun
 
@@ -123,6 +161,7 @@ def _read_tree_file(
         snap_halos["Vmax"].astype(np.float32)[mass_mask],
         _compute_rvir(mvir_tree[mass_mask]),
         _compute_vvir(_compute_rvir(mvir_tree[mass_mask])),
+        mass_field,
     )
 
 
@@ -148,6 +187,10 @@ def load_halo_snapshot(
     mass_cut:  minimum halo mass in Msun (after h correction)
     max_halos: random downsample if more haloes than this are found
     n_jobs:    joblib parallel workers (-1 = all CPUs)
+
+    The mass is read from the first populated column of MASS_FIELDS, so tree
+    sets that leave Mvir at zero and carry the mass in M_TopHat / M_Mean200
+    load correctly instead of coming back empty.
     """
     tree_dir = Path(tree_dir)
     tree_files = [
@@ -190,7 +233,11 @@ def load_halo_snapshot(
         )
 
     if VERBOSE:
-        print(f"  Haloes: {len(positions):,} loaded")
+        # Say so when the trees don't carry the mass in Mvir, since it changes
+        # what "halo mass" means for colouring, filtering and Rvir/Vvir.
+        used = sorted({r[5] for r in results} - {"", MASS_FIELDS[0]})
+        note = f" (halo mass from {', '.join(used)})" if used else ""
+        print(f"  Haloes: {len(positions):,} loaded{note}")
     return HaloSnapshot(
         positions=positions,
         masses=masses,
