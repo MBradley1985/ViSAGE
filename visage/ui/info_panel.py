@@ -21,6 +21,30 @@ def build_info_panel(server, scene: Scene) -> None:
 
     _last_click: list[float] = [0.0]
 
+    # Cache the point-picking KD-trees so repeated double-clicks don't rebuild
+    # them every time. The tree only depends on the visible point set, so we key
+    # on (model, snapshot, offset, visible-set fingerprint): any change — a new
+    # snapshot, a different box, or a filter / environment toggle that alters
+    # which points are visible — changes the key and forces a rebuild. Building a
+    # KD-tree over millions of points is O(N log N); reusing it turns each extra
+    # pick into a cheap query. hash(visible.tobytes()) is O(N) but ~an order of
+    # magnitude cheaper than the rebuild it avoids.
+    _gal_tree_cache: dict = {}
+    _halo_tree_cache: dict = {}
+
+    def _cached_tree(cache, positions, visible, off, model_name, snap):
+        key = (
+            model_name,
+            snap,
+            off.tobytes(),
+            int(visible.size),
+            hash(visible.tobytes()),
+        )
+        if cache.get("key") != key:
+            cache["key"] = key
+            cache["tree"] = KDTree(positions[visible] + off)
+        return cache["tree"]
+
     def _push():
         if hasattr(ctrl, "view_update"):
             ctrl.view_update()
@@ -74,15 +98,21 @@ def build_info_panel(server, scene: Scene) -> None:
             )
 
             if len(visible) > 0:
-                gal_world = galaxies.positions[visible] + off
-
                 # Two-stage selection for screen-space accuracy:
                 # 1. Find the 50 nearest in 3D world space (fast pre-filter).
                 # 2. Project those candidates to screen pixels and take the one
                 #    visually closest to the cursor — avoids picking a galaxy
                 #    that is 3D-near but hidden behind a visually closer one.
                 k = min(50, len(visible))
-                _, near_local = KDTree(gal_world).query(point, k=k)
+                gtree = _cached_tree(
+                    _gal_tree_cache,
+                    galaxies.positions,
+                    visible,
+                    off,
+                    active.name,
+                    active.current_snap,
+                )
+                _, near_local = gtree.query(point, k=k)
                 if np.isscalar(near_local):
                     near_local = [near_local]
 
@@ -135,8 +165,15 @@ def build_info_panel(server, scene: Scene) -> None:
                 h_visible = np.where(hmask)[0]
                 hidx = None
                 if len(h_visible) > 0:
-                    h_world = halos.positions[h_visible] + off
-                    _, hhit = KDTree(h_world).query(search_pt)
+                    htree = _cached_tree(
+                        _halo_tree_cache,
+                        halos.positions,
+                        h_visible,
+                        off,
+                        active.name,
+                        active.current_snap,
+                    )
+                    _, hhit = htree.query(search_pt)
                     hidx = int(h_visible[hhit])
             else:
                 hidx = scene.camera._halo_index.nearest(search_pt)

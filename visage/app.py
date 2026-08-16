@@ -1300,11 +1300,18 @@ def create_app(
                     view = VtkRemoteView(
                         scene.plotter.ren_win,
                         style="flex:1;height:100%;display:block;min-width:0;",
-                        # Closer to original quality settings — less dramatic
-                        # interactive→still cycling on each click reduces
-                        # visible "flash" re-renders.
-                        # Full quality at all times — no resolution drop
-                        # during camera drag.
+                        # Full quality at all times, no interactive level-of-
+                        # detail. ViSAGE shows real data at full fidelity in every
+                        # situation: all points, full render resolution, full JPEG
+                        # quality — both while the camera moves and when it
+                        # settles, so there is no interactive→still "flash".
+                        # Reducing resolution/quality during motion was tried and
+                        # rejected: the transition is too striking, and degrading
+                        # the view is not acceptable for real data. Interactivity
+                        # on large clouds is a rendering-horsepower problem (use a
+                        # real GPU / native rendering), NOT something to solve by
+                        # dropping quality or subsampling. Any thinning of the
+                        # cloud must stay a deliberate, user-driven choice.
                         interactive_ratio=1.0,
                         interactive_quality=100,
                         still_quality=100,
