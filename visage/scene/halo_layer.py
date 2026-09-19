@@ -198,6 +198,24 @@ class HaloLayer:
         (0.18, 0.0, 0.95),  # dense core
     )
 
+    # Crowding: a big box puts so many overlapping splats along each line
+    # of sight that they pile up into a solid wash at the opacity a sparse
+    # box needs.  Fade with halo count, from full opacity at or below the
+    # reference count down to a floor — 0.05 stays 0.05 for Millennium-like
+    # boxes (~30k haloes) and lands at ~0.02 for microUchuu (~390k).
+    _DENSITY_REFERENCE_COUNT = 150_000
+    _MIN_DENSITY_SCALE = 0.4
+
+    @classmethod
+    def density_scale(cls, n_halos: int) -> float:
+        """Opacity multiplier for a snapshot holding `n_halos` haloes."""
+        if n_halos <= cls._DENSITY_REFERENCE_COUNT:
+            return 1.0
+        return max(
+            cls._MIN_DENSITY_SCALE,
+            cls._DENSITY_REFERENCE_COUNT / float(n_halos),
+        )
+
     def _render_layered(
         self,
         positions: np.ndarray,
@@ -206,7 +224,9 @@ class HaloLayer:
     ) -> None:
         if len(positions) == 0:
             return
-        for r_scale, opa_floor, opa_mul in self._LAYERS:
+        crowding = self.density_scale(len(positions))
+        for r_scale, opa_floor, opa_mul_base in self._LAYERS:
+            opa_mul = opa_mul_base * crowding
             cloud = pv.PolyData(positions)
             cloud["rgba"] = scalars_to_rgba(colors, self._colormap)
             cloud["radius"] = (radii * float(r_scale)).astype(np.float32)

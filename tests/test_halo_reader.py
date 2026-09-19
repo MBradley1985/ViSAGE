@@ -186,3 +186,34 @@ def test_loads_haloes_through_the_fallback(mini_tree_path, tmp_path):
         tree_type="consistent_trees_ascii",
     )
     assert snap.count > 0
+
+
+# ── Crowding-aware halo opacity ───────────────────────────────────────────
+# A box with hundreds of thousands of haloes piles up overlapping splats
+# into a solid wash at the opacity a sparse box needs, so the layer fades
+# with halo count.
+
+
+def test_density_scale_leaves_sparse_boxes_alone():
+    from visage.scene.halo_layer import HaloLayer
+
+    assert HaloLayer.density_scale(30_707) == 1.0  # Millennium-like
+    assert HaloLayer.density_scale(79_890) == 1.0  # The300-like
+    assert HaloLayer.density_scale(0) == 1.0
+
+
+def test_density_scale_fades_crowded_boxes_to_the_floor():
+    from visage.scene.halo_layer import HaloLayer
+
+    # microUchuu-like and larger both land on 0.02 for a 0.05 setting.
+    assert HaloLayer.density_scale(386_585) == pytest.approx(0.4)
+    assert HaloLayer.density_scale(5_000_000) == pytest.approx(0.4)
+    assert 0.05 * HaloLayer.density_scale(386_585) == pytest.approx(0.02)
+
+
+def test_density_scale_is_monotonic():
+    from visage.scene.halo_layer import HaloLayer
+
+    counts = [10_000, 150_000, 200_000, 300_000, 400_000, 1_000_000]
+    scales = [HaloLayer.density_scale(c) for c in counts]
+    assert scales == sorted(scales, reverse=True)

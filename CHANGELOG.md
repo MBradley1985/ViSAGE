@@ -8,6 +8,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-09-19
+
+### Changed
+
+- **Halo opacity now fades with how crowded the box is.** A box with hundreds
+  of thousands of haloes stacks overlapping splats into a solid wash at the
+  opacity a sparse box needs, so the layer scales its alpha by halo count:
+  full 0.05 at or below 150,000 haloes (Millennium, The300), tapering to a
+  floor of 0.02 for microUchuu-sized boxes (~390,000) and larger. The setting
+  itself is unchanged — console commands and box profiles still address 0.05
+  — and the scaling survives an in-place opacity change.
+
 ## [2.5.0] — 2026-09-19
 
 ### Added
