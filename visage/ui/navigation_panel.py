@@ -18,6 +18,11 @@ from visage.scene.scene import Scene
 # slider.  Console commands and saved box profiles can still change it.
 _HALO_OPACITY = 0.05
 
+# Stills are rendered at this multiple of the window size and downsampled,
+# so saved figures get properly supersampled splat edges.  The interactive
+# view is untouched.
+_SCREENSHOT_SUPERSAMPLE = 2
+
 _MAX_EXTRA_HALO = 10
 _MAX_EXTRA_GAL = 24
 
@@ -2094,6 +2099,29 @@ def build_navigation_panel(server, scene: Scene) -> None:
         finally:
             rw.SetOffScreenRendering(prev)
 
+    def _vtk_to_pil_ssaa(supersample: int = 2):
+        """Native-size image rendered at `supersample`x and downsampled.
+
+        True supersampling: the render window is resized, drawn once at the
+        larger size and put back.  vtkWindowToImageFilter's own SetScale
+        renders in tiles and leaves seams, and simply upscaling afterwards
+        adds no detail at all — this is the only route to clean splat edges
+        in a saved figure.
+        """
+        from PIL import Image as _PIL
+
+        rw = scene.plotter.ren_win
+        w, h = rw.GetSize()
+        if supersample < 2 or w == 0 or h == 0:
+            return _vtk_to_pil(scale=1)
+        try:
+            rw.SetSize(w * supersample, h * supersample)
+            big = _vtk_to_pil(scale=1)
+        finally:
+            rw.SetSize(w, h)
+            rw.Render()
+        return big.resize((w, h), _PIL.LANCZOS)
+
     def _vtk_to_pil(scale: int = 1):
         """Return a PIL Image from the VTK render window (RGB, top-row first)."""
         from vtkmodules.util.numpy_support import vtk_to_numpy
@@ -2413,7 +2441,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 raw = base64.b64decode(pf.split(",", 1)[1])
                 pil = _PIL.open(_io.BytesIO(raw)).convert("RGB")
             else:
-                pil = _vtk_to_pil(scale=1)
+                pil = _vtk_to_pil_ssaa(_SCREENSHOT_SUPERSAMPLE)
             pil = _composite_console_overlay(pil)
             ext_out = str(path).lower().rsplit(".", 1)[-1]
             if ext_out in ("jpg", "jpeg"):

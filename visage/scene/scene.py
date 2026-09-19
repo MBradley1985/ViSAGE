@@ -44,7 +44,10 @@ class Scene:
         self._plotter = pv.Plotter(
             off_screen=off_screen, window_size=[1600, 900]
         )
-        self._plotter.set_background("black")
+        # A hint of blue at the bottom rather than flat black: the box
+        # then sits in something instead of floating in a void.  Subtle
+        # enough not to tint the data.
+        self._plotter.set_background("#080b14", top="#000000")
         # FXAA: a post-process pass, so it smooths the splat edges and the
         # box labels without the 4x cost of supersampling — and without
         # touching the render resolution the remote view ships.

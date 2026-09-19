@@ -8,6 +8,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.2] — 2026-09-19
+
+### Changed
+
+- **Screenshots are supersampled.** Stills are now rendered at twice the
+  window size and downsampled, instead of being rendered at native size and
+  upscaled (`vtkWindowToImageFilter`'s own scaling renders in tiles and leaves
+  seams, and upscaling adds no detail). Splat edges and labels in a saved
+  figure come out visibly cleaner; the interactive view is untouched and the
+  render window is restored immediately after the capture.
+- **The background is a very dark blue-black gradient** rather than flat
+  black, so the box sits in something instead of floating in a void. Subtle
+  enough not to tint the data.
+
 ## [2.5.1] — 2026-09-19
 
 ### Changed
