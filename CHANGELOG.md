@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-09-19
+
+### Changed
+
+- Galaxy glow eased from 2.0 to 1.8 — at 2.0 the galaxies read a little too
+  much like stars.
+
 ## [2.6.0] — 2026-09-19
 
 ### Changed
