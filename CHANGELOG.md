@@ -8,6 +8,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-09-19
+
+### Changed
+
+- **Galaxies glow.** The galaxy splats are emissive, so overlapping galaxies
+  add light like real emitters instead of alpha-blending toward grey; bright
+  cores build up and the field gains dynamic range. Brightness is shaped by an
+  asinh curve on the scalar before the colormap lookup, the same stretch the
+  photometry stack uses, so faint galaxies lift and bright ones compress.
+  Fixed at strength 2.0.
+
+  Emissive is a property of the point-gaussian mapper, so it applies to the
+  galaxy actors alone: the haloes stay alpha-blended and their render is
+  unchanged, verified pixel for pixel. There is no renderer-wide tone-mapping
+  pass — that would have lifted the haloes too.
+
+  One consequence of the mode: VTK scales an emissive splat by its actor's
+  opacity before adding it, so a layer at 0.15-0.5 alpha would clamp to almost
+  nothing. Emissive layers therefore render at full actor alpha with their
+  per-layer weighting carried in the colours instead.
+
+### Fixed
+
+- **A galaxy with both CGM and hot gas now shows both.** The halo-gas shells
+  were chosen by the `Regime` flag — CGM *or* hot, never both — so a galaxy
+  carrying both components only ever showed one, and a model with no `Regime`
+  field rendered every galaxy as hot. The two are now independent shells over
+  the cold-gas base, each drawn for the galaxies whose mass in that component
+  is non-zero: CGM at 0.85x the envelope radius, hot at 1.0x. Galaxies with
+  neither keep just the cold-gas base instead of a zero-mass shell.
+
 ## [2.5.2] — 2026-09-19
 
 ### Changed

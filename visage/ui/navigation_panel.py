@@ -483,6 +483,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
     scene.galaxy_layer.opacity = 1.0
     state.halo_opacity = scene.halo_layer.opacity
     state.galaxy_opacity = scene.galaxy_layer.opacity
+    # No control in the panel — the glow is fixed at the values the layer
+    # defaults to.  The state vars remain so saved box profiles, stories
+    # and console commands can still address them.
+    state.galaxy_glow = scene.galaxy_layer.emissive
+    state.galaxy_glow_strength = scene.galaxy_layer.glow_strength
     state.halo_color_mode = scene.halo_layer.color_mode
     state.galaxy_color_mode = scene.galaxy_layer.color_mode
     state.halo_colormap = scene.halo_layer.colormap
@@ -1175,6 +1180,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @state.change("galaxy_opacity")
     def on_galaxy_opacity(galaxy_opacity, **_):
         scene.galaxy_layer.opacity = float(galaxy_opacity)
+        _push()
+
+    @state.change("galaxy_glow_strength")
+    def on_galaxy_glow_strength(galaxy_glow_strength, **_):
+        scene.galaxy_layer.glow_strength = float(galaxy_glow_strength)
+        _push()
+
+    @state.change("galaxy_glow")
+    def on_galaxy_glow(galaxy_glow, **_):
+        scene.galaxy_layer.emissive = bool(galaxy_glow)
         _push()
 
     @state.change("halo_color_mode")

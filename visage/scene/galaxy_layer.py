@@ -9,6 +9,21 @@ from visage.io.galaxy_reader import GalaxySnapshot
 from visage.utils.colormap import normalize_log, scalars_to_rgba
 from visage.utils.sizing import galaxy_world_radii_rvir
 
+# Emissive galaxies: the splats add light instead of alpha-blending toward
+# grey.  It is a property of the point-gaussian mapper, so it applies to
+# the galaxy actors alone — the haloes are not touched by it.
+#
+# There is no renderer-wide tone-mapping pass to go with it (that would
+# lift the haloes too).  The roll-off is done here instead: an asinh
+# stretch of each galaxy's brightness, the same shaping the photometry
+# stack uses, so faint galaxies lift and bright ones compress rather than
+# clipping.  `_GLOW_KNEE` sets how hard that curve bends.
+_GLOW_KNEE = 2.0
+
+# Default glow level, in the units of the Structure panel's slider.
+_DEFAULT_GLOW_STRENGTH = 2.0
+
+
 ColorMode = Literal[
     "stellar_mass",
     "ssfr",
@@ -156,6 +171,12 @@ class GalaxyLayer:
         # The photometry stack bakes opacity into per-point alpha, so it
         # can only follow the slider through a redraw.
         self._opacity_baked = False
+        # Emissive (additive) splats are the default look: overlapping
+        # galaxies add light instead of alpha-blending toward grey.  The
+        # haloes stay alpha-blended — they are a scaffold, not a source.
+        self._emissive = True
+        # Multiplies how much light the emissive layers put out.
+        self._glow_strength = _DEFAULT_GLOW_STRENGTH
         self._cloud: pv.PolyData | None = None  # persistent geometry
         self._render_params: tuple = ()  # tracks need-to-rebuild
         self._snapshot: GalaxySnapshot | None = None
@@ -206,6 +227,33 @@ class GalaxyLayer:
         self._pl.render()
 
     @property
+    def glow_strength(self) -> float:
+        return self._glow_strength
+
+    @glow_strength.setter
+    def glow_strength(self, value: float) -> None:
+        value = max(0.05, float(value))
+        if value == self._glow_strength:
+            return
+        self._glow_strength = value
+        # Emissive brightness lives in the colours, so this needs a rebuild.
+        if self._snapshot is not None and self._emissive:
+            self._redraw()
+
+    @property
+    def emissive(self) -> bool:
+        return self._emissive
+
+    @emissive.setter
+    def emissive(self, value: bool) -> None:
+        value = bool(value)
+        if value == self._emissive:
+            return
+        self._emissive = value
+        if self._snapshot is not None:
+            self._redraw()
+
+    @property
     def opacity(self) -> float:
         return self._opacity
 
@@ -214,7 +262,7 @@ class GalaxyLayer:
         self._opacity = float(value)
         if self._snapshot is None:
             return
-        if self._opacity_baked or not self._opacity_terms:
+        if self._opacity_baked or self._emissive or not self._opacity_terms:
             self._redraw()
             return
         # Cheap path: opacity is just an actor property, so there is no
@@ -318,6 +366,43 @@ class GalaxyLayer:
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _layer_weight(self, floor: float, mul: float) -> float:
+        """How strongly a layer contributes, from the opacity setting."""
+        weight = max(floor, self._opacity * mul)
+        if self._emissive:
+            weight *= self._glow_strength
+        return weight
+
+    def _layer_alpha(self, floor: float, mul: float) -> float:
+        """Actor opacity for a layer.
+
+        Emissive splats are scaled by the actor's opacity before being
+        added, so a layer at 0.15-0.5 alpha comes out clamped and dim.  In
+        that mode the actor stays fully opaque and the layer's weighting
+        is carried by the colour instead (see `_rgba`).
+        """
+        if self._emissive:
+            return 1.0
+        return self._layer_weight(floor, mul)
+
+    def _rgba(
+        self, scalars: np.ndarray, cmap: str, weight: float = 1.0
+    ) -> np.ndarray:
+        """Splat colours, asinh-shaped when the splats are emissive.
+
+        The curve goes on the scalar, before the colormap lookup — not on
+        the colour that comes out of it.  A sequential colormap already
+        carries brightness, so scaling its output would count the value
+        twice and darken everything instead of shaping the roll-off.
+        """
+        v = np.clip(np.asarray(scalars, dtype=np.float32), 0.0, 1.0)
+        if not self._emissive:
+            return scalars_to_rgba(v, cmap)
+        v = np.arcsinh(_GLOW_KNEE * v) / np.arcsinh(_GLOW_KNEE)
+        rgba = scalars_to_rgba(v, cmap).copy()
+        rgba[:, :3] = (rgba[:, :3] * float(weight)).astype(np.uint8)
+        return rgba
 
     def _clear_actors(self) -> None:
         for actor in self._actors:
@@ -449,8 +534,11 @@ class GalaxyLayer:
         """Multi-layer physically-suggestive galaxy rendering.
 
         Always rendered (all galaxies):
-          • blue cold-gas envelope sized by ColdGas
-          • blue-green CGM (Regime == 0) or red HotGas (Regime == 1) outer envelope
+          • blue cold-gas envelope sized by ColdGas — the base every galaxy
+            gets
+          • a blue-green CGM shell and a red hot-atmosphere shell, each drawn
+            for the galaxies that actually carry that mass.  A galaxy with
+            both gets both, at their own radii; a galaxy with one gets one.
 
         Only when a focus region is active:
           • cyan disk layer  (StellarMass − BulgeMass), user-configurable colour
@@ -473,37 +561,41 @@ class GalaxyLayer:
             return np.clip((log - vmin) / (vmax - vmin + 1e-10), 0.0, 1.0)
 
         cold_scalar = _logn(snap.cold_gas, 7.0, 11.5)
-        # CGM vs Hot: split galaxies by regime
-        cgm_mask = (
-            (snap.cgm_regime == 0)
-            if snap.cgm_regime.size
-            else np.zeros(snap.count, bool)
-        )
-        hot_mask = ~cgm_mask
-        # Outer envelope: CGM galaxies sized/coloured by CGMgas;
-        # Hot-atmosphere galaxies by HotGas. (cold_gas is reserved for
-        # the inner cold-gas envelope; H2 currently unused at this layer.)
-        outer_mass = np.where(cgm_mask, snap.cgm_gas, snap.hot_gas)
-        outer_scalar = _logn(outer_mass, 7.0, 11.5)
 
-        # ---- (1) Outer envelope ---------------------------------------
-        # CGM galaxies → blue-green, Hot atmosphere → red.
-        # Sized by outer mass, very low opacity.
-        for mask, cmap in [(cgm_mask, "YlGn"), (hot_mask, "Reds")]:
+        # ---- (1) Halo-gas shells --------------------------------------
+        # CGM and hot atmosphere are separate components, not two sides of
+        # a switch: a galaxy can carry both, and the regime flag only says
+        # which one dominates.  Each shell is drawn for the galaxies whose
+        # mass in that component is non-zero, so a mixed galaxy shows a
+        # green CGM shell inside a red hot one and a single-component
+        # galaxy shows just its own.  (Before, the regime flag picked one
+        # and the other was never drawn — and a model with no Regime field
+        # rendered every galaxy as hot.)
+        shells = (
+            ("cgm", snap.cgm_gas, "YlGn", 0.85),
+            ("hot", snap.hot_gas, "Reds", 1.00),
+        )
+        for _name, mass, cmap, r_scale in shells:
+            if mass.size != snap.count:
+                continue
+            mask = mass > 0.0
             if not np.any(mask):
                 continue
+            scalar = _logn(mass[mask], 7.0, 11.5)
             cloud = pv.PolyData(pos[mask])
-            cloud["rgba"] = scalars_to_rgba(outer_scalar[mask], cmap)
+            cloud["rgba"] = self._rgba(
+                scalar, cmap, self._layer_weight(0.15, 0.3)
+            )
             cloud["radius"] = (
-                r_outer[mask] * (0.5 + 0.5 * outer_scalar[mask])
+                r_outer[mask] * r_scale * (0.5 + 0.5 * scalar)
             ).astype(np.float32)
             actor = self._pl.add_mesh(
                 cloud,
                 scalars="rgba",
                 rgb=True,
                 style="points_gaussian",
-                emissive=False,
-                opacity=max(0.15, self._opacity * 0.3),
+                emissive=self._emissive,
+                opacity=self._layer_alpha(0.15, 0.3),
                 show_scalar_bar=False,
                 render=False,
                 reset_camera=False,
@@ -518,7 +610,9 @@ class GalaxyLayer:
 
         # ---- (2) Cold-gas blue envelope -------------------------------
         cloud = pv.PolyData(pos)
-        cloud["rgba"] = scalars_to_rgba(cold_scalar, "Blues")
+        cloud["rgba"] = self._rgba(
+            cold_scalar, "Blues", self._layer_weight(0.2, 0.5)
+        )
         cloud["radius"] = (r_cold * (0.5 + 0.5 * cold_scalar)).astype(
             np.float32
         )
@@ -527,8 +621,8 @@ class GalaxyLayer:
             scalars="rgba",
             rgb=True,
             style="points_gaussian",
-            emissive=False,
-            opacity=max(0.2, self._opacity * 0.5),
+            emissive=self._emissive,
+            opacity=self._layer_alpha(0.2, 0.5),
             show_scalar_bar=False,
             render=False,
             reset_camera=False,
@@ -566,15 +660,17 @@ class GalaxyLayer:
                 (bulge_scalar, r_bulge, "RdBu"),
             ]:
                 cloud = pv.PolyData(pos)
-                cloud["rgba"] = scalars_to_rgba(scalar, cmap)
+                cloud["rgba"] = self._rgba(
+                    scalar, cmap, self._layer_weight(0.5, 0.75)
+                )
                 cloud["radius"] = radii_arr
                 actor = self._pl.add_mesh(
                     cloud,
                     scalars="rgba",
                     rgb=True,
                     style="points_gaussian",
-                    emissive=False,
-                    opacity=max(0.5, self._opacity * 0.75),
+                    emissive=self._emissive,
+                    opacity=self._layer_alpha(0.5, 0.75),
                     show_scalar_bar=False,
                     render=False,
                     reset_camera=False,
@@ -601,7 +697,9 @@ class GalaxyLayer:
         if len(positions) == 0:
             return
         cloud = pv.PolyData(positions)
-        cloud["rgba"] = scalars_to_rgba(colors, cmap)
+        cloud["rgba"] = self._rgba(
+            colors, cmap, self._layer_weight(0.12, 0.25)
+        )
         # Sit ~30% beyond the standard envelope.  This is the "Colour-by" halo.
         cloud["radius"] = (radii * 1.3).astype(np.float32)
         actor = self._pl.add_mesh(
@@ -609,9 +707,9 @@ class GalaxyLayer:
             scalars="rgba",
             rgb=True,
             style="points_gaussian",
-            emissive=False,
+            emissive=self._emissive,
             # Subtle so the inner Structure detail isn't drowned
-            opacity=max(0.12, self._opacity * 0.25),
+            opacity=self._layer_alpha(0.12, 0.25),
             show_scalar_bar=False,
             render=False,
             reset_camera=False,
@@ -634,15 +732,15 @@ class GalaxyLayer:
         if len(positions) == 0:
             return
         cloud = pv.PolyData(positions)
-        cloud["rgba"] = scalars_to_rgba(colors, cmap)
+        cloud["rgba"] = self._rgba(colors, cmap)
         cloud["radius"] = radii
         actor = self._pl.add_mesh(
             cloud,
             scalars="rgba",
             rgb=True,
             style="points_gaussian",
-            emissive=False,
-            opacity=self._opacity,
+            emissive=self._emissive,
+            opacity=self._layer_alpha(0.0, 1.0),
             show_scalar_bar=False,
             render=False,
             reset_camera=False,
@@ -901,7 +999,7 @@ class GalaxyLayer:
                 scalars="sed_rgba",
                 rgb=True,  # direct scalars; 4 components => RGBA
                 style="points_gaussian",
-                emissive=False,
+                emissive=self._emissive,
                 opacity=1.0,  # per-point alpha carries the opacity
                 show_scalar_bar=False,
                 render=False,

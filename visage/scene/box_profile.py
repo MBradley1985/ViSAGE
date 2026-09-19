@@ -28,6 +28,8 @@ LAYER_KEYS: list[str] = [
     "galaxy_colormap",
     "galaxy_color_mode",
     "galaxy_opacity",
+    "galaxy_glow",
+    "galaxy_glow_strength",
 ]
 
 FILTER_KEYS: list[str] = [
@@ -143,6 +145,8 @@ _LAYER_DEFAULTS: dict[str, Any] = {
     "galaxy_colormap": "plasma",
     "galaxy_color_mode": "structure",
     "galaxy_opacity": 1.0,
+    "galaxy_glow": True,
+    "galaxy_glow_strength": 2.0,
 }
 
 
