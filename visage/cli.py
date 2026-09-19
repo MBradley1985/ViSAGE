@@ -77,11 +77,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum stellar mass in Msun (default: 1e8)",
     )
     p.add_argument(
+        "--cache-gb",
+        type=float,
+        default=None,
+        metavar="GB",
+        help=(
+            "Memory budget for cached snapshots in GB "
+            "(default: half of system RAM; also settable via VISAGE_CACHE_GB)"
+        ),
+    )
+    p.add_argument(
         "--max-halos",
         type=int,
-        default=100_000,
+        default=None,
         metavar="N",
-        help="Downsample ceiling for haloes per snapshot (default: 100000)",
+        help=(
+            "Optional downsample ceiling for haloes per snapshot "
+            "(default: no limit — every halo is loaded)"
+        ),
     )
     p.add_argument(
         "--version",
@@ -139,6 +152,7 @@ def _explore_mode(args) -> None:
         min_halo_mass=args.min_halo_mass,
         min_stellar_mass=args.min_stellar_mass,
         max_halos=args.max_halos,
+        cache_gb=args.cache_gb,
         port=args.port,
     )
     print("[3/4] Building scene and Trame UI...")
@@ -173,6 +187,7 @@ def _lightcone_mode(args) -> None:
         min_halo_mass=args.min_halo_mass,
         min_stellar_mass=args.min_stellar_mass,
         max_halos=args.max_halos,
+        cache_gb=args.cache_gb,
         port=args.port,
         lightcone_path=lc_path,
     )

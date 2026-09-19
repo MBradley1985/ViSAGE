@@ -9,6 +9,33 @@ from trame.widgets import vuetify3 as v3
 
 from visage.scene.scene import Scene
 
+# Slider slots reserved for auto-discovered properties.  Trame needs one
+# state var per slider, so the pools are fixed and the UI shows as many of
+# them as the model actually has (same trick as the wizard's par-file form).
+# Discovered fields are split by what they describe, so a halo property
+# lands among the halo sliders and a galaxy property among the galaxy ones.
+# Haloes are a faint scaffold behind the galaxies — fixed, no longer a
+# slider.  Console commands and saved box profiles can still change it.
+_HALO_OPACITY = 0.05
+
+_MAX_EXTRA_HALO = 10
+_MAX_EXTRA_GAL = 24
+
+# Name fragments that mark a per-galaxy dataset as describing the host halo
+# rather than the galaxy — the same distinction Vmax / Len / Concentration /
+# Spin already get in the Halo section.
+_HALO_NAME_HINTS = (
+    "halo",
+    "vir",
+    "vmax",
+    "vpeak",
+    "spin",
+    "concentration",
+    "subhalo",
+    "fof",
+    "particle",
+)
+
 _FIELD = "padding:8px 0 4px;"
 _BTN = "padding:8px 0 4px;"
 
@@ -447,6 +474,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Layer state
     state.halos_visible = True
     state.galaxies_visible = True
+    scene.halo_layer.opacity = _HALO_OPACITY
+    scene.galaxy_layer.opacity = 1.0
     state.halo_opacity = scene.halo_layer.opacity
     state.galaxy_opacity = scene.galaxy_layer.opacity
     state.halo_color_mode = scene.halo_layer.color_mode
@@ -464,6 +493,70 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.photometry_opacity = 1.0
     state.sed_galaxy_bands = []  # ticked filter keys (multi-select stack)
     state.sed_legend = []  # [{title, color}] swatches for the ticked bands
+
+    # ── Auto-discovered galaxy properties ──────────────────────────────
+    # Datasets SAGE wrote that ViSAGE has no named field for. They get a
+    # Colour-by entry and a filter slider each, built from the model file
+    # itself, so the UI always matches the output it is showing.
+    state.extra_halo_filters = []  # [{key,label,log,min,max,step}]
+    state.extra_gal_filters = []
+    for _i in range(_MAX_EXTRA_HALO):
+        setattr(state, f"extra_halo_filter_{_i}", [0.0, 1.0])
+    for _i in range(_MAX_EXTRA_GAL):
+        setattr(state, f"extra_gal_filter_{_i}", [0.0, 1.0])
+
+    def _is_halo_property(key: str) -> bool:
+        k = key.lower()
+        return any(h in k for h in _HALO_NAME_HINTS)
+
+    def _extra_spec(f: dict) -> dict:
+        return {
+            "key": f["key"],
+            "label": f"{f['label']}  (log10)" if f["log"] else f["label"],
+            "log": f["log"],
+            "min": f["min"],
+            "max": f["max"],
+            "step": round((f["max"] - f["min"]) / 100.0, 6) or 0.01,
+        }
+
+    def _rebuild_extra_fields() -> None:
+        found = list(getattr(scene.active_model, "extra_fields", []) or [])
+        halo = [_extra_spec(f) for f in found if _is_halo_property(f["key"])]
+        gal = [
+            _extra_spec(f) for f in found if not _is_halo_property(f["key"])
+        ]
+        state.extra_halo_filters = halo[:_MAX_EXTRA_HALO]
+        state.extra_gal_filters = gal[:_MAX_EXTRA_GAL]
+        for prefix, specs, cap in (
+            ("extra_halo_filter", state.extra_halo_filters, _MAX_EXTRA_HALO),
+            ("extra_gal_filter", state.extra_gal_filters, _MAX_EXTRA_GAL),
+        ):
+            for i in range(cap):
+                rng = (
+                    [specs[i]["min"], specs[i]["max"]]
+                    if i < len(specs)
+                    else [0.0, 1.0]
+                )
+                setattr(state, f"{prefix}_{i}", rng)
+
+    def _extra_modes() -> list:
+        """Colour-by entries for the discovered properties.
+
+        They are per-galaxy values, so they can only be painted on the
+        galaxies — a host-halo property is tagged as such rather than
+        being offered under Halo Colour-by, where the halo layer has no
+        per-galaxy array to colour with.
+        """
+        out = []
+        for f in getattr(scene.active_model, "extra_fields", []) or []:
+            title = f["label"]
+            if _is_halo_property(f["key"]):
+                title = f"{title}  (halo)"
+            out.append({"title": title, "value": f"extra:{f['key']}"})
+        return out
+
+    def _sorted_modes(modes: list) -> list:
+        return sorted(modes, key=lambda m: str(m["title"]).lower())
 
     def _rebuild_color_mode_lists() -> None:
         fields = dict(scene.active_model.fields_available)
@@ -486,14 +579,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "value": f"ml:{k}",
                     }
                 )
-        state.halo_color_modes = _filter_modes(_HALO_MODES, fields)
+        # Alphabetical, matching the filter sliders.
+        state.halo_color_modes = _sorted_modes(
+            _filter_modes(_HALO_MODES, fields)
+        )
         # SED bands live only in the dedicated Synthetic Photometry section
         # below, not in the general "Colour by" dropdown.
-        state.galaxy_color_modes = _filter_modes(_GALAXY_MODES, fields)
+        state.galaxy_color_modes = _sorted_modes(
+            _filter_modes(_GALAXY_MODES, fields) + _extra_modes()
+        )
         state.sed_color_modes = sed_modes
         state.has_sed_data = bool(sed_modes)
         state.is_lightcone = scene.is_lightcone
 
+    _rebuild_extra_fields()
     _rebuild_color_mode_lists()
 
     def _sed_legend(items: list) -> list:
@@ -546,10 +645,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
 
-        # Halo filters
+        # Halo filters.  Vmax is the only one of the structural four the
+        # halo snapshot carries; Len / Concentration / Spin exist per
+        # galaxy (as host-halo columns) and are applied to the galaxies
+        # below — their state keys keep the filter_halo_ prefix so saved
+        # box profiles and stories still load.
         m_lo, m_hi = state.filter_halo_mvir
         r_lo, r_hi = state.filter_halo_rvir
         v_lo, v_hi = state.filter_halo_vvir
+        vmax_lo, vmax_hi = state.filter_halo_vmax
 
         h_mvir_log = np.log10(np.maximum(halos.masses, 1.0))
         h_mask = (
@@ -559,6 +663,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             & (halos.rvir <= float(r_hi))
             & (halos.vvir >= float(v_lo))
             & (halos.vvir <= float(v_hi))
+            & (halos.vmax >= float(vmax_lo))
+            & (halos.vmax <= float(vmax_hi))
         )
         full = (
             float(m_lo) <= 10.0 + 1e-6
@@ -567,6 +673,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             and float(r_hi) >= 3.0 - 1e-6
             and float(v_lo) <= 0.0 + 1e-6
             and float(v_hi) >= 1000.0 - 1e-6
+            and float(vmax_lo) <= 0.0 + 1e-6
+            and float(vmax_hi) >= 1000.0 - 1e-6
         )
         if full:
             h_mask = None
@@ -647,6 +755,66 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 g_mask &= galaxies.gal_type > 0
 
             fields = scene.active_model.fields_available
+
+            # ── Auto-discovered properties ─────────────────────────────────────
+            # Values live on the galaxies either way — a halo-classified
+            # field is a property of each galaxy's host halo — so both
+            # groups narrow the galaxy mask.  Same pass-through rule as the
+            # named filters: a slider left at its full extent filters
+            # nothing.
+            def _apply_extra(prefix: str, i: int, spec: dict) -> None:
+                rng = getattr(state, f"{prefix}_{i}", None)
+                if not rng or len(rng) != 2:
+                    return
+                lo, hi = float(rng[0]), float(rng[1])
+                if not _active(lo, hi, spec["min"], spec["max"]):
+                    return
+                vals = galaxies.extra.get(spec["key"])
+                if vals is None or len(vals) != galaxies.count:
+                    return
+                vals = np.asarray(vals, dtype=np.float64)
+                if spec["log"]:
+                    # Non-positive values have no log — treat them as absent
+                    # and let them pass, as the other log filters do.
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        log_v = np.log10(np.maximum(vals, 1e-30))
+                    g_mask.__iand__(
+                        (vals <= 0) | ((log_v >= lo) & (log_v <= hi))
+                    )
+                else:
+                    g_mask.__iand__((vals >= lo) & (vals <= hi))
+
+            for _prefix, _specs in (
+                ("extra_halo_filter", state.extra_halo_filters or []),
+                ("extra_gal_filter", state.extra_gal_filters or []),
+            ):
+                for _i, _spec in enumerate(_specs):
+                    _apply_extra(_prefix, _i, _spec)
+
+            # ── Host-halo properties, carried per galaxy ───────────────────────
+            # Shown among the galaxy sliders because that is what they
+            # filter: the halo snapshot has no Len / Concentration / Spin
+            # of its own.
+            if fields.get("len_particles", False):
+                lo, hi = state.filter_halo_len
+                if _active(lo, hi, 0, 10000):
+                    g_mask &= (galaxies.len_particles >= float(lo)) & (
+                        galaxies.len_particles <= float(hi)
+                    )
+
+            if fields.get("concentration", False):
+                lo, hi = state.filter_halo_conc
+                if _active(lo, hi, 0.0, 50.0):
+                    g_mask &= (galaxies.concentration >= float(lo)) & (
+                        galaxies.concentration <= float(hi)
+                    )
+
+            if fields.get("spin", False):
+                lo, hi = state.filter_halo_spin
+                if _active(lo, hi, 0.0, 0.2):
+                    g_mask &= (galaxies.spin >= float(lo)) & (
+                        galaxies.spin <= float(hi)
+                    )
 
             # ── Conditional filters ────────────────────────────────────────────
             if fields.get("bh_mass", False):
@@ -822,6 +990,41 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Re-apply on every snapshot change (new data, masks must be rebuilt)
     scene.register_snap_change_callback(lambda _n: _apply_filters())
 
+    # A dragged slider emits a value per step, and every one of them would
+    # otherwise recompute the masks AND rebuild every point cloud.  Coalesce
+    # the burst and apply once it settles, so dragging stays smooth and the
+    # value you release on is always the one that gets applied.
+    _FILTER_DEBOUNCE_S = 0.12
+    _filter_task: list = [None]
+    _filter_pending: list = [False]
+
+    async def _filter_debounce() -> None:
+        try:
+            while True:
+                await asyncio.sleep(_FILTER_DEBOUNCE_S)
+                if not _filter_pending[0]:
+                    break
+                _filter_pending[0] = False
+                _apply_filters()
+                _push()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            _filter_task[0] = None
+
+    def _apply_filters_soon() -> None:
+        _filter_pending[0] = True
+        if _filter_task[0] is not None and not _filter_task[0].done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (headless tests) — just do it now.
+            _filter_pending[0] = False
+            _apply_filters()
+            return
+        _filter_task[0] = loop.create_task(_filter_debounce())
+
     @state.change(
         "filter_halo_mvir",
         "filter_halo_rvir",
@@ -873,18 +1076,26 @@ def build_navigation_panel(server, scene: Scene) -> None:
         "env_show_group",
         "env_show_cluster",
         "filter_gal_age",
+        *(f"extra_halo_filter_{i}" for i in range(_MAX_EXTRA_HALO)),
+        *(f"extra_gal_filter_{i}" for i in range(_MAX_EXTRA_GAL)),
     )
     def on_filter_change(**_):
-        _apply_filters()
+        _apply_filters_soon()
 
     @ctrl.set("reset_opacities")
     def on_reset_opacities():
-        state.halo_opacity = 0.15
+        state.halo_opacity = _HALO_OPACITY
         state.galaxy_opacity = 1.0
         state.flush()
 
     @ctrl.set("reset_filters")
     def on_reset_filters():
+        for prefix, specs in (
+            ("extra_halo_filter", state.extra_halo_filters or []),
+            ("extra_gal_filter", state.extra_gal_filters or []),
+        ):
+            for i, spec in enumerate(specs):
+                setattr(state, f"{prefix}_{i}", [spec["min"], spec["max"]])
         state.filter_halo_mvir = [10.0, 15.0]
         state.filter_halo_rvir = [0.0, 3.0]
         state.filter_halo_vvir = [0.0, 1000.0]
@@ -1193,6 +1404,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     # Clear draw widgets whenever the primary model changes (world coords shift).
     scene.register_model_change_callback(_clear_draw_widgets)
+    scene.register_model_change_callback(_rebuild_extra_fields)
     scene.register_model_change_callback(_rebuild_color_mode_lists)
 
     # ------------------------------------------------------------------
@@ -3100,6 +3312,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("center_camera")
     def on_center_camera():
+        # Flying back to the box centre leaves an isolated object behind,
+        # so drop the isolate mask (and its stars) on the way out.
+        if bool(state.isolate_active):
+            scene.clear_focus()
+            state.isolate_active = False
         if scene.is_lightcone:
             # No box centre in a lightcone — stand at the observer (origin)
             # and look outward along the cone.
@@ -3837,6 +4054,29 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         _push()
 
+    # ------------------------------------------------------------------
+    # Star field — decorative stars around an isolated object
+    # ------------------------------------------------------------------
+
+    _sparkle_target: dict = {"center": None, "radius": 0.0}
+
+    def _stop_sparkles() -> None:
+        if scene.camera.has_sparkles:
+            scene.camera.clear_sparkles()
+            _push()
+
+    def _start_sparkles(center, radius: float) -> None:
+        scene.camera.add_sparkles(center, float(radius))
+        _push()
+
+    @state.change("isolate_active")
+    def on_isolate_active_change(isolate_active=False, **_):
+        """Stars vanish the moment Isolate is dropped — by the Isolate
+        button itself, by Focus/Centre/Reset Camera, or by anything else
+        that clears the isolate state."""
+        if not isolate_active:
+            _stop_sparkles()
+
     @ctrl.set("toggle_isolate")
     def on_toggle_isolate():
         """Isolate the selected halo (with its FOF members) or galaxy.
@@ -3929,11 +4169,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
             cam.position = (cx, cy, cz + dist)
             cam.up = (0.0, 1.0, 0.0)
             scene.plotter.renderer.ResetCameraClippingRange()
+            _sparkle_target["center"] = (cx, cy, cz)
+            _sparkle_target["radius"] = radius
         except Exception:
-            pass
+            _sparkle_target["center"] = None
 
         state.isolate_active = True
         state.focus_active = False
+        if _sparkle_target["center"] is not None:
+            _start_sparkles(
+                _sparkle_target["center"], _sparkle_target["radius"]
+            )
         _push()
 
     # ------------------------------------------------------------------
@@ -4117,17 +4363,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                     )
                 with v3.VSheet(color="transparent", style=_FIELD):
-                    v3.VSlider(
-                        v_model=("halo_opacity",),
-                        label="Opacity",
-                        min=0.0,
-                        max=1.0,
-                        step=0.01,
-                        thumb_label=True,
-                        color="#c084fc",
-                        hide_details=True,
-                    )
-                with v3.VSheet(color="transparent", style=_FIELD):
                     v3.VSelect(
                         v_model=("halo_color_mode",),
                         items=("halo_color_modes",),
@@ -4185,17 +4420,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                     )
                 with v3.VSheet(color="transparent", style=_FIELD):
-                    v3.VSlider(
-                        v_model=("galaxy_opacity",),
-                        label="Opacity",
-                        min=0.0,
-                        max=1.0,
-                        step=0.01,
-                        thumb_label=True,
-                        color="#FFD700",
-                        hide_details=True,
-                    )
-                with v3.VSheet(color="transparent", style=_FIELD):
                     v3.VSelect(
                         v_model=("galaxy_color_mode",),
                         items=("galaxy_color_modes",),
@@ -4242,18 +4466,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "{{ gal_cbar_max }}",
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
-
-                v3.VDivider(style="margin:14px 0 10px;")
-
-                v3.VBtn(
-                    "Reset Opacities",
-                    block=True,
-                    variant="outlined",
-                    color="red",
-                    density="compact",
-                    prepend_icon="mdi-restore",
-                    click=ctrl.reset_opacities,
-                )
 
             # Target (halo + galaxy combined)
             with v3.VSheet(
@@ -4501,7 +4713,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style="margin-bottom:6px;",
                 )
                 v3.VBtn(
-                    "Clear",
+                    "Clear Indicator",
                     block=True,
                     variant="outlined",
                     color="red",
@@ -5229,21 +5441,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Vvir  (km/s)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_vvir",),
-                        min=0.0,
-                        max=1000.0,
-                        step=10.0,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
                     html.Div("Vmax  (km/s)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_vmax",),
@@ -5260,108 +5457,54 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Len  (DM particles)", style=_FLBL)
+                    html.Div("Vvir  (km/s)", style=_FLBL)
                     v3.VRangeSlider(
-                        v_model=("filter_halo_len",),
-                        min=0,
-                        max=10000,
-                        step=100,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.len_particles",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Concentration  (NFW)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_conc",),
+                        v_model=("filter_halo_vvir",),
                         min=0.0,
-                        max=50.0,
-                        step=0.5,
+                        max=1000.0,
+                        step=10.0,
                         thumb_label=True,
                         color="#c084fc",
                         density="compact",
                         hide_details=True,
-                        disabled=("!model_fields.concentration",),
                         thumb_size=10,
                         track_size=2,
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Spin  (dimensionless)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_spin",),
-                        min=0.0,
-                        max=0.2,
-                        step=0.002,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.spin",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
+                    # Halo properties discovered in this model's own
+                    # output — same sliders, ranges read from the file.
+                    for _i in range(_MAX_EXTRA_HALO):
+                        with html.Div(
+                            v_if=(f"extra_halo_filters.length > {_i}",)
+                        ):
+                            html.Div(
+                                f"{{{{ extra_halo_filters[{_i}]?.label }}}}",
+                                style=_FLBL,
+                            )
+                            v3.VRangeSlider(
+                                v_model=(f"extra_halo_filter_{_i}",),
+                                min=(f"extra_halo_filters[{_i}]?.min ?? 0",),
+                                max=(f"extra_halo_filters[{_i}]?.max ?? 1",),
+                                step=(
+                                    f"extra_halo_filters[{_i}]?.step ?? 0.01",
+                                ),
+                                thumb_label=True,
+                                color="#c084fc",
+                                density="compact",
+                                hide_details=True,
+                                thumb_size=10,
+                                track_size=2,
+                                classes="sage-fslider",
+                                style=_FSLD,
+                            )
 
                 v3.VDivider(style="margin:4px 0 2px;")
 
                 # ── Galaxy section ────────────────────────────
                 html.Div("GALAXIES", style=_FSEC_GAL)
                 with html.Div(style=_SH + "height:185px;"):
-                    # ── Top 5 ──────────────────────────────────────
-                    html.Div("Stellar mass  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_smass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "SFR  (log10 Msun/yr,  -6 = quenched)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("sSFR  (log10 yr^-1)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ssfr",),
-                        min=-14.0,
-                        max=0.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
+                    # Alphabetical, like the Colour-by lists.
                     html.Div("B / T  (BulgeMass / StellarMass)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_bt",),
@@ -5377,23 +5520,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Stellar age  (Gyr, mass-weighted)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_age",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.mean_age",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    # ── Alphabetical ──────────────────────────────
                     html.Div("BH mass  (log10 Msun)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_bhmass",),
@@ -5467,6 +5593,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="#FFD700",
                         density="compact",
                         hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div("Concentration  (NFW, host halo)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_halo_conc",),
+                        min=0.0,
+                        max=50.0,
+                        step=0.5,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.concentration",),
                         thumb_size=10,
                         track_size=2,
                         classes="sage-fslider",
@@ -5584,6 +5726,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
+                    html.Div("ICS mass  (log10 Msun)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_ics",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.ics_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
                     html.Div(
                         "Instability bulge mass  (log10 Msun)", style=_FLBL
                     )
@@ -5620,17 +5778,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("ICS mass  (log10 Msun)", style=_FLBL)
+                    html.Div("Len  (DM particles, host halo)", style=_FLBL)
                     v3.VRangeSlider(
-                        v_model=("filter_gal_ics",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
+                        v_model=("filter_halo_len",),
+                        min=0,
+                        max=10000,
+                        step=100,
                         thumb_label=True,
                         color="#FFD700",
                         density="compact",
                         hide_details=True,
-                        disabled=("!model_fields.ics_mass",),
+                        disabled=("!model_fields.len_particles",),
                         thumb_size=10,
                         track_size=2,
                         classes="sage-fslider",
@@ -5818,6 +5976,23 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
+                    html.Div(
+                        "SFR  (log10 Msun/yr,  -6 = quenched)", style=_FLBL
+                    )
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_sfr",),
+                        min=-6.0,
+                        max=5.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
                     html.Div("SFR bulge  (log10 Msun/yr)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_sfr_bulge",),
@@ -5882,6 +6057,94 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
+                    html.Div("Spin  (host halo)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_halo_spin",),
+                        min=0.0,
+                        max=0.2,
+                        step=0.002,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.spin",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div("sSFR  (log10 yr^-1)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_ssfr",),
+                        min=-14.0,
+                        max=0.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div("Stellar age  (Gyr, mass-weighted)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_age",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.mean_age",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div("Stellar mass  (log10 Msun)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_smass",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    # Galaxy properties discovered in this model's own
+                    # output — same sliders, ranges read from the file.
+                    for _i in range(_MAX_EXTRA_GAL):
+                        with html.Div(
+                            v_if=(f"extra_gal_filters.length > {_i}",)
+                        ):
+                            html.Div(
+                                f"{{{{ extra_gal_filters[{_i}]?.label }}}}",
+                                style=_FLBL,
+                            )
+                            v3.VRangeSlider(
+                                v_model=(f"extra_gal_filter_{_i}",),
+                                min=(f"extra_gal_filters[{_i}]?.min ?? 0",),
+                                max=(f"extra_gal_filters[{_i}]?.max ?? 1",),
+                                step=(
+                                    f"extra_gal_filters[{_i}]?.step ?? 0.01",
+                                ),
+                                thumb_label=True,
+                                color="#FFD700",
+                                density="compact",
+                                hide_details=True,
+                                thumb_size=10,
+                                track_size=2,
+                                classes="sage-fslider",
+                                style=_FSLD,
+                            )
 
                 v3.VDivider(style="margin:4px 0 2px;")
 

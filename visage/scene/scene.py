@@ -36,14 +36,23 @@ class Scene:
         n_jobs: int = -1,
         min_halo_mass: float = 1.0e10,
         min_stellar_mass: float = 1.0e8,
-        max_halos: int = 100_000,
+        max_halos: int | None = None,
         max_galaxies: int | None = None,
+        cache_bytes: int | None = None,
         lightcone_path: str | Path | None = None,
     ) -> None:
         self._plotter = pv.Plotter(
             off_screen=off_screen, window_size=[1600, 900]
         )
         self._plotter.set_background("black")
+        # FXAA: a post-process pass, so it smooths the splat edges and the
+        # box labels without the 4x cost of supersampling — and without
+        # touching the render resolution the remote view ships.
+        try:
+            self._plotter.enable_anti_aliasing("fxaa")
+        except Exception:
+            # Some VTK builds / headless GL stacks have no FXAA pass.
+            pass
         self._plotter.renderer.SetNearClippingPlaneTolerance(0.00001)
 
         # Loader kwargs reused when adding additional models later
@@ -53,6 +62,7 @@ class Scene:
             min_stellar_mass=min_stellar_mass,
             max_halos=max_halos,
             max_galaxies=max_galaxies,
+            cache_bytes=cache_bytes,
         )
 
         self._models: dict[str, Model] = {}

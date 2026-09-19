@@ -142,8 +142,9 @@ def create_app(
     n_jobs: int = -1,
     min_halo_mass: float = 1.0e10,
     min_stellar_mass: float = 1.0e8,
-    max_halos: int = 100_000,
+    max_halos: int | None = None,
     max_galaxies: int | None = None,
+    cache_gb: float | None = None,
     port: int = 8080,
     lightcone_path: str | Path | None = None,
 ):
@@ -156,6 +157,9 @@ def create_app(
         min_stellar_mass=min_stellar_mass,
         max_halos=max_halos,
         max_galaxies=max_galaxies,
+        cache_bytes=(
+            int(cache_gb * 1024**3) if cache_gb is not None else None
+        ),
         lightcone_path=lightcone_path,
     )
 

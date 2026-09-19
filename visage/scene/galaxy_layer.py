@@ -6,7 +6,7 @@ import numpy as np
 import pyvista as pv
 
 from visage.io.galaxy_reader import GalaxySnapshot
-from visage.utils.colormap import normalize_log
+from visage.utils.colormap import normalize_log, scalars_to_rgba
 from visage.utils.sizing import galaxy_world_radii_rvir
 
 ColorMode = Literal[
@@ -149,6 +149,13 @@ class GalaxyLayer:
         self._opacity = opacity
         self._visible = visible
         self._actors: list = []
+        # (actor, floor, multiplier) for every actor whose opacity is an
+        # actor property, so the opacity slider can change it in place
+        # instead of rebuilding the geometry.
+        self._opacity_terms: list[tuple] = []
+        # The photometry stack bakes opacity into per-point alpha, so it
+        # can only follow the slider through a redraw.
+        self._opacity_baked = False
         self._cloud: pv.PolyData | None = None  # persistent geometry
         self._render_params: tuple = ()  # tracks need-to-rebuild
         self._snapshot: GalaxySnapshot | None = None
@@ -205,8 +212,15 @@ class GalaxyLayer:
     @opacity.setter
     def opacity(self, value: float) -> None:
         self._opacity = float(value)
-        if self._snapshot is not None:
+        if self._snapshot is None:
+            return
+        if self._opacity_baked or not self._opacity_terms:
             self._redraw()
+            return
+        # Cheap path: opacity is just an actor property, so there is no
+        # reason to rebuild point clouds while the slider is dragged.
+        for actor, floor, mul in self._opacity_terms:
+            actor.prop.opacity = max(floor, self._opacity * mul)
 
     @property
     def color_mode(self) -> ColorMode:
@@ -309,6 +323,12 @@ class GalaxyLayer:
         for actor in self._actors:
             self._pl.remove_actor(actor, render=False)
         self._actors.clear()
+        self._opacity_terms.clear()
+        self._opacity_baked = False
+
+    def _track_opacity(self, actor, floor: float, mul: float) -> None:
+        """Remember how this actor's opacity follows the slider."""
+        self._opacity_terms.append((actor, float(floor), float(mul)))
 
     def _redraw(self) -> None:
         snap = self._snapshot
@@ -406,20 +426,6 @@ class GalaxyLayer:
             kwargs[fld.name] = v
         return _GS(**kwargs)
 
-    def _update_in_place(
-        self,
-        positions: np.ndarray,
-        colors: np.ndarray,
-        radii: np.ndarray,
-    ) -> None:
-        cloud = self._cloud
-        if cloud is None:
-            return
-        cloud.points = positions
-        cloud["scalar"] = colors
-        cloud["radius"] = radii
-        cloud.Modified()
-
     def _render_by_type(self, snap: GalaxySnapshot, radii: np.ndarray) -> None:
         mass_colors = normalize_log(
             snap.stellar_mass, *_RANGES["stellar_mass"]
@@ -487,15 +493,14 @@ class GalaxyLayer:
             if not np.any(mask):
                 continue
             cloud = pv.PolyData(pos[mask])
-            cloud["scalar"] = outer_scalar[mask]
+            cloud["rgba"] = scalars_to_rgba(outer_scalar[mask], cmap)
             cloud["radius"] = (
                 r_outer[mask] * (0.5 + 0.5 * outer_scalar[mask])
             ).astype(np.float32)
             actor = self._pl.add_mesh(
                 cloud,
-                scalars="scalar",
-                cmap=cmap,
-                clim=[0.0, 1.0],
+                scalars="rgba",
+                rgb=True,
                 style="points_gaussian",
                 emissive=False,
                 opacity=max(0.15, self._opacity * 0.3),
@@ -508,19 +513,19 @@ class GalaxyLayer:
             mp.SetScaleFactor(1.0)
             if not self._visible:
                 actor.SetVisibility(False)
+            self._track_opacity(actor, 0.15, 0.3)
             self._actors.append(actor)
 
         # ---- (2) Cold-gas blue envelope -------------------------------
         cloud = pv.PolyData(pos)
-        cloud["scalar"] = cold_scalar.astype(np.float32)
+        cloud["rgba"] = scalars_to_rgba(cold_scalar, "Blues")
         cloud["radius"] = (r_cold * (0.5 + 0.5 * cold_scalar)).astype(
             np.float32
         )
         actor = self._pl.add_mesh(
             cloud,
-            scalars="scalar",
-            cmap="Blues",
-            clim=[0.0, 1.0],
+            scalars="rgba",
+            rgb=True,
             style="points_gaussian",
             emissive=False,
             opacity=max(0.2, self._opacity * 0.5),
@@ -533,6 +538,7 @@ class GalaxyLayer:
         mp.SetScaleFactor(1.0)
         if not self._visible:
             actor.SetVisibility(False)
+        self._track_opacity(actor, 0.2, 0.5)
         self._actors.append(actor)
 
         # (Per-galaxy star scatter and BH accretion-disk cores both
@@ -560,13 +566,12 @@ class GalaxyLayer:
                 (bulge_scalar, r_bulge, "RdBu"),
             ]:
                 cloud = pv.PolyData(pos)
-                cloud["scalar"] = scalar.astype(np.float32)
+                cloud["rgba"] = scalars_to_rgba(scalar, cmap)
                 cloud["radius"] = radii_arr
                 actor = self._pl.add_mesh(
                     cloud,
-                    scalars="scalar",
-                    cmap=cmap,
-                    clim=[0.0, 1.0],
+                    scalars="rgba",
+                    rgb=True,
                     style="points_gaussian",
                     emissive=False,
                     opacity=max(0.5, self._opacity * 0.75),
@@ -579,6 +584,7 @@ class GalaxyLayer:
                 mp.SetScaleFactor(1.0)
                 if not self._visible:
                     actor.SetVisibility(False)
+                self._track_opacity(actor, 0.5, 0.75)
                 self._actors.append(actor)
 
     def _render_outer_property(
@@ -595,14 +601,13 @@ class GalaxyLayer:
         if len(positions) == 0:
             return
         cloud = pv.PolyData(positions)
-        cloud["scalar"] = colors.astype(np.float32)
+        cloud["rgba"] = scalars_to_rgba(colors, cmap)
         # Sit ~30% beyond the standard envelope.  This is the "Colour-by" halo.
         cloud["radius"] = (radii * 1.3).astype(np.float32)
         actor = self._pl.add_mesh(
             cloud,
-            scalars="scalar",
-            cmap=cmap,
-            clim=[0.0, 1.0],
+            scalars="rgba",
+            rgb=True,
             style="points_gaussian",
             emissive=False,
             # Subtle so the inner Structure detail isn't drowned
@@ -616,6 +621,7 @@ class GalaxyLayer:
         mp.SetScaleFactor(1.0)
         if not self._visible:
             actor.SetVisibility(False)
+        self._track_opacity(actor, 0.12, 0.25)
         self._actors.append(actor)
 
     def _render_gaussian(
@@ -628,13 +634,12 @@ class GalaxyLayer:
         if len(positions) == 0:
             return
         cloud = pv.PolyData(positions)
-        cloud["scalar"] = colors
+        cloud["rgba"] = scalars_to_rgba(colors, cmap)
         cloud["radius"] = radii
         actor = self._pl.add_mesh(
             cloud,
-            scalars="scalar",
-            cmap=cmap,
-            clim=[0.0, 1.0],
+            scalars="rgba",
+            rgb=True,
             style="points_gaussian",
             emissive=False,
             opacity=self._opacity,
@@ -650,6 +655,7 @@ class GalaxyLayer:
         if not self._visible:
             actor.SetVisibility(False)
         self._cloud = cloud
+        self._track_opacity(actor, 0.0, 1.0)
         self._actors.append(actor)
 
     def _compute_colors(self, snap: GalaxySnapshot) -> np.ndarray:
@@ -687,12 +693,43 @@ class GalaxyLayer:
             ages = snap.mean_age.astype(np.float32)
             vmin, vmax = _RANGES["age"]
             return np.clip((ages - vmin) / (vmax - vmin + 1e-10), 0.0, 1.0)
+        if m.startswith("extra:"):
+            return self._extra_colors(snap, m[len("extra:") :])
         if m in _LOG_FIELDS:
             attr, floor = _LOG_FIELDS[m]
             return normalize_log(
                 np.maximum(getattr(snap, attr), floor), *_RANGES[m]
             )
         return normalize_log(snap.stellar_mass, *_RANGES["stellar_mass"])
+
+    def _extra_colors(self, snap: GalaxySnapshot, key: str) -> np.ndarray:
+        """Normalised colours for an auto-discovered property.
+
+        The field's meaning (and so its natural range) isn't known, so the
+        scale comes from the data: log10 when it is non-negative and spans
+        several decades, linear otherwise, clipped to the 1st–99th
+        percentile so a handful of outliers can't flatten everything else.
+        """
+        v = snap.extra.get(key)
+        if v is None or len(v) != snap.count:
+            return np.zeros(snap.count, dtype=np.float32)
+        v = np.asarray(v, dtype=np.float64)
+        finite = np.isfinite(v)
+        if not np.any(finite):
+            return np.zeros(snap.count, dtype=np.float32)
+        pos = v[finite & (v > 0)]
+        if (
+            v[finite].min() >= 0.0
+            and pos.size > 0
+            and pos.max() / max(pos.min(), 1e-300) >= 1.0e3
+        ):
+            v = np.log10(np.maximum(v, pos.min()))
+            finite = np.isfinite(v)
+        lo, hi = np.percentile(v[finite], [1.0, 99.0])
+        if hi <= lo:
+            hi = lo + 1e-10
+        out = np.clip((v - lo) / (hi - lo), 0.0, 1.0)
+        return np.where(finite, out, 0.0).astype(np.float32)
 
     def _sed_stack_amplitude(
         self, snap: GalaxySnapshot, item: str
@@ -878,4 +915,5 @@ class GalaxyLayer:
             if first:
                 self._cloud = cloud
                 first = False
+            self._opacity_baked = True
             self._actors.append(actor)

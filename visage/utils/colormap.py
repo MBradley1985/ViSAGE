@@ -1,6 +1,38 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
+
+
+@lru_cache(maxsize=64)
+def colormap_lut(name: str, n: int = 256) -> np.ndarray:
+    """(n, 4) uint8 RGBA lookup table for a matplotlib colormap.
+
+    Bin centres, matching how VTK samples its own lookup table, so the
+    colours come out identical to the ones VTK would have produced.
+    """
+    import matplotlib
+
+    cmap = matplotlib.colormaps[name]
+    return (cmap((np.arange(n) + 0.5) / n) * 255.0).astype(np.uint8)
+
+
+def scalars_to_rgba(values: np.ndarray, cmap: str, n: int = 256) -> np.ndarray:
+    """Map already-normalised (0-1) scalars to RGBA, vectorised.
+
+    Handing VTK a scalar array plus a colormap makes PyVista convert the
+    values to colours one at a time in Python — hundreds of milliseconds
+    for a large point cloud, and it happens on every redraw.  A table
+    lookup here is the same 256-entry quantisation VTK's own lookup table
+    uses, done in numpy.
+
+    Alpha is left at full: layer opacity stays an actor property, so the
+    opacity slider can still move it without rebuilding anything.
+    """
+    v = np.asarray(values, dtype=np.float32)
+    idx = np.clip((v * n).astype(np.int32), 0, n - 1)
+    return colormap_lut(cmap, n)[idx]
 
 
 def cmap_css_gradient(name: str, n: int = 12) -> str:

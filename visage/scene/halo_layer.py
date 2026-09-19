@@ -6,7 +6,7 @@ import numpy as np
 import pyvista as pv
 
 from visage.io.halo_reader import HaloSnapshot
-from visage.utils.colormap import normalize_log
+from visage.utils.colormap import normalize_log, scalars_to_rgba
 from visage.utils.sizing import halo_world_radii
 
 ColorMode = Literal["mvir", "rvir", "vvir", "vmax"]
@@ -27,7 +27,7 @@ class HaloLayer:
         plotter: pv.Plotter,
         color_mode: ColorMode = "mvir",
         colormap: str = "viridis",
-        opacity: float = 0.12,
+        opacity: float = 0.05,
         visible: bool = True,
     ) -> None:
         self._pl = plotter
@@ -36,6 +36,9 @@ class HaloLayer:
         self._opacity = opacity
         self._visible = visible
         self._actors: list = []
+        # (actor, floor, multiplier) so the opacity slider can move the
+        # layered splats in place instead of rebuilding them.
+        self._opacity_terms: list[tuple] = []
         self._snapshot: HaloSnapshot | None = None
         self._focus_mask: np.ndarray | None = None
         self._filter_mask: np.ndarray | None = None
@@ -64,8 +67,13 @@ class HaloLayer:
     @opacity.setter
     def opacity(self, value: float) -> None:
         self._opacity = float(value)
-        if self._snapshot is not None:
+        if self._snapshot is None:
+            return
+        if not self._opacity_terms:
             self._redraw()
+            return
+        for actor, floor, mul in self._opacity_terms:
+            actor.prop.opacity = max(floor, self._opacity * mul)
 
     @property
     def color_mode(self) -> ColorMode:
@@ -139,6 +147,7 @@ class HaloLayer:
         for actor in self._actors:
             self._pl.remove_actor(actor, render=False)
         self._actors.clear()
+        self._opacity_terms.clear()
 
     def _redraw(self) -> None:
         snap = self._snapshot
@@ -178,11 +187,15 @@ class HaloLayer:
     # density-profile look (bright core → faint Rvir boundary).
     # ------------------------------------------------------------------
 
+    # (radius_scale, opacity_floor, opacity_multiplier).  The floors kept a
+    # dragged opacity slider from fading the haloes to nothing; with the
+    # slider gone and the value fixed low on purpose, a floor would just
+    # override it — so the layers now scale straight from the setting and
+    # only their relative weighting is kept.
     _LAYERS = (
-        # (radius_scale, opacity_floor, opacity_multiplier)
-        (1.00, 0.03, 0.35),  # outer envelope ~ Rvir boundary
-        (0.45, 0.05, 0.60),  # inner halo
-        (0.18, 0.08, 0.95),  # dense core
+        (1.00, 0.0, 0.35),  # outer envelope ~ Rvir boundary
+        (0.45, 0.0, 0.60),  # inner halo
+        (0.18, 0.0, 0.95),  # dense core
     )
 
     def _render_layered(
@@ -195,13 +208,12 @@ class HaloLayer:
             return
         for r_scale, opa_floor, opa_mul in self._LAYERS:
             cloud = pv.PolyData(positions)
-            cloud["scalar"] = colors
+            cloud["rgba"] = scalars_to_rgba(colors, self._colormap)
             cloud["radius"] = (radii * float(r_scale)).astype(np.float32)
             actor = self._pl.add_mesh(
                 cloud,
-                scalars="scalar",
-                cmap=self._colormap,
-                clim=[0.0, 1.0],
+                scalars="rgba",
+                rgb=True,
                 style="points_gaussian",
                 emissive=False,
                 opacity=max(opa_floor, self._opacity * opa_mul),
@@ -214,6 +226,9 @@ class HaloLayer:
             mapper.SetScaleFactor(1.0)
             if not self._visible:
                 actor.SetVisibility(False)
+            self._opacity_terms.append(
+                (actor, float(opa_floor), float(opa_mul))
+            )
             self._actors.append(actor)
 
     def _compute_colors(self, snap: HaloSnapshot) -> np.ndarray:

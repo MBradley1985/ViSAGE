@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import re
+
 import h5py
 import numpy as np
 from joblib import Parallel, delayed
@@ -108,13 +110,78 @@ class HaloSnapshot:
 TREE_SUFFIXES = ("", ".hdf5", ".h5")
 
 
+def _looks_like_lhalo_binary(path: Path) -> bool:
+    """Cheap header sniff: an lhalo_binary tree file starts with two int32
+    counts followed by that many per-forest counts."""
+    try:
+        with open(path, "rb") as f:
+            head = np.fromfile(f, dtype=np.int32, count=2)
+            if len(head) < 2:
+                return False
+            nforests, nhalos = int(head[0]), int(head[1])
+            if nforests <= 0 or nhalos <= 0:
+                return False
+            # The header must fit inside the file, and the halo records after
+            # it must be a whole number of structs.
+            header = 8 + 4 * nforests
+            size = path.stat().st_size
+            if size < header:
+                return False
+            return (size - header) == nhalos * HALO_DTYPE.itemsize
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+_NUMBERED_FILE = re.compile(r"^(?P<base>.+)\.(?P<idx>\d+)$")
+
+
+def _discover_tree_sets(root: Path) -> list[list[Path]]:
+    """Numbered lhalo_binary tree sets in `root` and its immediate subdirs.
+
+    SAGE runs on consistent-trees ASCII usually keep a converted binary set
+    alongside the ASCII file (ViSAGE reads the binary trees, not the ASCII
+    ones), so this is what makes those runs show haloes.
+    """
+    sets: list[list[Path]] = []
+    dirs = [root] + [d for d in sorted(root.iterdir()) if d.is_dir()]
+    for d in dirs:
+        groups: dict[str, list[tuple[int, Path]]] = {}
+        for f in sorted(d.iterdir()):
+            if not f.is_file():
+                continue
+            m = _NUMBERED_FILE.match(f.name)
+            if not m:
+                continue
+            groups.setdefault(m.group("base"), []).append(
+                (int(m.group("idx")), f)
+            )
+        for _base, items in groups.items():
+            files = [f for _i, f in sorted(items)]
+            if _looks_like_lhalo_binary(files[0]):
+                sets.append(files)
+    # Most files first, then most bytes — the fullest tree set wins.
+    sets.sort(
+        key=lambda fs: (len(fs), sum(f.stat().st_size for f in fs)),
+        reverse=True,
+    )
+    return sets
+
+
 def _resolve_tree_files(
-    tree_dir: Path, tree_name: str, first_file: int, last_file: int
+    tree_dir: Path,
+    tree_name: str,
+    first_file: int,
+    last_file: int,
+    tree_type: str = "",
 ) -> list[Path]:
     """Existing tree files for the file-number range.
 
-    The par file's TreeName has no extension, so "TreeName.n" may be a bare
-    binary file or an HDF5 one written as "TreeName.n.hdf5".
+    The par file's TreeName usually has no extension, so "TreeName.n" may be
+    a bare binary file or an HDF5 one written as "TreeName.n.hdf5".  Two
+    other shapes are handled: a TreeName that is already a complete file
+    name (consistent-trees ASCII names the file outright), and a run whose
+    configured trees aren't readable but which keeps a converted
+    lhalo_binary set nearby.
     """
     found = []
     for i in range(first_file, last_file + 1):
@@ -123,7 +190,34 @@ def _resolve_tree_files(
             if path.exists():
                 found.append(path)
                 break
-    return found
+    if found:
+        return found
+
+    # TreeName given in full (e.g. "tree_0_0_0.dat" for consistent-trees
+    # ASCII).  Only usable if it turns out to be a format we can read.
+    exact = tree_dir / tree_name
+    if exact.is_file() and (
+        h5py.is_hdf5(exact) or _looks_like_lhalo_binary(exact)
+    ):
+        return [exact]
+
+    # Nothing configured is readable — look for a converted binary set.
+    if tree_dir.is_dir():
+        sets = _discover_tree_sets(tree_dir)
+        if sets:
+            best = sets[0]
+            if VERBOSE:
+                where = best[0].parent
+                print(
+                    f"  Haloes: no readable trees at "
+                    f"{tree_dir / tree_name}"
+                    + (f" (TreeType {tree_type})" if tree_type else "")
+                    + f" — using the lhalo_binary set "
+                    f"{best[0].name.rsplit('.', 1)[0]}.[0-{len(best) - 1}] "
+                    f"in {where}"
+                )
+            return best
+    return []
 
 
 def _empty_result() -> tuple:
@@ -196,10 +290,11 @@ def load_halo_snapshot(
     first_file: int = 0,
     last_file: int = 7,
     mass_cut: float = 1.0e10,
-    max_halos: int = 100_000,
+    max_halos: int | None = None,
     hubble_h: float = 0.73,
     n_jobs: int = -1,
     box_size: float = 0.0,
+    tree_type: str = "",
 ) -> HaloSnapshot:
     """Load halo positions and masses for one snapshot from lhalo_binary tree files.
 
@@ -209,7 +304,8 @@ def load_halo_snapshot(
     tree_name: base name (e.g. 'trees_063'); files are tree_name.{first_file..last_file}
     snap_num:  snapshot index to extract
     mass_cut:  minimum halo mass in Msun (after h correction)
-    max_halos: random downsample if more haloes than this are found
+    max_halos: optional random downsample ceiling.  None (the default)
+               loads every halo — no thinning of the field.
     n_jobs:    joblib parallel workers (-1 = all CPUs)
 
     The mass is read from the first populated column of MASS_FIELDS, so tree
@@ -218,17 +314,25 @@ def load_halo_snapshot(
     """
     tree_dir = Path(tree_dir)
     tree_files = _resolve_tree_files(
-        tree_dir, tree_name, first_file, last_file
+        tree_dir, tree_name, first_file, last_file, tree_type
     )
     if not tree_files:
         # Worth its own message: an unreadable/misnamed tree path used to look
         # exactly like a mass cut that filtered everything out.
         if VERBOSE:
             print(
-                f"  Haloes: no tree files found matching "
-                f"{tree_dir / tree_name}.{{{first_file}..{last_file}}}"
-                f"[{'|'.join(TREE_SUFFIXES[1:])}]"
+                f"  Haloes: no readable tree files for "
+                f"{tree_dir / tree_name}"
+                + (f"  (TreeType {tree_type})" if tree_type else "")
             )
+            if "ascii" in tree_type.lower():
+                # Say why, rather than leaving an empty box to puzzle over.
+                print(
+                    "  Haloes: ASCII merger trees are not read directly — "
+                    "ViSAGE needs the lhalo_binary (or HDF5) trees.  Point "
+                    "SimulationDir at the converted set, or keep it beside "
+                    "the ASCII file and it will be found automatically."
+                )
         return HaloSnapshot.empty(snap_num)
 
     n_files = len(tree_files)
@@ -271,7 +375,7 @@ def load_halo_snapshot(
     rvir = np.concatenate([r[3] for r in results])
     vvir = np.concatenate([r[4] for r in results])
 
-    if len(positions) > max_halos:
+    if max_halos is not None and len(positions) > max_halos:
         rng = np.random.default_rng(42)
         idx = rng.choice(len(positions), max_halos, replace=False)
         positions, masses, vmax, rvir, vvir = (

@@ -61,9 +61,6 @@ _OPTIONAL_FIELDS: dict[str, str] = {
     "metals_cgm_gas": "MetalsCGMgas",
 }
 
-# Age availability requires BOTH SFH arrays — checked separately
-_AGE_FIELDS = ("SFHMassDisk", "SFHMassBulge")
-
 
 class Model:
     """A single SAGE simulation, with its own loader, layers, and metadata.
@@ -91,6 +88,10 @@ class Model:
         self.halo_layer: HaloLayer = HaloLayer(plotter)
         self.galaxy_layer: GalaxyLayer = GalaxyLayer(plotter)
         self.fields_available: dict[str, bool] = self._detect_fields()
+        # Per-galaxy datasets SAGE wrote that ViSAGE has no named field
+        # for — discovered from the file so filters and Colour-by always
+        # match the model's actual output.
+        self.extra_fields: list[dict] = self._detect_extra_fields()
         self._current_snap: int = -1
         self._offset: np.ndarray = np.zeros(3, dtype=np.float64)
 
@@ -117,9 +118,89 @@ class Model:
                 grp = f[snap_key]
                 for ui_key, hdf_field in _OPTIONAL_FIELDS.items():
                     out[ui_key] = hdf_field in grp
-                out["mean_age"] = all(k in grp for k in _AGE_FIELDS)
+                # Stellar age is computed from the SFH pair, found by
+                # shape so a renamed dataset doesn't grey the slider out.
+                from visage.io.galaxy_reader import find_sfh_datasets
+
+                sfh_disk, sfh_bulge = find_sfh_datasets(grp)
+                out["mean_age"] = (
+                    sfh_disk is not None and sfh_bulge is not None
+                )
         except Exception:
             pass
+        return out
+
+    @staticmethod
+    def _pretty_label(name: str) -> str:
+        """ "MetalsColdGas" -> "Metals Cold Gas"; "sfr_new" -> "Sfr New"."""
+        import re
+
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name.replace("_", " "))
+        return " ".join(w[:1].upper() + w[1:] for w in spaced.split())
+
+    def _detect_extra_fields(self) -> list[dict]:
+        """Describe every per-galaxy dataset with no named field of its own.
+
+        Each entry carries what the UI needs to build a filter and a
+        Colour-by mode: the HDF5 name, a readable label, whether it wants
+        a log scale, and the value range (in log10 units when log).
+        """
+        from visage.io.galaxy_reader import discover_extra_fields
+
+        out: list[dict] = []
+        try:
+            with h5py.File(self.cfg.hdf5_path, "r") as f:
+                snap_key = f"Snap_{self.snap_table.count - 1}"
+                if snap_key not in f:
+                    for k in f.keys():
+                        if k.startswith("Snap_"):
+                            snap_key = k
+                            break
+                    else:
+                        return out
+                grp = f[snap_key]
+                for name in discover_extra_fields(grp):
+                    v = np.asarray(grp[name], dtype=np.float64)
+                    v = v[np.isfinite(v)]
+                    if v.size == 0:
+                        continue
+                    pos = v[v > 0]
+                    # Log scale when the field is non-negative and spans
+                    # more than three decades — the usual mass/rate case.
+                    log = bool(
+                        v.min() >= 0.0
+                        and pos.size > 0
+                        and pos.max() / max(pos.min(), 1e-300) >= 1.0e3
+                    )
+                    if log:
+                        lo, hi = np.percentile(np.log10(pos), [0.5, 99.5])
+                        lo, hi = float(np.floor(lo)), float(np.ceil(hi))
+                    else:
+                        lo, hi = np.percentile(v, [0.5, 99.5])
+                        lo, hi = float(lo), float(hi)
+                        # Round out to a tidy slider extent rather than the
+                        # raw percentile — whole decades would be far too
+                        # coarse for a field that lives in, say, 0–0.2.
+                        span = hi - lo
+                        if span > 0:
+                            import math
+
+                            q = 10.0 ** math.floor(math.log10(span) - 1.0)
+                            lo = math.floor(lo / q) * q
+                            hi = math.ceil(hi / q) * q
+                    if hi <= lo:
+                        hi = lo + 1.0
+                    out.append(
+                        {
+                            "key": name,
+                            "label": self._pretty_label(name),
+                            "log": log,
+                            "min": lo,
+                            "max": hi,
+                        }
+                    )
+        except Exception:
+            return []
         return out
 
     # ------------------------------------------------------------------

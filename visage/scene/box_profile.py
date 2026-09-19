@@ -137,7 +137,7 @@ _FILTER_DEFAULTS: dict[str, Any] = {
 _LAYER_DEFAULTS: dict[str, Any] = {
     "halos_visible": True,
     "galaxies_visible": True,
-    "halo_opacity": 0.12,
+    "halo_opacity": 0.05,
     "halo_color_mode": "mvir",
     "halo_colormap": "viridis",
     "galaxy_colormap": "plasma",

@@ -8,6 +8,94 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-09-19
+
+### Added
+
+- **Isolate button in the navigation panel.** A magnifier beside Focus and
+  Centre hides every halo and galaxy except the selected one and frames the
+  camera on what survives. Selecting a halo keeps the galaxies of the FOF
+  group living in it, so an isolated group is actually populated; selecting a
+  galaxy keeps that galaxy. A field of coloured stars (spectral-class palette,
+  fixed pixel size) is drawn around the isolated object and disappears the
+  moment Isolate is dropped — by the button itself, by Focus, Centre, Reset
+  Camera, or any Go. Pressing the button again restores the full scene.
+- **Galaxy properties are discovered from the model file.** Every per-galaxy
+  dataset ViSAGE has no named field for is now read automatically into
+  `GalaxySnapshot.extra`, described from the file (readable label, log or
+  linear scale, range from the data percentiles), and given both a filter
+  slider and a Colour-by entry. Fields are split by what they describe, so a
+  host-halo property lands among the halo sliders and a galaxy property among
+  the galaxy ones. Bookkeeping datasets (`DT`, `MergeIntoID`,
+  `MergeIntoSnapNum`, `MergeType`, `QuasarModeBHaccretionMass`,
+  `SAGEHaloIndex`, `SAGETreeIndex`, `SimulationHaloIndex`, `SnapNum`) are
+  excluded, matched case- and underscore-insensitively.
+- **Update checks for SAGE26, SAGEswarm and LightSAGE.** Each wizard menu
+  fetches and reports where its checkout stands against the remote — up to
+  date, N commits behind, local commits ahead, no upstream, or unreachable —
+  and offers an Update entry (`git pull --ff-only --recurse-submodules`) when
+  there is something to pull. Non-git directories are reported as such.
+- **Memory-budgeted snapshot cache.** Snapshots are cached against a byte
+  budget (half of physical RAM by default; `--cache-gb` or `$VISAGE_CACHE_GB`)
+  instead of a snapshot count, evicting least-recently-used snapshots and
+  their KDTrees. Completed prefetch Futures are released so they no longer pin
+  every snapshot in memory.
+
+### Changed
+
+- **The halo cap is gone.** `max_halos` now defaults to no limit, so every
+  halo above the mass floor is loaded instead of a random 100,000 sample —
+  microUchuu goes from 100,000 to 386,585 haloes at z = 0. `--max-halos N`
+  still applies a ceiling if one is wanted. Nothing else in the pipeline
+  thins the data.
+- **Opacity sliders removed.** Haloes render at a fixed 0.05 and galaxies at
+  full opacity; the halo layer's per-layer opacity floors are gone, so the
+  setting is honoured exactly. Console commands and saved box profiles can
+  still drive opacity.
+- **SAGE26 has its own launch-mode menu**, beside SAGEswarm and LightSAGE, in
+  place of the old "Run SAGE26" entry and the "Start Fresh" submenu: run the
+  local checkout, compile it, update it, or (re-)clone it.
+- **Filters and Colour-by are alphabetical** in both the halo and galaxy
+  sections.
+- Environment tab's "Clear" button is now "Clear Indicator", matching Target.
+
+### Fixed
+
+- **Haloes were missing for runs configured with consistent-trees ASCII.**
+  TreeName points at the ASCII file itself, which matches none of the
+  `TreeName.n` patterns, so the tree search came back empty and only the
+  galaxies rendered. Tree resolution now also accepts a TreeName that is a
+  complete file name, and falls back to a converted lhalo_binary set found in
+  the tree directory or one of its subdirectories (validated by header sniff).
+  When nothing readable is found the message says so, and says that ASCII
+  trees need converting.
+- **Re-cloning a repository failed** with "check internet connection": git
+  refuses to clone onto an existing directory. An existing checkout is now
+  moved aside to `<name>.backup-<timestamp>` — never deleted, since it may
+  hold edited configs or output — before cloning.
+- **Stellar Age was greyed out** when SAGE spelled its SFH datasets
+  differently. The pair is now matched by shape and pattern rather than the
+  exact names `SFHMassDisk` / `SFHMassBulge`.
+- **Four halo filter sliders did nothing.** Vmax now filters the haloes (and
+  counts towards the "any filter active" check); Len, Concentration and Spin
+  filter the galaxies by their host-halo columns, which is where that data
+  lives, and have moved to the galaxy section accordingly.
+
+### Performance
+
+- **Colour mapping is vectorised.** Handing VTK scalars plus a colormap made
+  PyVista convert values to colours one point at a time in Python — about
+  400 ms per actor for 200,000 points, on every redraw. Layers now pass
+  finished RGBA built from a 256-entry lookup table: a 386,585-object redraw
+  drops from seconds to ~21 ms (galaxies) and ~23 ms (haloes), with colours
+  identical to VTK's own lookup table.
+- **Opacity changes no longer rebuild the scene** — they set actor properties
+  in place (243 ms → 0.01 ms for 60,000 galaxies).
+- **Filter sliders are debounced** (120 ms trailing), so dragging a thumb no
+  longer recomputes masks and rebuilds point clouds on every intermediate
+  value.
+- **FXAA anti-aliasing** is enabled on the plotter.
+
 ## [2.4.0] — 2026-09-19
 
 ### Added

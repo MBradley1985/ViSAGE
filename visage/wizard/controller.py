@@ -601,7 +601,9 @@ class WizardController:
         self._wiz_buf: bytearray = (
             bytearray()
         )  # replay buffer for late-mounting xterm
-        self._back: str = "back_fresh"  # Back target for par/compile steps
+        self._back: str = (
+            "back_sage26_menu"  # Back target for par/compile steps
+        )
 
         # SAGEswarm (PSO calibration) flow state
         self._flow: str = "sage26"  # "sage26" | "sageswarm" | "sagelightcone"
@@ -676,7 +678,7 @@ class WizardController:
         self._lc_dir = None
         self._stop_plot_watch()
         self._wiz_buf = bytearray()
-        self._back = "back_fresh"
+        self._back = "back_sage26_menu"
         self._st.wiz_step = 0
         if self._flow == "sageswarm":
             self._st.wiz_steps = list(_STEPS_SAGESWARM)
@@ -859,6 +861,144 @@ class WizardController:
             self._st.wiz_lc_script_text = _apply_params(
                 str(self._st.wiz_lc_script_text or ""), params, kind
             )
+
+    # ------------------------------------------------------------------
+    # Git helpers — shared by every repo flow (SAGE26 / SAGEswarm /
+    # LightSAGE), so all three report and update the same way.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _git_capture(args: list[str], cwd: Path) -> tuple[int, str]:
+        """Run a git command quietly and return (returncode, stdout)."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=str(cwd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+            return proc.returncode or 0, out.decode(errors="replace").strip()
+        except (asyncio.TimeoutError, OSError):
+            return 1, ""
+
+    async def _git_status(self, repo: Path | None) -> dict:
+        """Where a checkout stands against its remote.
+
+        Returns {"repo": bool, "branch": str, "short": str, "behind": int,
+        "ahead": int, "offline": bool}.  `repo` False means the directory
+        isn't a git checkout (a tarball copy, say) — nothing to update.
+        """
+        info = {
+            "repo": False,
+            "branch": "",
+            "short": "",
+            "behind": 0,
+            "ahead": 0,
+            "offline": False,
+            "upstream": False,
+        }
+        if repo is None or not (Path(repo) / ".git").exists():
+            return info
+        repo = Path(repo)
+        info["repo"] = True
+        _, info["branch"] = await self._git_capture(
+            ["rev-parse", "--abbrev-ref", "HEAD"], repo
+        )
+        _, info["short"] = await self._git_capture(
+            ["rev-parse", "--short", "HEAD"], repo
+        )
+        rc, _ = await self._git_capture(["fetch", "--quiet"], repo)
+        if rc != 0:
+            info["offline"] = True
+            return info
+        rc, counts = await self._git_capture(
+            ["rev-list", "--left-right", "--count", "HEAD...@{u}"], repo
+        )
+        if rc != 0 or not counts:
+            # No upstream configured for this branch.
+            return info
+        try:
+            ahead, behind = counts.split()
+            info["ahead"], info["behind"] = int(ahead), int(behind)
+            info["upstream"] = True
+        except ValueError:
+            pass
+        return info
+
+    async def _report_git_status(self, name: str, repo: Path | None) -> dict:
+        """Emit a one-line update report and return the status."""
+        st = await self._git_status(repo)
+        if not st["repo"]:
+            if repo is not None:
+                self._emit(f"  {name} updates   : not a git checkout", "warn")
+            return st
+        where = f"{st['branch']} @ {st['short']}" if st["short"] else "HEAD"
+        if st["offline"]:
+            self._emit(
+                f"  {name} updates   : {where} — could not reach remote",
+                "warn",
+            )
+        elif st["behind"]:
+            self._emit(
+                f"  {name} updates   : {st['behind']} behind "
+                f"({where}) — update available",
+                "warn",
+            )
+        elif not st["upstream"]:
+            self._emit(
+                f"  {name} updates   : {where} — no upstream branch to "
+                f"compare against",
+                "warn",
+            )
+        elif st["ahead"]:
+            self._emit(
+                f"  {name} updates   : up to date, {st['ahead']} local "
+                f"commit(s) ahead ({where})",
+                "ok",
+            )
+        else:
+            self._emit(f"  {name} updates   : up to date ({where})", "ok")
+        return st
+
+    async def _git_update(self, name: str, repo: Path | None) -> None:
+        """Fast-forward a checkout to its remote, submodules included."""
+        if repo is None or not (Path(repo) / ".git").exists():
+            self._emit(
+                f"{name} is not a git checkout — nothing to pull.", "err"
+            )
+            return
+        self._emit(f"Updating {name} at {repo} ...", "info")
+        rc = await self._run_cmd(
+            ["git", "pull", "--ff-only", "--recurse-submodules"], cwd=repo
+        )
+        if rc != 0:
+            self._emit(
+                "Update failed — the checkout has local commits or changes "
+                "that block a fast-forward. Commit, stash or re-clone.",
+                "err",
+            )
+            return
+        self._emit(f"{name} updated.", "ok")
+
+    @staticmethod
+    def _move_aside(target: Path) -> Path:
+        """Rename an existing checkout out of the way, and say where to.
+
+        Re-cloning must never delete someone's edited par files or output,
+        so the old tree is kept next to the new one with a timestamp.
+        """
+        import time
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = target.with_name(f"{target.name}.backup-{stamp}")
+        i = 1
+        while backup.exists():
+            backup = target.with_name(f"{target.name}.backup-{stamp}-{i}")
+            i += 1
+        target.rename(backup)
+        return backup
 
     async def _run_cmd(self, cmd: list[str], cwd: Path | None = None) -> int:
         """Run a command in a PTY so ANSI colors and \\r progress bars work."""
@@ -1075,15 +1215,14 @@ class WizardController:
                     "disabled": False,
                 }
             )
-        if self._sage26_dir:
-            choices.append(
-                {
-                    "label": "Run SAGE26",
-                    "value": "run_sage26",
-                    "icon": "mdi-play-circle-outline",
-                    "disabled": False,
-                }
-            )
+        choices.append(
+            {
+                "label": "SAGE26",
+                "value": "sage26",
+                "icon": "mdi-play-circle-outline",
+                "disabled": False,
+            }
+        )
         choices.append(
             {
                 "label": "SAGEswarm",
@@ -1100,14 +1239,6 @@ class WizardController:
                 "disabled": False,
             }
         )
-        choices.append(
-            {
-                "label": "Start Fresh",
-                "value": "fresh",
-                "icon": "mdi-git",
-                "disabled": False,
-            }
-        )
         self._set_choices(choices)
 
     def _on_choice(self, value: str, **_) -> None:
@@ -1119,20 +1250,17 @@ class WizardController:
         if value == "load":
             await self._step_select_model()
 
+        elif value == "sage26":
+            await self._step_sage26_menu()
+
         elif value == "run_sage26":
             await self._step_run_sage26_existing()
-
-        elif value == "fresh":
-            await self._step_fresh_choice()
 
         elif value.startswith("model:"):
             name = value[6:]
             model = next((m for m in self._models if m["name"] == name), None)
             if model:
                 await self._launch_explore(model["par"], model_name=name)
-
-        elif value == "new_model":
-            await self._step_pick_par()
 
         elif value == "clone_sage26":
             await self._step_clone()
@@ -1160,13 +1288,25 @@ class WizardController:
             self._emit("", "info")
             await self._step_main_choice()
 
-        elif value == "back_fresh":
+        elif value == "back_sage26_menu":
             self._emit("", "info")
-            await self._step_fresh_choice()
+            await self._step_sage26_menu()
 
         # ── SAGEswarm (PSO calibration) flow ──────────────────────────────
         elif value == "sageswarm":
             await self._step_sw_scan()
+
+        elif value == "update_sage26":
+            await self._git_update("SAGE26", self._sage26_dir)
+            await self._step_sage26_menu()
+
+        elif value == "sw_update":
+            await self._git_update("SAGEswarm", self._sw_dir)
+            await self._step_sw_scan()
+
+        elif value == "lc_update":
+            await self._git_update("LightSAGE", self._lc_dir)
+            await self._step_lc_scan()
 
         elif value == "sw_clone":
             await self._step_sw_clone()
@@ -1236,18 +1376,16 @@ class WizardController:
 
     async def _step_run_sage26_existing(self) -> None:
         """Run SAGE26 with the existing local installation — no clone step."""
-        self._back = "back_main"
+        self._back = "back_sage26_menu"
         self._st.wiz_step = 2
         if not self._sage26_dir:
             self._emit("SAGE26 not found locally.", "err")
-            self._emit(
-                "Use 'Start Fresh' to clone it from GitHub first.", "info"
-            )
+            self._emit("Clone it from GitHub first.", "info")
             self._set_choices(
                 [
                     {
                         "label": "Back",
-                        "value": "back_main",
+                        "value": "back_sage26_menu",
                         "icon": "mdi-arrow-left",
                         "disabled": False,
                     }
@@ -1280,7 +1418,7 @@ class WizardController:
                     },
                     {
                         "label": "Back",
-                        "value": "back_main",
+                        "value": "back_sage26_menu",
                         "icon": "mdi-arrow-left",
                         "disabled": False,
                     },
@@ -1310,33 +1448,31 @@ class WizardController:
         )
         self._set_choices(choices)
 
-    async def _step_fresh_choice(self) -> None:
-        self._back = "back_fresh"
+    async def _step_sage26_menu(self) -> None:
+        """SAGE26 sub-menu — run the local checkout, or (re-)clone it.
+
+        Mirrors the SAGEswarm / LightSAGE menus: what you can do with the
+        local checkout first, the clone/re-clone at the bottom.
+        """
+        self._back = "back_sage26_menu"
         self._st.wiz_step = 2
         choices: list[dict] = []
 
-        # Clone is always the first option — full fresh start from GitHub
-        choices.append(
-            {
-                "label": "Clone SAGE26",
-                "value": "clone_sage26",
-                "icon": "mdi-git",
-                "disabled": False,
-            }
-        )
-
         if self._sage26_dir:
+            self._emit(f"SAGE26 found at {self._sage26_dir}", "ok")
+            git = await self._report_git_status("SAGE26", self._sage26_dir)
             compiled, _ = self._sage26_compiled(self._sage26_dir)
             if compiled:
                 choices.append(
                     {
-                        "label": "Run New Model",
-                        "value": "new_model",
+                        "label": "Run SAGE26",
+                        "value": "run_sage26",
                         "icon": "mdi-play",
                         "disabled": False,
                     }
                 )
             else:
+                self._emit("Not yet compiled — compile it first.", "warn")
                 choices.append(
                     {
                         "label": "Compile SAGE26",
@@ -1347,14 +1483,43 @@ class WizardController:
                 )
                 choices.append(
                     {
-                        "label": "Run New Model (after compile)",
-                        "value": "new_model",
+                        "label": "Run SAGE26 (after compile)",
+                        "value": "run_sage26",
                         "icon": "mdi-play",
                         "disabled": True,
                     }
                 )
+            if git.get("repo"):
+                choices.append(
+                    {
+                        "label": (
+                            f"Update SAGE26 ({git['behind']} behind)"
+                            if git.get("behind")
+                            else "Update SAGE26"
+                        ),
+                        "value": "update_sage26",
+                        "icon": "mdi-download",
+                        "disabled": not git.get("behind"),
+                    }
+                )
+            choices.append(
+                {
+                    "label": "Re-clone SAGE26",
+                    "value": "clone_sage26",
+                    "icon": "mdi-git",
+                    "disabled": False,
+                }
+            )
         else:
             self._emit("SAGE26 not found locally — clone it first.", "info")
+            choices.append(
+                {
+                    "label": "Clone SAGE26",
+                    "value": "clone_sage26",
+                    "icon": "mdi-git",
+                    "disabled": False,
+                }
+            )
 
         choices.append(
             {
@@ -1421,6 +1586,26 @@ class WizardController:
             )
             return
         target = parent / "SAGE26"
+        # A re-clone lands on an existing folder: git refuses to clone into
+        # one, so move it aside first (never delete — it may hold edited
+        # configs or output) and say where it went.
+        if target.exists():
+            try:
+                backup = self._move_aside(target)
+            except OSError as exc:
+                self._emit(f"Could not move {target} aside: {exc}", "err")
+                self._set_choices(
+                    [
+                        {
+                            "label": "Back",
+                            "value": self._back,
+                            "icon": "mdi-arrow-left",
+                            "disabled": False,
+                        }
+                    ]
+                )
+                return
+            self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning SAGE26 into {target} ...", "info")
         rc = await self._run_cmd(
             ["git", "clone", _SAGE26_REPO, str(target)],
@@ -1801,8 +1986,10 @@ class WizardController:
         self._emit("", "info")
 
         self._sw_dir = self._find_sageswarm()
+        sw_git: dict = {}
         if self._sw_dir:
             self._emit(f"  SAGEswarm found : {self._sw_dir}", "ok")
+            sw_git = await self._report_git_status("SAGEswarm", self._sw_dir)
         else:
             self._emit(
                 "  SAGEswarm       : Not found — clone it to begin", "warn"
@@ -1838,6 +2025,19 @@ class WizardController:
                     "disabled": False,
                 }
             )
+            if sw_git.get("repo"):
+                choices.append(
+                    {
+                        "label": (
+                            f"Update SAGEswarm ({sw_git['behind']} behind)"
+                            if sw_git.get("behind")
+                            else "Update SAGEswarm"
+                        ),
+                        "value": "sw_update",
+                        "icon": "mdi-download",
+                        "disabled": not sw_git.get("behind"),
+                    }
+                )
             choices.append(
                 {
                     "label": "Re-clone SAGEswarm",
@@ -1910,6 +2110,17 @@ class WizardController:
             )
             return
         target = parent / "SAGEswarm"
+        # A re-clone lands on an existing folder: git refuses to clone into
+        # one, so move it aside first (never delete — it may hold edited
+        # configs or output) and say where it went.
+        if target.exists():
+            try:
+                backup = self._move_aside(target)
+            except OSError as exc:
+                self._emit(f"Could not move {target} aside: {exc}", "err")
+                self._set_choices([self._back_choice()])
+                return
+            self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning SAGEswarm into {target} ...", "info")
         rc = await self._run_cmd(
             ["git", "clone", _SAGESWARM_REPO, str(target)], cwd=parent
@@ -2459,8 +2670,10 @@ class WizardController:
 
         self._lc_dir = self._find_sagelightcone()
         built = False
+        lc_git: dict = {}
         if self._lc_dir:
             self._emit(f"  LightSAGE found : {self._lc_dir}", "ok")
+            lc_git = await self._report_git_status("LightSAGE", self._lc_dir)
             built, tools = self._lc_built(self._lc_dir)
             if built:
                 self._emit(
@@ -2508,6 +2721,19 @@ class WizardController:
                     "disabled": False,
                 }
             )
+            if lc_git.get("repo"):
+                choices.append(
+                    {
+                        "label": (
+                            f"Update LightSAGE ({lc_git['behind']} behind)"
+                            if lc_git.get("behind")
+                            else "Update LightSAGE"
+                        ),
+                        "value": "lc_update",
+                        "icon": "mdi-download",
+                        "disabled": not lc_git.get("behind"),
+                    }
+                )
             choices.append(
                 {
                     "label": "Re-clone LightSAGE",
@@ -2597,6 +2823,17 @@ class WizardController:
             )
             return
         target = parent / "LightSAGE"
+        # A re-clone lands on an existing folder: git refuses to clone into
+        # one, so move it aside first (never delete — it may hold edited
+        # configs or output) and say where it went.
+        if target.exists():
+            try:
+                backup = self._move_aside(target)
+            except OSError as exc:
+                self._emit(f"Could not move {target} aside: {exc}", "err")
+                self._set_choices([self._back_choice("lc_back_scan")])
+                return
+            self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning LightSAGE into {target} ...", "info")
         # --recurse-submodules per the LightSAGE README (it vendors SAGE).
         rc = await self._run_cmd(

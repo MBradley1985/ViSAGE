@@ -32,6 +32,8 @@ class CameraController:
             None  # thin white outline marking the FOF central
         )
         self._group_ring_actor = None  # red ring sized to enclose the group
+        # Star field — decorative stars drawn around an isolated object.
+        self._sparkle_actors: list = []
         # Lightcone mode: frame the actual point-cloud bounds instead of a
         # cubic box (a cone is not a box). None => normal box framing.
         self._lc_bounds: np.ndarray | None = None
@@ -52,6 +54,97 @@ class CameraController:
 
     def update_galaxy_positions(self, positions: np.ndarray) -> None:
         self._galaxy_positions = positions
+
+    # ------------------------------------------------------------------
+    # Sparkle field (Isolate view)
+    # ------------------------------------------------------------------
+
+    @property
+    def has_sparkles(self) -> bool:
+        return bool(self._sparkle_actors)
+
+    def clear_sparkles(self) -> None:
+        for a in self._sparkle_actors:
+            self._pl.remove_actor(a, render=False)
+        self._sparkle_actors.clear()
+
+    # Stellar colours by spectral class: O/B blue, A white-blue, F white,
+    # G yellow-white, K orange, M red.
+    _STAR_COLORS = np.array(
+        [
+            [155, 176, 255],  # O/B  blue
+            [202, 215, 255],  # A    blue-white
+            [248, 247, 255],  # F    white
+            [255, 244, 234],  # G    yellow-white
+            [255, 204, 140],  # K    orange
+            [255, 156, 84],  # M    deep orange
+            [255, 108, 72],  # M    red
+            [246, 74, 60],  # M    deep red
+        ],
+        dtype=np.uint8,
+    )
+    _STAR_WEIGHTS = np.array([0.06, 0.10, 0.15, 0.18, 0.17, 0.14, 0.12, 0.08])
+
+    def add_sparkles(
+        self,
+        center: tuple[float, float, float],
+        radius: float,
+        n_stars: int = 6000,
+        seed: int = 12345,
+        point_size: float = 2.0,
+    ) -> None:
+        """Scatter decorative stars in a shell around `center`.
+
+        The shell starts outside `radius` so the stars frame the isolated
+        object instead of sitting on top of it.  They are round points of
+        a fixed pixel size, so every star looks the same however the user
+        zooms or flies about.
+        """
+        self.clear_sparkles()
+        if radius <= 0 or n_stars <= 0:
+            return
+        rng = np.random.default_rng(seed)
+        c = np.asarray(center, dtype=float)
+
+        # Uniform directions; radii spread over a 2r–9r shell (cube-root
+        # so the stars don't all pile up at the inner edge).
+        dirs = rng.normal(size=(n_stars, 3))
+        dirs /= np.maximum(np.linalg.norm(dirs, axis=1)[:, None], 1e-12)
+        rad = radius * (2.0 + 7.0 * rng.random(n_stars) ** (1.0 / 3.0))
+        pts = c + dirs * rad[:, None]
+
+        # Colours down the spectral sequence, O/B through M, with the
+        # white/yellow middle most common — real stars, not a rainbow.
+        cloud = pv.PolyData(pts)
+        cloud.point_data["rgb"] = self._STAR_COLORS[
+            rng.choice(
+                len(self._STAR_COLORS), size=n_stars, p=self._STAR_WEIGHTS
+            )
+        ]
+
+        self._sparkle_actors.append(
+            self._pl.add_mesh(
+                cloud,
+                scalars="rgb",
+                rgb=True,
+                point_size=point_size,
+                render_points_as_spheres=True,
+                opacity=0.9,
+                # Flat: a two-pixel dot has no shading to show, and a
+                # white specular highlight would wash the reds out.
+                lighting=False,
+                show_scalar_bar=False,
+                render=False,
+                reset_camera=False,
+            )
+        )
+        # The shell reaches well beyond the isolated object, so the far
+        # clipping plane has to be re-fitted or the stars sit outside it
+        # and are simply clipped away until the next camera move.
+        self._pl.renderer.ResetCameraClippingRange()
+        # Show them straight away — without this the stars only turn up on
+        # the next render the view happens to do (e.g. a camera move).
+        self._pl.render()
 
     # ------------------------------------------------------------------
     # Zoom indicators

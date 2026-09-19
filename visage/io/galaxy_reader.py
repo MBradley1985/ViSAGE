@@ -73,6 +73,13 @@ class GalaxySnapshot:
     # key -> (N,) float32 AB magnitude, e.g. "mag_rest_sdss_g",
     # "mag_obs_sdss_r". Empty for every non-SED-enabled snapshot/model.
     sed_mags: dict = field(default_factory=dict)
+    # ── Auto-discovered properties ──────────────────────────────────────
+    # Every other per-galaxy dataset found in the snapshot group, keyed by
+    # its HDF5 name.  This is what keeps the UI honest when SAGE grows a
+    # new output field: it shows up as a filter and a Colour-by mode with
+    # no code change here.  Values are raw (no unit conversion is possible
+    # without knowing what the field means).
+    extra: dict = field(default_factory=dict)
 
     @property
     def count(self) -> int:
@@ -135,6 +142,135 @@ class GalaxySnapshot:
             sage_indices=np.empty(0, dtype=np.int64),
             snap_num=snap_num,
         )
+
+
+# Every dataset this reader handles by name.  Anything else found in a
+# snapshot group is picked up automatically into `GalaxySnapshot.extra`.
+KNOWN_HDF5_FIELDS: frozenset[str] = frozenset(
+    {
+        # Core (required)
+        "Posx",
+        "Posy",
+        "Posz",
+        "StellarMass",
+        "BulgeMass",
+        "ColdGas",
+        "Mvir",
+        "SfrDisk",
+        "SfrBulge",
+        "Type",
+        # Optional, read explicitly above
+        "BlackHoleMass",
+        "IntraClusterStars",
+        "FFBRegime",
+        "Regime",
+        "CentralMvir",
+        "Rvir",
+        "H2gas",
+        "CGMgas",
+        "HotGas",
+        "GalaxyIndex",
+        "CentralGalaxyIndex",
+        "TimeOfInfall",
+        "Len",
+        "Vmax",
+        "Concentration",
+        "Spin",
+        "DiskRadius",
+        "BulgeRadius",
+        "MergerBulgeMass",
+        "MergerBulgeRadius",
+        "InstabilityBulgeMass",
+        "InstabilityBulgeRadius",
+        "H1gas",
+        "EjectedMass",
+        "OutflowRate",
+        "MassLoading",
+        "Cooling",
+        "Heating",
+        "SfrBulgeZ",
+        "SfrDiskZ",
+        "MetalsColdGas",
+        "MetalsStellarMass",
+        "MetalsBulgeMass",
+        "MetalsHotGas",
+        "MetalsEjectedMass",
+        "MetalsIntraClusterStars",
+        "MetalsCGMgas",
+        # Multi-column / derived inputs
+        "SFHMassDisk",
+        "SFHMassBulge",
+    }
+)
+
+
+# Datasets to leave out of discovery: bookkeeping, tree indices and internal
+# SAGE state rather than physical properties worth filtering or colouring by.
+# Matched case- and underscore-insensitively, so a spelling change in SAGE's
+# output doesn't put them back in the UI.
+IGNORED_HDF5_FIELDS: frozenset[str] = frozenset(
+    {
+        "DT",
+        "MergeIntoID",
+        "MergeIntoSnapNum",
+        "MergeType",
+        "QuasarModeBHaccretionMass",
+        "SAGEHaloIndex",
+        "SAGETreeIndex",
+        "SimulationHaloIndex",
+        "SnapNum",
+    }
+)
+
+_IGNORED_NORMALISED = frozenset(
+    n.lower().replace("_", "") for n in IGNORED_HDF5_FIELDS
+)
+
+
+def is_ignored_field(name: str) -> bool:
+    """True for bookkeeping datasets that should never reach the UI."""
+    return name.lower().replace("_", "") in _IGNORED_NORMALISED
+
+
+def find_sfh_datasets(grp) -> tuple[str | None, str | None]:
+    """(disk, bulge) star-formation-history dataset names in `grp`.
+
+    Matched by shape rather than an exact spelling — the SFH arrays are the
+    two-dimensional "SFH…Disk"/"SFH…Bulge" pair — so a rename or a change of
+    case in SAGE's output doesn't silently switch stellar age off.
+    """
+    disk = bulge = None
+    for name, ds in grp.items():
+        if not isinstance(ds, h5py.Dataset) or ds.ndim != 2:
+            continue
+        low = name.lower()
+        if not low.startswith("sfh"):
+            continue
+        if "disk" in low and disk is None:
+            disk = name
+        elif "bulge" in low and bulge is None:
+            bulge = name
+    return disk, bulge
+
+
+def discover_extra_fields(grp, n_rows: int | None = None) -> list[str]:
+    """Names of per-galaxy datasets in `grp` this reader has no field for.
+
+    One row per galaxy, numeric, not already handled.  Used both to read
+    the values and (by Model) to list what a model actually offers.
+    """
+    out: list[str] = []
+    for name, ds in grp.items():
+        if name in KNOWN_HDF5_FIELDS or is_ignored_field(name):
+            continue
+        if not isinstance(ds, h5py.Dataset):
+            continue
+        if ds.ndim != 1 or ds.dtype.kind not in "fiu":
+            continue
+        if n_rows is not None and ds.shape[0] != n_rows:
+            continue
+        out.append(name)
+    return sorted(out)
 
 
 VERBOSE = True
@@ -258,9 +394,17 @@ def load_galaxy_snapshot(
 
         # SFH arrays (one row per galaxy × ~64 time bins).  Only read if
         # present; the age computation tolerates absent SFH gracefully.
-        has_sfh = ("SFHMassDisk" in grp) and ("SFHMassBulge" in grp)
-        sfh_disk_raw = np.asarray(grp["SFHMassDisk"]) if has_sfh else None
-        sfh_bulge_raw = np.asarray(grp["SFHMassBulge"]) if has_sfh else None
+        sfh_disk_name, sfh_bulge_name = find_sfh_datasets(grp)
+        has_sfh = sfh_disk_name is not None and sfh_bulge_name is not None
+        sfh_disk_raw = np.asarray(grp[sfh_disk_name]) if has_sfh else None
+        sfh_bulge_raw = np.asarray(grp[sfh_bulge_name]) if has_sfh else None
+
+        # Anything else SAGE wrote — read as-is, so a new output field is
+        # available to the UI without a code change here.
+        extra_raw = {
+            name: np.asarray(grp[name])
+            for name in discover_extra_fields(grp, len(posx))
+        }
 
     # All mass fields stored as 10^10 Msun/h → convert to Msun
     f = 1.0e10 / hubble_h
@@ -381,6 +525,7 @@ def load_galaxy_snapshot(
         metals_ejected_mass=metals_ejected_mass[indices],
         metals_ics=metals_ics[indices],
         metals_cgm_gas=metals_cgm_gas[indices],
+        extra={k: v[indices] for k, v in extra_raw.items()},
         sage_indices=indices.astype(np.int64),
         snap_num=snap_num,
     )
