@@ -8,6 +8,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-09-19
+
+### Added
+
+- **Isolate button (magnifier) in the navigation panel.** A third small button
+  beside Focus and Centre hides every halo and galaxy except the selected one.
+  Selecting a halo keeps the halo together with the galaxies of the FOF group
+  living in it (the nearest galaxy within 1.5 Rvir and its members); selecting
+  a galaxy keeps that galaxy alone. The camera is framed on whatever survives —
+  the bounding radius of the kept objects, floored at the halo Rvir — so the
+  isolated group is in view rather than off-screen. Pressing the button again
+  restores the full scene. Reset Camera keeps filling the remaining width of
+  the row.
+
 ## [2.3.2] — 2026-09-01
 
 ### Fixed

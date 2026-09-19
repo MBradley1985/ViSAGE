@@ -309,6 +309,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.nav_box_zmin = 0.0
     state.nav_box_zmax = round(scene._cfg.box_size / 2, 2)
     state.focus_active = False
+    state.isolate_active = False
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
     state.draw_box_active = False  # interactive box widget in Box tab
@@ -1210,6 +1211,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 (float(pos[0]), float(pos[1]), float(pos[2])), d
             )
             state.focus_active = True
+            state.isolate_active = False
         except Exception:
             pass
         _push()
@@ -1221,6 +1223,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if center != (0.0, 0.0, 0.0):
                 scene.set_focus_sphere(center, radius)
                 state.focus_active = True
+                state.isolate_active = False
         except Exception:
             pass
         _push()
@@ -1343,6 +1346,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             (float(halo_pos[0]), float(halo_pos[1]), float(halo_pos[2])), d
         )
         state.focus_active = True
+        state.isolate_active = False
         state.flush()
         _push()
 
@@ -2741,6 +2745,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # Always engage focus on Go
         scene.set_focus_sphere((x, y, z), d)
         state.focus_active = True
+        state.isolate_active = False
         _push()
 
     @ctrl.set("toggle_draw_sphere")
@@ -2898,6 +2903,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # Coords behaviour. User can toggle it off via the focus button.
         scene.set_focus_box(xmin, xmax, ymin, ymax, zmin, zmax)
         state.focus_active = True
+        state.isolate_active = False
         _push()
 
     @ctrl.set("toggle_draw_box")
@@ -3039,6 +3045,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.camera._clear_indicator()
         scene.clear_focus()
         state.focus_active = False
+        state.isolate_active = False
         state.flush()
         _push()
 
@@ -3056,6 +3063,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.camera._clear_indicator()
         scene.clear_focus()
         state.focus_active = False
+        state.isolate_active = False
         state.flush()
         _push()
 
@@ -3084,6 +3092,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             scene.camera.focus_on_boxes(regions)
         scene.clear_focus()
         state.focus_active = False
+        state.isolate_active = False
         # Recompute clipping planes so all geometry is visible without
         # the user having to zoom/move to trigger an automatic update.
         scene.plotter.renderer.ResetCameraClippingRange()
@@ -3752,6 +3761,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             # Turning OFF — always just clears focus, regardless of tab.
             _clear_draw_widgets()
             state.focus_active = False
+            state.isolate_active = False
             scene.clear_focus()
             _push()
             return
@@ -3771,6 +3781,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         (float(g[0]), float(g[1]), float(g[2])), radius
                     )
                     state.focus_active = True
+                    state.isolate_active = False
             except Exception:
                 pass
         elif tab == "environment":
@@ -3783,6 +3794,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         (float(pos[0]), float(pos[1]), float(pos[2])), d
                     )
                     state.focus_active = True
+                    state.isolate_active = False
             except Exception:
                 pass
         elif tab == "box":
@@ -3801,6 +3813,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 scene.set_focus_box(xmin, xmax, ymin, ymax, zmin, zmax)
                 state.focus_active = True
+                state.isolate_active = False
             except Exception:
                 pass
         elif tab == "coords":
@@ -3811,6 +3824,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 d = float(state.nav_distance)
                 scene.set_focus_sphere((x, y, z), d)
                 state.focus_active = True
+                state.isolate_active = False
             except Exception:
                 pass
         else:
@@ -3819,7 +3833,107 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if scene._focus_region is not None:
                 scene._apply_focus_masks(halos.positions, galaxies.positions)
                 state.focus_active = True
+                state.isolate_active = False
 
+        _push()
+
+    @ctrl.set("toggle_isolate")
+    def on_toggle_isolate():
+        """Isolate the selected halo (with its FOF members) or galaxy.
+
+        Like Focus, but the keep-set is the selected object itself rather
+        than a sphere/box around it: every other halo and galaxy is
+        hidden, and the camera is framed so what survives is in view.
+        """
+        import numpy as np
+        from visage.utils.group_info import member_indices
+
+        if bool(state.isolate_active):
+            # Turning OFF — drop the mask entirely.
+            _clear_draw_widgets()
+            state.isolate_active = False
+            state.focus_active = False
+            scene.clear_focus()
+            _push()
+            return
+
+        halos, galaxies = scene.active_model.loader.get(scene.current_snap)
+        off = scene.active_model.offset
+
+        try:
+            hidx = int(state.nav_halo_idx)
+        except (TypeError, ValueError):
+            hidx = -1
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            gidx = -1
+
+        halo_indices: list[int] = []
+        gal_indices = np.array([], dtype=np.int64)
+
+        if state.nav_active_tab == "environment" and 0 <= hidx < halos.count:
+            # Halo selection — keep the halo AND the galaxies of the FOF
+            # group sitting in it, so the group is actually populated.
+            halo_indices = [hidx]
+            halo_world = halos.positions[hidx] + off
+            if galaxies.count > 0:
+                d = np.linalg.norm(
+                    (galaxies.positions + off) - halo_world, axis=1
+                )
+                nearest = int(np.argmin(d))
+                rvir = float(halos.rvir[hidx]) if len(halos.rvir) else 0.0
+                # Only adopt the group if a galaxy actually lives in the
+                # halo — otherwise the nearest one could be far away.
+                if d[nearest] <= max(1.5 * rvir, 1e-3):
+                    gal_indices = member_indices(galaxies, nearest)
+        elif 0 <= gidx < galaxies.count:
+            gal_indices = np.array([gidx], dtype=np.int64)
+        elif 0 <= hidx < halos.count:
+            halo_indices = [hidx]
+
+        if not halo_indices and len(gal_indices) == 0:
+            _push()
+            return
+
+        scene.set_focus_indices(
+            halo_indices=halo_indices, galaxy_indices=gal_indices
+        )
+
+        # Frame what survived — with everything else masked out the view
+        # would otherwise look empty whenever the camera points elsewhere.
+        try:
+            pts = []
+            if halo_indices:
+                pts.append(halos.positions[halo_indices] + off)
+            if len(gal_indices):
+                pts.append(galaxies.positions[gal_indices] + off)
+            pts = np.vstack(pts)
+            center = pts.mean(axis=0)
+            extent = (
+                float(np.linalg.norm(pts - center, axis=1).max())
+                if len(pts) > 1
+                else 0.0
+            )
+            rvir = (
+                float(halos.rvir[halo_indices[0]])
+                if halo_indices and len(halos.rvir)
+                else 0.0
+            )
+            radius = max(extent, rvir, 0.05)
+            cam = scene.plotter.camera
+            fov = np.deg2rad(cam.view_angle)
+            dist = radius / np.tan(fov / 2.0) * 1.8
+            cx, cy, cz = (float(c) for c in center)
+            cam.focal_point = (cx, cy, cz)
+            cam.position = (cx, cy, cz + dist)
+            cam.up = (0.0, 1.0, 0.0)
+            scene.plotter.renderer.ResetCameraClippingRange()
+        except Exception:
+            pass
+
+        state.isolate_active = True
+        state.focus_active = False
         _push()
 
     # ------------------------------------------------------------------
@@ -3890,6 +4004,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         variant="outlined",
                         color="cyan",
                         density="compact",
+                        style="min-width:0;",
                         click=ctrl.reset_camera,
                     )
                 with v3.VCol(cols="auto", style="padding:0;"):
@@ -3909,6 +4024,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         click=ctrl.center_camera,
                         color="white",
                         title="Place camera at box centre",
+                    )
+                with v3.VCol(cols="auto", style="padding:0;"):
+                    v3.VBtn(
+                        icon="mdi-magnify",
+                        variant="outlined",
+                        density="compact",
+                        click=ctrl.toggle_isolate,
+                        color=("isolate_active ? 'cyan' : 'white'",),
+                        title="Isolate selected halo/galaxy",
                     )
 
         v3.VDivider(style="flex-shrink:0;")

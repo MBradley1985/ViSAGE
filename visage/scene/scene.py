@@ -627,6 +627,35 @@ class Scene:
             galaxies.positions + off,
         )
 
+    def set_focus_indices(
+        self,
+        halo_indices=None,
+        galaxy_indices=None,
+    ) -> None:
+        """Isolate specific halos/galaxies — everything else is hidden.
+
+        Each argument is a sequence of indices into the current snapshot
+        (None or empty hides that population entirely).
+        """
+        self._focus_region = dict(
+            type="indices",
+            halo_indices=np.asarray(
+                [] if halo_indices is None else halo_indices, dtype=np.int64
+            ),
+            galaxy_indices=np.asarray(
+                [] if galaxy_indices is None else galaxy_indices,
+                dtype=np.int64,
+            ),
+        )
+        active = self.active_model
+        halos, galaxies = active.loader.get(active.current_snap)
+        self._apply_focus_masks_for_layer(
+            active.halo_layer,
+            active.galaxy_layer,
+            halos.positions,
+            galaxies.positions,
+        )
+
     def clear_focus(self) -> None:
         self._focus_region = None
         for m in self._models.values():
@@ -659,6 +688,17 @@ class Scene:
 
             halo_layer.set_mask(_box_mask(halo_pos))
             gal_layer.set_mask(_box_mask(gal_pos))
+        elif r["type"] == "indices":
+
+            def _index_mask(pos, idxs):
+                mask = np.zeros(len(pos), dtype=bool)
+                if len(idxs):
+                    keep = idxs[(idxs >= 0) & (idxs < len(pos))]
+                    mask[keep] = True
+                return mask
+
+            halo_layer.set_mask(_index_mask(halo_pos, r["halo_indices"]))
+            gal_layer.set_mask(_index_mask(gal_pos, r["galaxy_indices"]))
         elif r["type"] == "sphere":
             cx, cy, cz = r["center"]
             rad = r["radius"]
