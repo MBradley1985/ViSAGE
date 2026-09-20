@@ -8,6 +8,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.2] — 2026-09-21
+
+### Fixed
+
+- **Halo opacity jumped whenever the view narrowed.** The crowding scale that
+  fades a dense box was measured on the haloes left after masking rather than
+  on the snapshot, so a focus, isolate or filter took microUchuu from 386,585
+  haloes to a handful and the alpha jumped 0.02 to 0.05 — the flythrough
+  visibly changed the moment it stopped on a group. Crowding is a property of
+  the box and is now measured on the whole snapshot, so the scaffold holds the
+  same alpha through free flight, focus and back.
+- **Isolate now reports itself as focused.** It always applied a focus mask —
+  which is what makes the galaxies draw their disk and bulge layers — but left
+  the Focus button reading "off", so the button and the view disagreed and the
+  first press of Focus appeared to do nothing.
+- **Photometry is no longer emissive.** The synthetic-photometry stack
+  inherited the galaxies' emissive splats, but its composite is already a
+  calibrated brightness (median-balanced flux, asinh stretch) carried in
+  per-point alpha; adding it instead of blending it discarded that
+  calibration. It renders alpha-blended as before.
+
 ## [2.6.1] — 2026-09-19
 
 ### Changed

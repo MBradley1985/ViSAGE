@@ -999,7 +999,11 @@ class GalaxyLayer:
                 scalars="sed_rgba",
                 rgb=True,  # direct scalars; 4 components => RGBA
                 style="points_gaussian",
-                emissive=self._emissive,
+                # Never emissive: the photometry composite is already a
+                # calibrated brightness (median-balanced flux, asinh
+                # stretch) carried in per-point alpha.  Adding it instead
+                # of blending it would throw that calibration away.
+                emissive=False,
                 opacity=1.0,  # per-point alpha carries the opacity
                 show_scalar_bar=False,
                 render=False,

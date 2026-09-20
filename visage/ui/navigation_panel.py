@@ -4217,8 +4217,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
         except Exception:
             _sparkle_target["center"] = None
 
+        # Isolating IS a focus region — the galaxy layer draws its
+        # disk/bulge inner layers off the focus mask either way — so the
+        # Focus button reflects that rather than reading "off" while a
+        # focus mask is plainly in force.
+        state.focus_active = True
         state.isolate_active = True
-        state.focus_active = False
         if _sparkle_target["center"] is not None:
             _start_sparkles(
                 _sparkle_target["center"], _sparkle_target["radius"]

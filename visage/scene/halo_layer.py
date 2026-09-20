@@ -179,7 +179,12 @@ class HaloLayer:
         # three actors per halo population so the in-place fast-path
         # doesn't apply (the same trade-off galaxies make for Structure).
         self._clear_actors()
-        self._render_layered(snap.positions + self._offset, colors, radii)
+        self._render_layered(
+            snap.positions + self._offset,
+            colors,
+            radii,
+            n_total=self._snapshot.count,
+        )
 
     # ------------------------------------------------------------------
     # Layered NFW-style halo rendering — 3 stacked gaussian splats per
@@ -221,10 +226,17 @@ class HaloLayer:
         positions: np.ndarray,
         colors: np.ndarray,
         radii: np.ndarray,
+        n_total: int | None = None,
     ) -> None:
         if len(positions) == 0:
             return
-        crowding = self.density_scale(len(positions))
+        # Crowding is a property of the box, so it is measured on the whole
+        # snapshot rather than on whatever survived the current masks.
+        # Measuring the drawn subset made the haloes jump from 0.02 to 0.05
+        # alpha the moment a focus, isolate or filter narrowed the view.
+        crowding = self.density_scale(
+            len(positions) if n_total is None else n_total
+        )
         for r_scale, opa_floor, opa_mul_base in self._LAYERS:
             opa_mul = opa_mul_base * crowding
             cloud = pv.PolyData(positions)
