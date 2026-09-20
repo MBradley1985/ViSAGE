@@ -21,7 +21,7 @@ from visage.utils.sizing import galaxy_world_radii_rvir
 _GLOW_KNEE = 2.0
 
 # Default glow level, in the units of the Structure panel's slider.
-_DEFAULT_GLOW_STRENGTH = 1.8
+_DEFAULT_GLOW_STRENGTH = 1.7
 
 
 ColorMode = Literal[

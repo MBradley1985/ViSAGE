@@ -8,6 +8,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.3] — 2026-09-21
+
+### Changed
+
+- **The FOF central is green, not gold.** Against the members' blue and red
+  and the galaxies' own warm splats, gold was the one marker that
+  disappeared. It is also drawn larger than a member, so a member in front of
+  it still leaves a rim showing.
+- **Highlight Members markers have shape.** The member, central and selected
+  markers are lit spheres with a specular highlight rather than flat discs.
+- **Isolate's stars are a backdrop.** They were scattered in a shell around
+  the isolated object, which put half of them between the viewer and it,
+  reading as specks over the galaxies. They are now anchored to the camera at
+  a distance that tracks what is being looked at, so they always sit beyond
+  the scene, and they are repositioned as the camera moves. The count is
+  90,000 because a full sphere around the camera only shows about 3-4% of
+  itself at any moment — roughly 3,000 on screen, matching the old density.
+
+  Emissive galaxies add light rather than blocking it, so a star behind one
+  still shines through the glow. The field therefore fades out as it
+  approaches the object's direction (smoothstep, full sky from about 2.2x its
+  angular radius outward) instead of being cut away, which would leave a
+  hard-edged hole.
+- Galaxy glow eased from 1.8 to 1.7.
+
+### Fixed
+
+- A spurious `divide by zero encountered in matmul` warning from Apple's
+  Accelerate BLAS, fired on every camera move while isolating.
+
 ## [2.6.2] — 2026-09-21
 
 ### Fixed

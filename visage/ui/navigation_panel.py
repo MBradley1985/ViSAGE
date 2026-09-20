@@ -1998,16 +1998,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _highlight_cache["positions"],
             _highlight_cache["regimes"],
         )
-        # Paint gold on top of the central's regime dot (larger point wins the depth fight)
+        # Paint the central marker on top of its regime dot
         if 0 <= central_idx < galaxies.count and central_idx != gidx:
-            cam._add_central_gold_indicator(
+            cam._add_group_central_indicator(
                 galaxies.positions[central_idx] + off
             )
-        # Selected galaxy: gold if it IS the central, else regime colour
+        # Selected galaxy: central colour if it IS the central, else regime
         if 0 <= gidx < galaxies.count:
             if gidx == central_idx:
                 cam._add_selected_indicator(
-                    galaxies.positions[gidx] + off, color="gold"
+                    galaxies.positions[gidx] + off,
+                    color=cam._CENTRAL_COLOR,
                 )
             else:
                 has_regime = scene.active_model.fields_available.get(

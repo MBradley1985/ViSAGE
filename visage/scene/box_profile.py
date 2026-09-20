@@ -146,7 +146,7 @@ _LAYER_DEFAULTS: dict[str, Any] = {
     "galaxy_color_mode": "structure",
     "galaxy_opacity": 1.0,
     "galaxy_glow": True,
-    "galaxy_glow_strength": 1.8,
+    "galaxy_glow_strength": 1.7,
 }
 
 

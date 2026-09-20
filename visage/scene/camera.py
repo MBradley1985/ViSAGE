@@ -32,8 +32,11 @@ class CameraController:
             None  # thin white outline marking the FOF central
         )
         self._group_ring_actor = None  # red ring sized to enclose the group
-        # Star field — decorative stars drawn around an isolated object.
+        # Star field — a backdrop drawn behind an isolated object.  Kept
+        # anchored to the camera, so it needs the state below to follow it.
         self._sparkle_actors: list = []
+        self._sparkle_state: dict | None = None
+        self._sparkle_obs: int | None = None
         # Lightcone mode: frame the actual point-cloud bounds instead of a
         # cubic box (a cone is not a box). None => normal box framing.
         self._lc_bounds: np.ndarray | None = None
@@ -63,7 +66,21 @@ class CameraController:
     def has_sparkles(self) -> bool:
         return bool(self._sparkle_actors)
 
+    # How far out the backdrop sits, in units of the isolate framing
+    # radius: far enough to read as sky, near enough to stay inside the
+    # far clipping plane.
+    _STAR_DISTANCE = 25.0
+
     def clear_sparkles(self) -> None:
+        if self._sparkle_obs is not None:
+            try:
+                self._pl.renderer.GetActiveCamera().RemoveObserver(
+                    self._sparkle_obs
+                )
+            except Exception:
+                pass
+            self._sparkle_obs = None
+        self._sparkle_state = None
         for a in self._sparkle_actors:
             self._pl.remove_actor(a, render=False)
         self._sparkle_actors.clear()
@@ -89,43 +106,62 @@ class CameraController:
         self,
         center: tuple[float, float, float],
         radius: float,
-        n_stars: int = 6000,
+        n_stars: int = 90_000,
         seed: int = 12345,
         point_size: float = 2.0,
     ) -> None:
-        """Scatter decorative stars in a shell around `center`.
+        """A star backdrop behind the isolated object.
 
-        The shell starts outside `radius` so the stars frame the isolated
-        object instead of sitting on top of it.  They are round points of
-        a fixed pixel size, so every star looks the same however the user
-        zooms or flies about.
+        `n_stars` covers the whole sphere around the camera, of which the
+        field of view shows about 3-4%, so the count is far higher than the
+        number on screen at any moment (~3,000 of 90,000).
+
+        The stars are anchored to the camera rather than scattered around
+        the object: a shell centred on the object puts half of its stars
+        between the viewer and the object, where they read as specks over
+        the galaxies instead of sky behind them.  Anchored to the camera
+        they sit at a fixed distance in every direction — the parallax-free
+        backdrop a real star field has — and they are repositioned as the
+        camera moves.  Round points of a fixed pixel size, so they look the
+        same however the user zooms.
         """
         self.clear_sparkles()
         if radius <= 0 or n_stars <= 0:
             return
         rng = np.random.default_rng(seed)
-        c = np.asarray(center, dtype=float)
 
-        # Uniform directions; radii spread over a 2r–9r shell (cube-root
-        # so the stars don't all pile up at the inner edge).
         dirs = rng.normal(size=(n_stars, 3))
         dirs /= np.maximum(np.linalg.norm(dirs, axis=1)[:, None], 1e-12)
-        rad = radius * (2.0 + 7.0 * rng.random(n_stars) ** (1.0 / 3.0))
-        pts = c + dirs * rad[:, None]
+        # A little depth variation so the field doesn't look like a decal.
+        spread = 1.0 + 0.35 * rng.random(n_stars)
 
         # Colours down the spectral sequence, O/B through M, with the
         # white/yellow middle most common — real stars, not a rainbow.
-        cloud = pv.PolyData(pts)
-        cloud.point_data["rgb"] = self._STAR_COLORS[
+        colors = self._STAR_COLORS[
             rng.choice(
                 len(self._STAR_COLORS), size=n_stars, p=self._STAR_WEIGHTS
             )
         ]
+        cloud = pv.PolyData(np.zeros((n_stars, 3)))
+
+        self._sparkle_state = {
+            "dirs": dirs,
+            "spread": spread,
+            "distance": max(float(radius), 1e-6) * self._STAR_DISTANCE,
+            "center": np.asarray(center, dtype=float),
+            "radius": max(float(radius), 1e-6),
+            "rgba": np.concatenate(
+                [colors, np.full((n_stars, 1), 255, np.uint8)], axis=1
+            ),
+            "cloud": cloud,
+            "cam_key": None,
+        }
+        self._reposition_sparkles()
 
         self._sparkle_actors.append(
             self._pl.add_mesh(
                 cloud,
-                scalars="rgb",
+                scalars="rgba",
                 rgb=True,
                 point_size=point_size,
                 render_points_as_spheres=True,
@@ -138,13 +174,92 @@ class CameraController:
                 reset_camera=False,
             )
         )
-        # The shell reaches well beyond the isolated object, so the far
-        # clipping plane has to be re-fitted or the stars sit outside it
-        # and are simply clipped away until the next camera move.
+        try:
+            self._sparkle_obs = (
+                self._pl.renderer.GetActiveCamera().AddObserver(
+                    "ModifiedEvent", self._on_camera_moved
+                )
+            )
+        except Exception:
+            self._sparkle_obs = None
+        # The backdrop sits well beyond the isolated object, so the far
+        # clipping plane has to be re-fitted or the stars are clipped away.
         self._pl.renderer.ResetCameraClippingRange()
         # Show them straight away — without this the stars only turn up on
         # the next render the view happens to do (e.g. a camera move).
         self._pl.render()
+
+    def _camera_key(self) -> tuple:
+        cam = self._pl.camera
+        return (
+            tuple(round(float(v), 6) for v in cam.position),
+            tuple(round(float(v), 6) for v in cam.focal_point),
+        )
+
+    def _reposition_sparkles(self) -> None:
+        """Park the backdrop around the camera, beyond what it is looking at.
+
+        The distance tracks the camera-to-focal-point distance as well as
+        the framing radius: a fixed distance would end up in front of the
+        scene as soon as the viewer pulled back.
+        """
+        st = self._sparkle_state
+        if st is None:
+            return
+        cam = np.asarray(self._pl.camera.position, dtype=float)
+        focal = np.asarray(self._pl.camera.focal_point, dtype=float)
+        to_focal = float(np.linalg.norm(focal - cam))
+        distance = max(st["distance"], 2.5 * to_focal)
+        st["cloud"].points = (
+            cam + st["dirs"] * (distance * st["spread"])[:, None]
+        )
+
+        # Emissive galaxies add light rather than blocking it, so a star
+        # behind one shines straight through the glow.  Rather than empty
+        # the object's line of sight — which leaves a hard-edged hole in
+        # the field — the stars fade out as they approach that direction,
+        # so the field simply thins where the object is.
+        to_obj = st["center"] - cam
+        obj_dist = float(np.linalg.norm(to_obj))
+        rgba = st["rgba"].copy()
+        if obj_dist > 1e-9:
+            axis = to_obj / obj_dist
+            # Tight: the object itself, then full sky just beyond it.  A
+            # wide ramp dims most of the frame at the isolate framing,
+            # where the object already subtends a good part of the view.
+            inner = np.arctan2(st["radius"] * 1.0, obj_dist)
+            outer = np.arctan2(st["radius"] * 2.2, obj_dist)
+            # Element-wise rather than a matmul: Accelerate raises a
+            # spurious divide-by-zero warning for this shape, and this
+            # runs on every camera move.
+            cos_to_axis = (st["dirs"] * axis).sum(axis=1)
+            angle = np.arccos(np.clip(cos_to_axis, -1.0, 1.0))
+            fade = np.clip(
+                (angle - inner) / max(outer - inner, 1e-9), 0.0, 1.0
+            )
+            # Smoothstep, so there is no visible edge where it starts.
+            fade = fade * fade * (3.0 - 2.0 * fade)
+            rgba[:, 3] = (rgba[:, 3] * fade).astype(np.uint8)
+        st["cloud"].point_data["rgba"] = rgba
+        st["cam_key"] = self._camera_key()
+        # Keep the far plane out past the backdrop.  This fires the
+        # camera's ModifiedEvent, but the key above has already been
+        # updated, so the observer returns immediately instead of looping.
+        try:
+            self._pl.renderer.ResetCameraClippingRange()
+        except Exception:
+            pass
+
+    def _on_camera_moved(self, *_args) -> None:
+        # The camera fires ModifiedEvent for things that do not move it —
+        # a clipping-range update during a render above all — and
+        # rewriting the points mid-render costs that frame.
+        st = self._sparkle_state
+        if st is None:
+            return
+        if self._camera_key() == st["cam_key"]:
+            return
+        self._reposition_sparkles()
 
     # ------------------------------------------------------------------
     # Zoom indicators
@@ -166,26 +281,55 @@ class CameraController:
     # Regime colours: cold CGM = dodger blue, hot = tomato, unknown = cyan
     _REGIME_COLORS = {0: "dodgerblue", 1: "tomato", -1: "cyan"}
 
+    # The FOF central.  Green rather than the old gold: against the members'
+    # blue and red, and over the galaxies' own warm splats, gold was the one
+    # marker that disappeared.
+    _CENTRAL_COLOR = "springgreen"
+
+    # Markers are lit spheres: the diffuse falloff and specular highlight
+    # give them shape, so they read as balls rather than flat discs.
+    _MARKER_SHADING = dict(
+        ambient=0.22, diffuse=0.85, specular=1.0, specular_power=30
+    )
+
+    def _add_marker_points(
+        self,
+        positions: np.ndarray,
+        color: str,
+        size: float,
+        opacity: float,
+        store: list,
+    ) -> None:
+        """Shaded marker spheres at `positions`."""
+        cloud = pv.PolyData(np.asarray(positions, dtype=np.float64))
+        store.append(
+            self._pl.add_mesh(
+                cloud,
+                color=color,
+                point_size=size,
+                render_points_as_spheres=True,
+                opacity=opacity,
+                show_scalar_bar=False,
+                render=False,
+                reset_camera=False,
+                **self._MARKER_SHADING,
+            )
+        )
+
     def _clear_member_indicators(self) -> None:
         for a in self._member_actors + self._selected_actors:
             self._pl.remove_actor(a, render=False)
         self._member_actors.clear()
         self._selected_actors.clear()
 
-    def _add_central_gold_indicator(self, position: np.ndarray) -> None:
-        """Gold splat for the FOF central galaxy — appended to _member_actors so it clears with the group."""
-        cloud = pv.PolyData(np.asarray([position], dtype=np.float64))
-        a = self._pl.add_mesh(
-            cloud,
-            color="gold",
-            point_size=30.0,
-            render_points_as_spheres=True,
-            opacity=0.90,
-            show_scalar_bar=False,
-            render=False,
-            reset_camera=False,
+    def _add_group_central_indicator(self, position: np.ndarray) -> None:
+        """Marker for the FOF central — appended to _member_actors so it
+        clears with the rest of the group."""
+        # Noticeably larger than a member (24) so a member sitting in front
+        # of it still leaves a green rim showing.
+        self._add_marker_points(
+            [position], self._CENTRAL_COLOR, 42.0, 0.95, self._member_actors
         )
-        self._member_actors.append(a)
 
     def _add_member_indicators(
         self,
@@ -209,18 +353,13 @@ class CameraController:
         for regime_key, idxs in groups.items():
             if not idxs:
                 continue
-            cloud = pv.PolyData(positions[idxs])
-            a = self._pl.add_mesh(
-                cloud,
-                color=self._REGIME_COLORS[regime_key],
-                point_size=24.0,
-                render_points_as_spheres=True,
-                opacity=0.70,
-                show_scalar_bar=False,
-                render=False,
-                reset_camera=False,
+            self._add_marker_points(
+                positions[idxs],
+                self._REGIME_COLORS[regime_key],
+                24.0,
+                0.80,
+                self._member_actors,
             )
-            self._member_actors.append(a)
 
     def _add_selected_indicator(
         self,
@@ -237,22 +376,13 @@ class CameraController:
         self._selected_actors.clear()
         if position is None:
             return
-        cloud = pv.PolyData(np.asarray([position], dtype=np.float64))
         if color is None:
             color = self._REGIME_COLORS.get(
                 regime if regime in (0, 1) else -1, "cyan"
             )
-        a_fill = self._pl.add_mesh(
-            cloud,
-            color=color,
-            point_size=30.0,
-            render_points_as_spheres=True,
-            opacity=0.90,
-            show_scalar_bar=False,
-            render=False,
-            reset_camera=False,
+        self._add_marker_points(
+            [position], color, 30.0, 0.95, self._selected_actors
         )
-        self._selected_actors.append(a_fill)
 
     @property
     def has_member_indicators(self) -> bool:
