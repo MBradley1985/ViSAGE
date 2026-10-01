@@ -8,6 +8,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.4] — 2026-10-01
+
+### Fixed
+
+- **Massive, quenched galaxies no longer render blue in Structure mode.** The
+  bulge used `RdBu`, whose top end is blue, so a high bulge-to-total galaxy
+  had a blue core. It is now amber.
+- **More gas means more light.** The hot, CGM and cold-gas layers used
+  matplotlib's light-to-dark sequential maps, so under emissive (additive)
+  rendering the most massive hot atmospheres came out near-black. Each
+  component now keeps one hue (red hot, green CGM, blue cold) and its mass
+  sets brightness and size.
+- **Hot atmospheres are no longer capped at 3e11 Msun.** The hot-gas range now
+  runs to 1e14, so group and cluster atmospheres are distinguished, and the
+  CGM and hot shells are weighted the same as the cold-gas layer.
+- **Galaxy and Group Information cards no longer lose their last rows.** They
+  grew past the bottom of the render area and were clipped (hiding Environment
+  and Approx Age). They now stop at the bottom of the view and scroll.
+
 ## [2.6.3] — 2026-09-21
 
 ### Changed

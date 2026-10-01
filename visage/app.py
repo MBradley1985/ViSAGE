@@ -1486,6 +1486,11 @@ def create_app(
                         style=(
                             "position:absolute;top:32px;right:24px;"
                             "min-width:260px;max-width:320px;"
+                            # Grow with the rows but never past the bottom
+                            # of the render area (which clips overflow);
+                            # longer lists scroll inside the card body.
+                            "max-height:calc(100% - 56px);"
+                            "display:flex;flex-direction:column;"
                             "background:rgba(17,24,39,0.85);"
                             "backdrop-filter:blur(6px);"
                             "border:1px solid #374151;"
@@ -1500,7 +1505,7 @@ def create_app(
                                 "display:flex;align-items:center;"
                                 "font-size:0.85rem;letter-spacing:0.06em;"
                                 "padding:10px 12px 6px;"
-                                "cursor:move;user-select:none;"
+                                "cursor:move;user-select:none;flex-shrink:0;"
                                 "border-bottom:1px solid #1f2937;"
                             ),
                         ):
@@ -1521,7 +1526,10 @@ def create_app(
                                 click=server.controller.hide_galaxy_info,
                             )
                         with v3.VCardText(
-                            style="padding:8px 12px;font-size:0.72rem;",
+                            style=(
+                                "padding:8px 12px;font-size:0.72rem;"
+                                "flex:1 1 auto;min-height:0;overflow-y:auto;"
+                            ),
                         ):
                             with html.Div(
                                 v_for=("row in galinfo_items",),
@@ -1550,6 +1558,11 @@ def create_app(
                         style=(
                             "position:absolute;top:32px;right:24px;"
                             "min-width:260px;max-width:320px;"
+                            # Grow with the rows but never past the bottom
+                            # of the render area (which clips overflow);
+                            # longer lists scroll inside the card body.
+                            "max-height:calc(100% - 56px);"
+                            "display:flex;flex-direction:column;"
                             "background:rgba(17,24,39,0.85);"
                             "backdrop-filter:blur(6px);"
                             "border:1px solid #374151;"
@@ -1564,7 +1577,7 @@ def create_app(
                                 "display:flex;align-items:center;"
                                 "font-size:0.85rem;letter-spacing:0.06em;"
                                 "padding:10px 12px 6px;"
-                                "cursor:move;user-select:none;"
+                                "cursor:move;user-select:none;flex-shrink:0;"
                                 "border-bottom:1px solid #1f2937;"
                             ),
                         ):
@@ -1585,7 +1598,10 @@ def create_app(
                                 click=server.controller.hide_group_info,
                             )
                         with v3.VCardText(
-                            style="padding:8px 12px;font-size:0.72rem;",
+                            style=(
+                                "padding:8px 12px;font-size:0.72rem;"
+                                "flex:1 1 auto;min-height:0;overflow-y:auto;"
+                            ),
                         ):
                             with html.Div(
                                 v_for=("row in groupinfo_items",),

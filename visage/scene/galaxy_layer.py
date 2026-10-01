@@ -146,6 +146,21 @@ _LOG_FIELDS: dict[str, tuple[str, float]] = {
 _CENTRAL_CMAP = "Blues"
 _SATELLITE_CMAP = "Reds"
 
+# Structure-mode component hues.  Each component keeps one hue and its mass
+# drives brightness (and size), so more mass always means more light.  The
+# matplotlib sequential maps run light→dark, which under additive emission
+# made the most massive hot atmospheres the dimmest thing on screen.
+_HOT_RGB = (255, 85, 55)
+_CGM_RGB = (110, 220, 130)
+_COLD_RGB = (70, 140, 255)
+_BULGE_RGB = (255, 175, 60)
+
+# log10(Msun) ranges for the structure layers.  Hot atmospheres in groups
+# and clusters reach 1e13-1e14, so that range runs well past the others.
+_HOT_RANGE = (7.0, 14.0)
+_CGM_RANGE = (7.0, 11.5)
+_COLD_RANGE = (7.0, 11.5)
+
 
 class GalaxyLayer:
     """Manages the galaxy point-cloud actor(s) inside a PyVista Plotter."""
@@ -404,6 +419,30 @@ class GalaxyLayer:
         rgba[:, :3] = (rgba[:, :3] * float(weight)).astype(np.uint8)
         return rgba
 
+    def _hue_rgba(
+        self,
+        scalars: np.ndarray,
+        rgb: tuple[int, int, int],
+        weight: float = 1.0,
+        floor: float = 0.3,
+    ) -> np.ndarray:
+        """Single-hue splat colours whose brightness rises with the scalar.
+
+        Brightness runs from `floor` (scalar 0) to full (scalar 1), with the
+        same asinh shaping and layer weighting as `_rgba` when emissive.
+        """
+        v = np.clip(np.asarray(scalars, dtype=np.float32), 0.0, 1.0)
+        if self._emissive:
+            v = np.arcsinh(_GLOW_KNEE * v) / np.arcsinh(_GLOW_KNEE)
+        else:
+            weight = 1.0
+        bright = (floor + (1.0 - floor) * v) * float(weight)
+        rgba = np.full((len(v), 4), 255, dtype=np.uint8)
+        rgba[:, :3] = np.clip(
+            bright[:, None] * np.asarray(rgb, dtype=np.float32), 0.0, 255.0
+        ).astype(np.uint8)
+        return rgba
+
     def _clear_actors(self) -> None:
         for actor in self._actors:
             self._pl.remove_actor(actor, render=False)
@@ -536,13 +575,16 @@ class GalaxyLayer:
         Always rendered (all galaxies):
           • blue cold-gas envelope sized by ColdGas — the base every galaxy
             gets
-          • a blue-green CGM shell and a red hot-atmosphere shell, each drawn
+          • a green CGM shell and a red hot-atmosphere shell, each drawn
             for the galaxies that actually carry that mass.  A galaxy with
             both gets both, at their own radii; a galaxy with one gets one.
 
         Only when a focus region is active:
-          • cyan disk layer  (StellarMass − BulgeMass), user-configurable colour
-          • amber bulge layer (BulgeMass), user-configurable colour
+          • pale-blue disk layer (StellarMass − BulgeMass)
+          • amber bulge layer (BulgeMass)
+
+        Gas shells and the bulge are single-hue: mass sets brightness and
+        size, so a massive component is always the brighter one.
 
         All layers share the per-galaxy world-space `radii` envelope so the
         overall splat size stays consistent with the standard rendering.
@@ -560,7 +602,7 @@ class GalaxyLayer:
             log = np.log10(np.maximum(x, 1.0))
             return np.clip((log - vmin) / (vmax - vmin + 1e-10), 0.0, 1.0)
 
-        cold_scalar = _logn(snap.cold_gas, 7.0, 11.5)
+        cold_scalar = _logn(snap.cold_gas, *_COLD_RANGE)
 
         # ---- (1) Halo-gas shells --------------------------------------
         # CGM and hot atmosphere are separate components, not two sides of
@@ -572,19 +614,19 @@ class GalaxyLayer:
         # and the other was never drawn — and a model with no Regime field
         # rendered every galaxy as hot.)
         shells = (
-            ("cgm", snap.cgm_gas, "YlGn", 0.85),
-            ("hot", snap.hot_gas, "Reds", 1.00),
+            ("cgm", snap.cgm_gas, _CGM_RGB, _CGM_RANGE, 0.85),
+            ("hot", snap.hot_gas, _HOT_RGB, _HOT_RANGE, 1.00),
         )
-        for _name, mass, cmap, r_scale in shells:
+        for _name, mass, rgb, (lo, hi), r_scale in shells:
             if mass.size != snap.count:
                 continue
             mask = mass > 0.0
             if not np.any(mask):
                 continue
-            scalar = _logn(mass[mask], 7.0, 11.5)
+            scalar = _logn(mass[mask], lo, hi)
             cloud = pv.PolyData(pos[mask])
-            cloud["rgba"] = self._rgba(
-                scalar, cmap, self._layer_weight(0.15, 0.3)
+            cloud["rgba"] = self._hue_rgba(
+                scalar, rgb, self._layer_weight(0.2, 0.5)
             )
             cloud["radius"] = (
                 r_outer[mask] * r_scale * (0.5 + 0.5 * scalar)
@@ -595,7 +637,7 @@ class GalaxyLayer:
                 rgb=True,
                 style="points_gaussian",
                 emissive=self._emissive,
-                opacity=self._layer_alpha(0.15, 0.3),
+                opacity=self._layer_alpha(0.2, 0.5),
                 show_scalar_bar=False,
                 render=False,
                 reset_camera=False,
@@ -605,13 +647,13 @@ class GalaxyLayer:
             mp.SetScaleFactor(1.0)
             if not self._visible:
                 actor.SetVisibility(False)
-            self._track_opacity(actor, 0.15, 0.3)
+            self._track_opacity(actor, 0.2, 0.5)
             self._actors.append(actor)
 
         # ---- (2) Cold-gas blue envelope -------------------------------
         cloud = pv.PolyData(pos)
-        cloud["rgba"] = self._rgba(
-            cold_scalar, "Blues", self._layer_weight(0.2, 0.5)
+        cloud["rgba"] = self._hue_rgba(
+            cold_scalar, _COLD_RGB, self._layer_weight(0.2, 0.5)
         )
         cloud["radius"] = (r_cold * (0.5 + 0.5 * cold_scalar)).astype(
             np.float32
@@ -655,14 +697,13 @@ class GalaxyLayer:
                 np.float32
             )
 
-            for scalar, radii_arr, cmap in [
-                (disk_scalar, r_disk, "Blues_r"),
-                (bulge_scalar, r_bulge, "RdBu"),
+            weight = self._layer_weight(0.5, 0.75)
+            for rgba, radii_arr in [
+                (self._rgba(disk_scalar, "Blues_r", weight), r_disk),
+                (self._hue_rgba(bulge_scalar, _BULGE_RGB, weight), r_bulge),
             ]:
                 cloud = pv.PolyData(pos)
-                cloud["rgba"] = self._rgba(
-                    scalar, cmap, self._layer_weight(0.5, 0.75)
-                )
+                cloud["rgba"] = rgba
                 cloud["radius"] = radii_arr
                 actor = self._pl.add_mesh(
                     cloud,
