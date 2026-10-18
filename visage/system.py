@@ -157,6 +157,72 @@ def system_summary(
     return " · ".join(parts)
 
 
+# ── responsiveness ────────────────────────────────────────────────────────
+
+# PROCESS_POWER_THROTTLING_STATE flags (processthreadsapi.h)
+_THROTTLE_EXECUTION_SPEED = 0x1
+_THROTTLE_IGNORE_TIMER_RESOLUTION = 0x4  # Windows 11+
+
+
+def tune_for_interactivity() -> list[str]:
+    """Undo two Windows defaults that make the viewer feel sluggish.
+
+    * Timer resolution.  Windows wakes sleeping threads on a ~15.6 ms
+      system tick, so asyncio's short waits — the frame scheduler's 1 ms
+      reschedule, the playback and camera-motion sleeps — each round up
+      to a whole tick.  Asking for 1 ms makes them land when intended
+      (macOS and Linux already behave this way).
+    * Power throttling (EcoQoS).  Windows 11 throttles processes with no
+      foreground window — and ViSAGE's console sits in the background
+      while you use the browser — moving it to efficiency cores and
+      ignoring its timer requests.  ViSAGE opts out, as a game would.
+
+    Both apply to this process only and end with it.  Returns what was
+    changed, for the startup report; a no-op elsewhere.
+    """
+    if not IS_WINDOWS:
+        return []
+    import atexit
+    import ctypes
+
+    notes: list[str] = []
+    try:
+        winmm = ctypes.WinDLL("winmm")
+        if winmm.timeBeginPeriod(1) == 0:  # TIMERR_NOERROR
+            atexit.register(winmm.timeEndPeriod, 1)
+            notes.append("1 ms timer resolution")
+    except (OSError, AttributeError):
+        pass
+
+    class _PowerThrottlingState(ctypes.Structure):
+        _fields_ = [
+            ("Version", ctypes.c_ulong),
+            ("ControlMask", ctypes.c_ulong),
+            ("StateMask", ctypes.c_ulong),
+        ]
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        proc = ctypes.c_void_p(kernel32.GetCurrentProcess())
+        # ControlMask = the policies we take charge of; StateMask 0 = off.
+        # Windows 10 rejects the Windows 11-only timer flag, so retry
+        # without it.
+        for mask in (
+            _THROTTLE_EXECUTION_SPEED | _THROTTLE_IGNORE_TIMER_RESOLUTION,
+            _THROTTLE_EXECUTION_SPEED,
+        ):
+            state = _PowerThrottlingState(1, mask, 0)
+            if kernel32.SetProcessInformation(
+                proc, 4, ctypes.byref(state), ctypes.sizeof(state)
+            ):  # 4 = ProcessPowerThrottling
+                notes.append("power throttling off")
+                break
+    except (OSError, AttributeError):
+        pass
+    return notes
+
+
 # ── rendering / GPU ───────────────────────────────────────────────────────
 
 

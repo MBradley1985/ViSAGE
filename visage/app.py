@@ -149,6 +149,7 @@ def create_app(
     cache_gb: float | None = None,
     port: int = 8080,
     lightcone_path: str | Path | None = None,
+    perf: bool = False,
 ):
     scene = Scene(
         primary_par_path=par_path,
@@ -196,6 +197,12 @@ def create_app(
         loop.call_soon(_notify)
 
     system.report_renderer_once(scene.plotter.ren_win, _on_renderer)
+    if perf:
+        from visage.utils import perf as _perf
+
+        _perf.install(
+            scene.plotter.ren_win, out=lambda s: print(s, flush=True)
+        )
 
     # Serve ViSAGE's client-side helpers (pop-out drag, Enter-to-
     # click). Vue 3 silently drops <script> tags from templates so we

@@ -8,6 +8,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.1] — 2026-10-18
+
+### Added
+
+- **`--perf`** (or `VISAGE_PERF=1`) prints frame-delivery timing every few
+  seconds while the view is moving: fps, frame size, render time, total
+  render + readback + JPEG time, and bytes per frame. It shows which step
+  is slow on a given machine.
+
+### Fixed
+
+- **Sluggish view on Windows.** Windows wakes sleeping threads on a
+  ~15.6 ms tick, so every short wait in the frame scheduler and playback
+  loops was rounded up to a whole tick. Windows 11 also throttles processes
+  with no foreground window (ViSAGE's console, while you use the browser).
+  ViSAGE now requests 1 ms timer resolution and opts out of power throttling
+  for its own process.
+- **PSO gallery labels use forward slashes on Windows**, matching macOS and
+  Linux.
+
 ## [2.7.0] — 2026-10-18
 
 ### Added

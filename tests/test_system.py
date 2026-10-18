@@ -229,3 +229,58 @@ def test_offscreen_choice(monkeypatch):
 
     monkeypatch.setattr(system, "IS_LINUX", False)
     assert not system.prefer_offscreen_rendering()  # macOS
+
+
+# ── responsiveness / --perf ───────────────────────────────────────────────
+
+
+def test_tune_for_interactivity():
+    notes = system.tune_for_interactivity()
+    if system.IS_WINDOWS:
+        assert "1 ms timer resolution" in notes
+    else:
+        assert notes == []
+
+
+def test_perf_describe():
+    from visage.utils import perf
+
+    st = perf._Stats()
+    assert perf.describe(st, 5.0) is None  # idle: say nothing
+    st.frames, st.frame_s, st.bytes = 50, 0.5, 50 * 400 * 1024
+    st.renders, st.render_s, st.size = 50, 0.25, (1600, 900)
+    line = perf.describe(st, 5.0)
+    assert line == (
+        "perf: 10.0 fps · 1600x900 · render 5.0 ms · frame 10.0 ms · "
+        "400 KB (3.9 MB/s)"
+    )
+
+
+def test_perf_install_times_real_frames(monkeypatch):
+    pv = pytest.importorskip("pyvista")
+    from trame_vtk.modules.vtk.protocols import vtkWebPublishImageDelivery
+
+    from visage.utils import perf
+
+    monkeypatch.setattr(
+        vtkWebPublishImageDelivery,
+        "still_render",
+        lambda self, options: {"memsize": 1000, "size": [64, 48]},
+    )
+    pl = pv.Plotter(off_screen=True, window_size=[64, 48])
+    lines = []
+    perf.install(pl.ren_win, interval=0.05, out=lines.append)
+
+    async def go():
+        for _ in range(5):
+            pl.ren_win.Render()
+            vtkWebPublishImageDelivery.still_render(None, {})
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
+
+    import asyncio
+
+    asyncio.run(go())
+    pl.close()
+    assert lines and lines[0].startswith("perf: ") and "64x48" in lines[0]
+    assert "render " in lines[0]

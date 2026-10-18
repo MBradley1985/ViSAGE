@@ -70,6 +70,24 @@ Notes:
   exactly as on Linux, and your Windows browser reaches
   `http://localhost:8080` as usual.
 
+### If the view feels slow on Windows
+
+ViSAGE renders every frame on the server, JPEG-encodes it and streams it to
+the browser. At startup on Windows it prints
+`Tuning : 1 ms timer resolution, power throttling off`. Those two settings
+stop Windows from delaying the frame loop. If the view still lags:
+
+- Run `visage --perf` and move the camera. Each line splits a frame into
+  `render` (GPU drawing) and `frame` (render + readback + JPEG encode),
+  with the frame rate and size. A `frame` time well above `render` means the
+  CPU-side encode is the cost. A frame rate far below `1000 / frame` ms
+  means something else (scheduling, the browser) is the bottleneck.
+- Check that the `GPU :` line names your discrete card. If it doesn't,
+  restart ViSAGE once after the first launch sets the graphics preference.
+- On a laptop, plug in and choose **Best performance** in Windows power
+  settings. On battery, Windows lowers CPU clocks, which slows encoding.
+- A smaller browser window means smaller frames and higher frame rates.
+
 ## Hardware detection
 
 ViSAGE sizes itself to the machine on every platform, and prints what it

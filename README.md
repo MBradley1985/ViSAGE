@@ -179,6 +179,8 @@ ssh -L 8080:localhost:8080 user@cluster
                         an HPC job's memory allocation; env VISAGE_CACHE_GB)
 --gpu MODE              auto | high | low | system — which GPU renders
                         (default auto; env VISAGE_GPU). See below.
+--perf                  Print frame timing (fps, render/encode ms, KB/frame)
+                        every few seconds while the view moves
 --max-halos N           Downsample ceiling per snapshot
 --min-halo-mass MSUN    Minimum halo mass to load
 --min-stellar-mass MSUN Minimum stellar mass to load

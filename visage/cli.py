@@ -112,6 +112,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--perf",
+        action="store_true",
+        default=bool(os.environ.get("VISAGE_PERF")),
+        help=(
+            "Print frame-delivery timing (fps, render / encode ms, frame "
+            "size) every few seconds — for diagnosing a sluggish view. "
+            "Also settable via VISAGE_PERF=1."
+        ),
+    )
+    p.add_argument(
         "--version",
         action="version",
         version=f"visage {__version__}",
@@ -130,6 +140,9 @@ def main(argv: list[str] | None = None) -> None:
                 pass
 
     args = build_parser().parse_args(argv)
+    tuned = system.tune_for_interactivity()
+    if tuned:
+        print(f"Tuning   : {', '.join(tuned)}")
 
     if args.lightcone is not None:
         _lightcone_mode(args)
@@ -195,6 +208,7 @@ def _explore_mode(args) -> None:
         max_halos=args.max_halos,
         cache_gb=args.cache_gb,
         port=args.port,
+        perf=args.perf,
     )
     print("[3/4] Building scene and Trame UI...")
     print(f"Snapshot : {scene.snap_label}")
@@ -232,6 +246,7 @@ def _lightcone_mode(args) -> None:
         cache_gb=args.cache_gb,
         port=args.port,
         lightcone_path=lc_path,
+        perf=args.perf,
     )
     print("[2/3] Building scene and Trame UI...")
     print(f"[3/3] Starting server on port {args.port}...")
