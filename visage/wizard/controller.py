@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64 as _b64
 import os
-import shutil
-import signal
 import sys
 from pathlib import Path
+
+from visage import system
+from visage.utils import terminal
+from visage.wizard import toolchain as _toolchain
 
 _SAGE26_REPO = "https://github.com/MBradley1985/SAGE26.git"
 _SAGESWARM_REPO = "https://github.com/MBradley1985/SAGEswarm.git"
@@ -126,6 +128,42 @@ _STEPS_SAGELIGHTCONE = [
     "Run",
     "Done",
 ]
+
+# SAGE26 is compiled from a ViSAGE-managed helper (kept in ~/.visage, like
+# the LightSAGE one below) so the build can use every core and cope with
+# machines that lack MPI or keep HDF5 somewhere the Makefile doesn't look.
+_SAGE26_BUILD_SCRIPT = "build_sage26.sh"
+
+_SAGE26_BUILD_SCRIPT_TEMPLATE = """\
+#!/bin/bash
+# ViSAGE-managed build for SAGE26: `make` on every core, falling back to a
+# serial (non-MPI) build when there is no MPI compiler.
+set -e
+
+cd "{sage_dir}"
+
+NJOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+MAKE_ARGS=""
+# SAGE26's Makefile enables MPI by default, which needs mpicc.
+if ! command -v mpicc >/dev/null 2>&1; then
+    echo "ViSAGE: mpicc not found -- building serial SAGE26 (USE-MPI=)."
+    MAKE_ARGS="USE-MPI="
+fi
+# Debian/Ubuntu (and so WSL) keep the HDF5 headers in a multiarch folder
+# that the Makefile's `which h5ls` guess (/usr) misses.
+if [ -z "$HDF5_DIR" ] && [ "$(uname)" = "Linux" ]; then
+    for d in /usr/lib/*-linux-gnu/hdf5/serial; do
+        if [ -f "$d/include/hdf5.h" ]; then
+            export HDF5_DIR="$d"
+            echo "ViSAGE: using HDF5 from $d"
+            break
+        fi
+    done
+fi
+
+echo "==> make -j$NJOBS $MAKE_ARGS"
+make -j"$NJOBS" $MAKE_ARGS
+"""
 
 # The SAGEswarm run is driven by editing its run_pso.sh script (all options —
 # constraints, PSO params, bounds file, sim settings — are shell vars in there),
@@ -614,7 +652,12 @@ class WizardController:
         self._plot_task = None  # asyncio task watching for PSO plots
         self._plot_watch_stop = True
         self._plot_seen: dict[str, int] = {}  # plot name → last-seen mtime
-        self._run_proc = None  # currently-running _run_cmd subprocess
+        self._run_proc = None  # currently-running _run_cmd TerminalProcess
+        # Where the SAGE tools run (native, or WSL on Windows) — detected on
+        # the first scan; Rescan re-probes so a fresh WSL install is seen.
+        self._tc: _toolchain.Toolchain | None = None
+        self._tc_refresh = False
+        self._missing_tools: list[str] = []
 
         self._st.wiz_step = 0
         self._st.wiz_steps = list(_STEPS)  # header chip labels (per-flow)
@@ -726,19 +769,21 @@ class WizardController:
             self._st.flush()
 
     def _on_rescan(self, **_) -> None:
+        self._tc_refresh = True
         self.reset_and_start(flow=self._flow)
 
     def _on_cancel_run(self, **_) -> None:
         """Interrupt the running command — equivalent to pressing Ctrl+C.
 
-        Sends SIGINT to the whole process group (created via os.setsid) so the
-        PSO driver and any SAGE instances it spawned all receive the interrupt.
+        The interrupt reaches the whole job (the command runs in its own
+        session / console), so the PSO driver and any SAGE instances it
+        spawned all receive it.
         """
         proc = self._run_proc
         if proc is None or proc.poll() is not None:
             return
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+            proc.interrupt()
             self._emit("^C  — interrupt sent to the running process", "warn")
         except (ProcessLookupError, OSError) as exc:
             self._emit(f"Could not interrupt process: {exc}", "err")
@@ -867,21 +912,15 @@ class WizardController:
     # LightSAGE), so all three report and update the same way.
     # ------------------------------------------------------------------
 
-    @staticmethod
-    async def _git_capture(args: list[str], cwd: Path) -> tuple[int, str]:
+    async def _git_capture(
+        self, args: list[str], cwd: Path
+    ) -> tuple[int, str]:
         """Run a git command quietly and return (returncode, stdout)."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "git",
-                *args,
-                cwd=str(cwd),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-            return proc.returncode or 0, out.decode(errors="replace").strip()
-        except (asyncio.TimeoutError, OSError):
-            return 1, ""
+        tc = self._toolchain
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: tc.capture(["git", *args], cwd)
+        )
 
     async def _git_status(self, repo: Path | None) -> dict:
         """Where a checkout stands against its remote.
@@ -1000,77 +1039,49 @@ class WizardController:
         target.rename(backup)
         return backup
 
-    async def _run_cmd(self, cmd: list[str], cwd: Path | None = None) -> int:
-        """Run a command in a PTY so ANSI colors and \\r progress bars work."""
-        import pty as _pty, select as _select, subprocess as _subprocess
-        import fcntl as _fcntl, struct as _struct, termios as _termios
+    async def _run_cmd(
+        self,
+        cmd: list,
+        cwd: Path | None = None,
+        *,
+        env: dict | None = None,
+        as_root: bool = False,
+    ) -> int:
+        """Run a command in a terminal so ANSI colors and \\r progress bars
+        work, streaming its output into the wizard terminal.
 
+        Path items in ``cmd`` (and ``cwd``) are translated for the
+        toolchain, so on Windows the same call runs inside WSL.
+        """
+        tc = self._toolchain
         self._push_bytes(
-            (
-                "\x1b[36m$ " + " ".join(str(c) for c in cmd) + "\x1b[0m\r\n"
-            ).encode()
+            ("\x1b[36m$ " + tc.display(cmd) + "\x1b[0m\r\n").encode()
         )
-
-        master_fd = slave_fd = -1
         try:
-            master_fd, slave_fd = _pty.openpty()
-            try:
-                _fcntl.ioctl(
-                    slave_fd,
-                    _termios.TIOCSWINSZ,
-                    _struct.pack("HHHH", 24, 220, 0, 0),
-                )
-            except Exception:
-                pass
-
-            proc = _subprocess.Popen(
-                [str(c) for c in cmd],
-                stdin=slave_fd,
-                stdout=slave_fd,
-                stderr=slave_fd,
-                close_fds=True,
-                cwd=str(cwd) if cwd else None,
-                preexec_fn=os.setsid,
+            argv, run_cwd, extra = tc.wrap(cmd, cwd, env=env, as_root=as_root)
+        except _toolchain.ToolchainUnavailable as exc:
+            self._emit(str(exc), "err")
+            return 1
+        try:
+            proc = terminal.spawn(
+                argv,
+                cwd=run_cwd,
+                env={**os.environ, **extra} if extra else None,
+                rows=24,
+                cols=220,
             )
-            os.close(slave_fd)
-            slave_fd = -1
+        except Exception as exc:
+            self._push_bytes(f"\x1b[1;31mError: {exc}\x1b[0m\r\n".encode())
+            return 1
 
-            # Expose the process so the Cancel button (Ctrl+C) can signal it.
-            self._run_proc = proc
-            self._st.wiz_run_active = True
-            self._st.flush()
-
-            loop = asyncio.get_running_loop()
-
-            def _read_chunk() -> bytes | None:
-                try:
-                    r, _, _ = _select.select([master_fd], [], [], 1.0)
-                except (OSError, ValueError):
-                    return b""
-                if not r:
-                    return None  # timeout
-                try:
-                    chunk = os.read(master_fd, 4096)
-                except OSError:
-                    return b""
-                if not chunk:
-                    return b""
-                buf = bytearray(chunk)
-                while True:
-                    try:
-                        r2, _, _ = _select.select([master_fd], [], [], 0)
-                        if not r2:
-                            break
-                        more = os.read(master_fd, 4096)
-                        if not more:
-                            break
-                        buf.extend(more)
-                    except OSError:
-                        break
-                return bytes(buf)
-
+        # Expose the process so the Cancel button (Ctrl+C) can signal it.
+        self._run_proc = proc
+        self._st.wiz_run_active = True
+        self._st.flush()
+        loop = asyncio.get_running_loop()
+        try:
             while True:
-                data = await loop.run_in_executor(None, _read_chunk)
+                data = await loop.run_in_executor(None, proc.read, 1.0)
                 if data is None:
                     if proc.poll() is not None:
                         break
@@ -1078,9 +1089,7 @@ class WizardController:
                 if not data:
                     break
                 self._push_bytes(data)
-
-            proc.wait()
-            return proc.returncode or 0
+            return await loop.run_in_executor(None, proc.wait) or 0
         except Exception as exc:
             self._push_bytes(f"\x1b[1;31mError: {exc}\x1b[0m\r\n".encode())
             return 1
@@ -1088,12 +1097,120 @@ class WizardController:
             self._run_proc = None
             self._st.wiz_run_active = False
             self._st.flush()
-            for fd in (master_fd, slave_fd):
-                if fd >= 0:
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        pass
+            proc.close()
+
+    # ── platform helpers ─────────────────────────────────────────────────────
+
+    @property
+    def _toolchain(self) -> _toolchain.Toolchain:
+        if self._tc is None:
+            self._tc = _toolchain.detect()
+        return self._tc
+
+    def _tc_path(self, p) -> str:
+        """A path as the SAGE tools see it (/mnt/c/... under WSL)."""
+        return self._toolchain.path(p)
+
+    async def _scan_toolchain(self, width: int) -> None:
+        """Report the machine and where the SAGE tools run.  Under WSL also
+        check the Linux build tools, remembering what is missing so the
+        flow can offer to install it."""
+        loop = asyncio.get_running_loop()
+        refresh, self._tc_refresh = self._tc_refresh, False
+        self._tc = await loop.run_in_executor(None, _toolchain.detect, refresh)
+        tc = self._tc
+        self._emit(f"  {'System':<{width}}: {system.system_summary()}", "out")
+        self._missing_tools = []
+        if tc.kind == "wsl":
+            self._emit(f"  {'Linux tools':<{width}}: {tc.describe()}", "ok")
+            self._missing_tools = await loop.run_in_executor(
+                None, tc.missing_tools
+            )
+            if self._missing_tools:
+                self._emit(
+                    f"  {'Missing':<{width}}: "
+                    + ", ".join(self._missing_tools)
+                    + "  (use Install Linux build tools)",
+                    "warn",
+                )
+        elif tc.kind == "missing":
+            self._emit(f"  {'Linux tools':<{width}}: WSL not found", "warn")
+            self._emit("  " + _toolchain.WSL_INSTALL_HELP, "warn")
+            self._emit(
+                "  Existing models and lightcones can still be opened.", "info"
+            )
+
+    def _linux_tools_choices(self) -> list[dict]:
+        if not self._missing_tools:
+            return []
+        return [
+            {
+                "label": "Install Linux build tools",
+                "value": "install_linux_tools",
+                "icon": "mdi-penguin",
+                "disabled": False,
+            }
+        ]
+
+    async def _step_install_linux_tools(self) -> None:
+        """apt-get the compilers and libraries all three flows need, inside
+        WSL as root (no password prompt), then restart the current flow."""
+        self._emit(
+            "Installing the Linux build tools inside WSL (apt, as root) ...",
+            "info",
+        )
+        self._emit("  " + " ".join(_toolchain.LINUX_PACKAGES), "out")
+        self._emit(
+            "This downloads a few hundred MB; allow a few minutes.", "info"
+        )
+        rc = await self._run_cmd(
+            self._toolchain.install_command(), as_root=True
+        )
+        if rc != 0:
+            self._emit("Install failed — see the output above.", "err")
+        else:
+            self._emit("Linux build tools installed.", "ok")
+        self._emit("", "info")
+        if self._flow == "sageswarm":
+            await self._step_sw_scan()
+        elif self._flow == "sagelightcone":
+            await self._step_lc_scan()
+        else:
+            await self._step_scan()
+
+    @staticmethod
+    def _read_text(path: Path) -> str:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+
+    @staticmethod
+    def _write_unix_text(path: Path, text: str) -> None:
+        """Write a file a Unix tool will read: UTF-8 with LF line endings.
+        Plain write_text() on Windows writes CRLF, and bash then fails on
+        every line with "$'\\r': command not found"."""
+        Path(path).write_text(text, encoding="utf-8", newline="\n")
+
+    def _warn_crlf(self, paths: list[Path]) -> None:
+        """Warn when a checkout's scripts have Windows line endings — a
+        clone made with Git for Windows (core.autocrlf) — since bash in WSL
+        can't run them.  The wizard's own clones run inside WSL and never
+        have this problem."""
+        if self._toolchain.kind != "wsl":
+            return
+        bad = []
+        for p in paths:
+            try:
+                if b"\r\n" in Path(p).read_bytes():
+                    bad.append(Path(p).name)
+            except OSError:
+                pass
+        if bad:
+            self._emit(
+                f"Warning: {', '.join(bad)} has Windows (CRLF) line endings, "
+                "so bash in WSL will fail on it. The checkout was probably "
+                "cloned with Git for Windows; re-clone it from this wizard "
+                "(which clones inside WSL).",
+                "warn",
+            )
 
     # ── discovery ────────────────────────────────────────────────────────────
 
@@ -1174,6 +1291,7 @@ class WizardController:
         self._emit("Scanning environment...", "info")
         self._emit("", "info")
 
+        await self._scan_toolchain(width=13)
         self._sage26_dir = self._find_sage26()
         if self._sage26_dir:
             compiled, n_obj = self._sage26_compiled(self._sage26_dir)
@@ -1205,7 +1323,7 @@ class WizardController:
 
     async def _step_main_choice(self) -> None:
         self._st.wiz_step = 1
-        choices = []
+        choices = self._linux_tools_choices()
         if self._models:
             choices.append(
                 {
@@ -1367,6 +1485,9 @@ class WizardController:
 
         elif value == "lc_done":
             await self._step_lc_scan()
+
+        elif value == "install_linux_tools":
+            await self._step_install_linux_tools()
 
         elif value == "back_sage26":
             self._flow = "sage26"
@@ -1608,7 +1729,7 @@ class WizardController:
             self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning SAGE26 into {target} ...", "info")
         rc = await self._run_cmd(
-            ["git", "clone", _SAGE26_REPO, str(target)],
+            ["git", "clone", _SAGE26_REPO, target],
             cwd=parent,
         )
         if rc != 0:
@@ -1635,10 +1756,27 @@ class WizardController:
             return
         first_run = self._sage26_dir / "first_run.sh"
         if first_run.is_file():
+            self._warn_crlf([first_run])
             self._emit("Running first_run.sh ...", "info")
             await self._run_cmd(["bash", "first_run.sh"], cwd=self._sage26_dir)
-        self._emit("Compiling SAGE26 (may take a minute) ...", "info")
-        rc = await self._run_cmd(["make"], cwd=self._sage26_dir)
+        build_script = Path.home() / ".visage" / _SAGE26_BUILD_SCRIPT
+        try:
+            build_script.parent.mkdir(parents=True, exist_ok=True)
+            self._write_unix_text(
+                build_script,
+                _SAGE26_BUILD_SCRIPT_TEMPLATE.format(
+                    sage_dir=self._tc_path(self._sage26_dir)
+                ),
+            )
+        except OSError as exc:
+            self._emit(f"Could not write build helper: {exc}", "err")
+            self._set_choices([self._back_choice(self._back)])
+            return
+        self._emit(
+            "Compiling SAGE26 on every CPU core (may take a minute) ...",
+            "info",
+        )
+        rc = await self._run_cmd(["bash", build_script], cwd=self._sage26_dir)
         if rc != 0:
             self._emit("Compilation failed. See output above.", "err")
             self._set_choices(
@@ -1750,16 +1888,15 @@ class WizardController:
         dest = inp_dir / name
         self._emit(f"Creating config file: {dest}", "info")
         sage26 = self._sage26_dir or Path.cwd()
+        # Paths as SAGE will see them (/mnt/c/... when it runs in WSL).
         content = _MILLENNIUM_PAR_TEMPLATE.format(
-            output_dir=sage26 / "output" / "millennium" / "",
-            sim_dir=sage26 / "input" / "millennium" / "trees" / "",
-            snaplist=sage26
-            / "input"
-            / "millennium"
-            / "trees"
-            / "millennium.a_list",
+            output_dir=self._tc_path(sage26 / "output" / "millennium"),
+            sim_dir=self._tc_path(sage26 / "input" / "millennium" / "trees"),
+            snaplist=self._tc_path(
+                sage26 / "input" / "millennium" / "trees" / "millennium.a_list"
+            ),
         )
-        dest.write_text(content)
+        self._write_unix_text(dest, content)
         self._par_path = dest
         self._emit(
             "Template written. Edit the paths to the right, then Save & Run.",
@@ -1778,7 +1915,7 @@ class WizardController:
         )
         self._emit("", "info")
         try:
-            text = self._par_path.read_text()
+            text = self._read_text(self._par_path)
         except Exception as exc:
             self._emit(f"Could not read par file: {exc}", "err")
             return
@@ -1810,8 +1947,12 @@ class WizardController:
         self._st.flush()
 
         if self._par_path:
+            if self._toolchain.kind == "wsl":
+                self._st.wiz_par_text = self._par_paths_for_toolchain(
+                    str(self._st.wiz_par_text or "")
+                )
             try:
-                self._par_path.write_text(self._st.wiz_par_text)
+                self._write_unix_text(self._par_path, self._st.wiz_par_text)
                 self._emit(f"Saved {self._par_path.name}", "ok")
             except Exception as exc:
                 self._emit(f"Could not save par file: {exc}", "err")
@@ -1858,7 +1999,7 @@ class WizardController:
         self._emit("This may take a while for large simulations.", "info")
         self._emit("", "info")
         rc = await self._run_cmd(
-            [str(sage_bin), str(self._par_path)], cwd=self._sage26_dir
+            [sage_bin, self._par_path], cwd=self._sage26_dir
         )
         if rc != 0:
             self._emit(
@@ -1900,6 +2041,23 @@ class WizardController:
             await self._launch_explore(m["par"], model_name=m["name"])
         else:
             await self._step_select_model()
+
+    def _par_paths_for_toolchain(self, text: str) -> str:
+        """Rewrite Windows absolute paths in a .par (C:\\...) into the form
+        SAGE sees inside WSL (/mnt/c/...).  ViSAGE reads both forms."""
+        changes = [
+            {"key": p["key"], "value": self._tc_path(p["value"])}
+            for p in _parse_params(text, "par")
+            if _re.match(r"^[A-Za-z]:[\\/]", p["value"])
+        ]
+        if not changes:
+            return text
+        self._emit(
+            f"Converted {len(changes)} Windows path(s) in the .par to the "
+            "form SAGE sees inside WSL (/mnt/...).",
+            "info",
+        )
+        return _apply_params(text, changes, "par")
 
     # ── SAGEswarm (PSO calibration) flow ─────────────────────────────────────
 
@@ -1950,7 +2108,7 @@ class WizardController:
                 val = m.group(1).strip()
         if not val or val.startswith("$"):
             return self._sw_dir
-        p = Path(val).expanduser()
+        p = self._toolchain.native(val)
         return p if p.is_absolute() else (self._sw_dir / p)
 
     def _back_choice(self, value: str = "sw_back_scan") -> dict:
@@ -1985,6 +2143,8 @@ class WizardController:
         )
         self._emit("", "info")
 
+        await self._scan_toolchain(width=16)
+
         self._sw_dir = self._find_sageswarm()
         sw_git: dict = {}
         if self._sw_dir:
@@ -2007,7 +2167,7 @@ class WizardController:
             )
         self._emit("", "info")
 
-        choices: list[dict] = []
+        choices: list[dict] = self._linux_tools_choices()
         if self._sw_dir:
             choices.append(
                 {
@@ -2123,7 +2283,7 @@ class WizardController:
             self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning SAGEswarm into {target} ...", "info")
         rc = await self._run_cmd(
-            ["git", "clone", _SAGESWARM_REPO, str(target)], cwd=parent
+            ["git", "clone", _SAGESWARM_REPO, target], cwd=parent
         )
         if rc != 0:
             self._emit(
@@ -2145,10 +2305,19 @@ class WizardController:
             self._emit("Installing SAGEswarm requirements ...", "info")
             # Use python3 to match run_pso.sh's `python3 ./main.py`, so deps
             # land in the interpreter the run will actually use.
-            rc = await self._run_cmd(
-                ["python3", "-m", "pip", "install", "-r", "requirements.txt"],
-                cwd=self._sw_dir,
-            )
+            cmd = ["python3", "-m", "pip", "install", "-r", "requirements.txt"]
+            if self._toolchain.kind == "wsl":
+                # Ubuntu's python3 refuses system-wide pip installs
+                # (PEP 668), so install for the user.  Older pips lack
+                # --break-system-packages but don't need it either.
+                cmd = [
+                    "bash",
+                    "-c",
+                    "python3 -m pip install --user --break-system-packages "
+                    "-r requirements.txt || "
+                    "python3 -m pip install --user -r requirements.txt",
+                ]
+            rc = await self._run_cmd(cmd, cwd=self._sw_dir)
             if rc != 0:
                 self._emit("pip install failed. See output above.", "err")
                 self._set_choices(
@@ -2180,7 +2349,7 @@ class WizardController:
 
         if script.is_file():
             try:
-                self._st.wiz_sw_script_text = script.read_text()
+                self._st.wiz_sw_script_text = self._read_text(script)
                 self._emit(
                     f"Loaded {script.name} — edit it on the right.", "ok"
                 )
@@ -2233,7 +2402,9 @@ class WizardController:
 
         # Save the edited run_pso.sh back to the checkout (like the .par editor).
         try:
-            script.write_text(str(self._st.wiz_sw_script_text or ""))
+            self._write_unix_text(
+                script, str(self._st.wiz_sw_script_text or "")
+            )
             self._emit(f"Saved {script.name}", "ok")
         except OSError as exc:
             self._emit(f"Could not save {script.name}: {exc}", "err")
@@ -2438,7 +2609,7 @@ class WizardController:
 
         outdir = _var("OUTDIR", str(Path.cwd() / "sage_outputs" / "lightcone"))
         outfile = _var("OUTFILE", "lightcone.h5")
-        p = Path(outdir).expanduser()
+        p = self._toolchain.native(outdir)
         if not p.is_absolute():
             p = script_dir / p
         return p / outfile
@@ -2534,23 +2705,22 @@ class WizardController:
         self._st.flush()
         await asyncio.sleep(1.0)
 
-        visage_cmd = shutil.which("visage")
-        argv = ["--lightcone", str(out), "--port", str(self._port)]
-        if visage_cmd:
-            os.execv(visage_cmd, [visage_cmd, *argv])
-        else:
-            os.execv(
-                sys.executable, [sys.executable, "-m", "visage.cli", *argv]
-            )
+        system.relaunch_visage(
+            ["--lightcone", str(out), "--port", str(self._port)]
+        )
 
     def _lc_seed_script(self) -> str:
         """Seed run_lightcone.sh, pre-filling paths from discovered dirs."""
-        lc = str(self._lc_dir) if self._lc_dir else "/path/to/LightSAGE"
+        # Every path is written as the pipeline sees it (/mnt/c/... when it
+        # runs in WSL); the SED stage's python is ViSAGE's own interpreter,
+        # which WSL can launch even when it is a Windows python.exe.
+        tp = self._tc_path
+        lc = tp(self._lc_dir) if self._lc_dir else "/path/to/LightSAGE"
         sage = self._sage26_dir
         if sage:
-            sage_out = str(sage / "output" / "millennium")
-            par = str(sage / "input" / "millennium.par")
-            alist = str(
+            sage_out = tp(sage / "output" / "millennium")
+            par = tp(sage / "input" / "millennium.par")
+            alist = tp(
                 sage / "input" / "millennium" / "trees" / "millennium.a_list"
             )
         else:
@@ -2565,8 +2735,8 @@ class WizardController:
             sage_output_dir=sage_out,
             param_file=par,
             alist_file=alist,
-            outdir=str(outdir),
-            python_exe=sys.executable,
+            outdir=tp(outdir),
+            python_exe=tp(sys.executable),
         )
 
     # Canonical (BAND_KEY, fsps filter name) pairs — used only to translate
@@ -2668,6 +2838,8 @@ class WizardController:
         self._emit("Scanning for the LightSAGE package...", "info")
         self._emit("", "info")
 
+        await self._scan_toolchain(width=16)
+
         self._lc_dir = self._find_sagelightcone()
         built = False
         lc_git: dict = {}
@@ -2703,7 +2875,7 @@ class WizardController:
             )
         self._emit("", "info")
 
-        choices: list[dict] = []
+        choices: list[dict] = self._linux_tools_choices()
         if self._lc_dir:
             choices.append(
                 {
@@ -2842,7 +3014,7 @@ class WizardController:
                 "clone",
                 "--recurse-submodules",
                 _LIGHTSAGE_REPO,
-                str(target),
+                target,
             ],
             cwd=parent,
         )
@@ -2869,8 +3041,11 @@ class WizardController:
         build_script = self._lc_build_script_path()
         try:
             build_script.parent.mkdir(parents=True, exist_ok=True)
-            build_script.write_text(
-                _LC_BUILD_SCRIPT_TEMPLATE.format(lc_dir=str(self._lc_dir))
+            self._write_unix_text(
+                build_script,
+                _LC_BUILD_SCRIPT_TEMPLATE.format(
+                    lc_dir=self._tc_path(self._lc_dir)
+                ),
             )
         except OSError as exc:
             self._emit(f"Could not write build helper: {exc}", "err")
@@ -2882,8 +3057,11 @@ class WizardController:
             "into the pipeline.",
             "info",
         )
+        self._warn_crlf(
+            [self._lc_dir / "setup.sh", self._lc_dir / "install.sh"]
+        )
         self._emit("C++/CMake build — this can take a few minutes ...", "info")
-        rc = await self._run_cmd(["bash", str(build_script)], cwd=self._lc_dir)
+        rc = await self._run_cmd(["bash", build_script], cwd=self._lc_dir)
         if rc != 0:
             self._emit(
                 "Build failed. See output above (check Boost/HDF5/CMake).",
@@ -2939,7 +3117,7 @@ class WizardController:
 
         if script.is_file():
             try:
-                self._st.wiz_lc_script_text = script.read_text()
+                self._st.wiz_lc_script_text = self._read_text(script)
                 self._emit(f"Loaded {script} — edit it on the right.", "ok")
             except OSError as exc:
                 self._emit(f"Could not read {script}: {exc}", "err")
@@ -2972,7 +3150,12 @@ class WizardController:
             # whatever was on disk.
             self._st.wiz_lc_script_text = _apply_params(
                 str(self._st.wiz_lc_script_text),
-                [{"key": "LIGHTCONE_DIR", "value": str(self._lc_dir)}],
+                [
+                    {
+                        "key": "LIGHTCONE_DIR",
+                        "value": self._tc_path(self._lc_dir),
+                    }
+                ],
                 "sh",
             )
         else:
@@ -3013,7 +3196,9 @@ class WizardController:
         script = self._lc_script_path()
         try:
             script.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(str(self._st.wiz_lc_script_text or ""))
+            self._write_unix_text(
+                script, str(self._st.wiz_lc_script_text or "")
+            )
             self._emit(f"Saved {script}", "ok")
         except OSError as exc:
             self._emit(f"Could not save {script}: {exc}", "err")
@@ -3028,9 +3213,15 @@ class WizardController:
         self._emit("This can take a while.  Use Cancel to stop.", "info")
         self._emit("", "info")
 
+        self._warn_crlf(
+            [
+                self._lc_dir / "scripts" / "sage2kdtree.sh",
+                self._lc_dir / "scripts" / "lightcone.sh",
+            ]
+        )
         # Run from the script's own dir (~/.visage) so its relative outputs
         # (KDTREE_OUT, OUTDIR) land there, not inside the LightSAGE repo.
-        rc = await self._run_cmd(["bash", str(script)], cwd=script.parent)
+        rc = await self._run_cmd(["bash", script], cwd=script.parent)
         if rc != 0:
             self._emit(f"Lightcone pipeline exited with code {rc}.", "err")
             self._set_choices(
@@ -3093,28 +3284,6 @@ class WizardController:
         self._st.flush()
         await asyncio.sleep(1.0)
 
-        sage_cmd = shutil.which("visage")
-        if sage_cmd:
-            os.execv(
-                sage_cmd,
-                [
-                    sage_cmd,
-                    "--par",
-                    str(par_path),
-                    "--port",
-                    str(self._port),
-                ],
-            )
-        else:
-            os.execv(
-                sys.executable,
-                [
-                    sys.executable,
-                    "-m",
-                    "visage.cli",
-                    "--par",
-                    str(par_path),
-                    "--port",
-                    str(self._port),
-                ],
-            )
+        system.relaunch_visage(
+            ["--par", str(par_path), "--port", str(self._port)]
+        )

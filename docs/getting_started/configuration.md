@@ -10,7 +10,9 @@ ViSAGE reads all simulation parameters directly from the SAGE `.par` file. No se
 | `--lightcone FILE` | — | Path to a `cli_lightcone` HDF5 output file — opens the full Explore UI on the lightcone instead of a SAGE box |
 | `--snap N` | last snap | Initial snapshot number |
 | `--port N` | 8080 | Trame server port |
-| `--n-jobs N` | CPUs-1 | Parallel workers for halo loading |
+| `--n-jobs N` | usable CPUs − 1 | Parallel workers for halo loading (respects a cluster job's CPU allocation) |
+| `--cache-gb GB` | half of RAM | Snapshot cache budget; half of physical RAM, or of an HPC job's memory limit. Also `VISAGE_CACHE_GB` |
+| `--gpu MODE` | `auto` | Which GPU renders: `auto` prefers the discrete GPU on a Windows laptop with hybrid graphics; `high` / `low` force the discrete / integrated GPU; `system` leaves the OS default. Also `VISAGE_GPU` |
 | `--min-halo-mass MSUN` | 1e10 | Minimum halo mass floor (Msun) |
 | `--min-stellar-mass MSUN` | 1e8 | Minimum stellar mass floor (Msun) |
 | `--max-halos N` | 100000 | Downsample ceiling for haloes per snapshot |

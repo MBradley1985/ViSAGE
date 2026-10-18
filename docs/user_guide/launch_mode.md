@@ -48,6 +48,27 @@ The working directory you launch from is the anchor for the entire session:
 
 **Existing SAGE26:** run from the SAGE26 root and the wizard finds everything automatically.
 
+## On Windows
+
+The three flows build and run Unix programs, so on Windows every clone,
+build and run step executes inside **WSL** (Windows Subsystem for Linux).
+You don't need to do anything different; the wizard handles it:
+
+- The scan step reports `Linux tools : WSL (Ubuntu)` and lists any missing
+  compilers or libraries. **Install Linux build tools** installs them inside
+  WSL with `apt-get`, as root, so there is no password prompt.
+- Checkouts stay on your Windows drive, and paths are translated both ways:
+  `.par` files and run scripts get `/mnt/c/...` paths for the tools, and
+  ViSAGE reads those paths back as `C:\...` to open the results.
+- Commands shown in the terminal are prefixed with `[WSL]`, and **Cancel**
+  (Ctrl+C) reaches the Linux processes as usual.
+- If WSL isn't installed, the scan step says how to install it
+  (`wsl --install` in an administrator PowerShell). Opening existing models
+  and lightcones works without it.
+
+See [Installation › Windows](../getting_started/installation.md#windows) for
+the one-time setup.
+
 ## Step indicator
 
 A row of chips in the header tracks progress through the wizard:
@@ -63,6 +84,12 @@ A row of chips in the header tracks progress through the wizard:
 ### 1 — Scan environment
 
 The wizard checks for a SAGE26 executable, locates any existing `.par` files under your SAGE root, and reports what it finds.
+
+When SAGE26 needs compiling (after **Clone SAGE26**, or via **Compile
+SAGE26**), the wizard runs `make -j<cores>` from a helper script in
+`~/.visage/build_sage26.sh`. If no MPI compiler (`mpicc`) is installed, it
+builds the serial version (`USE-MPI=`) instead of failing. On
+Debian/Ubuntu/WSL it also points the build at the system HDF5.
 
 ### 2 — Choose action
 

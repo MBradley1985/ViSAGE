@@ -11,6 +11,7 @@ from typing import Optional
 import numpy as np
 from scipy.spatial import KDTree
 
+from visage import system
 from visage.config import SimConfig
 from visage.io.galaxy_reader import GalaxySnapshot, load_galaxy_snapshot
 from visage.io.halo_reader import HaloSnapshot, load_halo_snapshot
@@ -48,10 +49,9 @@ def default_cache_bytes() -> int:
             return max(int(float(env) * 1024**3), 256 * 1024**2)
         except ValueError:
             pass
-    try:
-        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (ValueError, OSError, AttributeError):
-        total = 8 * 1024**3
+    # Physical RAM on every OS (Windows has no os.sysconf), capped by an
+    # HPC job's or container's memory allocation.
+    total = system.total_memory_bytes() or 8 * 1024**3
     return max(int(total * 0.5), 2 * 1024**3)
 
 
@@ -154,7 +154,8 @@ class SnapshotLoader:
     ----------
     config:          parsed SimConfig
     snap_table:      SnapshotTable for the simulation
-    n_jobs:          worker threads for parallel halo file reads (default: CPUs-1)
+    n_jobs:          worker threads for parallel halo file reads (default:
+                     the CPUs this process may use, minus one)
     prefetch_radius: number of snapshots ahead/behind to prefetch
     cache_size:      max snapshots kept in memory
     min_halo_mass:   Msun halo mass floor
@@ -169,7 +170,7 @@ class SnapshotLoader:
         self,
         config: SimConfig,
         snap_table: SnapshotTable,
-        n_jobs: int = max(1, os.cpu_count() - 1),
+        n_jobs: int | None = None,
         prefetch_radius: int = 2,
         cache_size: int = 8,
         min_halo_mass: float = 1.0e10,
@@ -180,7 +181,9 @@ class SnapshotLoader:
     ) -> None:
         self._cfg = config
         self._snap_table = snap_table
-        self._n_jobs = n_jobs
+        self._n_jobs = (
+            n_jobs if n_jobs is not None else system.default_workers()
+        )
         self._prefetch_radius = prefetch_radius
         self._min_halo_mass = min_halo_mass
         self._min_stellar_mass = min_stellar_mass

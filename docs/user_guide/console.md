@@ -14,7 +14,7 @@ Type `terminal` from any non-default mode to return to the shell. Type `exit` or
 
 ## Terminal mode
 
-The terminal is backed by a real PTY (`$SHELL -l`), so full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`, ncurses apps) all work exactly as they would in your local terminal.
+The terminal is backed by a real PTY (`$SHELL -l` on macOS/Linux; PowerShell in a ConPTY on Windows), so full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`, ncurses apps) all work exactly as they would in your local terminal.
 
 Three built-ins are intercepted in-process so they persist between commands:
 

@@ -8,6 +8,55 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-10-18
+
+### Added
+
+- **Windows support.** The viewer runs natively on Windows: Explore,
+  Lightcone and Story Mode, recording, and the Console (PowerShell in a real
+  terminal).
+- **SAGE26, SAGEswarm and LightSAGE on Windows.** Their C/C++ builds and bash
+  scripts can't use Windows compilers, so on Windows the Launch Mode flows
+  run every clone, build and run step inside WSL automatically. Checkouts
+  stay on the Windows drive and paths are translated both ways, so the
+  native viewer opens the results directly. A new **Install Linux build
+  tools** step installs the compilers and libraries inside WSL in one click.
+  If WSL is missing, the wizard explains how to install it.
+- **Hardware detection.** At startup ViSAGE reports the OS, the CPUs it will
+  use, RAM and cache budget, and the GPU that is actually rendering. It warns
+  when OpenGL has fallen back to the CPU (Remote Desktop, a VM, a missing
+  driver).
+- **`--gpu auto|high|low|system`** (or `VISAGE_GPU`). On a Windows laptop with
+  integrated and discrete graphics, `auto` sets the Windows "High
+  performance" graphics preference for Python so the discrete GPU renders.
+  `high` also requests the discrete GPU on Linux (NVIDIA PRIME, DRI_PRIME,
+  WSLg).
+- **SAGE26 compiles on every core** (`make -j`), builds serially when no MPI
+  compiler is installed, and finds Debian/Ubuntu's HDF5.
+- CI now runs the test suite on Linux, macOS and Windows.
+
+### Changed
+
+- Worker threads and the snapshot cache now follow what this process may
+  actually use: a cluster job's CPU allocation and memory limit, not the
+  whole node.
+- On Windows and on Linux machines with no display, VTK renders off-screen,
+  so no stray native window appears. macOS and Linux desktops are unchanged.
+
+### Fixed
+
+- **Wizard commands failed on Windows.** The terminal and Cancel button
+  relied on Unix-only system calls.
+- **Scripts the wizard saved on Windows had Windows line endings**, which bash
+  rejects (`$'\r': command not found`). `.par` files, `run_pso.sh`,
+  `run_lightcone.sh` and the build helpers are now always written with Unix
+  line endings.
+- **Switching models on Windows broke for paths with spaces.** The relaunch
+  now quotes its arguments.
+- **The cache budget ignored the machine's RAM on Windows**, always assuming
+  8 GB.
+- **MOV recording on Windows** uses a bundled ffmpeg when none is on `PATH`.
+
 ## [2.6.4] — 2026-10-01
 
 ### Fixed

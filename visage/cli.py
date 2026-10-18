@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from visage import system
 from visage._version import __version__
 
 
@@ -58,9 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--n-jobs",
         type=int,
-        default=max(1, (os.cpu_count() or 2) - 1),
+        default=system.default_workers(),
         metavar="N",
-        help="Worker threads for parallel halo loading (default: CPUs-1)",
+        help=(
+            "Worker threads for parallel halo loading (default: the CPUs "
+            "this process may use, minus one)"
+        ),
     )
     p.add_argument(
         "--min-halo-mass",
@@ -97,6 +101,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--gpu",
+        choices=("auto", "high", "low", "system"),
+        default=os.environ.get("VISAGE_GPU", "auto"),
+        help=(
+            "Which GPU renders. auto (default): on a Windows laptop with "
+            "integrated + discrete graphics, prefer the discrete GPU. "
+            "high / low: force the discrete / integrated GPU. system: leave "
+            "the OS default alone. Also settable via VISAGE_GPU."
+        ),
+    )
+    p.add_argument(
         "--version",
         action="version",
         version=f"visage {__version__}",
@@ -105,6 +120,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    if system.IS_WINDOWS:
+        # Status lines use characters (—, →) a redirected cp1252 console
+        # can't encode; never crash over one.
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(errors="replace")
+            except (AttributeError, ValueError):
+                pass
+
     args = build_parser().parse_args(argv)
 
     if args.lightcone is not None:
@@ -119,6 +143,7 @@ def _launch_mode(args) -> None:
     from visage._version import __version__ as _ver
 
     print(f"\nViSAGE {_ver}  —  Launch Mode")
+    print(f"System   : {system.system_summary()}")
     print(f"Port     : {args.port}")
     print(f"\n  --> Open http://localhost:{args.port} in your browser\n")
 
@@ -126,6 +151,22 @@ def _launch_mode(args) -> None:
 
     server = create_launch_app(port=args.port)
     server.start(port=args.port, open_browser=False)
+
+
+def _print_system(args) -> None:
+    """Report the machine and what this session will use of it, and steer
+    rendering onto the right GPU before VTK creates its OpenGL context."""
+    from visage.parallel.loader import default_cache_bytes
+
+    cache = (
+        int(args.cache_gb * 1024**3)
+        if args.cache_gb is not None
+        else default_cache_bytes()
+    )
+    print(f"System   : {system.system_summary(args.n_jobs, cache)}")
+    note = system.apply_gpu_preference(args.gpu)
+    if note:
+        print(f"GPU      : {note}")
 
 
 def _explore_mode(args) -> None:
@@ -138,7 +179,7 @@ def _explore_mode(args) -> None:
 
     print(f"\nViSAGE {_ver}  —  Explore Mode")
     print(f"Par file : {par_path.resolve()}")
-    print(f"Workers  : {args.n_jobs}")
+    _print_system(args)
     print("\n[1/4] Parsing par file and snapshot table...")
 
     from visage.app import create_app
@@ -176,6 +217,7 @@ def _lightcone_mode(args) -> None:
 
     print(f"\nViSAGE {_ver}  —  Lightcone Mode")
     print(f"Lightcone : {lc_path.resolve()}")
+    _print_system(args)
     print("\n[1/3] Reading lightcone galaxies + host haloes...")
 
     from visage.app import create_app

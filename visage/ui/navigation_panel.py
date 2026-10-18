@@ -2915,8 +2915,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 return f"ERROR (gif): {e!s}"
 
         if fmt == "mov":
+            from visage.system import find_ffmpeg
+
+            ffmpeg = find_ffmpeg()
+            if ffmpeg is None:
+                return (
+                    "ERROR: ffmpeg not found — install it (brew install "
+                    "ffmpeg / winget install ffmpeg / apt install ffmpeg) or "
+                    "pip install imageio-ffmpeg"
+                )
             cmd = [
-                "ffmpeg",
+                ffmpeg,
                 "-y",
                 "-framerate",
                 str(fps),
@@ -3399,6 +3408,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if not exe:
             return None
         shim = _pathlib_pty.Path.home() / ".visage" / "shims"
+        if _sys.platform == "win32":
+            # Windows: .cmd shims (symlinks need admin rights there), and a
+            # python3 that beats the Microsoft Store stub of the same name.
+            try:
+                shim.mkdir(parents=True, exist_ok=True)
+                for _name, _args in (
+                    ("python3", ""),
+                    ("pip", " -m pip"),
+                    ("pip3", " -m pip"),
+                ):
+                    (shim / f"{_name}.cmd").write_text(
+                        f'@"{exe}"{_args} %*\r\n', encoding="utf-8"
+                    )
+            except OSError:
+                return None
+            return str(shim)
         try:
             shim.mkdir(parents=True, exist_ok=True)
             for _name in ("python", "python3"):
@@ -3420,70 +3445,49 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return None
         return str(shim)
 
+    def _console_shell() -> list[str]:
+        """The interactive shell the Console runs: the user's login shell on
+        macOS / Linux, PowerShell on Windows."""
+        if _sys.platform == "win32":
+            import shutil as _shutil_sh
+
+            for _sh in ("pwsh.exe", "powershell.exe"):
+                if _shutil_sh.which(_sh):
+                    return [_sh, "-NoLogo"]
+            return [_os.environ.get("COMSPEC", "cmd.exe")]
+        return [_os.environ.get("SHELL", "/bin/bash"), "-l"]
+
     class _PTYSession:
-        """PTY-backed shell session powering the xterm.js terminal."""
+        """Terminal-backed shell session powering the xterm.js terminal."""
 
         def __init__(self, cwd: str, env: dict) -> None:
-            import pty as _pty, fcntl as _fcntl, struct as _struct, termios as _termios
+            from visage.utils import terminal as _terminal
 
-            master_fd, slave_fd = _pty.openpty()
-            try:
-                _fcntl.ioctl(
-                    slave_fd,
-                    _termios.TIOCSWINSZ,
-                    _struct.pack("HHHH", 24, 80, 0, 0),
-                )
-            except Exception:
-                pass
-            shell = env.get("SHELL", _os.environ.get("SHELL", "/bin/bash"))
-            self._proc = _subprocess.Popen(
-                [shell, "-l"],
-                stdin=slave_fd,
-                stdout=slave_fd,
-                stderr=slave_fd,
-                close_fds=True,
-                cwd=str(cwd),
-                env=env,
-                preexec_fn=_os.setsid,
+            self._term = _terminal.spawn(
+                _console_shell(), cwd=cwd, env=env, rows=24, cols=80
             )
-            _os.close(slave_fd)
-            self._fd = master_fd
             self._dead = False
 
-        @property
-        def fd(self) -> int:
-            return self._fd
+        def read(self, timeout: float = 1.0) -> bytes | None:
+            return self._term.read(timeout)
 
         def write(self, data: bytes) -> None:
             if not self._dead:
                 try:
-                    _os.write(self._fd, data)
-                except OSError:
+                    self._term.write(data)
+                except (OSError, EOFError):
                     self._dead = True
 
         def resize(self, rows: int, cols: int) -> None:
-            try:
-                import fcntl as _fcntl2, struct as _struct2, termios as _termios2
-
-                _fcntl2.ioctl(
-                    self._fd,
-                    _termios2.TIOCSWINSZ,
-                    _struct2.pack("HHHH", rows, cols, 0, 0),
-                )
-            except Exception:
-                pass
+            self._term.resize(rows, cols)
 
         def is_alive(self) -> bool:
-            return not self._dead and self._proc.poll() is None
+            return not self._dead and self._term.is_alive()
 
         def close(self) -> None:
             self._dead = True
             try:
-                _os.close(self._fd)
-            except Exception:
-                pass
-            try:
-                self._proc.kill()
+                self._term.close()
             except Exception:
                 pass
 
@@ -3564,54 +3568,18 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         Uses an async coroutine + run_in_executor so the blocking read happens
         in a thread pool while state updates run on the event loop (same
-        pattern as other blocking I/O in this file).  select() with a 1 s
-        timeout makes the thread exit promptly on shutdown so the event loop
-        never hangs waiting for a blocked os.read().
-        Drains all immediately-available bytes after the first read so that
-        rapid bursts (echo + output) arrive as one chunk and are not dropped
-        between 50 ms JS polls.
+        pattern as other blocking I/O in this file).  Each read waits at most
+        1 s, so the thread exits promptly on shutdown, and returns every byte
+        already buffered so rapid bursts (echo + output) arrive as one chunk
+        and are not dropped between 50 ms JS polls.
         """
-        import select as _select
-
-        def _read_chunk(fd: int) -> bytes | None:
-            """Wait up to 1 s for data, then drain all available bytes.
-            Returns None on timeout (caller retries), b"" on fd close."""
-            try:
-                r, _, _ = _select.select([fd], [], [], 1.0)
-            except (OSError, ValueError):
-                return b""
-            if not r:
-                return None  # timeout — is_alive() re-checked by caller
-            try:
-                chunk = _os.read(fd, 4096)
-            except OSError:
-                return b""
-            if not chunk:
-                return b""
-            buf = bytearray(chunk)
-            # drain any further bytes already buffered (non-blocking)
-            while True:
-                try:
-                    r2, _, _ = _select.select([fd], [], [], 0)
-                    if not r2:
-                        break
-                    more = _os.read(fd, 4096)
-                    if not more:
-                        break
-                    buf.extend(more)
-                except OSError:
-                    break
-            return bytes(buf)
 
         async def _pump() -> None:
             loop = asyncio.get_running_loop()
             seq = 0
-            fd = pty_sess.fd
             while pty_sess.is_alive():
                 try:
-                    data = await loop.run_in_executor(
-                        None, lambda: _read_chunk(fd)
-                    )
+                    data = await loop.run_in_executor(None, pty_sess.read, 1.0)
                 except asyncio.CancelledError:
                     break
                 if data is None:
@@ -3933,6 +3901,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 for p in (
                     _python_shim_dir(),
                     _os.path.dirname(_sys.executable),
+                    # Windows keeps pip.exe & co. in Scripts\ beside python.
+                    (
+                        _os.path.join(
+                            _os.path.dirname(_sys.executable), "Scripts"
+                        )
+                        if _sys.platform == "win32"
+                        else None
+                    ),
                 )
                 if p
             )
@@ -3943,7 +3919,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             # A login shell re-sources the user's profile, which can push our
             # dirs back down PATH; re-assert them as the shell's first input
             # (queued before any typing, runs after profile init).
-            if _prepend:
+            # PowerShell keeps the PATH it was started with.
+            if _prepend and _sys.platform != "win32":
                 try:
                     d["pty"].write(
                         (

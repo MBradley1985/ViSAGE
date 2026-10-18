@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from visage.config import SimConfig
+from visage.system import native_path
 
 
 def parse_par(par_path: str | Path) -> SimConfig:
@@ -10,13 +11,15 @@ def parse_par(par_path: str | Path) -> SimConfig:
 
     Handles both absolute and relative paths. Relative paths in the par file
     are resolved relative to the par file's parent directory (the SAGE root).
+    On Windows, /mnt/c/... paths (written for SAGE running inside WSL) are
+    read as C:\\... .
     """
     par_path = Path(par_path).resolve()
     # Paths in the par file are relative to the SAGE root (parent of input/)
     root = par_path.parent.parent
 
     raw: dict[str, str] = {}
-    with open(par_path) as f:
+    with open(par_path, encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
             # Strip inline comments — SAGE par files use either '%' (old
@@ -34,8 +37,7 @@ def parse_par(par_path: str | Path) -> SimConfig:
                 raw[parts[0]] = parts[1].strip()
 
     def _path(key: str, default: str) -> Path:
-        val = raw.get(key, default)
-        p = Path(val)
+        p = native_path(raw.get(key, default))
         return p if p.is_absolute() else root / p
 
     def _int(key: str, default: int) -> int:

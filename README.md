@@ -93,6 +93,8 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - **Create config file** option generates a new `.par` from a template pre-filled with paths for your SAGE26 directory; choose a custom filename before writing
 - Every editable config (`.par`, `run_pso.sh`, `run_lightcone.sh`) is shown as a **parameter form** — one labelled box per option, pre-filled with its default — instead of raw text; edits fold back into the file on Save & Run, preserving comments and layout
 - The LightSAGE build auto-detects a macOS Apple-clang/SDK mismatch and falls back to a compatible SDK; the generated build/run scripts live in `~/.visage/`, never inside the third-party checkout
+- SAGE26 compiles on every CPU core, and falls back to a serial build when no MPI compiler is installed
+- **Windows:** all three flows run their Linux tools inside WSL automatically, with a one-click **Install Linux build tools** step — see [Windows](#windows)
 - Screenshots, recordings, catalogue exports, and LightSAGE lightcone output all save to `sage_outputs/` in the directory you launched from
 - Wizard always resets cleanly when reopened
 
@@ -112,7 +114,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Persisted in `~/.visage/session_models.json` across relaunches
 
 ### Embedded console (Console tab)
-- **Terminal mode** — a live xterm.js terminal backed by a real PTY (`$SHELL -l`); full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`) all work
+- **Terminal mode** — a live xterm.js terminal backed by a real PTY (`$SHELL -l` on macOS/Linux, PowerShell on Windows); full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`) all work
 - **SAGE command mode** — natural-language SAGE commands (`show only clusters`, `go to halo 42`, `snap 30`, `screenshot`, …); switch via the **SAGE Cmds** button, `terminal` returns to the shell
 - **Multiple sessions** with a `+` button — each console has its own PTY process and command history
 - **Pop-out** floats a movable / resizable console card over the viewport so you can keep typing while watching the render
@@ -172,10 +174,24 @@ ssh -L 8080:localhost:8080 user@cluster
 --snap N                Initial snapshot number (default: last = z=0)
 --port N                Trame server port (default: 8080)
 --n-jobs N              Worker threads for parallel halo file reads
+                        (default: the CPUs this process may use, minus one)
+--cache-gb GB           Snapshot cache budget (default: half of RAM, or of
+                        an HPC job's memory allocation; env VISAGE_CACHE_GB)
+--gpu MODE              auto | high | low | system — which GPU renders
+                        (default auto; env VISAGE_GPU). See below.
 --max-halos N           Downsample ceiling per snapshot
 --min-halo-mass MSUN    Minimum halo mass to load
 --min-stellar-mass MSUN Minimum stellar mass to load
 ```
+
+ViSAGE sizes itself to the machine. At startup it prints what it found,
+for example `System : Windows 11 (AMD64) · 16 CPUs (15 workers) · 31.8 GB RAM (cache 15.9 GB)`,
+and, after the first frame, the GPU that is actually rendering. If OpenGL has
+fallen back to the CPU (Remote Desktop, a VM, a missing driver), a warning
+appears in the viewer. On a Windows laptop with both integrated and discrete
+graphics, `--gpu auto` sets the Windows "High performance" graphics
+preference for Python so the discrete GPU renders. `high`/`low` force the
+choice, and `system` leaves the OS default alone.
 
 Galaxies have no display cap — every galaxy above the mass floor loads, since all snapshots are preloaded up front.
 
@@ -212,7 +228,7 @@ Requires Python ≥ 3.10. After install, `visage` is available as a command. If 
 export PATH="$HOME/Library/Python/3.12/bin:$PATH"
 ```
 
-Movie recording in MOV format requires `ffmpeg` in your `PATH`.
+Movie recording in MOV format uses `ffmpeg` from your `PATH`. On Windows, a bundled copy is installed automatically.
 
 Synthetic photometry (SED synthesis for lightcones) is an optional extra — it pulls in FSPS + astropy, which the base install omits:
 
@@ -229,6 +245,30 @@ git clone https://github.com/MBradley1985/ViSAGE
 cd ViSAGE
 pip install .
 ```
+
+### Windows
+
+```powershell
+py -m pip install sage-viewer
+visage
+```
+
+The viewer (Explore, Lightcone, Story Mode, recording, the Console) runs
+natively on Windows. The Launch Mode flows, **SAGE26**, **SAGEswarm** and
+**LightSAGE**, build and run Unix C/C++ code, so on Windows ViSAGE runs
+those tools inside **WSL** (Windows Subsystem for Linux) for you. Your
+checkouts stay on your Windows drive (`C:\Users\you\SAGE26` is
+`/mnt/c/Users/you/SAGE26` inside WSL), and the native viewer reads their
+output directly. Set it up once:
+
+1. In an **administrator** PowerShell, run `wsl --install`, then restart Windows.
+2. Open the new **Ubuntu** app once and create a Linux user.
+3. Start `visage`, open a flow, and click **Install Linux build tools**. This
+   installs the compilers, HDF5, GSL, OpenMPI, Boost and Python inside WSL.
+
+You can also run ViSAGE entirely inside WSL (`pip install sage-viewer` in
+the Ubuntu terminal). It then behaves exactly as on Linux, and your Windows
+browser opens `http://localhost:8080` as usual.
 
 ### HPC / supercomputer
 

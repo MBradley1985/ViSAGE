@@ -37,6 +37,7 @@ from collections.abc import Callable
 import h5py
 import numpy as np
 
+from visage.system import native_path
 from visage.sed.cosmology import (
     MPC_TO_CM,
     age_at_scale_factor,
@@ -138,8 +139,8 @@ def _resolve_alist(
     Returns the first existing path, or None."""
     candidates: list[Path] = []
     if override:
-        candidates.append(Path(override).expanduser())
-    hv = Path(str(header_val)).expanduser()
+        candidates.append(native_path(override))
+    hv = native_path(header_val)
     candidates.append(hv)
     if not hv.is_absolute():
         base = lightcone_path.resolve().parent
@@ -453,6 +454,9 @@ def main(argv: list[str] | None = None) -> None:
         "lightcone header, which may be relative and fail to resolve.",
     )
     args = p.parse_args(argv)
+    # The wizard's LightSAGE run calls this from bash; inside WSL on Windows
+    # that hands a Windows python /mnt/c/... paths.
+    args.input = str(native_path(args.input))
 
     bands = tuple(b.strip() for b in args.bands.split(",") if b.strip())
 

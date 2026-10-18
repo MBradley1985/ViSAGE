@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,18 +7,21 @@ name = "sage-viewer"
 dynamic = ["version"]
 description = "Interactive 3D viewer for SAGE semi-analytic galaxy formation outputs"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Michael Bradley", email = "mbrads85@live.com.au" }]
 requires-python = ">=3.10"
 keywords = ["astronomy", "galaxy-formation", "dark-matter", "visualization", "SAGE"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Topic :: Scientific/Engineering :: Astronomy",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
@@ -35,6 +38,10 @@ dependencies = [
     # SAGE26 plotting scripts and SAGEswarm without extra installs.
     "matplotlib>=3.7",
     "pandas>=2.0",
+    # Windows: a real terminal (ConPTY) for the wizard and Console, and a
+    # bundled ffmpeg for MOV recording (macOS/Linux use the system one).
+    "pywinpty>=2.0; sys_platform == 'win32'",
+    "imageio-ffmpeg>=0.4.9; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from trame.app import get_server
@@ -16,6 +17,7 @@ from visage.scene.box_profile import (
     save_profile,
     load_profile,
 )
+from visage import system
 from visage.scene.scene import Scene
 from visage.utils.discover import find_models
 
@@ -150,7 +152,7 @@ def create_app(
 ):
     scene = Scene(
         primary_par_path=par_path,
-        off_screen=False,
+        off_screen=system.prefer_offscreen_rendering(),
         initial_snap=initial_snap,
         n_jobs=n_jobs,
         min_halo_mass=min_halo_mass,
@@ -165,6 +167,35 @@ def create_app(
 
     server = get_server(client_type="vue3")
     server.enable_module(has_capabilities)
+
+    # Say which GPU actually renders, and warn when OpenGL has fallen back
+    # to the CPU (Remote Desktop, a VM, missing drivers) — that, not
+    # ViSAGE, is what makes the view sluggish.
+    def _on_renderer(info: system.GPUInfo) -> None:
+        print(f"GPU      : {info.describe()}", flush=True)
+        if not info.software:
+            return
+        msg = (
+            "Rendering on the CPU (software OpenGL) — the view will be slow. "
+            "Update the GPU driver, or run ViSAGE locally rather than over "
+            "Remote Desktop."
+        )
+        print(f"WARNING  : {msg}", flush=True)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        def _notify() -> None:
+            server.state.notice_text = msg
+            server.state.notice_color = "warning"
+            server.state.notice_timeout = 15000
+            server.state.notice_show = True
+            server.state.flush()
+
+        loop.call_soon(_notify)
+
+    system.report_renderer_once(scene.plotter.ren_win, _on_renderer)
 
     # Serve ViSAGE's client-side helpers (pop-out drag, Enter-to-
     # click). Vue 3 silently drops <script> tags from templates so we
@@ -393,20 +424,12 @@ def create_app(
 
     @server.controller.set("open_recent_model")
     def _open_recent_model(path, kind):
-        import os as _os, sys as _sys, shutil as _shutil
-
         argv = (
             ["--lightcone", str(path)]
             if kind == "lightcone"
             else ["--par", str(path)]
         ) + ["--port", str(port)]
-        exe = _shutil.which("visage")
-        if exe:
-            _os.execv(exe, [exe, *argv])
-        else:
-            _os.execv(
-                _sys.executable, [_sys.executable, "-m", "visage.cli", *argv]
-            )
+        system.relaunch_visage(argv)
 
     server.state.active_box_name = scene.primary_name
     server.state.box_strip_items = []
