@@ -4,6 +4,8 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+
+from visage.io.sage_files import open_snapshot, probe_snapshot
 import pyvista as pv
 
 from visage.config import SimConfig
@@ -104,18 +106,13 @@ class Model:
         out = dict.fromkeys(_OPTIONAL_FIELDS, False)
         out["mean_age"] = False
         try:
-            with h5py.File(self.cfg.hdf5_path, "r") as f:
-                # Probe the last snapshot — most likely to contain all fields.
-                snap_key = f"Snap_{self.snap_table.count - 1}"
-                if snap_key not in f:
-                    # Fall back to whichever group is present
-                    for k in f.keys():
-                        if k.startswith("Snap_"):
-                            snap_key = k
-                            break
-                    else:
-                        return out
-                grp = f[snap_key]
+            # Probe the last snapshot — most likely to contain all fields.
+            snap = probe_snapshot(
+                self.cfg.hdf5_path, self.snap_table.count - 1
+            )
+            if snap is None:
+                return out
+            with open_snapshot(self.cfg.hdf5_path, snap) as grp:
                 for ui_key, hdf_field in _OPTIONAL_FIELDS.items():
                     out[ui_key] = hdf_field in grp
                 # Stellar age is computed from the SFH pair, found by
@@ -149,16 +146,13 @@ class Model:
 
         out: list[dict] = []
         try:
-            with h5py.File(self.cfg.hdf5_path, "r") as f:
-                snap_key = f"Snap_{self.snap_table.count - 1}"
-                if snap_key not in f:
-                    for k in f.keys():
-                        if k.startswith("Snap_"):
-                            snap_key = k
-                            break
-                    else:
-                        return out
-                grp = f[snap_key]
+            snap = probe_snapshot(
+                self.cfg.hdf5_path, self.snap_table.count - 1
+            )
+            if snap is None:
+                return out
+            # Every rank's rows, so value ranges cover the whole run.
+            with open_snapshot(self.cfg.hdf5_path, snap) as grp:
                 for name in discover_extra_fields(grp):
                     v = np.asarray(grp[name], dtype=np.float64)
                     v = v[np.isfinite(v)]

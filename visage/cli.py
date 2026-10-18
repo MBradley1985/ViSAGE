@@ -129,6 +129,30 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+# Options that describe the session rather than the model being opened, and
+# so must survive a relaunch into another model.
+_SESSION_OPTIONS = (
+    "n_jobs",
+    "min_halo_mass",
+    "min_stellar_mass",
+    "max_halos",
+    "cache_gb",
+    "gpu",
+)
+
+
+def session_args(args, parser: argparse.ArgumentParser) -> list[str]:
+    """The session options the user set, as command-line arguments."""
+    out: list[str] = []
+    for dest in _SESSION_OPTIONS:
+        value = getattr(args, dest)
+        if value != parser.get_default(dest):
+            out += [f"--{dest.replace('_', '-')}", str(value)]
+    if args.perf and not parser.get_default("perf"):
+        out.append("--perf")
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     if system.IS_WINDOWS:
         # Status lines use characters (—, →) a redirected cp1252 console
@@ -139,7 +163,9 @@ def main(argv: list[str] | None = None) -> None:
             except (AttributeError, ValueError):
                 pass
 
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    system.SESSION_ARGS[:] = session_args(args, parser)
     tuned = system.tune_for_interactivity()
     if tuned:
         print(f"Tuning   : {', '.join(tuned)}")

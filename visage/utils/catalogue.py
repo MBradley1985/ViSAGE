@@ -48,8 +48,12 @@ def _read_snap_fields(
     data: dict[str, np.ndarray] = {}
     units: dict[str, str] = {}
 
-    with h5py.File(str(hdf5_path), "r") as hf:
-        grp = hf[f"Snap_{snap_num}"]
+    from visage.io.sage_files import open_snapshot
+
+    # sage_indices are rows of the whole run (every MPI rank file joined).
+    with open_snapshot(hdf5_path, snap_num) as grp:
+        if grp is None:
+            raise KeyError(f"Snap_{snap_num} not found in {hdf5_path}")
         n_total = len(grp["Posx"]) if "Posx" in grp else None
 
         for key in sorted(grp.keys()):

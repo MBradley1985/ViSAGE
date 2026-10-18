@@ -284,3 +284,32 @@ def test_perf_install_times_real_frames(monkeypatch):
     pl.close()
     assert lines and lines[0].startswith("perf: ") and "64x48" in lines[0]
     assert "render " in lines[0]
+
+
+def test_session_options_survive_relaunch(monkeypatch):
+    """Opening a model from the wizard restarts ViSAGE; options the user
+    started with (e.g. --perf) must come along."""
+    from visage import cli
+
+    monkeypatch.delenv("VISAGE_PERF", raising=False)
+    monkeypatch.delenv("VISAGE_GPU", raising=False)
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["--perf", "--gpu", "high", "--n-jobs", "3", "--port", "9000"]
+    )
+    assert cli.session_args(args, parser) == [
+        "--n-jobs",
+        "3",
+        "--gpu",
+        "high",
+        "--perf",
+    ]
+    assert cli.session_args(parser.parse_args([]), parser) == []
+
+    launched = []
+    monkeypatch.setattr(system, "SESSION_ARGS", ["--perf"])
+    monkeypatch.setattr(system, "IS_WINDOWS", False)
+    monkeypatch.setattr(system.shutil, "which", lambda _: None)
+    monkeypatch.setattr(system.os, "execv", lambda exe, a: launched.append(a))
+    system.relaunch_visage(["--par", "m.par", "--port", "8080"])
+    assert launched[0][-5:] == ["--par", "m.par", "--port", "8080", "--perf"]

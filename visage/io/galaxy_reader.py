@@ -6,6 +6,8 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from visage.io.sage_files import galaxy_files, is_dataset, open_snapshot
+
 
 @dataclass
 class GalaxySnapshot:
@@ -241,7 +243,7 @@ def find_sfh_datasets(grp) -> tuple[str | None, str | None]:
     """
     disk = bulge = None
     for name, ds in grp.items():
-        if not isinstance(ds, h5py.Dataset) or ds.ndim != 2:
+        if not is_dataset(ds) or ds.ndim != 2:
             continue
         low = name.lower()
         if not low.startswith("sfh"):
@@ -263,7 +265,7 @@ def discover_extra_fields(grp, n_rows: int | None = None) -> list[str]:
     for name, ds in grp.items():
         if name in KNOWN_HDF5_FIELDS or is_ignored_field(name):
             continue
-        if not isinstance(ds, h5py.Dataset):
+        if not is_dataset(ds):
             continue
         if ds.ndim != 1 or ds.dtype.kind not in "fiu":
             continue
@@ -303,7 +305,8 @@ def load_galaxy_snapshot(
 
     Parameters
     ----------
-    hdf5_path:        path to SAGE HDF5 output (e.g. model_0.hdf5)
+    hdf5_path:        path to SAGE HDF5 output (model_0.hdf5; an MPI run's
+                      other rank files model_1.hdf5 … are read with it)
     snap_num:         snapshot index
     min_stellar_mass: minimum stellar mass in Msun (after h correction)
     max_galaxies:     random downsample if more galaxies than this are found
@@ -313,16 +316,20 @@ def load_galaxy_snapshot(
     group_key = f"Snap_{snap_num}"
 
     if VERBOSE:
-        print(f"  Galaxies: reading {hdf5_path.name} / {group_key}...")
-    with h5py.File(hdf5_path, "r") as f:
-        if group_key not in f:
+        n_files = len(galaxy_files(hdf5_path))
+        which = (
+            hdf5_path.name
+            if n_files == 1
+            else f"{hdf5_path.name} + {n_files - 1} more MPI rank files"
+        )
+        print(f"  Galaxies: reading {which} / {group_key}...")
+    with open_snapshot(hdf5_path, snap_num) as grp:
+        if grp is None:
             if VERBOSE:
                 print(
                     f"  Galaxies: group {group_key} not found — empty snapshot"
                 )
             return GalaxySnapshot.empty(snap_num)
-
-        grp = f[group_key]
 
         def _get(field: str) -> np.ndarray:
             return np.array(grp[field])

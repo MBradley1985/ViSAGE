@@ -514,8 +514,15 @@ def find_ffmpeg() -> str | None:
         return None
 
 
+# Session-wide command-line options (--perf, --gpu, --n-jobs, ...) the user
+# started with.  Set by the CLI; every relaunch — the wizard opening a model,
+# switching to a recent model — passes them on, so they last the session.
+SESSION_ARGS: list[str] = []
+
+
 def relaunch_visage(argv: list[str]):
-    """Replace this ViSAGE process with a new one running ``argv``.
+    """Replace this ViSAGE process with a new one running ``argv`` (plus
+    the session's own options, SESSION_ARGS).
 
     POSIX swaps the process image in place (same PID, same terminal).
     Windows has no real exec — os.execv there spawns a child without
@@ -523,6 +530,7 @@ def relaunch_visage(argv: list[str]):
     start the child properly and exit; the server port is released as this
     process ends, well before the child finishes importing.
     """
+    argv = [*argv, *SESSION_ARGS]
     if IS_WINDOWS:
         import subprocess
 

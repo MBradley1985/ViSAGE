@@ -8,6 +8,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.2] — 2026-10-18
+
+### Fixed
+
+- **SAGE26 runs made with MPI now load every galaxy.** An MPI run writes one
+  file per rank (`model_0.hdf5` … `model_<N-1>.hdf5`), and ViSAGE read only
+  `model_0`. A 4-rank run therefore showed about a quarter of its galaxies,
+  a thinned-out box. All rank files are now read as one catalogue, for the
+  view, filters, colour-by ranges, galaxy info and catalogue export. The
+  rank count comes from the run's own header, so rank files left over from
+  an earlier run in the same folder are ignored. A missing rank file is
+  reported by name.
+- **Command-line options now last the whole session.** Opening a model from
+  the Launch wizard, or switching to a recent model, restarts ViSAGE. The
+  restart used to drop `--perf`, `--gpu`, `--n-jobs`, `--cache-gb` and the
+  mass cuts. It now passes them on.
+
 ## [2.7.1] — 2026-10-18
 
 ### Added

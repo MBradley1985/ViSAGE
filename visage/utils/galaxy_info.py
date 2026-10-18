@@ -60,10 +60,16 @@ def _sfh_age_gyr(
     galaxy's position in the unfiltered HDF5 dataset; the caller must
     translate downsample/cut indices back to this.
     """
+    from visage.io.sage_files import open_snapshot
+
     try:
-        with h5py.File(str(hdf5_path), "r") as f:
-            grp = f[f"Snap_{snap_num}"]
-            if "SFHMassDisk" not in grp or "SFHMassBulge" not in grp:
+        # raw_index is a row of the whole run (MPI rank files joined).
+        with open_snapshot(hdf5_path, snap_num) as grp:
+            if (
+                grp is None
+                or "SFHMassDisk" not in grp
+                or "SFHMassBulge" not in grp
+            ):
                 return None
             sfh_d = np.asarray(
                 grp["SFHMassDisk"][raw_index, :], dtype=np.float64
