@@ -294,12 +294,14 @@ def test_session_options_survive_relaunch(monkeypatch):
     monkeypatch.delenv("VISAGE_PERF", raising=False)
     monkeypatch.delenv("VISAGE_GPU", raising=False)
     parser = cli.build_parser()
+    # Any worker count other than this machine's default.
+    jobs = str(system.default_workers() + 5)
     args = parser.parse_args(
-        ["--perf", "--gpu", "high", "--n-jobs", "3", "--port", "9000"]
+        ["--perf", "--gpu", "high", "--n-jobs", jobs, "--port", "9000"]
     )
     assert cli.session_args(args, parser) == [
         "--n-jobs",
-        "3",
+        jobs,
         "--gpu",
         "high",
         "--perf",
