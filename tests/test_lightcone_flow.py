@@ -251,7 +251,7 @@ def test_lc_config_migrates_old_format_script(tmp_path, monkeypatch):
     assert "BAND_WISE_W1_ENABLED=0" in text
     # Old hardcoded OUTDIR default upgraded to the new convention.
     assert 'OUTDIR="./lightcone_output"' not in text
-    assert "sage_outputs/lightcone" in text
+    assert "sage_outputs/lightcone" in text.replace("\\", "/")
     # LIGHTCONE_DIR also resynced (migration regenerates from the seed
     # template, which already fills the verified checkout).
     assert f'LIGHTCONE_DIR="{lc}"' in text

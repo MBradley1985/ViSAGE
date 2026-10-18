@@ -107,8 +107,9 @@ def test_sw_output_dir_parsed_from_script(tmp_path):
     c._st.wiz_sw_script_text = 'OUTPUT_PATH="./millennium_pso"\n'
     assert c._sw_output_dir() == tmp_path / "millennium_pso"
 
-    c._st.wiz_sw_script_text = "python3 main.py -o /abs/out -x SMF_z0\n"
-    assert c._sw_output_dir() == __import__("pathlib").Path("/abs/out")
+    abs_out = tmp_path / "abs" / "out"  # absolute on every OS
+    c._st.wiz_sw_script_text = f"python3 main.py -o {abs_out} -x SMF_z0\n"
+    assert c._sw_output_dir() == abs_out
 
     c._st.wiz_sw_script_text = "no output here\n"
     assert c._sw_output_dir() == tmp_path  # falls back to the SAGEswarm dir

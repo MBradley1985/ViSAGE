@@ -2527,7 +2527,8 @@ class WizardController:
         by_name = {it["name"]: it for it in current}
         changed = False
         for p in pngs:
-            rel = str(p.relative_to(root))
+            # Forward slashes on every OS, so gallery labels read the same.
+            rel = p.relative_to(root).as_posix()
             try:
                 mtime = int(p.stat().st_mtime)
             except OSError:

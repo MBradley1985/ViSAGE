@@ -26,8 +26,8 @@ def test_native_wrap_is_passthrough():
     argv, cwd, env = NATIVE.wrap(
         ["make", Path("/x/y"), "-j4"], Path("/src"), env={"A": "1"}
     )
-    assert argv == ["make", "/x/y", "-j4"]
-    assert cwd == "/src"
+    assert argv == ["make", str(Path("/x/y")), "-j4"]
+    assert cwd == str(Path("/src"))
     assert env == {"A": "1"}
 
 
