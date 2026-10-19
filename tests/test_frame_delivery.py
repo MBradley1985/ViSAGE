@@ -165,12 +165,13 @@ def test_smooth_move_keeps_its_duration_on_a_slow_machine():
     frames = []
 
     def push():
-        frames.append(cam.position)
+        frames.append((time.perf_counter(), cam.position))
         time.sleep(0.04)
 
-    t0 = time.perf_counter()
-    done = asyncio.run(
-        camera_motion.smooth_move(
+    async def move():
+        # Timed inside the event loop: starting a loop can itself take
+        # a good fraction of a second on a cold Windows CI runner.
+        done = await camera_motion.smooth_move(
             cam,
             np.zeros(3),
             np.array([0.0, 0.0, -1.0]),
@@ -181,10 +182,12 @@ def test_smooth_move_keeps_its_duration_on_a_slow_machine():
             is_active=lambda: True,
             push=push,
         )
-    )
-    elapsed = time.perf_counter() - t0
+        return done, time.perf_counter()
+
+    done, end = asyncio.run(move())
+    elapsed = end - frames[0][0]
     assert done
-    assert 0.25 < elapsed < 0.7  # slack for a loaded CI runner
+    assert 0.2 < elapsed < 0.6  # slack for a loaded CI runner
     assert 4 <= len(frames) <= 9
     assert cam.position == (10.0, 0.0, 0.0)
 
