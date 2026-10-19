@@ -43,9 +43,10 @@ MASS_BINS = [
     (11.5, 12.5),
 ]
 # Rendered light scales as (M / M_REF)^LUM_POWER: brighter with mass, but
-# compressed so the dwarfs in the top row stay visible.
+# compressed so the dwarfs stay visible and the giants don't blow out into
+# a haze.
 M_REF = 3e10
-LUM_POWER = 0.7
+LUM_POWER = 0.35
 
 
 def columns(g):
@@ -180,7 +181,9 @@ def main():
             )
 
     # One white point for the whole grid: the median cell's highlight level.
-    white = float(np.median(highlights))
+    # Shared white point from the brighter cells (75th percentile), so the
+    # most massive galaxies aren't overexposed.
+    white = float(np.percentile(highlights, 75))
 
     if args.paired:
         draw_paired(cells, cnames, args, white)

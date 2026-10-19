@@ -42,7 +42,7 @@ microUchuu.
 |---|---|---|
 | Disk vs elliptical | B/T > 0.75 (or > 0.5, hot regime, f_gas < 0.02) | `BulgeMass`, `Regime`, `ColdGas` |
 | Size | Shen et al. (2003) size–mass, SAGE radius nudges ±30% | `StellarMass`, `DiskRadius`, `BulgeRadius` |
-| Brightness | ∝ (M / 3e10)^0.7, common white point (AGN excluded) | `StellarMass` |
+| Brightness | ∝ (M / 3e10)^0.35, common white point at the 75th-percentile highlight (AGN excluded), so giants don't haze over | `StellarMass` |
 | Old stars | 40% light per unit mass (`OLD_LIGHT`), tinted by Z* | `MetalsStellarMass` |
 | Bar | ≤ 8% of M*, rest of the instability bulge is a pseudobulge | `InstabilityBulgeMass` |
 | Young stars / clusters | Scale with sSFR / SFR | `SfrDisk` |
@@ -53,7 +53,7 @@ microUchuu.
 | Merger debris | Shells (ellipticals) / tidal tails (disks) < 4 Gyr; stream < 2.5 Gyr | `TimeOfLastMajorMerger`, `TimeOfLastMinorMerger` |
 | ICL | Extended envelope, half weight | `IntraClusterStars` |
 | CGM (gas overlay) | Three inflow streams + filaments out to Rvir | `CGMgas` |
-| Hot gas (gas overlay) | One textured look (core 0.15 Rvir); only opacity varies, 0.13 → 0.20 (cap at log M_hot ≥ 13) | `HotGas`, `Cooling`, `RcoolToRvir` |
+| Hot gas (gas overlay) | Intracluster / intragroup medium: one textured look filling Rvir (core 0.15 Rvir), softly and irregularly thinned around the galaxy (never a hard edge); only opacity varies, 0.085 → 0.13 (cap at log M_hot ≥ 13) | `HotGas` |
 | Cold streams in hot haloes | Same generator as the CGM streams | `mdot_stream` > 0 |
 | Galactic wind | Biconical plumes along the spin axis | `OutflowRate`, `MassLoading` |
 | Radio jets | Jets + lobes in the gas overlay | `Heating` > 10^40 erg/s |

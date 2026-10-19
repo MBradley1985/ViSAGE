@@ -67,6 +67,11 @@ def layer(lay, *names):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None)
+    ap.add_argument(
+        "--no-cavity",
+        action="store_true",
+        help="hot gas right up to the galaxy (no cavity around it)",
+    )
     args = ap.parse_args()
     out_dir = Path(args.out) if args.out else OUT
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -133,6 +138,7 @@ def main():
             lay.half_width,
             inc=INC,
             pa=PA,
+            hot_cavity=not args.no_cavity,
         )
         outflows = gas_halo(
             dataclasses.replace(gal, hot_gas=0.0, cgm_gas=0.0),
@@ -141,8 +147,17 @@ def main():
             lay.half_width,
             inc=INC,
             pa=PA,
+            hot_cavity=not args.no_cavity,
         )
-        all_gas = gas_halo(gal, rc, NPIX, lay.half_width, inc=INC, pa=PA)
+        all_gas = gas_halo(
+            gal,
+            rc,
+            NPIX,
+            lay.half_width,
+            inc=INC,
+            pa=PA,
+            hot_cavity=not args.no_cavity,
+        )
 
         # Whole halo at ±1.05 Rvir, hot gas on a log stretch.
         lay_r = render(
@@ -164,6 +179,7 @@ def main():
                 inc=INC,
                 pa=PA,
                 log_stretch=True,
+                hot_cavity=not args.no_cavity,
             ),
         )
 
@@ -214,12 +230,17 @@ def main():
         print(label, "->", "; ".join(rc.notes), flush=True)
     fig.suptitle(
         "HD isolate components — cold (CGM) vs hot regime "
-        f"(i = {INC}°, ±{FRAME_KPC:.0f} kpc; last column ±Rvir)",
+        f"(i = {INC}°, ±{FRAME_KPC:.0f} kpc; last column ±Rvir)"
+        + ("  —  no hot-gas cavity" if args.no_cavity else ""),
         color="w",
         fontsize=13,
     )
     fig.subplots_adjust(left=0.05, right=0.995, top=0.86, bottom=0.01)
-    out = out_dir / "components_cgm_vs_hot.png"
+    out = out_dir / (
+        "components_cgm_vs_hot"
+        + ("_nocavity" if args.no_cavity else "")
+        + ".png"
+    )
     fig.savefig(out, dpi=115, facecolor="black")
     print("wrote", out, flush=True)
 

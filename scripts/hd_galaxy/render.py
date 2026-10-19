@@ -317,6 +317,7 @@ def gas_halo(
     inc=0.0,
     pa=0.0,
     log_stretch=False,
+    hot_cavity=True,
 ) -> np.ndarray:
     """Display-space overlay of the halo gas, in the style of an X-ray /
     optical composite.  Neither reservoir is optical light, so this is
@@ -347,12 +348,21 @@ def gas_halo(
         sb = (1 + (R / rcore) ** 2) ** -0.5 * np.exp(-((R / rvir) ** 8))
         if log_stretch:
             sb = np.log1p(sb / 0.02) / np.log1p(1 / 0.02)
+        if hot_cavity:
+            # The intracluster / intragroup medium thins out around the
+            # galaxy rather than stopping at a radius: a soft, irregular
+            # depletion (its edge wobbles with a large-scale noise field)
+            # that never quite reaches zero.
+            r_in = 1.2 * rc.extent * rc.unit_kpc
+            wob = np.exp(0.3 * gaussian_field((npix, npix), 4.0, rng))
+            sb = sb * (1 - 0.85 * np.exp(-((R / (1.6 * r_in * wob)) ** 2)))
+            sb = sb / max(sb.max(), 1e-9)
         tex = np.exp(0.15 * gaussian_field((npix, npix), 3.0, rng))
         opacity = hot_opacity(gal.hot_gas)
         out += opacity * (sb * tex)[..., None] * HOT_GAS_RGB
         # Cool core: gas inside the cooling radius radiates hardest, so
         # brighten and whiten the centre by the cooling luminosity.
-        if gal.cooling_log > 38 and gal.rcool_to_rvir > 0:
+        if gal.cooling_log > 38 and gal.rcool_to_rvir > 0 and not hot_cavity:
             rcool = min(gal.rcool_to_rvir, 1.0) * rvir
             cc = np.exp(-((R / (0.35 * rcool)) ** 2))
             camp = np.clip((gal.cooling_log - 39.0) / 3.0, 0.0, 1.0)
@@ -398,7 +408,7 @@ def gas_halo(
 
 # Hot-atmosphere opacity peaks here (log M_hot >= 13); fainter haloes scale
 # down from it to 65% of this at log M_hot = 10.
-HOT_MAX_OPACITY = 0.20
+HOT_MAX_OPACITY = 0.13
 
 
 def hot_opacity(hot_gas):
