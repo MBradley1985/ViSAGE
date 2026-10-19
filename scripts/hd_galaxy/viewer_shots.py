@@ -130,14 +130,8 @@ def main():
         t = time.time()
         ctrl.toggle_hd()
         lay = scene_hd_layer(ctrl)
-        print(
-            f"{name}: HD built in {time.time() - t:.1f}s, "
-            f"{sum(len(c[2]) for c in lay._clouds.values())} particles; "
-            + "; ".join(lay.recipe.notes[:3]),
-            flush=True,
-        )
-        # Top row: the particle preview (what you see while orbiting).
-        # Bottom row: the refined, ray-marched view once the camera rests.
+        print(f"{name}: HD built in {time.time() - t:.1f}s", flush=True)
+        # One renderer: what you see while orbiting is the final look.
         views = [
             (0, 1.0, False),
             (55, 1.0, False),
@@ -145,24 +139,22 @@ def main():
             (55, 1.0, True),
             (55, 0.25, True),
         ]
-        preview, refined = [], []
+        frames, times = [], []
         for inc, dscale, gas in views:
             if gas and not state.hd_gas:
                 state.hd_gas = True
                 state.flush()
             orbit(scene, lay, inc, dist_scale=dscale, gas=gas)
-            lay._on_camera()  # as the camera observer would
-            preview.append(capture(scene))
             t = time.time()
-            ctrl.hd_refine_now(900)
-            dt = time.time() - t
-            refined.append(capture(scene))
-            print(f"   refine i={inc} gas={gas}: {dt:.1f}s", flush=True)
-        grid = np.concatenate(
-            [np.concatenate(preview, axis=1), np.concatenate(refined, axis=1)],
-            axis=0,
+            frames.append(capture(scene))
+            times.append(time.time() - t)
+        print(
+            f"   frame times (ms): {[round(x * 1000) for x in times]}",
+            flush=True,
         )
-        Image.fromarray(grid).save(out / f"viewer_{name}.png")
+        Image.fromarray(np.concatenate(frames, axis=1)).save(
+            out / f"viewer_{name}.png"
+        )
         ctrl.toggle_hd()  # off again
         state.flush()
         assert not lay.active, "HD layer should be cleared when toggled off"

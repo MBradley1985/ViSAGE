@@ -5,13 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from visage.hd.model import SageGalaxy, build_disk_maps, recipe_from_sage
-from visage.hd.particles import (
-    MIN_COLOUR,
-    attach_dust,
-    attenuation,
-    build_optical,
-    calibrate,
+from visage.hd.model import (
+    SageGalaxy,
+    build_disk_maps,
+    build_points,
+    recipe_from_sage,
 )
 
 
@@ -57,54 +55,21 @@ def _elliptical() -> SageGalaxy:
     )
 
 
-@pytest.fixture(scope="module")
-def disk_particles():
-    gal = _disk()
-    rc = recipe_from_sage(gal)
+def test_disk_recipe_has_every_starlight_component():
+    rc = recipe_from_sage(_disk())
     maps = build_disk_maps(rc, n=256)
-    sets = build_optical(rc, maps, budget=0.2)
-    calibrate(sets, rc.extent * 1.3)
-    attach_dust(sets, maps)
-    return gal, rc, sets
-
-
-def test_disk_recipe_builds_every_starlight_component(disk_particles):
-    _, rc, sets = disk_particles
-    names = {s.name for s in sets}
+    names = {p.name for p in build_points(rc, maps)}
     assert rc.kind == "disk"
-    assert {"old_disk", "young_disk", "bulge", "clusters", "hii"} <= names
-    assert "bar" in names  # instability bulge of 12% of M* makes a bar
+    assert {"clusters", "hii", "field"} <= names
+    assert rc.bar_len > 0  # instability bulge of 12% of M* makes a bar
+    assert maps.dust.max() > 0
 
 
-def test_elliptical_has_no_disk_components():
+def test_elliptical_recipe():
     rc = recipe_from_sage(_elliptical())
-    sets = build_optical(rc, None, budget=0.1)
-    names = {s.name for s in sets}
+    names = {p.name for p in build_points(rc, None)}
     assert rc.kind == "elliptical"
-    assert {"core", "envelope"} <= names
-    assert not names & {"old_disk", "young_disk", "hii"}
-
-
-def test_calibrated_colours_survive_the_8bit_framebuffer(disk_particles):
-    """Faint regions are thinned, not filled with splats too dim to draw."""
-    _, _, sets = disk_particles
-    for s in sets:
-        assert np.all(np.isfinite(s.colour))
-        if s.meta.get("diffuse"):
-            assert s.colour.max(axis=1).min() >= MIN_COLOUR * 0.999
-
-
-def test_dust_dims_the_midplane_more_edge_on(disk_particles):
-    _, _, sets = disk_particles
-    disk = next(s for s in sets if s.name == "old_disk")
-    mid = np.abs(disk.zh) < 0.5
-    face = attenuation(disk, np.array([0.0, 0.0, 1.0]))
-    edge = attenuation(disk, np.array([0.0, 1.0, 0.0]))
-    assert face.shape == (len(disk), 3)
-    # Edge-on, the line of sight runs through the whole dusty midplane.
-    assert edge[mid].mean() < face[mid].mean()
-    # Dust reddens: blue is extinguished more than red.
-    assert edge[mid, 2].mean() < edge[mid, 0].mean()
+    assert "globulars" in names and "hii" not in names
 
 
 @pytest.fixture
@@ -115,56 +80,71 @@ def plotter():
     pl.close()
 
 
-def test_layer_show_gas_and_clear(plotter):
-    from visage.hd.layer import HDGalaxyLayer
-
-    lay = HDGalaxyLayer(plotter)
-    lay.show(
-        _disk(),
-        center=[10.0, 20.0, 30.0],
-        spin=np.array([0, 0, 1.0]),
-        hubble_h=0.73,
-    )
-    assert lay.active
-    optical = set(lay._clouds)
-    assert not any(k.startswith("gas:") for k in optical)
-    # Every particle sits near the galaxy's box position.
-    pts = np.vstack(
-        [
-            c.points
-            for _, c, _ in lay._clouds.values()
-            if not _.name.startswith("icl")
-        ]
-    )
-    assert np.abs(pts.mean(axis=0) - [10.0, 20.0, 30.0]).max() < 0.05
-
-    lay.set_gas(True)
-    gas = {k for k in lay._clouds if k.startswith("gas:")}
-    assert {
-        "gas:hot_gas",
-        "gas:wind",
-        "gas:jets",
-    } <= gas  # hot regime, outflow, Heating
-    lay.set_gas(False)
-    assert not any(k.startswith("gas:") for k in lay._clouds)
-
-    lay.clear()
-    assert not lay.active
-    assert lay._observer is None
+def _look(pl, gpu_or_layer, pos, focal=(0.0, 0.0, 0.0), up=(0.0, 0.0, 1.0)):
+    pl.set_background("black")  # as the viewer's sky
+    pl.camera_position = [tuple(pos), tuple(focal), tuple(up)]
+    pl.renderer.ResetCameraClippingRange()
+    pl.render()
+    return pl.screenshot(return_img=True)
 
 
-def test_layer_aligns_the_disk_with_the_spin_vector(plotter):
+def test_gpu_galaxy_draws_the_galaxy(plotter):
+    """The shader runs and puts a bright, coloured galaxy in the frame."""
+    from visage.hd.gpu import GPUGalaxy
+
+    plotter.window_size = [96, 96]
+    rc = recipe_from_sage(_disk())
+    maps = build_disk_maps(rc, n=256)
+    g = GPUGalaxy(plotter)
+    g.build(rc, maps, build_points(rc, maps), 1.0, np.eye(4), gal=_disk())
+    cam = np.array([0.0, -12.0, 12.0])
+    g.set_camera(cam)
+    img = _look(plotter, g, cam)[..., :3].astype(float)
+    centre = img[40:56, 40:56].mean()
+    corner = img[:10, :10].mean()
+    assert centre > 40 and centre > 4 * corner + 1
+    g.clear()
+    assert g.actor is None
+
+
+def test_gas_switch_changes_the_picture(plotter):
+    from visage.hd.gpu import GPUGalaxy
+
+    plotter.window_size = [96, 96]
+    gal = _disk()
+    rc = recipe_from_sage(gal)
+    maps = build_disk_maps(rc, n=256)
+    g = GPUGalaxy(plotter)
+    g.build(rc, maps, build_points(rc, maps), 1.0, np.eye(4), gal=gal)
+    far = np.array([0.0, -1.5, 1.5]) * gal.rvir_kpc / rc.unit_kpc
+    g.set_camera(far)
+    g.set_view_half(gal.rvir_kpc)
+    off = _look(plotter, g, far).astype(float)
+    g.set_gas(True)
+    on = _look(plotter, g, far).astype(float)
+    # The hot halo, wind and jets add light around the galaxy.
+    assert on[..., :3].sum() > off[..., :3].sum() * 1.05
+    g.clear()
+
+
+def test_layer_places_and_orients_the_model(plotter):
     from visage.hd.layer import HDGalaxyLayer
 
     lay = HDGalaxyLayer(plotter)
     spin = np.array([1.0, 0.0, 0.0])
-    lay.show(_disk(), center=[0.0, 0.0, 0.0], spin=spin, hubble_h=0.73)
-    _, cloud, _ = lay._clouds["old_disk"]
-    p = np.asarray(cloud.points)
-    # A thin disk perpendicular to x: small spread along x, wide in y and z.
-    assert p[:, 0].std() < 0.3 * p[:, 1].std()
-    assert p[:, 0].std() < 0.3 * p[:, 2].std()
+    lay.show(_disk(), center=[10.0, 20.0, 30.0], spin=spin, hubble_h=0.73)
+    assert lay.active
+    m = lay._gpu.actor.GetUserMatrix()
+    z_axis = np.array([m.GetElement(i, 2) for i in range(3)])
+    assert np.allclose(z_axis / np.linalg.norm(z_axis), spin)
+    assert np.allclose(
+        [m.GetElement(i, 3) for i in range(3)], [10.0, 20.0, 30.0]
+    )
+    lay.set_gas(True)
+    lay.set_gas(False)
     lay.clear()
+    assert not lay.active
+    assert lay._observer is None
 
 
 def test_adapter_converts_snapshot_units():
@@ -242,39 +222,6 @@ def test_dropping_isolate_removes_the_hd_model(hd_panel):
     state.isolate_active = False  # e.g. Reset Camera / Go To / Focus
     state.flush()
     assert not state.hd_active
-
-
-def test_refined_view_swaps_in_and_out_with_the_camera(plotter):
-    """Progressive refinement: a ray-marched view replaces the particles
-    while the camera rests, and the next camera move brings them back."""
-    from visage.hd.layer import HDGalaxyLayer
-
-    lay = HDGalaxyLayer(plotter)
-    lay.show(
-        _disk(),
-        center=[0.0, 0.0, 0.0],
-        spin=np.array([0, 0, 1.0]),
-        hubble_h=0.73,
-    )
-    r = lay.radius_world
-    plotter.camera_position = [(0, -2 * r, 2 * r), (0, 0, 0), (0, 0, 1)]
-    cam = lay.camera_state()
-    assert lay.needs_refine(cam)
-
-    view = lay.refine_view(cam, max_npix=160, threads=2)
-    img = view["image"]
-    assert img.ndim == 3 and img.shape[2] == 3 and np.isfinite(img).all()
-    assert img.max() > 0.2  # the galaxy is there, tone-mapped into [0, 1]
-
-    lay.show_impostor(view)
-    assert lay.impostor_matches(cam) and not lay.needs_refine(cam)
-    assert all(not a.GetVisibility() for a, _, _ in lay._clouds.values())
-
-    plotter.camera_position = [(0, -2.5 * r, 1.5 * r), (0, 0, 0), (0, 0, 1)]
-    lay._on_camera()
-    assert lay._impostor is None
-    assert all(a.GetVisibility() for a, _, _ in lay._clouds.values())
-    lay.clear()
 
 
 def test_threaded_raymarch_matches_single_thread():
