@@ -8,6 +8,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.4] — 2026-10-19
+
+### Changed
+
+- **Crisper galaxies.** With glow on, each galaxy is now drawn as a
+  flat-topped disc with a soft edge on a faint glow, instead of a
+  gaussian that fades from the centre. Galaxies have a defined edge at the
+  same brightness, and members of groups and clusters stay easier to tell
+  apart. With glow off, galaxies render as before.
+
 ## [2.7.3] — 2026-10-19
 
 ### Changed

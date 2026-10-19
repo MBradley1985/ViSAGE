@@ -23,17 +23,17 @@ _GLOW_KNEE = 2.0
 # Default glow level, in the units of the Structure panel's slider.
 _DEFAULT_GLOW_STRENGTH = 1.7
 
-# Splat profile for emissive galaxies: a bright core half the width of
-# VTK's default gaussian, on a faint glow of the full width.  With the
-# default profile alone, neighbouring glows in a group or cluster run
-# together into one patch; the narrow core keeps each galaxy a distinct
-# point while the faint wing still gives it a glow.  ``d2`` is the squared
-# distance from the splat centre in units of its radius (the splat is drawn
-# out to 3 radii).
+# Splat profile for emissive galaxies: a flat-topped disc with a soft edge
+# (about 0.7 of the splat radius across), on a faint glow of the full
+# width.  VTK's default gaussian falls off from the centre outward, so every
+# galaxy reads as a fuzzy blob and neighbours in a group run together; the
+# disc gives each galaxy a defined edge at the same peak brightness, and the
+# faint wing keeps a glow around it.  ``d2`` is the squared distance from
+# the splat centre in units of its radius (the splat is drawn out to 3).
 _SPLAT_SHADER = (
     "//VTK::Color::Impl\n"
     "  float d2 = dot(offsetVCVSOutput.xy, offsetVCVSOutput.xy);\n"
-    "  opacity = opacity * (exp(-2.0 * d2) + 0.2 * exp(-0.5 * d2));\n"
+    "  opacity = opacity * (exp(-pow(2.0 * d2, 2.0)) + 0.12 * exp(-0.5 * d2));\n"
 )
 
 # Crowding.  A single galaxy's glow is already close to full brightness,
