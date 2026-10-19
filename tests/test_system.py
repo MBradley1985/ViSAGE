@@ -252,7 +252,7 @@ def test_perf_describe():
     line = perf.describe(st, 5.0)
     assert line == (
         "perf: 10.0 fps · 1600x900 · render 5.0 ms · frame 10.0 ms · "
-        "400 KB (3.9 MB/s)"
+        "between 90 ms · 400 KB (3.9 MB/s)"
     )
 
 

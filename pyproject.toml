@@ -34,6 +34,8 @@ dependencies = [
     "numpy>=1.24",
     "joblib>=1.3",
     "scipy>=1.11",
+    # Fast JPEG encoding of the frames streamed to the browser.
+    "pillow>=9.0",
     # SAGE plotting/analysis stack — so the Console's interpreter can run the
     # SAGE26 plotting scripts and SAGEswarm without extra installs.
     "matplotlib>=3.7",

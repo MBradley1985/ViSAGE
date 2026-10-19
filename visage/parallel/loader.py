@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import time
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
 from threading import Lock
 from collections.abc import Callable
@@ -14,8 +16,38 @@ from scipy.spatial import KDTree
 from visage import system
 from visage.config import SimConfig
 from visage.io.galaxy_reader import GalaxySnapshot, load_galaxy_snapshot
+from visage.utils.sizing import galaxy_world_radii_rvir, glow_crowding
 from visage.io.halo_reader import HaloSnapshot, load_halo_snapshot
 from visage.io.snapshot_table import SnapshotTable
+
+
+# Background loads (preload / prefetch) hold off until this monotonic time.
+# The view pushes it forward with every frame it sends while the camera
+# moves, so snapshot reading does not compete with rendering for the CPU;
+# it lapses by itself once the view is still.  Code that is waiting for the
+# loads (playback waiting on the preload) overrides it via background_needed.
+_quiet_until = [0.0]
+_needed = [0]
+
+
+def hold_background(seconds: float) -> None:
+    """Keep background snapshot loads from starting for ``seconds``."""
+    _quiet_until[0] = max(_quiet_until[0], time.monotonic() + seconds)
+
+
+@contextmanager
+def background_needed():
+    """Let background loads run while something waits for them."""
+    _needed[0] += 1
+    try:
+        yield
+    finally:
+        _needed[0] -= 1
+
+
+def _wait_until_quiet() -> None:
+    while not _needed[0] and (left := _quiet_until[0] - time.monotonic()) > 0:
+        time.sleep(min(left, 0.1))
 
 
 def _array_bytes(value) -> int:
@@ -238,6 +270,12 @@ class SnapshotLoader:
         # snap navigation never blocks on KDTree construction (~50 ms / snap).
         if len(halos.positions) > 0:
             self._tree_cache[snap_num] = KDTree(halos.positions)
+        # Likewise the glow crowding the galaxy layer dims by (~150 ms for
+        # 100k galaxies).
+        galaxies.crowding = glow_crowding(
+            galaxies.positions,
+            galaxy_world_radii_rvir(galaxies.rvir, galaxies.mvir),
+        )
         return halos, galaxies
 
     def _on_evict(self, snap_num: int) -> None:
@@ -288,11 +326,15 @@ class SnapshotLoader:
         A Future keeps its result alive, so holding finished ones would pin
         every snapshot in memory and make the cache budget meaningless.
         """
-        future = self._executor.submit(self._cached_load, snap_num)
+        future = self._executor.submit(self._background_load, snap_num)
         future.add_done_callback(
             lambda _f, s=snap_num: self._futures.pop(s, None)
         )
         return future
+
+    def _background_load(self, snap_num: int):
+        _wait_until_quiet()
+        return self._cached_load(snap_num)
 
     def _prefetch_neighbours(self, current: int) -> None:
         n = self._snap_table.count

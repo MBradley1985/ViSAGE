@@ -5,15 +5,17 @@ the GPU, JPEG-encoded and pushed over the websocket.  When the view feels
 slow, the question is which of those steps is slow on this machine.  This
 prints, every few seconds while frames are flowing, a line such as::
 
-    perf: 24.6 fps · 1600x900 · render 6.1 ms · frame 31.4 ms · 412 KB (9.9 MB/s)
+    perf: 24.6 fps · 1600x900 · render 6.1 ms · frame 31.4 ms · between 9 ms · 412 KB (9.9 MB/s)
 
-* render — VTK drawing the scene (GPU work submitted by the CPU)
+* render — VTK drawing the scene, until the GPU has finished
 * frame  — render + GPU readback + JPEG encode, per delivered frame
+* between — the rest of each frame's share of a second: handling input,
+  sending the image, and waiting for the next one to be asked for
 * KB     — encoded frame size; MB/s is what the websocket carries
 
-High fps with a low frame time is a healthy machine.  A frame time much
-larger than render points at readback/encoding (CPU speed, frame size);
-fps far below 1000/frame-time points at scheduling (timers, throttling).
+A frame time much larger than render points at readback/encoding (CPU
+speed, frame size); a large "between" points at the rest of the server
+(input handling, background work competing for the CPU).
 """
 
 from __future__ import annotations
@@ -48,7 +50,12 @@ def describe(stats: _Stats, elapsed: float) -> str | None:
     ]
     if stats.renders:
         parts.append(f"render {1000 * stats.render_s / stats.renders:.1f} ms")
-    parts.append(f"frame {1000 * stats.frame_s / stats.frames:.1f} ms")
+        per_frame = stats.renders / stats.frames
+        if per_frame > 1.1:  # drawing frames nobody sees
+            parts.append(f"{per_frame:.1f} renders/frame")
+    frame_ms = 1000 * stats.frame_s / stats.frames
+    parts.append(f"frame {frame_ms:.1f} ms")
+    parts.append(f"between {max(0.0, 1000 / fps - frame_ms):.0f} ms")
     parts.append(f"{kb:.0f} KB ({stats.bytes / elapsed / 1024**2:.1f} MB/s)")
     return "perf: " + " · ".join(parts)
 
@@ -63,6 +70,13 @@ def install(ren_win, interval: float = 5.0, out=print) -> None:
         render_t0[:] = [time.perf_counter()]
 
     def _end(_obj, _evt):
+        # Render() only queues the drawing; wait for the GPU to finish so
+        # "render" is the real drawing time.  The readback that follows
+        # waits for it anyway, so this costs nothing extra.
+        try:
+            ren_win.WaitForCompletion()
+        except AttributeError:
+            pass
         if render_t0:
             stats.renders += 1
             stats.render_s += time.perf_counter() - render_t0.pop()

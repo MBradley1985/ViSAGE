@@ -78,10 +78,11 @@ the browser. At startup on Windows it prints
 stop Windows from delaying the frame loop. If the view still lags:
 
 - Run `visage --perf` and move the camera. Each line splits a frame into
-  `render` (GPU drawing) and `frame` (render + readback + JPEG encode),
-  with the frame rate and size. A `frame` time well above `render` means the
-  CPU-side encode is the cost. A frame rate far below `1000 / frame` ms
-  means something else (scheduling, the browser) is the bottleneck.
+  `render` (GPU drawing), `frame` (render + readback + JPEG encode) and
+  `between` (input handling, sending, waiting for the next frame), with the
+  frame rate and size. A `frame` time well above `render` means the
+  CPU-side encode is the cost. A large `between` means something else
+  (background loading, the network, the browser) is the bottleneck.
 - Check that the `GPU :` line names your discrete card. If it doesn't,
   restart ViSAGE once after the first launch sets the graphics preference.
 - On a laptop, plug in and choose **Best performance** in Windows power

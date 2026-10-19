@@ -17,6 +17,8 @@ from pathlib import Path
 import numpy as np
 
 from visage.scene.camera_motion import (
+    MOTION_FPS,
+    FramePacer,
     orbit_around,
     orbit_start_position,
     smooth_move,
@@ -24,7 +26,7 @@ from visage.scene.camera_motion import (
 from visage.story.keys import STORY_STATE_KEYS
 from visage.story.model import Story
 
-_FPS = 15.0  # render rate for transitions / motion (matches fly-through)
+_FPS = MOTION_FPS  # render rate for transitions / motion (matches fly-through)
 _UP = (0.0, 1.0, 0.0)
 
 # Per-kind text-overlay defaults (size in rem, weight, italic, default colour).
@@ -1531,9 +1533,10 @@ class StoryPlayer:
                 if np.linalg.norm(diff) > 1e-6
                 else 0.0
             )
-            deg_step = np.deg2rad(box_dps * interval)
+            pacer = FramePacer(fps)
+            theta0 = theta
             while active():
-                theta += deg_step
+                theta = theta0 + np.deg2rad(box_dps * pacer.elapsed())
                 cam.position = (
                     cx + orbit_r * np.sin(theta),
                     cy,
@@ -1542,7 +1545,7 @@ class StoryPlayer:
                 cam.focal_point = (cx, cy, cz)
                 cam.up = _UP
                 self._push()
-                await asyncio.sleep(interval)
+                await pacer.wait()
         finally:
             if getattr(st, "focus_active", False):
                 scene.clear_focus()

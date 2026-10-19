@@ -82,6 +82,10 @@ class GalaxySnapshot:
     # no code change here.  Values are raw (no unit conversion is possible
     # without knowing what the field means).
     extra: dict = field(default_factory=dict)
+    # ── Rendering ───────────────────────────────────────────────────────
+    # How many galaxy glows overlap at each galaxy (utils.sizing.
+    # glow_crowding), filled in by the loader's background thread.
+    crowding: np.ndarray | None = None
 
     @property
     def count(self) -> int:

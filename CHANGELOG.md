@@ -8,6 +8,41 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.3] — 2026-10-19
+
+### Changed
+
+- **Smoother view: up to 60 fps.** Frames are now JPEG-encoded with Pillow
+  (libjpeg-turbo) instead of VTK's built-in encoder: the same quality-100
+  image in ~3 ms instead of ~35 ms. Each frame sent is the one just drawn,
+  so the view no longer lags a frame behind the mouse. The fly-through,
+  auto-rotate, orbits and Story Mode run at up to 60 fps and are paced by
+  the clock, so on a slower machine a move keeps its speed with fewer
+  frames. Mouse dragging can reach 60 fps, and a held-still mouse sends
+  nothing. Pillow is now a listed dependency (it was already installed
+  with matplotlib).
+- **Large models stay smooth.** On big boxes such as microUchuu, frames
+  (up to ~1 MB each) were drawn faster than the websocket could send them.
+  They queued up and reached the browser late and in bursts (4–16 fps
+  received while 40 were sent). At most two frames are now in flight.
+  Background snapshot preloading also pauses while the view is moving, and
+  carries on as soon as it stops (or at once when playback needs it).
+- **Galaxies in groups and clusters stay distinct.** Each galaxy's glow is
+  now a bright core half the old width on a faint wide glow, and galaxies
+  in crowded regions are dimmed by how many glows pile up on them. On large
+  boxes, cluster cores used to merge into flat white blobs. Isolated
+  galaxies keep their brightness. The crowding is worked out by the
+  background loader with each snapshot, so changing snapshot costs nothing
+  extra. With glow off, galaxies render as before.
+- `--perf` now waits for the GPU before timing `render`, and adds
+  `between` (the rest of each frame's time: input, sending, waiting) and,
+  when frames are drawn that nobody sees, `renders/frame`.
+
+### Fixed
+
+- Closing a browser tab while the view was moving no longer prints a
+  `ConnectionResetError` traceback.
+
 ## [2.7.2] — 2026-10-18
 
 ### Fixed

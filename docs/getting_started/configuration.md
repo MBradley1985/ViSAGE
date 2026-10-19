@@ -12,7 +12,7 @@ ViSAGE reads all simulation parameters directly from the SAGE `.par` file. No se
 | `--port N` | 8080 | Trame server port |
 | `--n-jobs N` | usable CPUs − 1 | Parallel workers for halo loading (respects a cluster job's CPU allocation) |
 | `--cache-gb GB` | half of RAM | Snapshot cache budget; half of physical RAM, or of an HPC job's memory limit. Also `VISAGE_CACHE_GB` |
-| `--perf` | off | Print frame timing (fps, render / encode ms, frame size) every few seconds while the view moves. Also `VISAGE_PERF=1` |
+| `--perf` | off | Print frame timing (fps, render / encode / between ms, frame size) every few seconds while the view moves. Also `VISAGE_PERF=1` |
 | `--gpu MODE` | `auto` | Which GPU renders: `auto` prefers the discrete GPU on a Windows laptop with hybrid graphics; `high` / `low` force the discrete / integrated GPU; `system` leaves the OS default. Also `VISAGE_GPU` |
 | `--min-halo-mass MSUN` | 1e10 | Minimum halo mass floor (Msun) |
 | `--min-stellar-mass MSUN` | 1e8 | Minimum stellar mass floor (Msun) |

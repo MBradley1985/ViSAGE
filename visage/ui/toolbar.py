@@ -9,10 +9,13 @@ import numpy as np
 from trame.widgets import html, vuetify3 as v3
 
 from visage.scene.camera_motion import (
+    MOTION_FPS,
+    FramePacer,
     orbit_around,
     orbit_start_position,
     smooth_move,
 )
+from visage.parallel.loader import background_needed
 from visage.scene.scene import Scene
 
 # Frames per second for each speed multiplier
@@ -46,7 +49,7 @@ _ROTATE_ITEMS = [
     {"title": "CCW 60°/s", "value": "ccw_60"},
 ]
 
-_ROT_RATE_FPS = 12  # rotation render rate — lower = less load, larger steps
+_ROT_RATE_FPS = MOTION_FPS  # rotation render rate (paced by the wall clock)
 
 # All trame state variables that affect what a rendered frame looks like.
 # Checked in _scene_hash() so the frame cache is invalidated when any of these
@@ -597,7 +600,8 @@ def build_toolbar(server, scene: Scene) -> None:
     # ------------------------------------------------------------------
 
     async def _rotate_loop():
-        interval = 1.0 / _ROT_RATE_FPS
+        pacer = FramePacer(_ROT_RATE_FPS)
+        last = pacer.elapsed()
         while _ctl["rotate_mode"] != "off":
             mode = _ctl["rotate_mode"]
             sign, deg_per_sec = _parse_rotate(mode)
@@ -605,8 +609,12 @@ def build_toolbar(server, scene: Scene) -> None:
                 break
             # While recording, _record_loop steps rotation at the recording
             # FPS — skip stepping here to avoid double-rotating the camera.
+            # Step by the time that actually passed, so the spin rate holds
+            # however long each frame takes to render.
+            now = pacer.elapsed()
+            dt, last = now - last, now
             if not bool(getattr(state, "recording_active", False)):
-                delta = sign * deg_per_sec * interval
+                delta = sign * deg_per_sec * dt
                 cam = scene.plotter.camera
                 focal = np.array(cam.focal_point, dtype=np.float64)
                 pos = np.array(cam.position, dtype=np.float64)
@@ -617,7 +625,7 @@ def build_toolbar(server, scene: Scene) -> None:
                 cam.position = tuple(focal + rm @ r)
                 cam.up = (0.0, 1.0, 0.0)
             _push()
-            await asyncio.sleep(interval)
+            await pacer.wait()
 
     @state.change("rotate_mode")
     def on_rotate_mode(rotate_mode, **_):
@@ -650,7 +658,7 @@ def build_toolbar(server, scene: Scene) -> None:
     # In Explore Mode, targets are ordered most massive → least.
     # ------------------------------------------------------------------
 
-    _FT_FPS = 15  # render rate during fly-through
+    _FT_FPS = MOTION_FPS  # render rate during fly-through
     _FT_APPROACH_SECS = 8.0  # fly-in duration (reset → starting viewpoint)
     _FT_GROUP_RADIUS = 15.0  # standoff radius for group spin
     _FT_CLUSTER_RADIUS = 30.0  # standoff radius for cluster spin
@@ -896,8 +904,11 @@ def build_toolbar(server, scene: Scene) -> None:
         if not _preload_started[0]:  # no loop earlier — start inline now
             _preload_started[0] = True
             asyncio.ensure_future(_preload_loop())
-        while not _preload_done[0]:
-            await asyncio.sleep(0.1)
+        # Frames still flowing (e.g. a fly-through) would otherwise hold
+        # the preload back indefinitely.
+        with background_needed():
+            while not _preload_done[0]:
+                await asyncio.sleep(0.1)
 
     ctrl.add("on_server_ready")(_start_preload)
 

@@ -14,16 +14,74 @@ The caller supplies two callbacks:
 ``push()``
     Push the freshly-posed frame to the client (typically a wrapper around
     ``server.controller.view_update``).
+
+Motion is paced by the wall clock (FramePacer): the time a frame takes to
+render counts towards its slot, and a machine that cannot keep up shows
+fewer, larger steps instead of slowing the move down, so a move lasts
+*secs* seconds everywhere.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import time
+from collections.abc import Awaitable, Callable
 
 import numpy as np
 
 _UP = (0.0, 1.0, 0.0)
+
+# Target frame rate for camera motion (fly-through, rotation, Story Mode).
+# Pushes go straight to the client, so this is the rate the viewer sees
+# when the machine can render that fast.
+MOTION_FPS = 60.0
+
+# Longest wait for a frame to reach the network before drawing the next.
+_SEND_TIMEOUT_S = 0.5
+_frame_sent: list[Callable[[], Awaitable] | None] = [None]
+
+
+def set_frame_gate(sent: Callable[[], Awaitable] | None) -> None:
+    """Register an awaitable factory that resolves once earlier frames have
+    been written to the browser (ViSAGE allows one still in flight).
+
+    Without it a large scene, whose frames take most of a slot to draw,
+    renders back-to-back and the sends never get a turn: frames pile up
+    and reach the browser late and in bursts.
+    """
+    _frame_sent[0] = sent
+
+
+class FramePacer:
+    """Hold a loop to *fps* frames per second of wall-clock time.
+
+    ``wait()`` first lets the last frame reach the browser, then sleeps only
+    for what is left of the current frame's slot; when a frame overruns,
+    the schedule restarts from now instead of rushing to catch up.
+    """
+
+    def __init__(self, fps: float) -> None:
+        self.interval = 1.0 / fps
+        self.started = time.perf_counter()
+        self._next = self.started
+
+    def elapsed(self) -> float:
+        """Seconds since the pacer started."""
+        return time.perf_counter() - self.started
+
+    async def wait(self) -> None:
+        sent = _frame_sent[0]
+        if sent is not None:
+            try:
+                await asyncio.wait_for(sent(), _SEND_TIMEOUT_S)
+            except Exception:  # timeout, or no server running
+                pass
+        self._next += self.interval
+        delay = self._next - time.perf_counter()
+        if delay < 0:
+            self._next = time.perf_counter()
+            delay = 0.0
+        await asyncio.sleep(delay)
 
 
 async def smooth_move(
@@ -44,23 +102,28 @@ async def smooth_move(
     arrays.  Uses smoothstep easing.  Returns ``True`` if the move completed,
     ``False`` if ``is_active`` went false partway through.
     """
-    interval = 1.0 / fps
-    n = max(1, int(secs * fps))
+    pacer = FramePacer(fps)
     p0 = np.asarray(p0, dtype=float)
     f0 = np.asarray(f0, dtype=float)
     p1 = np.asarray(p1, dtype=float)
     f1 = np.asarray(f1, dtype=float)
-    for i in range(n):
+    while True:
         if not is_active():
             return False
-        t = (i + 1) / n
+        # Pose for the moment this frame is seen (one slot ahead).
+        t = (
+            min(1.0, (pacer.elapsed() + pacer.interval) / secs)
+            if secs > 0
+            else 1.0
+        )
         ts = t * t * (3.0 - 2.0 * t)
         camera.position = tuple(p0 + ts * (p1 - p0))
         camera.focal_point = tuple(f0 + ts * (f1 - f0))
         camera.up = _UP
         push()
-        await asyncio.sleep(interval)
-    return True
+        if t >= 1.0:
+            return True
+        await pacer.wait()
 
 
 async def orbit_around(
@@ -80,18 +143,18 @@ async def orbit_around(
     total at *dps* degrees/second.  Returns ``True`` if it completed, ``False``
     if aborted.
     """
-    interval = 1.0 / fps
+    pacer = FramePacer(fps)
     t3 = np.asarray(target, dtype=float)
     diff = np.asarray(camera.position, dtype=float) - t3
     diff[1] = 0.0
     nrm = np.linalg.norm(diff)
-    theta = np.arctan2(diff[0], diff[2]) if nrm > 1e-6 else 0.0
-    deg_step = dps * interval
-    n = max(1, int(spin_degs / dps * fps))
-    for _ in range(n):
+    theta0 = np.arctan2(diff[0], diff[2]) if nrm > 1e-6 else 0.0
+    total = abs(spin_degs / dps) if dps else 0.0
+    while True:
         if not is_active():
             return False
-        theta += np.deg2rad(deg_step)
+        secs = min(total, pacer.elapsed() + pacer.interval)
+        theta = theta0 + np.deg2rad(dps * secs)
         camera.position = (
             t3[0] + radius * np.sin(theta),
             t3[1],
@@ -100,8 +163,9 @@ async def orbit_around(
         camera.focal_point = tuple(t3)
         camera.up = _UP
         push()
-        await asyncio.sleep(interval)
-    return True
+        if secs >= total:
+            return True
+        await pacer.wait()
 
 
 def orbit_start_position(camera, target, radius: float) -> np.ndarray:

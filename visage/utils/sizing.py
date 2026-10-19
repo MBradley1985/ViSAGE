@@ -88,6 +88,53 @@ def galaxy_world_radii_rvir(
     return np.maximum(r * scale, r_min).astype(np.float32)
 
 
+# Neighbours further away than this many of their own splat radii are
+# ignored by `glow_crowding` (their share of the pile-up is under 1%).
+_CROWD_REACH = 8.0
+
+
+def glow_crowding(positions: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    """How many galaxy glows overlap at each galaxy, on average over
+    viewing directions (1 = only its own).
+
+    A splat is a gaussian of width ``sigma``.  Seen from a random direction,
+    a neighbour at 3D distance d adds, on average, D(x) / x of its peak
+    brightness at this galaxy's position on screen, where x = d / (sigma *
+    sqrt(2)) and D is Dawson's integral (the isotropic average of the
+    projected gaussian).  Averaging over directions keeps the estimate the
+    same however the camera turns, so it is computed once per snapshot.
+    """
+    from scipy.spatial import cKDTree
+    from scipy.special import dawsn
+
+    pos = np.asarray(positions, dtype=np.float64)
+    sig = np.maximum(np.asarray(sigma, dtype=np.float64), 1e-6)
+    n = len(pos)
+    out = np.ones(n)
+    if n < 2:
+        return out
+    tree = cKDTree(pos)
+    # Neighbours are found per band of splat size, each band searched out
+    # to the reach of its largest splat: one search at the reach of the
+    # largest splat overall (a cluster's) would test every pair in the box.
+    lo, hi = np.log(sig.min()), np.log(sig.max())
+    edges = np.exp(np.linspace(lo, hi, max(2, int((hi - lo) / 0.4) + 2)))
+    edges[-1] = np.inf
+    band = np.searchsorted(edges, sig, side="right") - 1
+    for b in np.unique(band):
+        src = np.flatnonzero(band == b)
+        reach = _CROWD_REACH * sig[src].max()
+        pairs = cKDTree(pos[src]).sparse_distance_matrix(
+            tree, reach, output_type="ndarray"
+        )
+        j, i, d = src[pairs["i"]], pairs["j"], pairs["v"]
+        keep = (i != j) & (d < _CROWD_REACH * sig[j])
+        j, i, d = j[keep], i[keep], d[keep]
+        x = np.maximum(d / (np.sqrt(2.0) * sig[j]), 1e-6)
+        out += np.bincount(i, dawsn(x) / x, minlength=n)
+    return out
+
+
 def halo_world_radii(
     masses: np.ndarray,
     r_min: float = 0.15,  # Mpc/h  (low-mass end)

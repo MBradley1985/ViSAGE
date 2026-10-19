@@ -18,7 +18,10 @@ from visage.scene.box_profile import (
     load_profile,
 )
 from visage import system
+from visage.parallel.loader import hold_background
+from visage.scene import camera_motion
 from visage.scene.scene import Scene
+from visage.utils import frame_delivery
 from visage.utils.discover import find_models
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -197,6 +200,19 @@ def create_app(
         loop.call_soon(_notify)
 
     system.report_renderer_once(scene.plotter.ren_win, _on_renderer)
+    frame_delivery.install()
+
+    async def _frame_sent() -> None:
+        # Two frames may still be on their way while the next is drawn; wait
+        # only when more are queued, so the backlog stays at two frames.
+        monitor = server.context.network_monitor
+        while monitor.pending > 2:
+            await asyncio.sleep(0.002)
+
+    camera_motion.set_frame_gate(_frame_sent)
+    # While frames flow, snapshot preloading waits rather than competing
+    # with the renderer for the CPU.
+    frame_delivery.on_frame.append(lambda: hold_background(0.3))
     if perf:
         from visage.utils import perf as _perf
 

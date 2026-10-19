@@ -7,7 +7,7 @@ import pyvista as pv
 
 from visage.io.galaxy_reader import GalaxySnapshot
 from visage.utils.colormap import normalize_log, scalars_to_rgba
-from visage.utils.sizing import galaxy_world_radii_rvir
+from visage.utils.sizing import galaxy_world_radii_rvir, glow_crowding
 
 # Emissive galaxies: the splats add light instead of alpha-blending toward
 # grey.  It is a property of the point-gaussian mapper, so it applies to
@@ -22,6 +22,31 @@ _GLOW_KNEE = 2.0
 
 # Default glow level, in the units of the Structure panel's slider.
 _DEFAULT_GLOW_STRENGTH = 1.7
+
+# Splat profile for emissive galaxies: a bright core half the width of
+# VTK's default gaussian, on a faint glow of the full width.  With the
+# default profile alone, neighbouring glows in a group or cluster run
+# together into one patch; the narrow core keeps each galaxy a distinct
+# point while the faint wing still gives it a glow.  ``d2`` is the squared
+# distance from the splat centre in units of its radius (the splat is drawn
+# out to 3 radii).
+_SPLAT_SHADER = (
+    "//VTK::Color::Impl\n"
+    "  float d2 = dot(offsetVCVSOutput.xy, offsetVCVSOutput.xy);\n"
+    "  opacity = opacity * (exp(-2.0 * d2) + 0.2 * exp(-0.5 * d2));\n"
+)
+
+# Crowding.  A single galaxy's glow is already close to full brightness,
+# so where several overlap on screen (a cluster core, seen through dozens
+# of members) the sum clips to a flat white blob.  Each galaxy is dimmed by
+# how many glows typically stack up on it (`glow_crowding`, worked out by
+# the loader with the snapshot): a galaxy carrying N of them is scaled by
+# (N / _CROWD_FREE) ** -_CROWD_POWER.  Up to _CROWD_FREE overlapping glows
+# (isolated galaxies and pairs) are left as they are.  At a power of 1 the piled-up light would be held at
+# that level; below 1 a dense region still reads brighter than a sparse
+# one, without clipping.
+_CROWD_FREE = 1.5
+_CROWD_POWER = 0.7
 
 
 ColorMode = Literal[
@@ -194,6 +219,12 @@ class GalaxyLayer:
         self._glow_strength = _DEFAULT_GLOW_STRENGTH
         self._cloud: pv.PolyData | None = None  # persistent geometry
         self._render_params: tuple = ()  # tracks need-to-rebuild
+        # Per-galaxy glow dimming for the galaxies being drawn (see
+        # `glow_crowding`), and the inputs it was computed from.
+        self._dim: np.ndarray | None = None
+        self._dim_snap: GalaxySnapshot | None = None
+        self._dim_key: tuple | None = None
+        self._dim_cached: np.ndarray | None = None
         self._snapshot: GalaxySnapshot | None = None
         self._focus_mask: np.ndarray | None = None
         self._filter_mask: np.ndarray | None = None
@@ -401,42 +432,46 @@ class GalaxyLayer:
             return 1.0
         return self._layer_weight(floor, mul)
 
-    def _rgba(
-        self, scalars: np.ndarray, cmap: str, weight: float = 1.0
-    ) -> np.ndarray:
+    def _rgba(self, scalars: np.ndarray, cmap: str, weight=1.0) -> np.ndarray:
         """Splat colours, asinh-shaped when the splats are emissive.
 
         The curve goes on the scalar, before the colormap lookup — not on
         the colour that comes out of it.  A sequential colormap already
         carries brightness, so scaling its output would count the value
         twice and darken everything instead of shaping the roll-off.
+
+        ``weight`` is one number for the layer or one per point.
         """
         v = np.clip(np.asarray(scalars, dtype=np.float32), 0.0, 1.0)
         if not self._emissive:
             return scalars_to_rgba(v, cmap)
         v = np.arcsinh(_GLOW_KNEE * v) / np.arcsinh(_GLOW_KNEE)
         rgba = scalars_to_rgba(v, cmap).copy()
-        rgba[:, :3] = (rgba[:, :3] * float(weight)).astype(np.uint8)
+        w = np.asarray(weight, dtype=np.float32).reshape(-1, 1)
+        rgba[:, :3] = np.clip(rgba[:, :3] * w, 0.0, 255.0).astype(np.uint8)
         return rgba
 
     def _hue_rgba(
         self,
         scalars: np.ndarray,
         rgb: tuple[int, int, int],
-        weight: float = 1.0,
+        weight=1.0,
         floor: float = 0.3,
     ) -> np.ndarray:
         """Single-hue splat colours whose brightness rises with the scalar.
 
         Brightness runs from `floor` (scalar 0) to full (scalar 1), with the
         same asinh shaping and layer weighting as `_rgba` when emissive.
+        ``weight`` is one number for the layer or one per point.
         """
         v = np.clip(np.asarray(scalars, dtype=np.float32), 0.0, 1.0)
         if self._emissive:
             v = np.arcsinh(_GLOW_KNEE * v) / np.arcsinh(_GLOW_KNEE)
         else:
             weight = 1.0
-        bright = (floor + (1.0 - floor) * v) * float(weight)
+        bright = (floor + (1.0 - floor) * v) * np.asarray(
+            weight, dtype=np.float32
+        )
         rgba = np.full((len(v), 4), 255, dtype=np.uint8)
         rgba[:, :3] = np.clip(
             bright[:, None] * np.asarray(rgb, dtype=np.float32), 0.0, 255.0
@@ -505,6 +540,7 @@ class GalaxyLayer:
             if rgb is not None:
                 self._render_sed_stack(eff_pos, rgb, radii)
             return
+        self._dim = self._crowd_dimming(snap, radii)
         self._render_structure(snap, radii, eff_pos)
         if self._color_mode == "type":
             mass_colors = normalize_log(
@@ -517,11 +553,76 @@ class GalaxyLayer:
                 if not np.any(tmask):
                     continue
                 self._render_outer_property(
-                    eff_pos[tmask], mass_colors[tmask], radii[tmask], cmap
+                    eff_pos[tmask],
+                    mass_colors[tmask],
+                    radii[tmask],
+                    cmap,
+                    self._dim_of(tmask),
                 )
         elif self._color_mode != "structure":
             colors = self._compute_colors(snap)
-            self._render_outer_property(eff_pos, colors, radii, self._colormap)
+            self._render_outer_property(
+                eff_pos, colors, radii, self._colormap, self._dim
+            )
+
+    def _crowd_dimming(
+        self, snap: GalaxySnapshot, radii: np.ndarray
+    ) -> np.ndarray | None:
+        """Per-galaxy brightness factor that keeps overlapping glows from
+        clipping to white (None when the splats are not emissive).
+
+        The loader works out the crowding of every galaxy in a snapshot
+        while reading it (a lightcone's is worked out here, once), so
+        changing snapshot costs nothing here.  A focus region or lightcone
+        cut removes whole regions, which leaves the crowding of the
+        galaxies kept much as it was, so it is reused.  A property filter
+        that leaves well under the whole snapshot thins out clusters
+        instead, so the crowding is redone for the galaxies drawn and what
+        remains brightens; that costs time in proportion to the galaxies
+        drawn.  None of this depends on the camera or colours, so
+        restyling reuses it.
+        """
+        if not self._emissive or snap.count == 0:
+            return None
+        full = self._snapshot
+        mask = self._combined_mask()
+        if mask is not None and mask.size != full.count:
+            mask = None
+        thinned = (
+            mask is not None
+            and self._filter_mask is not None
+            and int(np.count_nonzero(self._filter_mask)) < 0.7 * full.count
+        )
+        reuse = self._radius_scale == 1.0 and not thinned
+        key = (
+            None if mask is None else hash(np.packbits(mask).tobytes()),
+            self._radius_scale,
+            reuse,
+        )
+        if full is self._dim_snap and key == self._dim_key:
+            return self._dim_cached
+        if not reuse:
+            n = glow_crowding(snap.positions, radii)
+        else:
+            if full.crowding is None:
+                full.crowding = glow_crowding(
+                    full.positions,
+                    galaxy_world_radii_rvir(full.rvir, full.mvir),
+                )
+            n = full.crowding if mask is None else full.crowding[mask]
+        dim = np.minimum(1.0, (n / _CROWD_FREE) ** -_CROWD_POWER)
+        self._dim_cached = dim.astype(np.float32)
+        self._dim_snap, self._dim_key = full, key
+        return self._dim_cached
+
+    def _shape_splat(self, mapper) -> None:
+        """Give an emissive layer's splats the core-and-glow profile."""
+        if self._emissive:
+            mapper.SetSplatShaderCode(_SPLAT_SHADER)
+
+    def _dim_of(self, mask: np.ndarray) -> np.ndarray | float:
+        """The crowding factor for a subset of the drawn galaxies."""
+        return 1.0 if self._dim is None else self._dim[mask]
 
     @staticmethod
     def _subset(snap: GalaxySnapshot, mask: np.ndarray) -> GalaxySnapshot:
@@ -603,6 +704,8 @@ class GalaxyLayer:
             return np.clip((log - vmin) / (vmax - vmin + 1e-10), 0.0, 1.0)
 
         cold_scalar = _logn(snap.cold_gas, *_COLD_RANGE)
+        # Crowding factor per galaxy (1.0 when the splats are not emissive).
+        dim = 1.0 if self._dim is None else self._dim
 
         # ---- (1) Halo-gas shells --------------------------------------
         # CGM and hot atmosphere are separate components, not two sides of
@@ -626,7 +729,7 @@ class GalaxyLayer:
             scalar = _logn(mass[mask], lo, hi)
             cloud = pv.PolyData(pos[mask])
             cloud["rgba"] = self._hue_rgba(
-                scalar, rgb, self._layer_weight(0.2, 0.5)
+                scalar, rgb, self._layer_weight(0.2, 0.5) * self._dim_of(mask)
             )
             cloud["radius"] = (
                 r_outer[mask] * r_scale * (0.5 + 0.5 * scalar)
@@ -645,6 +748,7 @@ class GalaxyLayer:
             mp = actor.mapper
             mp.SetScaleArray("radius")
             mp.SetScaleFactor(1.0)
+            self._shape_splat(mp)
             if not self._visible:
                 actor.SetVisibility(False)
             self._track_opacity(actor, 0.2, 0.5)
@@ -653,7 +757,7 @@ class GalaxyLayer:
         # ---- (2) Cold-gas blue envelope -------------------------------
         cloud = pv.PolyData(pos)
         cloud["rgba"] = self._hue_rgba(
-            cold_scalar, _COLD_RGB, self._layer_weight(0.2, 0.5)
+            cold_scalar, _COLD_RGB, self._layer_weight(0.2, 0.5) * dim
         )
         cloud["radius"] = (r_cold * (0.5 + 0.5 * cold_scalar)).astype(
             np.float32
@@ -672,6 +776,7 @@ class GalaxyLayer:
         mp = actor.mapper
         mp.SetScaleArray("radius")
         mp.SetScaleFactor(1.0)
+        self._shape_splat(mp)
         if not self._visible:
             actor.SetVisibility(False)
         self._track_opacity(actor, 0.2, 0.5)
@@ -697,7 +802,7 @@ class GalaxyLayer:
                 np.float32
             )
 
-            weight = self._layer_weight(0.5, 0.75)
+            weight = self._layer_weight(0.5, 0.75) * dim
             for rgba, radii_arr in [
                 (self._rgba(disk_scalar, "Blues_r", weight), r_disk),
                 (self._hue_rgba(bulge_scalar, _BULGE_RGB, weight), r_bulge),
@@ -719,6 +824,7 @@ class GalaxyLayer:
                 mp = actor.mapper
                 mp.SetScaleArray("radius")
                 mp.SetScaleFactor(1.0)
+                self._shape_splat(mp)
                 if not self._visible:
                     actor.SetVisibility(False)
                 self._track_opacity(actor, 0.5, 0.75)
@@ -730,6 +836,7 @@ class GalaxyLayer:
         colors: np.ndarray,
         radii: np.ndarray,
         cmap: str,
+        dim=1.0,
     ) -> None:
         """Outermost halo around the Structure composition, coloured by the
         active galaxy Colour-by mode + chosen colormap.  Slightly larger and
@@ -739,7 +846,7 @@ class GalaxyLayer:
             return
         cloud = pv.PolyData(positions)
         cloud["rgba"] = self._rgba(
-            colors, cmap, self._layer_weight(0.12, 0.25)
+            colors, cmap, self._layer_weight(0.12, 0.25) * dim
         )
         # Sit ~30% beyond the standard envelope.  This is the "Colour-by" halo.
         cloud["radius"] = (radii * 1.3).astype(np.float32)
@@ -758,6 +865,7 @@ class GalaxyLayer:
         mp = actor.mapper
         mp.SetScaleArray("radius")
         mp.SetScaleFactor(1.0)
+        self._shape_splat(mp)
         if not self._visible:
             actor.SetVisibility(False)
         self._track_opacity(actor, 0.12, 0.25)
@@ -791,6 +899,7 @@ class GalaxyLayer:
         mapper = actor.mapper
         mapper.SetScaleArray("radius")
         mapper.SetScaleFactor(1.0)
+        self._shape_splat(mapper)
         if not self._visible:
             actor.SetVisibility(False)
         self._cloud = cloud
