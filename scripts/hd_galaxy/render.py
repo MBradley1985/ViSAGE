@@ -501,6 +501,48 @@ def wind(gal, rc, R, th, X, Y, inc, pa, rng, npix):
     return 0.35 * amp * cone * (0.3 + 0.9 * fil)
 
 
+def icl_zone(gal, rc: GalaxyRecipe, npix: int, E: float) -> np.ndarray:
+    """IntraClusterStars drawn into the zone around the galaxy where
+    the hot medium thins out -- a soft, warm old-star glow plus a sprinkle of
+    stripped stars, fading outward where the hot gas takes over.
+
+    Display-space (like the gas overlay): physically the ICL is far too
+    faint to see next to the galaxy, so this is an enhanced view of where
+    those stars sit, with opacity set by the ICS mass.
+    """
+    from model import gaussian_field
+
+    if gal.ics <= 0:
+        return np.zeros((npix, npix, 3))
+    rng = np.random.default_rng(rc.seed + 11)
+    ax = np.linspace(-E, E, npix) * rc.unit_kpc  # kpc
+    X, Y = np.meshgrid(ax, ax[::-1])
+    # Mildly elongated envelope along a random axis.
+    ang = rng.uniform(0, np.pi)
+    xr = X * np.cos(ang) + Y * np.sin(ang)
+    yr = (-X * np.sin(ang) + Y * np.cos(ang)) / 0.8
+    R = np.hypot(xr, yr) + 1e-3
+    r_in = 1.2 * rc.extent * rc.unit_kpc  # same scale as the hot-gas thinning
+    prof = (1 + (R / (0.5 * r_in)) ** 2) ** -1.2
+    prof *= 1 - np.exp(
+        -((R / (0.35 * r_in)) ** 2)
+    )  # galaxy dominates the centre
+    prof *= np.exp(-((R / (2.2 * r_in)) ** 2))  # hand over to the hot medium
+    prof *= np.exp(0.2 * gaussian_field((npix, npix), 3.0, rng))
+    prof /= max(prof.max(), 1e-12)
+    # Stripped stars scattered through the envelope.
+    n = int(np.clip(gal.ics / 1e8, 200, 6000))
+    p = prof.ravel() / prof.sum()
+    idx = rng.choice(p.size, size=n, p=p)
+    stars = np.zeros(npix * npix)
+    np.add.at(stars, idx, rng.uniform(0.3, 1.0, n))
+    stars = gaussian_filter(stars.reshape(npix, npix), 0.7) * 4.0
+    f = np.clip((np.log10(gal.ics) - 9.0) / 3.0, 0.0, 1.0)
+    opacity = 0.025 + 0.1 * f
+    icl_rgb = np.array([1.0, 0.82, 0.6])
+    return np.clip(opacity * (0.8 * prof + stars)[..., None] * icl_rgb, 0, 1)
+
+
 def screen(a, b):
     """Screen blend: adds light without clipping to flat white."""
     return 1 - (1 - a) * (1 - b)

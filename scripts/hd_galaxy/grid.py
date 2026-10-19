@@ -32,7 +32,7 @@ from model import (
     build_points,
     recipe_from_sage,
 )  # noqa: E402
-from render import gas_halo, render, screen, tonemap  # noqa: E402
+from render import gas_halo, icl_zone, render, screen, tonemap  # noqa: E402
 from run_prototype import OUT, load, to_galaxy  # noqa: E402
 
 MASS_BINS = [
@@ -171,8 +171,18 @@ def main():
                 pa=25,
                 log_stretch=args.rvir,
             )
+            # ICL is starlight, so it goes in both the optical and gas views.
+            halo_icl = icl_zone(gal, rc, args.npix, lay.half_width)
             src = "Millennium" if g["sim"] == "millennium" else "microUchuu"
-            cells[(i, j)] = (gal, rc, lin, halo, len(idx), src, half_kpc)
+            cells[(i, j)] = (
+                gal,
+                rc,
+                lin,
+                (halo, halo_icl),
+                len(idx),
+                src,
+                half_kpc,
+            )
             highlights.append(hl)
             print(
                 f"{cname.splitlines()[0]:22s} {lo}-{hi}: {src:10s} N={len(idx):5d} "
@@ -195,9 +205,10 @@ def main():
 def _cell(ax, cell, args, white, with_gas):
     """Draw one rendered galaxy (optical, or with the gas overlay)."""
     gal, rc, lin, halo, n, src, half_kpc = cell
-    img, _ = tonemap(lin, white=white)
+    gas, icl = halo
+    img = screen(tonemap(lin, white=white)[0], icl)
     if with_gas:
-        img = screen(img, halo)
+        img = screen(img, gas)
     ax.imshow(img)
     ax.text(
         0.03,

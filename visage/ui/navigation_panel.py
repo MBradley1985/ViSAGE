@@ -342,6 +342,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.nav_box_zmax = round(scene._cfg.box_size / 2, 2)
     state.focus_active = False
     state.isolate_active = False
+    state.hd_active = False  # HD model of the selected galaxy (Structure tab)
+    state.hd_gas = False  # its halo-gas overlay
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
     state.draw_box_active = False  # interactive box widget in Box tab
@@ -4097,6 +4099,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         that clears the isolate state."""
         if not isolate_active:
             _stop_sparkles()
+            _stop_hd()
 
     @ctrl.set("toggle_isolate")
     def on_toggle_isolate():
@@ -4206,6 +4209,99 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _sparkle_target["center"], _sparkle_target["radius"]
             )
         _push()
+
+    # ------------------------------------------------------------------
+    # HD galaxy — a detailed procedural 3D model of the selected galaxy
+    # ------------------------------------------------------------------
+
+    _hd: dict = {"layer": None}
+
+    def _hd_layer():
+        if _hd["layer"] is None:
+            from visage.hd.layer import HDGalaxyLayer
+
+            _hd["layer"] = HDGalaxyLayer(scene.plotter)
+        return _hd["layer"]
+
+    def _stop_hd() -> None:
+        """Drop the HD model (Isolate's teardown calls this too)."""
+        lay = _hd["layer"]
+        if lay is not None and lay.active:
+            lay.clear()
+            _push()
+        state.hd_active = False
+
+    @ctrl.set("toggle_hd")
+    def on_toggle_hd():
+        """Isolate the selected galaxy and replace its dot with the HD model.
+
+        Like Isolate, but every catalogue object is hidden and the galaxy
+        is drawn from its SAGE properties: disk or elliptical, arms, bar,
+        clusters, HII regions, view-dependent dust, merger debris, ICL and
+        (with the Gas box) its halo gas.  Turning it off, or anything that
+        drops Isolate, removes it.
+        """
+        import numpy as np
+
+        if bool(state.hd_active):
+            _clear_draw_widgets()
+            state.isolate_active = False
+            state.focus_active = False
+            scene.clear_focus()
+            _stop_hd()
+            _push()
+            return
+
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            gidx = -1
+        halos, galaxies = scene.active_model.loader.get(scene.current_snap)
+        if not 0 <= gidx < galaxies.count:
+            return
+
+        from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
+
+        h = float(scene._cfg.hubble_h)
+        gal = sage_galaxy_from_snapshot(galaxies, gidx, h)
+        if gal.stellar_mass <= 0:
+            return
+        center = galaxies.positions[gidx] + scene.active_model.offset
+
+        # The HD model stands in for this galaxy's dot, so hide everything.
+        scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
+        lay = _hd_layer()
+        lay.show(
+            gal, center, spin_vector(galaxies, gidx), h, gas=bool(state.hd_gas)
+        )
+
+        # Frame it at ~55 deg inclination: between the spin axis and the disk.
+        cam = scene.plotter.camera
+        radius = lay.rvir_world if state.hd_gas else lay.radius_world
+        dist = radius / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
+        e2, e3 = lay._R[:, 1], lay._R[:, 2]
+        view = np.cos(np.deg2rad(55)) * e3 - np.sin(np.deg2rad(55)) * e2
+        cx, cy, cz = (float(c) for c in center)
+        cam.focal_point = (cx, cy, cz)
+        cam.position = tuple(float(v) for v in center + view * dist)
+        cam.up = tuple(float(v) for v in e3)
+        scene.plotter.renderer.ResetCameraClippingRange()
+        lay.update_dust(force=True)
+
+        _sparkle_target["center"] = (cx, cy, cz)
+        _sparkle_target["radius"] = max(radius, 1e-3)
+        state.focus_active = True
+        state.isolate_active = True
+        state.hd_active = True
+        _start_sparkles(_sparkle_target["center"], _sparkle_target["radius"])
+        _push()
+
+    @state.change("hd_gas")
+    def on_hd_gas_change(hd_gas=False, **_):
+        lay = _hd["layer"]
+        if lay is not None and lay.active:
+            lay.set_gas(bool(hd_gas))
+            _push()
 
     # ------------------------------------------------------------------
     # UI helper
@@ -4491,6 +4587,41 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "{{ gal_cbar_max }}",
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
+
+                # HD model of the selected galaxy, then its gas overlay.
+                v3.VDivider(style="margin:14px 0;")
+                v3.VLabel(
+                    "HD GALAXY",
+                    style=(
+                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                        "color:#FFD700;padding:6px 0 8px;display:block;"
+                    ),
+                )
+                with v3.VSheet(
+                    color="transparent",
+                    style="display:flex;align-items:center;gap:12px;padding:4px 0;",
+                ):
+                    v3.VBtn(
+                        "HD",
+                        variant=("hd_active ? 'flat' : 'outlined'",),
+                        color=("hd_active ? 'cyan' : '#FFD700'",),
+                        density="compact",
+                        click=ctrl.toggle_hd,
+                        disabled=("nav_gal_idx === null || nav_gal_idx < 0",),
+                        title=(
+                            "Isolate the selected galaxy as a detailed 3D model "
+                            "built from its SAGE properties"
+                        ),
+                        id="btn-hd-galaxy",
+                    )
+                    v3.VCheckbox(
+                        v_model=("hd_gas",),
+                        label="Gas",
+                        color="#FFD700",
+                        hide_details=True,
+                        density="compact",
+                        title="Show the halo gas: CGM, hot gas, winds and jets",
+                    )
 
             # Target (halo + galaxy combined)
             with v3.VSheet(

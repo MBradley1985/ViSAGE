@@ -24,7 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from grid import columns  # noqa: E402
 from model import build_disk_maps, build_points, recipe_from_sage  # noqa: E402
-from render import gas_halo, render, screen, tonemap  # noqa: E402
+from render import gas_halo, icl_zone, render, screen, tonemap  # noqa: E402
 from run_prototype import OUT, load, to_galaxy  # noqa: E402
 
 NPIX = 512
@@ -67,6 +67,11 @@ def layer(lay, *names):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None)
+    ap.add_argument(
+        "--no-icl",
+        action="store_true",
+        help="leave out the IntraClusterStars glow around the galaxy",
+    )
     ap.add_argument(
         "--no-cavity",
         action="store_true",
@@ -131,6 +136,12 @@ def main():
             return tonemap(x, white=white)[0]
 
         optical = tm(lay.total)
+        icl = (
+            icl_zone(gal, rc, NPIX, lay.half_width)
+            if not args.no_icl
+            else np.zeros_like(optical)
+        )
+        optical = screen(optical, icl)
         halo_only = gas_halo(
             dataclasses.replace(gal, outflow_rate=0.0, heating_log=0.0),
             rc,
@@ -169,8 +180,13 @@ def main():
             npix=NPIX,
             frame_scale=1.05 * gal.rvir_kpc / (e0 * rc.unit_kpc),
         )
+        icl_r = (
+            icl_zone(gal, rc, NPIX, lay_r.half_width)
+            if not args.no_icl
+            else 0.0
+        )
         whole = screen(
-            tonemap(lay_r.total, white=white)[0],
+            screen(tonemap(lay_r.total, white=white)[0], icl_r),
             gas_halo(
                 gal,
                 rc,
@@ -189,7 +205,7 @@ def main():
             tm(layer(lay, "young", "clusters", "ring")),
             tm(layer(lay, "hii", "ring_hii")),
             None,  # dust: drawn with its own colour map
-            tm(layer(lay, "shells", "tails", "stream", "icl")),
+            screen(tm(layer(lay, "shells", "tails", "stream", "icl")), icl),
             optical,
             halo_only,
             outflows,
@@ -231,7 +247,8 @@ def main():
     fig.suptitle(
         "HD isolate components — cold (CGM) vs hot regime "
         f"(i = {INC}°, ±{FRAME_KPC:.0f} kpc; last column ±Rvir)"
-        + ("  —  no hot-gas cavity" if args.no_cavity else ""),
+        + ("  —  no hot-gas cavity" if args.no_cavity else "")
+        + ("  —  no ICL" if args.no_icl else ""),
         color="w",
         fontsize=13,
     )
@@ -239,6 +256,7 @@ def main():
     out = out_dir / (
         "components_cgm_vs_hot"
         + ("_nocavity" if args.no_cavity else "")
+        + ("_noicl" if args.no_icl else "")
         + ".png"
     )
     fig.savefig(out, dpi=115, facecolor="black")
