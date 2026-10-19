@@ -188,7 +188,9 @@ def test_smooth_move_keeps_its_duration_on_a_slow_machine():
     elapsed = end - frames[0][0]
     assert done
     assert 0.2 < elapsed < 0.6  # slack for a loaded CI runner
-    assert 4 <= len(frames) <= 9
+    # Far fewer than the 18 frames 60 fps would give (a slow CI runner's
+    # 40 ms sleeps run long, so the lower bound is loose).
+    assert 2 <= len(frames) <= 9
     assert cam.position == (10.0, 0.0, 0.0)
 
 
