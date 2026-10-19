@@ -86,24 +86,25 @@ def _cluster_and_loner():
     return np.vstack([cluster, [[30.0, 0, 0]]])
 
 
-def _cold_colours(layer) -> np.ndarray:
-    # The cold-gas envelope is the one layer every galaxy gets.
-    for actor in layer._actors:
-        data = actor.mapper.GetInput()
-        if data.GetNumberOfPoints() == layer._dim.size:
-            rgba = data.GetPointData().GetArray("rgba")
-            n = data.GetNumberOfPoints()
-            return np.array([rgba.GetTuple(i) for i in range(n)])
-    raise AssertionError("no full-size layer")
-
-
 def test_crowded_galaxies_are_dimmed_and_loners_are_not(layer):
+    colours = []
+    hue_rgba = layer._hue_rgba
+
+    def spy(*args, **kwargs):
+        colours.append(hue_rgba(*args, **kwargs))
+        return colours[-1]
+
+    layer._hue_rgba = spy
     layer.update(_snapshot(_cluster_and_loner()))
     dim = layer._dim
     assert dim[-1] == 1.0  # the isolated galaxy keeps its brightness
     assert dim[:-1].max() < 0.5  # every cluster member is dimmed
-    colours = _cold_colours(layer)
-    assert colours[:-1, 2].max() < 0.6 * colours[-1, 2]
+    # Every layer drawn for all 41 galaxies: members come out darker.
+    full = [c for c in colours if len(c) == len(dim)]
+    assert full
+    for rgba in full:
+        bright = rgba[:, :3].max(axis=1).astype(int)
+        assert bright[:-1].max() < 0.6 * bright[-1]
 
 
 def test_crowding_follows_the_emissive_switch(layer):
