@@ -136,19 +136,33 @@ def main():
             + "; ".join(lay.recipe.notes[:3]),
             flush=True,
         )
-        frames = []
-        for inc in (0, 55, 88):
-            orbit(scene, lay, inc)
-            frames.append(capture(scene))
-        # Gas on, framed on the whole halo.
-        state.hd_gas = True
-        state.flush()
-        orbit(scene, lay, 55, gas=True)
-        frames.append(capture(scene))
-        orbit(scene, lay, 55, dist_scale=0.25, gas=True)
-        frames.append(capture(scene))
-        row = np.concatenate(frames, axis=1)
-        Image.fromarray(row).save(out / f"viewer_{name}.png")
+        # Top row: the particle preview (what you see while orbiting).
+        # Bottom row: the refined, ray-marched view once the camera rests.
+        views = [
+            (0, 1.0, False),
+            (55, 1.0, False),
+            (88, 1.0, False),
+            (55, 1.0, True),
+            (55, 0.25, True),
+        ]
+        preview, refined = [], []
+        for inc, dscale, gas in views:
+            if gas and not state.hd_gas:
+                state.hd_gas = True
+                state.flush()
+            orbit(scene, lay, inc, dist_scale=dscale, gas=gas)
+            lay._on_camera()  # as the camera observer would
+            preview.append(capture(scene))
+            t = time.time()
+            ctrl.hd_refine_now(900)
+            dt = time.time() - t
+            refined.append(capture(scene))
+            print(f"   refine i={inc} gas={gas}: {dt:.1f}s", flush=True)
+        grid = np.concatenate(
+            [np.concatenate(preview, axis=1), np.concatenate(refined, axis=1)],
+            axis=0,
+        )
+        Image.fromarray(grid).save(out / f"viewer_{name}.png")
         ctrl.toggle_hd()  # off again
         state.flush()
         assert not lay.active, "HD layer should be cleared when toggled off"

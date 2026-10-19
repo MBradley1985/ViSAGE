@@ -9,14 +9,28 @@ dimmed and reddened by the part of the disk's dust layer lying between it
 and the camera (see `particles.attenuation`).  Recomputing this is a few
 numpy passes over the particles, done only when the viewing direction
 changes by more than ~0.5 degrees.
+
+Progressive refinement: the particles are the fast preview while the
+camera moves.  Once it rests, `refine_view` ray-marches the galaxy from
+exactly that viewpoint with the same renderer as the offline grids
+(emission + dust absorption, asinh tone map, bloom, gas overlay), and
+`show_impostor` draws the result on a camera-facing quad in place of the
+particles.  The next camera move swaps the particles back.
 """
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 from visage.hd.gas import build_gas, build_icl
-from visage.hd.model import SageGalaxy, build_disk_maps, recipe_from_sage
+from visage.hd.model import (
+    SageGalaxy,
+    build_disk_maps,
+    build_points,
+    recipe_from_sage,
+)
 from visage.hd.particles import (
     ParticleSet,
     attach_dust,
@@ -64,6 +78,8 @@ class HDGalaxyLayer:
         self._last_dir = None
         self.gal: SageGalaxy | None = None
         self.recipe = None
+        self._impostor = None  # (actor, camera_state) of the refined view
+        self._white = None  # exposure of the refined views, fixed per galaxy
 
     # -- lifecycle -----------------------------------------------------
 
@@ -84,6 +100,11 @@ class HDGalaxyLayer:
         calibrate(optical, rc.extent * (1.3 if rc.kind == "disk" else 1.0))
         attach_dust(optical, maps)
         optical += build_icl(gal, rc)
+        # Inputs of the ray-marched (refined) views.
+        self._maps = maps
+        self._pts2d = build_points(rc, maps)
+        self._white = None
+        self._gas_cache = {}
 
         self._R = galaxy_basis(spin, rc.seed)
         self._scale = rc.unit_kpc * hubble_h / 1000.0  # model units -> Mpc/h
@@ -102,6 +123,7 @@ class HDGalaxyLayer:
         self.update_dust()
 
     def clear(self):
+        self.hide_impostor(remove=True)
         if self._observer is not None:
             cam, tag = self._observer
             try:
@@ -122,6 +144,7 @@ class HDGalaxyLayer:
         on = bool(on)
         if not self.gal:
             return
+        self.hide_impostor(remove=True)  # its baked-in gas is now stale
         if on and self._gas_sets is None:
             self._gas_sets = build_gas(self.gal, self.recipe)
         for s in self._gas_sets or []:
@@ -184,6 +207,167 @@ class HDGalaxyLayer:
 
     def _on_camera(self, *_):
         self.update_dust()
+        if self._impostor is not None and not self.impostor_matches(
+            self.camera_state()
+        ):
+            self.hide_impostor()
+
+    # -- progressive refinement -----------------------------------------
+
+    def camera_state(self) -> tuple:
+        cam = self._pl.renderer.GetActiveCamera()
+        w, h = self._pl.ren_win.GetSize()
+        return (
+            tuple(round(v, 12) for v in cam.GetPosition()),
+            tuple(round(v, 12) for v in cam.GetFocalPoint()),
+            tuple(round(v, 9) for v in cam.GetViewUp()),
+            round(cam.GetViewAngle(), 6),
+            (int(w), int(h)),
+        )
+
+    def impostor_matches(self, cam_state) -> bool:
+        return self._impostor is not None and self._impostor[1] == cam_state
+
+    def needs_refine(self, cam_state) -> bool:
+        return self.active and not self.impostor_matches(cam_state)
+
+    def refine_view(
+        self, cam_state, max_npix: int = 768, threads=None
+    ) -> dict:
+        """Ray-march the galaxy as seen from `cam_state`.  Pure numpy (no
+        VTK), so it can run off the UI thread."""
+        from visage.hd import raymarch as rm
+
+        pos, focal, up, view_angle, (w, h) = cam_state
+        pos, focal, up = (np.asarray(v, float) for v in (pos, focal, up))
+        zo = pos - focal
+        zo /= np.linalg.norm(zo)  # toward the viewer
+        yo = up - (up @ zo) * zo
+        yo /= np.linalg.norm(yo)
+        xo = np.cross(yo, zo)
+        R = np.vstack([xo, yo, zo]) @ self._R  # galaxy frame -> observer frame
+
+        rc, gal = self.recipe, self.gal
+        k = 1.3 if rc.kind == "disk" else 1.0
+        frame = rc.extent * k
+        if self._gas_on:
+            frame = max(frame, 1.05 * gal.rvir_kpc / rc.unit_kpc)
+        # Only as much as the camera can see around the galaxy, so zooming
+        # in buys resolution.
+        dist = abs(float((self._center - pos) @ -zo)) / self._scale
+        h_vis = dist * np.tan(np.deg2rad(view_angle) / 2.0)
+        half = float(min(frame, 1.15 * h_vis * max(1.0, w / max(h, 1))))
+        npix = int(np.clip(2 * half / (2 * h_vis) * h, 160, max_npix))
+
+        lay = rm.render(
+            rc,
+            self._maps,
+            self._pts2d,
+            R=R,
+            npix=npix,
+            half_width=half,
+            threads=threads or min(8, os.cpu_count() or 1),
+        )
+        if self._white is None:
+            no_agn = lay.total - lay.points.get("agn", 0)
+            self._white = (
+                float(np.percentile(no_agn.mean(axis=2), 99.97)) or 1.0
+            )
+        img, _ = rm.tonemap(lay.total, white=self._white)
+        img = rm.screen(img, rm.icl_zone(gal, rc, npix, half))
+        if self._gas_on:
+            img = rm.screen(img, self._gas_image(npix, half, R))
+        return {
+            "image": img.astype(np.float32),
+            "half_world": half * self._scale,
+            "axes": (xo, yo, zo),
+            "camera": cam_state,
+        }
+
+    def _gas_image(self, npix: int, half: float, R: np.ndarray) -> np.ndarray:
+        """Gas overlay for a refined view.  The halo gas (hot medium, CGM,
+        cold streams) doesn't depend on the viewing angle, so it is cached
+        per frame; only the wind and jets, which follow the spin axis, are
+        redone for each view."""
+        import dataclasses
+
+        from visage.hd import raymarch as rm
+
+        gal, rc = self.gal, self.recipe
+        log = half * rc.unit_kpc > 0.5 * gal.rvir_kpc
+        key = (npix, round(half, 6), log)
+        cache = self.__dict__.setdefault("_gas_cache", {})
+        if key not in cache:
+            static = dataclasses.replace(
+                gal, outflow_rate=0.0, heating_log=0.0
+            )
+            cache.clear()
+            cache[key] = rm.gas_halo(
+                static, rc, npix, half, R=R, log_stretch=log
+            )
+        moving = dataclasses.replace(gal, hot_gas=0.0, cgm_gas=0.0)
+        if moving.outflow_rate > 0.05 or moving.heating_log > 40.0:
+            return rm.screen(
+                cache[key],
+                rm.gas_halo(moving, rc, npix, half, R=R, log_stretch=log),
+            )
+        return cache[key]
+
+    def show_impostor(self, view: dict) -> None:
+        """Show a refined view in place of the particles (if the camera
+        hasn't moved since it was requested)."""
+        import pyvista as pv
+
+        if not self.active or view["camera"] != self.camera_state():
+            return
+        self.hide_impostor(remove=True)
+        xo, yo, _ = view["axes"]
+        hw = view["half_world"]
+        c = self._center
+        corners = np.array(
+            [
+                c - xo * hw - yo * hw,
+                c + xo * hw - yo * hw,
+                c + xo * hw + yo * hw,
+                c - xo * hw + yo * hw,
+            ]
+        )
+        quad = pv.PolyData(corners, faces=np.array([4, 0, 1, 2, 3]))
+        quad.active_texture_coordinates = np.array(
+            [[0, 0], [1, 0], [1, 1], [0, 1]], np.float32
+        )
+        # Premultiplied encoding over the (black) scene: alpha = brightest
+        # channel, colour = hue at full value, so blending reproduces the
+        # image exactly and the sky behind it shows through dark regions.
+        img = np.clip(view["image"], 0.0, 1.0)
+        alpha = img.max(axis=2, keepdims=True)
+        rgb = img / np.maximum(alpha, 1e-6)
+        rgba = (np.concatenate([rgb, alpha], axis=2) * 255).astype(np.uint8)
+        tex = pv.Texture(
+            np.ascontiguousarray(rgba)
+        )  # row 0 = top, as pyvista expects
+        tex.SetInterpolate(True)
+        actor = self._pl.add_mesh(
+            quad,
+            texture=tex,
+            lighting=False,
+            show_scalar_bar=False,
+            render=False,
+            reset_camera=False,
+            pickable=False,
+        )
+        for a, _, _ in self._clouds.values():
+            a.SetVisibility(False)
+        self._impostor = (actor, view["camera"])
+
+    def hide_impostor(self, remove: bool = False) -> None:
+        if self._impostor is None:
+            return
+        actor, _ = self._impostor
+        self._pl.remove_actor(actor, render=False)
+        self._impostor = None
+        for a, _, _ in self._clouds.values():
+            a.SetVisibility(True)
 
     def update_dust(self, force: bool = False):
         """Re-attenuate the dusty components for the current view."""

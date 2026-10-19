@@ -4225,11 +4225,67 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     def _stop_hd() -> None:
         """Drop the HD model (Isolate's teardown calls this too)."""
+        task = _hd_task[0]
+        if task is not None and not task.done():
+            task.cancel()
         lay = _hd["layer"]
         if lay is not None and lay.active:
             lay.clear()
             _push()
         state.hd_active = False
+
+    # Progressive refinement: the particles are the preview while the camera
+    # moves; once it has rested for _HD_IDLE_S the galaxy is ray-marched
+    # from that exact view (quick pass, then sharp) on a worker thread and
+    # swapped in.  Any camera move brings the particles straight back.
+    _HD_IDLE_S = 0.3
+    _hd_task: list = [None]
+
+    async def _hd_refine_loop() -> None:
+        loop = asyncio.get_running_loop()
+        last, still_since = None, 0.0
+        try:
+            while True:
+                await asyncio.sleep(0.1)
+                lay = _hd["layer"]
+                if lay is None or not lay.active:
+                    break
+                cam = lay.camera_state()
+                now = loop.time()
+                if cam != last:
+                    last, still_since = cam, now
+                    continue
+                if now - still_since < _HD_IDLE_S or not lay.needs_refine(cam):
+                    continue
+                for max_npix in (320, 900):  # quick, then sharp
+                    view = await loop.run_in_executor(
+                        None, lay.refine_view, cam, max_npix
+                    )
+                    if not lay.active or lay.camera_state() != cam:
+                        break
+                    lay.show_impostor(view)
+                    _push()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            _hd_task[0] = None
+
+    def _start_hd_refine() -> None:
+        if _hd_task[0] is not None and not _hd_task[0].done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # no event loop (headless): ctrl.hd_refine_now does it
+        _hd_task[0] = loop.create_task(_hd_refine_loop())
+
+    @ctrl.set("hd_refine_now")
+    def on_hd_refine_now(max_npix: int = 768):
+        """Ray-march the current view right away (tests, screenshots)."""
+        lay = _hd["layer"]
+        if lay is not None and lay.active:
+            lay.show_impostor(lay.refine_view(lay.camera_state(), max_npix))
+            _push()
 
     @ctrl.set("toggle_hd")
     def on_toggle_hd():
@@ -4295,6 +4351,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.hd_active = True
         _start_sparkles(_sparkle_target["center"], _sparkle_target["radius"])
         _push()
+        _start_hd_refine()
 
     @state.change("hd_gas")
     def on_hd_gas_change(hd_gas=False, **_):

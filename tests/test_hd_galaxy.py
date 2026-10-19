@@ -242,3 +242,48 @@ def test_dropping_isolate_removes_the_hd_model(hd_panel):
     state.isolate_active = False  # e.g. Reset Camera / Go To / Focus
     state.flush()
     assert not state.hd_active
+
+
+def test_refined_view_swaps_in_and_out_with_the_camera(plotter):
+    """Progressive refinement: a ray-marched view replaces the particles
+    while the camera rests, and the next camera move brings them back."""
+    from visage.hd.layer import HDGalaxyLayer
+
+    lay = HDGalaxyLayer(plotter)
+    lay.show(
+        _disk(),
+        center=[0.0, 0.0, 0.0],
+        spin=np.array([0, 0, 1.0]),
+        hubble_h=0.73,
+    )
+    r = lay.radius_world
+    plotter.camera_position = [(0, -2 * r, 2 * r), (0, 0, 0), (0, 0, 1)]
+    cam = lay.camera_state()
+    assert lay.needs_refine(cam)
+
+    view = lay.refine_view(cam, max_npix=160, threads=2)
+    img = view["image"]
+    assert img.ndim == 3 and img.shape[2] == 3 and np.isfinite(img).all()
+    assert img.max() > 0.2  # the galaxy is there, tone-mapped into [0, 1]
+
+    lay.show_impostor(view)
+    assert lay.impostor_matches(cam) and not lay.needs_refine(cam)
+    assert all(not a.GetVisibility() for a, _, _ in lay._clouds.values())
+
+    plotter.camera_position = [(0, -2.5 * r, 1.5 * r), (0, 0, 0), (0, 0, 1)]
+    lay._on_camera()
+    assert lay._impostor is None
+    assert all(a.GetVisibility() for a, _, _ in lay._clouds.values())
+    lay.clear()
+
+
+def test_threaded_raymarch_matches_single_thread():
+    from visage.hd.model import build_points
+    from visage.hd.raymarch import render
+
+    rc = recipe_from_sage(_disk())
+    maps = build_disk_maps(rc, n=256)
+    pts = build_points(rc, maps)
+    one = render(rc, maps, pts, inc=60, pa=20, npix=96, threads=1).total
+    four = render(rc, maps, pts, inc=60, pa=20, npix=96, threads=4).total
+    assert np.abs(four - one).sum() / np.abs(one).sum() < 1e-5
