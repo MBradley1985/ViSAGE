@@ -161,12 +161,10 @@ def build_info_panel(server, scene: Scene) -> None:
             scene.camera._add_circle_indicator(
                 (float(gpos[0]), float(gpos[1]), float(gpos[2])), 0.0
             )
-            # Force info panel refresh even when the same galaxy is re-selected
-            # (Trame's @state.change won't fire if the value didn't change).
-            if bool(state.galinfo_show):
-                ctrl.show_galaxy_info()
-            elif bool(state.groupinfo_show):
-                ctrl.show_group_info()
+            # Re-selecting the same galaxy (no index change to react to)
+            # still brings its card back.
+            if hasattr(ctrl, "sel_refresh"):
+                ctrl.sel_refresh()
 
         # The host halo follows from the galaxy (visage.ui.selection), so it
         # is the halo the galaxy's group lives in, not just the nearest one.

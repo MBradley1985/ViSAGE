@@ -327,8 +327,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
 
     # Navigation state
-    state.nav_halo_idx = 0
-    state.nav_gal_idx = 0
+    # Nothing selected until the user picks something (None = no selection).
+    state.nav_halo_idx = None
+    state.nav_gal_idx = None
     state.nav_gal_last_radius = 10.0  # radius of the last galaxy zoom (focus)
     state.nav_x = round(scene._cfg.box_size / 2, 2)
     state.nav_y = round(scene._cfg.box_size / 2, 2)
@@ -1597,40 +1598,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.flush()
         _push()
 
-    @ctrl.set("show_galaxy_info")
-    def on_show_galaxy_info():
-        from visage.utils.galaxy_info import build_galaxy_info
-
-        try:
-            gidx = int(state.nav_gal_idx)
-        except (TypeError, ValueError):
-            return
-        _, galaxies = scene.active_model.loader.get(scene.current_snap)
-        if gidx < 0 or gidx >= galaxies.count:
-            return
-
-        # Show the info panel only — do NOT move the camera or change focus.
-        info = build_galaxy_info(
-            galaxies=galaxies,
-            fields_available=scene.active_model.fields_available,
-            idx=gidx,
-            snap_table=scene._snap_table,
-            hubble_h=scene._cfg.hubble_h,
-        )
-        state.galinfo_items = [
-            {"label": k, "value": v} for k, v in info.items()
-        ]
-        state.galinfo_show = True
-        # Close any other right-side overlay
-        state.groupinfo_show = False
-        state.flush()
-        _push()
-
-    @ctrl.set("hide_galaxy_info")
-    def on_hide_galaxy_info():
-        state.galinfo_show = False
-        state.flush()
-
     def _find_central_pos_and_extent(galaxies, gidx) -> tuple:
         """Return (central_position, group_extent_mpch, central_idx_in_galaxies)."""
         import numpy as np
@@ -1657,55 +1624,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         return central_pos, extent, central_idx
 
-    @ctrl.set("show_group_info")
-    def on_show_group_info():
-        from visage.utils.group_info import build_group_info
-        import numpy as np
-
-        try:
-            gidx = int(state.nav_gal_idx)
-        except (TypeError, ValueError):
-            return
-        _, galaxies = scene.active_model.loader.get(scene.current_snap)
-        if gidx < 0 or gidx >= galaxies.count:
-            return
-        info = build_group_info(
-            galaxies=galaxies,
-            fields_available=scene.active_model.fields_available,
-            idx=gidx,
-            hubble_h=scene._cfg.hubble_h,
-        )
-        state.groupinfo_items = [
-            {"label": k, "value": v} for k, v in info.items()
-        ]
-        state.groupinfo_show = True
-        # Mutually exclusive with the other right-side overlays
-        state.galinfo_show = False
-
-        # Place the standard small red circle on the FOF central — same
-        # indicator style used by the Galaxy info action.
-        central_pos, _extent, _central_idx = _find_central_pos_and_extent(
-            galaxies, gidx
-        )
-        if central_pos is not None:
-            off = scene.active_model.offset
-            scene.camera._add_circle_indicator(
-                (
-                    float(central_pos[0] + off[0]),
-                    float(central_pos[1] + off[1]),
-                    float(central_pos[2] + off[2]),
-                ),
-                0.0,
-            )
-        state.flush()
-        _push()
-
-    @ctrl.set("hide_group_info")
-    def on_hide_group_info():
-        state.groupinfo_show = False
-        state.flush()
-        _push()
-
     # ------------------------------------------------------------------
     # Export catalogue
     # ------------------------------------------------------------------
@@ -1720,7 +1638,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         else []
     ) + [
         {"title": "Current Filters", "value": "filters"},
-        {"title": "Target Galaxy", "value": "target"},
+        {"title": "Selected Galaxy", "value": "target"},
         {"title": "Group Members", "value": "group"},
         {"title": "Coords Sphere", "value": "coords"},
         {"title": "Box Region", "value": "box"},
@@ -1848,7 +1766,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     _SCOPE_LABELS = {
         "lightcone": "Whole Lightcone",
         "filters": "Current Filters",
-        "target": "Target Galaxy",
+        "target": "Selected Galaxy",
         "group": "Group Members",
         "coords": "Coords Sphere",
         "box": "Box Region",
@@ -1925,14 +1843,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         state.export_busy = False
         state.flush()
-
-    # Auto-refresh whichever info card is open when the selection changes.
-    @state.change("nav_gal_idx")
-    def _refresh_info_on_selection(**_):
-        if bool(state.galinfo_show):
-            ctrl.show_galaxy_info()
-        elif bool(state.groupinfo_show):
-            ctrl.show_group_info()
 
     # Cache the last-highlighted set so re-toggling re-shows the SAME
     # positions even if the snapshot or nav_gal_idx have drifted in between.
@@ -2206,24 +2116,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
         lib_items = list(getattr(state, "library_items", []))
         if lib_items:
             pil_img = _draw_library_cards(pil_img, lib_items)
-        # Galaxy Info — only visible when Target tab is active
-        if (
-            bool(getattr(state, "galinfo_show", False))
-            and str(getattr(state, "nav_active_tab", "")) == "target"
-        ):
-            items = list(getattr(state, "galinfo_items", []))
+        # The selection card.
+        if bool(getattr(state, "sel_show", False)):
+            items = list(getattr(state, "sel_props", []))
             if items:
                 pil_img = _draw_info_panel(
-                    pil_img, items, "Galaxy Information"
+                    pil_img, items, str(getattr(state, "sel_title", ""))
                 )
-        # Group Info — only visible when Environment tab is active
-        elif (
-            bool(getattr(state, "groupinfo_show", False))
-            and str(getattr(state, "nav_active_tab", "")) == "environment"
-        ):
-            items = list(getattr(state, "groupinfo_items", []))
-            if items:
-                pil_img = _draw_info_panel(pil_img, items, "Group Information")
         if bool(getattr(state, "console_popout_show", False)):
             pil_img = _draw_console_popout(pil_img)
         return pil_img
@@ -2587,15 +2486,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             sc = _record_state["scale"]
             has_overlays = (
                 bool(getattr(state, "library_items", []))
-                or (
-                    bool(getattr(state, "galinfo_show", False))
-                    and str(getattr(state, "nav_active_tab", "")) == "target"
-                )
-                or (
-                    bool(getattr(state, "groupinfo_show", False))
-                    and str(getattr(state, "nav_active_tab", ""))
-                    == "environment"
-                )
+                or bool(getattr(state, "sel_show", False))
                 or bool(getattr(state, "console_popout_show", False))
             )
 
@@ -4024,7 +3915,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         tab = state.nav_active_tab
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
 
-        if tab == "target":
+        if tab not in ("coords", "box") and isinstance(state.nav_gal_idx, int):
             try:
                 idx = int(state.nav_gal_idx)
                 radius = float(state.nav_gal_last_radius)
@@ -4032,19 +3923,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     g = galaxies.positions[idx]
                     scene.set_focus_sphere(
                         (float(g[0]), float(g[1]), float(g[2])), radius
-                    )
-                    state.focus_active = True
-                    state.isolate_active = False
-            except Exception:
-                pass
-        elif tab == "environment":
-            try:
-                hidx = int(state.nav_halo_idx)
-                d = float(state.nav_halo_distance)
-                if 0 <= hidx < halos.count:
-                    pos = scene.camera._halo_index.position_of(hidx)
-                    scene.set_focus_sphere(
-                        (float(pos[0]), float(pos[1]), float(pos[2])), d
                     )
                     state.focus_active = True
                     state.isolate_active = False
@@ -4149,7 +4027,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         halo_indices: list[int] = []
         gal_indices = np.array([], dtype=np.int64)
 
-        if state.nav_active_tab == "environment" and 0 <= hidx < halos.count:
+        if state.nav_active_tab == "target" and 0 <= hidx < halos.count:
             # Halo selection — keep the halo AND the galaxies of the FOF
             # group sitting in it, so the group is actually populated.
             halo_indices = [hidx]
@@ -4720,7 +4598,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                         id="btn-hd-galaxy",
                     )
-
         v3.VDivider(style="flex-shrink:0;")
 
         # ── Tab rows: 3-up grid wrapping to multiple rows ───────────
@@ -4733,6 +4610,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             style=(
                 "width:100%;flex-shrink:0;background:#111827;"
                 "border-radius:0;display:flex;flex-wrap:wrap;"
+                "justify-content:center;"
                 "height:auto;min-height:118px;padding-bottom:6px;"
             ),
         ):
@@ -4748,7 +4626,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ("Filters", "filters"),
                 ("Record", "record"),
                 ("Target", "target"),
-                ("Environment", "environment"),
                 ("Coords", "coords"),
                 _box_or_phot,
                 ("Console", "console"),
@@ -4907,167 +4784,41 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
 
-            # Target (halo + galaxy combined)
+            # Target tab — select a galaxy or halo by index (the selection
+            # card then shows it), and which environments to show.
             with v3.VSheet(
                 color="transparent",
                 v_show=("nav_active_tab === 'target'",),
             ):
                 v3.VLabel(
-                    "HALO",
+                    "SELECT",
                     style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#c084fc;display:block;padding:4px 0 6px;"
+                        "font-size:0.85rem;font-weight:700;"
+                        "letter-spacing:0.06em;color:#FFD700;"
+                        "display:block;padding:4px 0 6px;"
                     ),
                 )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_halo_idx",
-                        "Halo index",
-                        on_enter=ctrl.go_to_halo,
-                        target_id="btn-target-halo-go",
-                    )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_halo_distance",
-                        "Standoff (Mpc/h)",
-                        on_enter=ctrl.go_to_halo,
-                        target_id="btn-target-halo-go",
-                    )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "Go",
-                        block=True,
-                        color="#c084fc",
-                        density="compact",
-                        click=ctrl.go_to_halo,
-                        id="btn-target-halo-go",
-                    )
-
-                v3.VDivider(style="margin:12px 0;")
-
-                v3.VLabel(
-                    "GALAXY",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#FFD700;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_gal_idx",
-                        "Galaxy index",
-                        on_enter=ctrl.go_to_galaxy_enter,
-                        target_id="btn-target-galaxy-go",
-                    )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "Go",
-                        block=True,
-                        color="#FFD700",
-                        density="compact",
-                        click=ctrl.go_to_galaxy_enter,
-                        id="btn-target-galaxy-go",
-                    )
-                v3.VLabel(
-                    "Zoom radius (Mpc/h)",
-                    style=(
-                        "font-size:0.6rem;color:#9ca3af;"
-                        "display:block;padding:10px 0 4px;"
-                    ),
-                )
-                with v3.VBtnGroup(
-                    variant="outlined",
-                    density="compact",
-                    style="width:100%;",
+                for label, key, kind in (
+                    ("Galaxy index", "sel_q_gal", "galaxy"),
+                    ("Halo index", "sel_q_halo", "halo"),
                 ):
-                    v3.VBtn(
-                        "3",
-                        style="flex:1;",
-                        color="#FFD700",
-                        click=ctrl.go_to_galaxy_1,
-                    )
-                    v3.VBtn(
-                        "5",
-                        style="flex:1;",
-                        color="#FFD700",
-                        click=ctrl.go_to_galaxy_3,
-                    )
-                    v3.VBtn(
-                        "10",
-                        style="flex:1;",
-                        color="#FFD700",
-                        click=ctrl.go_to_galaxy_5,
-                    )
-
-                v3.VDivider(style="margin:14px 0 10px;")
-
-                v3.VBtn(
-                    "Galaxy Info",
-                    block=True,
-                    color="#FFD700",
-                    density="compact",
-                    prepend_icon="mdi-information-outline",
-                    click=ctrl.show_galaxy_info,
-                    style="margin-bottom:6px;",
-                )
-
-                v3.VBtn(
-                    "Highlight Galaxy",
-                    block=True,
-                    color="#FFD700",
-                    variant="outlined",
-                    density="compact",
-                    prepend_icon="mdi-bullseye-arrow",
-                    click=ctrl.highlight_galaxy,
-                    style="margin-bottom:6px;",
-                )
-
-                v3.VBtn(
-                    "Clear Indicator",
-                    block=True,
-                    variant="outlined",
-                    color="red",
-                    density="compact",
-                    prepend_icon="mdi-close-circle-outline",
-                    click=ctrl.clear_indicator,
-                )
-
-            # Environment tab — group/cluster-level selection & inspection
-            with v3.VSheet(
-                color="transparent",
-                v_show=("nav_active_tab === 'environment'",),
-            ):
-                v3.VLabel(
-                    "HALO  (pick a FOF group)",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#c084fc;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_halo_idx",
-                        "Halo index",
-                        on_enter=ctrl.go_to_env_halo,
-                        target_id="btn-env-go",
-                    )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_halo_distance",
-                        "Standoff (Mpc/h)",
-                        on_enter=ctrl.go_to_env_halo,
-                        target_id="btn-env-go",
-                    )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "Go",
-                        block=True,
-                        color="#c084fc",
-                        density="compact",
-                        click=ctrl.go_to_env_halo,
-                        id="btn-env-go",
-                    )
-
+                    with v3.VSheet(
+                        color="transparent",
+                        style=(
+                            "display:flex;align-items:center;gap:4px;"
+                            "margin-bottom:8px;"
+                        ),
+                    ):
+                        with html.Div(style="flex:1;min-width:0;"):
+                            _tf(key, label, target_id=f"btn-sel-{kind}")
+                        v3.VBtn(
+                            "Select",
+                            variant="outlined",
+                            density="compact",
+                            color="#FFD700",
+                            click=(ctrl.sel_query, f"['{kind}']"),
+                            id=f"btn-sel-{kind}",
+                        )
                 v3.VDivider(style="margin:12px 0;")
 
                 v3.VLabel(
@@ -5129,37 +4880,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
-                )
-
-                v3.VDivider(style="margin:14px 0 10px;")
-
-                v3.VBtn(
-                    "Group Info",
-                    block=True,
-                    color="#c084fc",
-                    density="compact",
-                    prepend_icon="mdi-account-group-outline",
-                    click=ctrl.show_group_info,
-                    style="margin-bottom:6px;",
-                )
-                v3.VBtn(
-                    "Highlight Members",
-                    block=True,
-                    color="#c084fc",
-                    variant="outlined",
-                    density="compact",
-                    prepend_icon="mdi-bullseye-arrow",
-                    click=ctrl.highlight_group_members,
-                    style="margin-bottom:6px;",
-                )
-                v3.VBtn(
-                    "Clear Indicator",
-                    block=True,
-                    variant="outlined",
-                    color="red",
-                    density="compact",
-                    prepend_icon="mdi-close-circle-outline",
-                    click=ctrl.clear_indicator,
                 )
 
             # Coords

@@ -43,6 +43,10 @@ def _init_state(state) -> None:
         "sel_track": False,
         "sel_info_open": False,
         "sel_info_items": [],
+        "sel_halo": "",
+        "sel_group": "",
+        "sel_q_gal": "",
+        "sel_q_halo": "",
     }.items():
         if not state.has(k):
             state[k] = v
@@ -128,6 +132,43 @@ def selection_card(server) -> None:
                 click="sel_track = !sel_track",
                 title="Keep the camera on it as the snapshot changes",
             )
+        # Closer zooms (Mpc/h), and the host halo.
+        with html.Div(
+            style=(
+                "display:flex;align-items:center;gap:4px;padding:0 12px 6px;"
+                "font-size:0.72rem;color:#9ca3af;flex-shrink:0;"
+            ),
+        ):
+            html.Span("Zoom (Mpc/h)", style="margin-right:4px;")
+            for label, fn in (
+                ("3", ctrl.go_to_galaxy_1),
+                ("5", ctrl.go_to_galaxy_3),
+                ("10", ctrl.go_to_galaxy_5),
+            ):
+                v3.VBtn(
+                    label,
+                    size="x-small",
+                    variant="outlined",
+                    color="#FFD700",
+                    click=fn,
+                    style="min-width:0;",
+                )
+        with html.Div(
+            v_show=("sel_halo",),
+            style=(
+                "display:flex;align-items:center;gap:6px;padding:0 12px 8px;"
+                "font-size:0.75rem;flex-shrink:0;"
+            ),
+        ):
+            html.Span("{{ sel_halo }}", style="flex:1;color:#c084fc;")
+            v3.VBtn(
+                "Go to halo",
+                size="x-small",
+                variant="outlined",
+                color="#c084fc",
+                click=ctrl.go_to_halo,
+                title="Fly to the host halo (10 Mpc/h standoff)",
+            )
         with html.Div(style="overflow-y:auto;padding:0 12px 10px;"):
             # Key properties.
             with html.Div(
@@ -166,7 +207,7 @@ def selection_card(server) -> None:
                     )
             # The group.
             html.Div(
-                "GROUP",
+                "GROUP · {{ sel_group }}",
                 v_show=("sel_members.length > 1",),
                 style=(
                     "font-size:0.7rem;letter-spacing:0.08em;color:#c084fc;"
@@ -296,10 +337,15 @@ def build_selection(server, scene) -> None:
             ("B/T", f"{galaxies.bulge_mass[i] / max(ms, 1.0):.2f}"),
             ("Cold gas", _fmt(float(galaxies.cold_gas[i]), " M☉")),
         ]
-        if host is not None:
-            props.append(("Host halo", f"{host}  ({_fmt(mvir_host, ' M☉')})"))
-        else:
-            props.append(("Host halo", "below the halo mass cut"))
+        state.sel_halo = (
+            f"Host halo {host} · {_fmt(mvir_host, ' M☉')}"
+            if host is not None
+            else "Host halo below the halo mass cut"
+        )
+        total = float(galaxies.stellar_mass[mem].sum())
+        state.sel_group = (
+            f"{kind}, {len(mem)} members · ΣM* {_fmt(total, ' M☉')}"
+        )
         if not is_cen:
             d_kpc = np.linalg.norm(pos - cpos) * 1000.0 / h
             props.append(("From central", f"{d_kpc:.0f} kpc"))
@@ -402,6 +448,40 @@ def build_selection(server, scene) -> None:
             cam.position = tuple(np.asarray(cam.position) + shift)
             scene.plotter.renderer.ResetCameraClippingRange()
             _push()
+
+    @ctrl.set("sel_refresh")
+    def _sel_refresh():
+        i = _int(state.nav_gal_idx)
+        if i is not None and i >= 0:
+            _select(i)
+
+    @ctrl.set("show_galaxy_info")
+    def _show_galaxy_info():
+        """The card, with every property open."""
+        state.sel_info_open = True
+        _sel_refresh()
+
+    @ctrl.set("show_group_info")
+    def _show_group_info():
+        _sel_refresh()
+
+    @ctrl.set("sel_query")
+    def _sel_query(kind):
+        """Select by a typed Galaxy or Halo index."""
+        key = "sel_q_gal" if kind == "galaxy" else "sel_q_halo"
+        k = _int(str(state[key]).strip())
+        if k is None or k < 0:
+            return
+        if kind == "galaxy":
+            if _int(state.nav_gal_idx) == k:
+                _sel_refresh()
+            state.nav_gal_idx = k
+        else:
+            sel["halo_echo"] = None
+            if _int(state.nav_halo_idx) == k:
+                _on_halo(nav_halo_idx=k)
+            state.nav_halo_idx = k
+        state.flush()
 
     @ctrl.set("sel_select")
     def _sel_select(idx):

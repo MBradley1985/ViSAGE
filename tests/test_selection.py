@@ -109,3 +109,22 @@ def test_hd_offers_its_galaxies_for_picking(panel):
     assert scene.camera.marker.active
     ctrl.toggle_hd()
     state.flush()
+
+
+def test_nothing_is_selected_at_startup(panel):
+    server, scene = panel
+    state = server.state
+    assert state.nav_gal_idx is None and not state.sel_show
+    assert not scene.camera.marker.active
+
+
+def test_selecting_by_typed_index_and_info(panel):
+    server, _ = panel
+    state, ctrl = server.state, server.controller
+    state.sel_q_gal = "7"
+    ctrl.sel_query("galaxy")
+    assert state.nav_gal_idx == 7 and state.sel_show
+    ctrl.sel_close()
+    assert not state.sel_show
+    ctrl.show_galaxy_info()  # Console "galaxy info": the card, all open
+    assert state.sel_show and state.sel_info_open and state.sel_info_items
