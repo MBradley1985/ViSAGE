@@ -351,6 +351,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.hd_progress = ""  # the message
     state.hd_percent = -1  # its progress, 0-100 (-1: indeterminate)
     state.hd_gas = False  # its halo-gas overlay (the card's Gas button)
+    # HD needs a GPU: off (and why) when OpenGL runs on the CPU.
+    if not state.has("hd_available"):
+        state.hd_available = True
+        state.hd_unavailable = ""
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
     state.draw_box_active = False  # interactive box widget in Box tab
@@ -4136,7 +4140,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
         "mode": None,
         "built_snap": None,  # the snapshot the HD model shows
         "lead": None,  # catalogue index of the halo's central
+        "build": None,  # token of the build in progress (None: cancelled)
+        "futs": [],  # its pending futures
+        "cache": None,  # recent builds (BuildCache)
     }
+
+    def _hd_cache():
+        if _hd["cache"] is None:
+            from visage.hd.group import BuildCache, default_cache_budget
+
+            _hd["cache"] = BuildCache(default_cache_budget())
+        return _hd["cache"]
 
     def _hd_layer():
         if _hd["layer"] is None:
@@ -4206,6 +4220,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return
         if bool(state.hd_active):
             _hd_off()
+            return
+        if not bool(state.hd_available):
+            state.notice_text = state.hd_unavailable or "HD needs a GPU."
+            state.notice_color = "warning"
+            state.notice_show = True
             return
 
         try:
@@ -4369,6 +4388,18 @@ def build_navigation_panel(server, scene: Scene) -> None:
         partners = tidal_partners(entries, h)
         sat_ctx = satellite_context(entries, h)
         todo = [k for k, e in enumerate(entries) if e["quality"]]
+        # Built a moment ago (HD off and on, back to the same group)?
+        key = (
+            scene.active_model.name,
+            scene.current_snap,
+            tuple((entries[k]["idx"], entries[k]["quality"]) for k in todo),
+        )
+        cached = _hd_cache().get(key)
+        if cached is not None:
+            for k, prep in zip(todo, cached, strict=True):
+                entries[k]["prep"] = prep
+            _hd_show_group(entries, h, focus)
+            return
 
         def args(k):
             e = entries[k]
@@ -4386,6 +4417,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             for k in todo:
                 fn, *a = args(k)
                 entries[k]["prep"] = fn(*a)
+            _hd_cache().put(key, [entries[k]["prep"] for k in todo])
             _hd_show_group(entries, h, focus)
             return
 
@@ -4398,9 +4430,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.hd_percent = 0
         state.flush()
 
+        token = _hd["build"] = object()
+
         async def _build():
             try:
                 await asyncio.sleep(0.05)  # let the message reach the browser
+                if _hd["build"] is not token:
+                    return
                 try:
                     ex = pool()
                 except Exception:
@@ -4414,21 +4450,53 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         return await loop.run_in_executor(None, *args(k))
 
                 futs = {asyncio.ensure_future(_prep(k)): k for k in todo}
+                _hd["futs"] = list(futs)
                 done = 0
                 for fut in asyncio.as_completed(list(futs)):
-                    await fut
+                    try:
+                        await fut
+                    except asyncio.CancelledError:
+                        return
+                    if _hd["build"] is not token:
+                        return  # cancelled
                     done += 1
                     state.hd_progress = f"Building HD {word}… {done}/{n}"
                     state.hd_percent = int(100 * done / max(n, 1))
                     state.flush()
                 for fut, k in futs.items():
                     entries[k]["prep"] = fut.result()
+                _hd_cache().put(key, [entries[k]["prep"] for k in todo])
                 _hd_show_group(entries, h, focus)
             finally:
-                state.hd_building = False
-                state.flush()
+                if _hd["build"] is token:
+                    _hd["build"] = None
+                    _hd["futs"] = []
+                    state.hd_building = False
+                    state.flush()
 
         loop.create_task(_build())
+
+    @ctrl.set("hd_cancel")
+    def _hd_cancel():
+        """Cancel button on the build card: stop waiting for the build
+        (members not yet started are dropped; ones mid-build finish in
+        their worker and are thrown away)."""
+        if not bool(state.hd_building):
+            return
+        _hd["build"] = None
+        for fut in _hd["futs"]:
+            fut.cancel()
+        _hd["futs"] = []
+        state.hd_building = False
+        state.flush()
+
+    @ctrl.set("hd_escape")
+    def _hd_escape():
+        """Esc: cancel a build, or leave HD."""
+        if bool(state.hd_building):
+            _hd_cancel()
+        elif bool(state.hd_active):
+            _hd_off()
 
     def _hd_go_to_member() -> bool:
         """If HD is on and the Galaxy index is one of the galaxies drawn in
@@ -4503,6 +4571,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         (as it drops Isolate), so nothing is left at stale positions."""
         if not bool(state.hd_active) and not bool(state.hd_building):
             return
+        _hd_cancel()
         _clear_draw_widgets()
         state.isolate_active = False
         state.focus_active = False
@@ -4587,6 +4656,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     id=f"cam-release-{_dir}",
                     click=(server.controller.cam_release, f"['{_dir}']"),
                 )
+            v3.VBtn("", id="hd-escape", click=ctrl.hd_escape)
 
         # ── Reset + Focus + Centre ─────────────────────────────────
         with v3.VSheet(
@@ -4643,14 +4713,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color=("hd_active ? 'cyan' : '#FFD700'",),
                         loading=("hd_building",),
                         disabled=(
-                            "hd_building || nav_gal_idx === null "
-                            "|| nav_gal_idx < 0",
+                            "hd_building || !hd_available "
+                            "|| nav_gal_idx === null || nav_gal_idx < 0",
                         ),
                         style="min-width:0;padding:0 8px;",
                         title=(
-                            "HD: the selected galaxy (its whole pair, group "
-                            "or cluster, with its surroundings) as detailed "
-                            "3D models built from its SAGE properties"
+                            "hd_available ? 'HD: the selected galaxy (its "
+                            "whole pair, group or cluster, with its "
+                            "surroundings) as detailed 3D models built from "
+                            "its SAGE properties' : hd_unavailable",
                         ),
                         id="btn-hd-galaxy",
                     )
@@ -4902,7 +4973,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style=_ENV_CB_STYLE,
                 )
                 # The selection card (what's selected, its group, Go /
-                # Isolate / HD / Track).
+                # Isolate / HD / Gas).
                 v3.VBtn(
                     "{{ sel_show ? 'Hide info' : 'Show info' }}",
                     block=True,
@@ -4915,6 +4986,49 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style="margin-top:14px;",
                     title="Show the selected galaxy's card",
                 )
+
+                # Find: galaxies worth a look, by preset; a click selects.
+                v3.VDivider(style="margin:14px 0;")
+                v3.VLabel(
+                    "FIND",
+                    style=(
+                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                        "color:#06b6d4;display:block;padding:4px 0 6px;"
+                    ),
+                )
+                from visage.utils.find import PRESETS
+
+                v3.VSelect(
+                    v_model=("find_preset",),
+                    items=(
+                        [{"title": t, "value": k} for k, t in PRESETS.items()],
+                    ),
+                    label="Find…",
+                    clearable=True,
+                    hide_details=True,
+                    variant="outlined",
+                    color="cyan",
+                    density="compact",
+                )
+                html.Div(
+                    "{{ find_note }}",
+                    v_show=("find_note",),
+                    style="font-size:0.72rem;color:#9ca3af;padding:6px 2px;",
+                )
+                with html.Div(style="padding-top:4px;"):
+                    with html.Div(
+                        v_for="r in find_results",
+                        key="r.idx",
+                        click=(ctrl.find_select, "[r.idx]"),
+                        style=(
+                            "'font-size:0.74rem;padding:3px 6px;"
+                            "cursor:pointer;border-radius:4px;' + "
+                            "(r.idx === nav_gal_idx ? "
+                            "'background:rgba(34,211,238,0.18);"
+                            "color:#22d3ee;' : 'color:#e2e8f0;')",
+                        ),
+                    ):
+                        html.Span("{{ r.text }}")
 
             # Coords
             with v3.VSheet(

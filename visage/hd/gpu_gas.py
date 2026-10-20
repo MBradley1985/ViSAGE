@@ -194,11 +194,15 @@ class GasSpec:
 
     glsl_impl = GLSL_IMPL
 
-    def __init__(self, gal, rc: GalaxyRecipe):
+    def __init__(self, gal, rc: GalaxyRecipe, magnify: float = 1.0):
+        """`magnify`: how many times its true size the galaxy is drawn (a
+        group member); the halo keeps its true size, and so does the gas's
+        clearing around the galaxy and its wind (true galaxy size)."""
         self.gal, self.rc = gal, rc
+        true_unit = rc.unit_kpc / magnify  # kpc per model unit, unmagnified
         self.rvir = max(gal.rvir_kpc, 20.0)
         self.half = 1.05 * self.rvir / rc.unit_kpc  # model units
-        self.r_in = 1.2 * rc.extent * rc.unit_kpc
+        self.r_in = 1.2 * rc.extent * true_unit
         self.hot = hot_opacity(gal.hot_gas) if gal.hot_gas > 0 else 0.0
 
         self.stream_amp = 0.0
@@ -222,7 +226,7 @@ class GasSpec:
             if gal.heating_log > 40.0
             else 0.0
         )
-        self.disk_r = rc.extent * rc.unit_kpc * 0.5
+        self.disk_r = rc.extent * true_unit * 0.5
         self.wind = 0.0
         if gal.outflow_rate > 0.05:
             self.wind = float(

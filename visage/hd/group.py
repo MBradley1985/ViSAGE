@@ -9,8 +9,9 @@ falls with rank, as each is small on screen); any long tail of a big
 cluster is drawn as soft glows.  All members share one exposure, so their
 relative brightness follows stellar mass as in the offline grids
 (brightness ~ M^0.35), anchored so the central looks as it does on its
-own.  Only the central carries the halo (gas, ICL, Rvir box): its Rvir is
-the group's.
+own.  Every member carries its own halo gas (on the Gas button) out to
+its own Rvir; only the central carries the intracluster light, and its
+Rvir is the group's.
 
 The CPU side of the builds runs in a process pool (many small numpy
 operations, which threads can't spread across cores).
@@ -243,6 +244,83 @@ def pool():
     return _POOL["pool"]
 
 
+def _warm_worker() -> int:
+    """Pool worker: import the build code (the slow part of a cold start)."""
+    import visage.hd.gpu  # noqa: F401
+    import visage.hd.layer  # noqa: F401
+
+    return os.getpid()
+
+
+def warm_pool() -> None:
+    """Start the pool's workers now (at app start, in the background), so
+    the first HD build doesn't wait for them to spawn and import."""
+    ex = pool()
+    for _ in range(ex._max_workers):
+        ex.submit(_warm_worker)
+
+
+def _nbytes(obj, seen=None) -> int:
+    """Rough memory held by a build (its numpy arrays)."""
+    seen = set() if seen is None else seen
+    if id(obj) in seen:
+        return 0
+    seen.add(id(obj))
+    if isinstance(obj, np.ndarray):
+        return int(obj.nbytes)
+    if isinstance(obj, dict):
+        return sum(_nbytes(v, seen) for v in obj.values())
+    if isinstance(obj, (list, tuple)):
+        return sum(_nbytes(v, seen) for v in obj)
+    if hasattr(obj, "__dict__"):
+        return _nbytes(vars(obj), seen)
+    return 0
+
+
+class BuildCache:
+    """The last few HD builds' CPU side, so turning HD off and on again (or
+    going back to a group seen a moment ago) skips the build.  Least
+    recently used first out, within a memory budget; the newest build is
+    always kept."""
+
+    def __init__(self, budget_bytes: int):
+        from collections import OrderedDict
+
+        self.budget = int(budget_bytes)
+        self._items: OrderedDict = OrderedDict()  # key -> (preps, bytes)
+
+    def get(self, key):
+        hit = self._items.get(key)
+        if hit is None:
+            return None
+        self._items.move_to_end(key)
+        return hit[0]
+
+    def put(self, key, preps) -> None:
+        self._items[key] = (preps, _nbytes(preps))
+        self._items.move_to_end(key)
+        while len(self._items) > 1 and self.nbytes > self.budget:
+            self._items.popitem(last=False)
+
+    @property
+    def nbytes(self) -> int:
+        return sum(b for _, b in self._items.values())
+
+    def clear(self) -> None:
+        self._items.clear()
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
+def default_cache_budget() -> int:
+    """A tenth of the machine's memory, between 0.5 and 3 GB."""
+    from visage import system
+
+    total = system.total_memory_bytes() or 8 * 1024**3
+    return int(np.clip(total / 10, 0.5 * 1024**3, 3 * 1024**3))
+
+
 class HDGroupLayer:
     """All members of a group, as HD models plus glows for the tail."""
 
@@ -252,8 +330,6 @@ class HDGroupLayer:
         self.neighbours: list[HDGalaxyLayer] = []  # around it
         self._glow = None
         self._glow_data = None
-        self._halo = None
-        self._halo_rgb = None
         self._observer = None
         self._fxaa = None
         self._near_tol = None
@@ -286,6 +362,7 @@ class HDGroupLayer:
             if e["prep"] is None:
                 continue
             lay = HDGalaxyLayer(self._pl)
+            member = e.get("role", "member") == "member"
             lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
             mag = (
                 magnification(e["gal"], e["prep"]["rc"], hubble_h)
@@ -297,14 +374,15 @@ class HDGroupLayer:
                 e["center"],
                 e["spin"],
                 hubble_h,
-                gas=gas and i == 0,
+                gas=gas and member,
                 prep=e["prep"],
                 white=w_common / lum,
-                halo=i == 0,
+                halo=member,
+                icl=i == 0,
                 manage_fxaa=False,
                 magnify=mag,
             )
-            if e.get("role", "member") == "member":
+            if member:
                 self.members.append(lay)
             else:
                 self.neighbours.append(lay)
@@ -319,7 +397,6 @@ class HDGroupLayer:
         self._add_glows(
             entries, hubble_h, display_luminosity(lead["gal"], k_lead)
         )
-        self._add_halos(entries, hubble_h, gas)
         self._observer = ren.AddObserver("StartEvent", self._update_glows)
         self._update_glows()
 
@@ -379,63 +456,6 @@ class HDGroupLayer:
         self._glow = a
         self._cloud = cloud
 
-    def _add_halos(self, entries, hubble_h, gas):
-        """Every member's halo as a soft glow the size of its normal-mode
-        splat (Rvir, scaled by its gas mass as there), tinted by whichever
-        of CGM or hot gas dominates: the galaxy keeps its true size and
-        sits inside the same footprint it has in the normal view.  The
-        central's glow gives way to its full gas render when Gas is on."""
-        import pyvista as pv
-
-        from visage.utils.sizing import galaxy_world_radii_rvir
-
-        pos, rad, col = [], [], []
-        for e in entries:
-            g = e["gal"]
-            r = float(
-                galaxy_world_radii_rvir(
-                    np.array([g.rvir_kpc * hubble_h / 1000.0])
-                )[0]
-            )
-            cgm = g.cgm_gas >= g.hot_gas
-            m = max(g.cgm_gas if cgm else g.hot_gas, 1.0)
-            lo, hi = (7.0, 11.5) if cgm else (7.0, 14.0)
-            f = float(np.clip((np.log10(m) - lo) / (hi - lo), 0.0, 1.0))
-            pos.append(np.asarray(e["center"], float))
-            rad.append(r * (0.5 + 0.5 * f))
-            rgb = np.asarray(CGM_RGB if cgm else HOT_GAS_RGB, float)
-            col.append((0.06 + 0.16 * f) * rgb / max(rgb.max(), 1e-6))
-        r_lead = np.linalg.norm(np.array(pos) - np.array(pos[0]), axis=1)
-        fade = np.clip((R_WEB - r_lead) / (0.3 * R_WEB), 0.0, 1.0)
-        self._halo_rgb = (np.array(col) * fade[:, None]).astype(np.float32)
-        cloud = pv.PolyData(np.array(pos))
-        cloud["rgb"] = self._halo_rgb.copy()
-        cloud["radius"] = np.array(rad, np.float32)
-        a = self._pl.add_mesh(
-            cloud,
-            scalars="rgb",
-            rgb=True,
-            style="points_gaussian",
-            emissive=True,
-            show_scalar_bar=False,
-            render=False,
-            reset_camera=False,
-            pickable=False,
-        )
-        a.mapper.SetScaleArray("radius")
-        a.mapper.SetScaleFactor(1.0)
-        self._halo = a
-        self._halo_cloud = cloud
-        self._halo_gas(gas)
-
-    def _halo_gas(self, on: bool):
-        if self._halo_rgb is None:
-            return
-        rgb = self._halo_rgb.copy()
-        if on:
-            rgb[0] = 0.0  # the central's full gas render takes over
-        self._halo_cloud["rgb"] = rgb
-
     def _update_glows(self, *_):
         """Per frame: each glow at least ~2.5 px across, faded out once the
         member's HD model is ~8 px across."""
@@ -473,10 +493,6 @@ class HDGroupLayer:
             self._pl.remove_actor(self._glow, render=False)
             self._glow = None
             self._glow_data = None
-        if self._halo is not None:
-            self._pl.remove_actor(self._halo, render=False)
-            self._halo = None
-            self._halo_rgb = None
         if self._fxaa is not None:
             self._pl.renderer.SetUseFXAA(self._fxaa)
             self._fxaa = None
@@ -485,10 +501,9 @@ class HDGroupLayer:
             self._near_tol = None
 
     def set_gas(self, on: bool):
-        """The group's gas is the central's halo."""
-        if self.members:
-            self.members[0].set_gas(on)
-        self._halo_gas(on)
+        """Every member's halo gas on or off."""
+        for m in self.members:
+            m.set_gas(on)
 
     # -- geometry ------------------------------------------------------
 

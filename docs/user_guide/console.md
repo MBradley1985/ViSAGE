@@ -63,9 +63,9 @@ The same parser that backed the previous Console tab. Useful for one-shot comman
 | Phrase | Action |
 |---|---|
 | `show only clusters` | Filter to environment-class clusters |
-| `go to halo 42` | Fly to halo idx 42 |
+| `go to halo 42` | Fly to halo idx 42 (and select its central) |
 | `snap 30` | Switch to snapshot 30 |
-| `galaxy info` | Open the Galaxy Info card for the selected galaxy |
+| `galaxy info` | Open the selection card with every property listed |
 | `rotate cw 30` | Start CW rotation at 30°/s |
 | `screenshot` | Take a screenshot |
 | `help` | List every recognised phrase |

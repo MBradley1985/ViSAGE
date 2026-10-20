@@ -334,9 +334,8 @@ def test_hd_draws_the_whole_group(hd_panel):
 
     grp = [o for o in gc.get_objects() if isinstance(o, HDGroupLayer)][0]
     assert len(grp.members) == 3 and grp.active
-    # Only the central carries the halo.
-    assert grp.members[0]._gpu.gas is not None
-    assert all(m._gpu.gas is None for m in grp.members[1:])
+    # Every member carries its own halo gas (the Gas button switches all).
+    assert all(m._gpu.gas is not None for m in grp.members)
     # Go to a member while in HD: the camera flies to it, HD stays on.
     state.nav_gal_idx = 5
     state.flush()
@@ -426,3 +425,106 @@ def test_group_across_the_box_edge_stays_together(hd_panel):
     assert grp.radius_world < 2.0  # framed on the pair, not the whole box
     ctrl.toggle_hd()
     state.flush()
+
+
+def test_hd_is_off_without_a_gpu(monkeypatch):
+    from visage import system
+
+    monkeypatch.delenv("VISAGE_HD", raising=False)
+    cpu = system.GPUInfo("Mesa", "llvmpipe (LLVM 15.0.7, 256 bits)", "4.5")
+    gpu = system.GPUInfo("Apple", "Apple M4", "4.1 Metal")
+    assert system.hd_unavailable_reason(cpu)
+    assert system.hd_unavailable_reason(gpu) == ""
+    monkeypatch.setenv("VISAGE_HD", "1")
+    assert system.hd_unavailable_reason(cpu) == ""
+
+
+def test_hd_button_says_why_when_unavailable(hd_panel):
+    server, _ = hd_panel
+    state, ctrl = server.state, server.controller
+    state.hd_available = False
+    state.hd_unavailable = "HD needs a GPU"
+    state.nav_gal_idx = 0
+    ctrl.toggle_hd()
+    assert not state.hd_active and state.notice_show
+
+
+def test_build_cache_keeps_recent_builds_within_budget():
+    from visage.hd.group import BuildCache
+
+    a = [{"x": np.zeros(1000, np.uint8)}]
+    c = BuildCache(budget_bytes=2500)
+    for k in range(4):
+        c.put(k, a if k else [{"x": np.zeros(1000, np.uint8)}])
+    assert len(c) == 2 and c.get(0) is None and c.get(3) is not None
+    big = BuildCache(budget_bytes=10)
+    big.put("only", a)  # the newest is always kept
+    assert big.get("only") is a
+
+
+def test_hd_off_and_on_reuses_the_build(hd_panel):
+    server, _ = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+    import visage.hd.group as group
+
+    calls = []
+    real = group.prepare_member
+
+    def counting(*a):
+        calls.append(1)
+        return real(*a)
+
+    group.prepare_member = counting
+    try:
+        ctrl.toggle_hd()
+        n = len(calls)
+        ctrl.toggle_hd()
+        ctrl.toggle_hd()
+        assert state.hd_active and len(calls) == n
+    finally:
+        group.prepare_member = real
+        ctrl.toggle_hd()
+
+
+def test_cancel_stops_a_build(hd_panel):
+    import asyncio
+
+    server, _ = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+
+    async def run():
+        ctrl.toggle_hd()
+        assert state.hd_building
+        ctrl.hd_escape()  # Esc while building: cancel
+        assert not state.hd_building
+        await asyncio.sleep(0.5)
+        assert not state.hd_active
+
+    asyncio.run(run())
+
+
+def test_no_halo_haze_with_gas_off(plotter):
+    """Gas off: nothing around the galaxies but the galaxies (the only
+    halo gas is the central's real gas render, on the Gas button)."""
+    from visage.hd.group import HDGroupLayer
+    from visage.hd.layer import HDGalaxyLayer
+
+    g = _disk()
+    grp = HDGroupLayer(plotter)
+    entry = {
+        "gal": g,
+        "center": np.zeros(3),
+        "spin": None,
+        "prep": HDGalaxyLayer.prepare(g, "lite"),
+        "role": "member",
+        "magnify": False,
+        "idx": 0,
+    }
+    grp.show([entry], 0.73, gas=False)
+    assert not hasattr(grp, "_halo")
+    assert not grp.members[0]._gas_on
+    grp.set_gas(True)
+    assert grp.members[0]._gas_on
+    grp.clear()

@@ -821,6 +821,8 @@ class GPUGalaxy:
         gal=None,
         gas=None,
         prep=None,
+        icl: bool = True,
+        magnify: float = 1.0,
     ):
         """Create the actor.  `user_matrix` (4x4) maps galaxy-frame model
         units to world coordinates; `gas` is an optional GasSpec.  `prep` is
@@ -860,9 +862,10 @@ class GPUGalaxy:
         else:
             hx = hz = max(E * 1.5, atlas_half if has_atlas else 0.0)
         if gal is not None:
-            # Room for the halo gas (Rvir) whether or not it is shown, so the
-            # Gas box can be toggled without rebuilding.
-            hx = hz = max(hx, 1.05 * max(gal.rvir_kpc, 20.0) / rc.unit_kpc)
+            # Room for the halo gas whether or not it is shown, so Gas can
+            # be toggled without rebuilding: out to 1.35 Rvir, where its
+            # fade at Rvir has reached zero (no box edge in view).
+            hx = hz = max(hx, 1.35 * max(gal.rvir_kpc, 20.0) / rc.unit_kpc)
         lo, hi = np.array([-hx, -hx, -hz]), np.array([hx, hx, hz])
         box = pv.Box(
             bounds=(lo[0], hi[0], lo[1], hi[1], lo[2], hi[2])
@@ -992,10 +995,10 @@ class GPUGalaxy:
         u.SetUniform3f("uBoxLo", [float(v) for v in lo])
         u.SetUniform3f("uBoxHi", [float(v) for v in hi])
         u.SetUniform3f("uCam", [0.0, 0.0, 10.0])
-        self._icl_uniforms(u, rc, gal)
+        self._icl_uniforms(u, rc, gal if icl else None)
         from visage.hd.gpu_gas import GasSpec
 
-        self.gas = GasSpec(gal, rc) if gal is not None else None
+        self.gas = GasSpec(gal, rc, magnify) if gal is not None else None
         if self.gas is not None:
             self.gas.set_uniforms(u, on=gas is not None and gas is not False)
         else:

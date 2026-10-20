@@ -33,18 +33,18 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Camera bookmarks (save, restore, delete)
 
 ### Selection & inspection
-- **Galaxy Info** panel (Target tab) — GalaxyID, type, halo Mvir, stellar mass, sSFR, cold gas, B/T, BH mass, H2 mass, gas regime, FFB regime, environment classification, mass-weighted stellar age
-- **Group Info** panel (Environment tab) — FOF-aggregate stats: classification, member breakdown (centrals vs satellites), host Mvir, total stellar / cold gas / SFR, mean B/T, spatial extent, target role, BCG stellar mass
-- **Highlight Galaxy** / **Highlight Members** buttons add regime-coloured splat overlays — CGM-regime members in dodgerblue, Hot-regime in tomato; the selected galaxy is marked with a white border ring
-- Galaxy Info, Group Info, and highlight splats all appear in screenshots and recordings — info panels are composited as overlays; highlight actors are baked into the pre-rendered playback frames
-- **Double-click any point** in the viewport (any tab) to populate the Target tab's halo + galaxy IDs and draw a red marker on the selection. Only currently visible galaxies (passing all filters and focus) are selectable. If Focus is active, the camera carries to the new selection at the last-used radius.
-- **Enter to run** in every input field — Halo idx, Galaxy idx, Coords X/Y/Z, Box bounds, Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Zoom / Run / Take Screenshot button
+- **Double-click a galaxy** (any tab, and inside HD) to select it: a cyan ring on it and smaller rings on the rest of its FOF group (merged where they would pile up). The selection follows the galaxy through snapshots by its GalaxyIndex.
+- **Selection card** (**Show info**, Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
+- **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
+- **Find** (Structure tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it
+- **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU, with its surroundings out to 12 Mpc/h. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
+- **Enter to run** in every input field — Coords X/Y/Z, Box bounds, Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Zoom / Run / Take Screenshot button
 
 ![Filters in action](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/filters.gif)
 
 ### Filtering
 - Halo filters: Mvir (log10), Rvir (Mpc/h), Vvir (km/s)
-- Galaxy filters: stellar mass, sSFR, B/T, age, BH mass, ICS mass, type (centrals / satellites), FFB regime, CGM / Hot regime, environment class (Field / Isolated / Group / Cluster, via checkboxes in the Environment tab)
+- Galaxy filters: stellar mass, sSFR, B/T, age, BH mass, ICS mass, type (centrals / satellites), FFB regime, CGM / Hot regime, environment class (Field / Isolated / Pairs / Groups / Clusters, via the Environment filter in the Structure tab)
 - Filters are **active-only** — a slider sitting at its full-range endpoints has no effect; move it inward to filter. Every galaxy with detectable mass is visible at startup.
 - Filters auto-disable when the loaded model doesn't contain the underlying field
 - Reset Filters button restores defaults
@@ -53,7 +53,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 ### Side-by-side multi-box comparison
 - Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the hamburger menu
 - Each box is fully independent: its own snapshot, filters, colormaps, opacity, and visibility settings
-- A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Target, Console, …) then controls that box
+- A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Coords, Console, …) then controls that box
 - Active box label is **green**; idle boxes are **white**
 - Play, step, and the snapshot slider advance only the active box's snapshot
 - Rotation is disabled in multi-box mode (all boxes share one camera; independent rotation is not supported)
@@ -307,11 +307,9 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 | Tab | Purpose |
 |---|---|
-| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar) |
+| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); environment filter, Show info (selection card), Find |
 | Filters    | Range sliders for halo and galaxy properties |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
-| Target     | Halo / galaxy navigation, focus zoom, Galaxy Info, Highlight Galaxy |
-| Environment| Halo selector, environment-class checkboxes, Group Info, Highlight Members |
 | Coords     | Fly to arbitrary (x, y, z) — "Use Current Position" populates from camera; **Draw Sphere** places an interactive two-handle sphere (drag centre ball to translate, drag edge ball to resize); **Lock Sphere** commits it as the focus region |
 | Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region. *In Lightcone Mode this tab becomes **Photometry**: a separate false-colour image layer built from a stack of synthetic-photometry filters (own Visible/Opacity, independent of the galaxies)* |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
@@ -319,7 +317,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 ![Draw Sphere](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/draw_sphere.gif)
 
-The **Focus button** (top of the right panel) is tab-aware: it focuses on whatever's active in the current tab (target galaxy, environment halo, coords point, or box region).
+The **Focus button** (top of the right panel) is tab-aware: it focuses on the selection (galaxy, or halo and group), the coords point, or the box region.
 
 ## License
 

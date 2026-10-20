@@ -58,5 +58,5 @@ visage --par input/millennium.par --n-jobs -1
 3. Press **▶ Play** to animate through cosmic time.
 4. Toggle **Dark Matter Haloes** or **Galaxies** off in the **Structure** tab (right panel).
 5. Change **Colour by** to `ssfr` to highlight star-forming galaxies.
-6. In the **Target** tab, enter a halo index and press **Go** to fly there.
-7. **Double-click** any point in the scene to select the nearest galaxy and see its properties in the info bar.
+6. **Double-click** a galaxy to select it, then press **Show info** (end of the Structure tab) for its card, and **Go** to fly there.
+7. Press **HD** (next to the Isolate magnifier) for a detailed model of the galaxy and its group. **Esc** returns to the normal view.

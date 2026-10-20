@@ -9,11 +9,11 @@ galaxy, and with it, from the catalogue itself:
   just the nearest visible one;
 * a ring on it and smaller rings on the other members (fixed size on
   screen), and a card in the view with its properties, the group list and
-  Go / Isolate / HD / Track.
+  Go / Isolate / HD / Gas.
 
 The selection is the galaxy, not its row in this snapshot: changing
-snapshot finds the same galaxy again by its persistent GalaxyIndex (and,
-with Track on, moves the camera with it), or says it isn't there.
+snapshot finds the same galaxy again by its persistent GalaxyIndex, or
+says it isn't there.
 Typing a halo index selects that halo's central.
 """
 
@@ -41,7 +41,6 @@ def _init_state(state) -> None:
         "sel_members": [],
         "sel_more": 0,
         "sel_note": "",
-        "sel_track": False,
         "sel_info_open": False,
         "sel_info_items": [],
         "sel_halo": "",
@@ -51,6 +50,13 @@ def _init_state(state) -> None:
         # What's selected: the galaxy, or its (host) halo with its group.
         "sel_kind": "galaxy",
         "sel_has_halo": False,
+        "sel_can_back": False,
+        "sel_can_fwd": False,
+        "find_preset": None,
+        "find_results": [],
+        "find_note": "",
+        "hd_available": True,
+        "hd_unavailable": "",
     }.items():
         if not state.has(k):
             state[k] = v
@@ -60,6 +66,18 @@ def selection_card(server) -> None:
     """The card (built in the render area's layout)."""
     state, ctrl = server.state, server.controller
     _init_state(state)
+    # Browsing keys (visage.js clicks these): [ ] members, C central,
+    # N nearest neighbour, B back, Shift+B forward.
+    with html.Div(style="display:none;"):
+        for name, fn in (
+            ("prev", (ctrl.sel_step, "[-1]")),
+            ("next", (ctrl.sel_step, "[1]")),
+            ("central", ctrl.sel_central),
+            ("nearest", ctrl.sel_nearest),
+            ("back", (ctrl.sel_history, "[-1]")),
+            ("fwd", (ctrl.sel_history, "[1]")),
+        ):
+            v3.VBtn("", id=f"sel-key-{name}", click=fn)
     with v3.VCard(
         v_show=("sel_show",),
         classes="sage-popout",
@@ -150,7 +168,9 @@ def selection_card(server) -> None:
                 variant=("hd_active ? 'flat' : 'outlined'",),
                 color=("hd_active ? 'cyan' : '#FFD700'",),
                 loading=("hd_building",),
+                disabled=("!hd_available",),
                 click=ctrl.toggle_hd,
+                title=("hd_available ? 'HD close-up' : hd_unavailable",),
             )
             v3.VBtn(
                 "Gas",
@@ -160,14 +180,61 @@ def selection_card(server) -> None:
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
             )
-            v3.VBtn(
-                "Track",
-                size="small",
-                variant=("sel_track ? 'flat' : 'outlined'",),
-                color="#a78bfa",
-                click="sel_track = !sel_track",
-                title="Keep the camera on it as the snapshot changes",
-            )
+        # Moving on: history, the group's members, its central, the nearest
+        # galaxy.
+        with html.Div(
+            style=(
+                "display:flex;align-items:center;gap:2px;padding:0 12px 6px;"
+                "flex-shrink:0;"
+            ),
+        ):
+            for icon, fn, tip, dis in (
+                (
+                    "mdi-arrow-left",
+                    (ctrl.sel_history, "[-1]"),
+                    "Back (B)",
+                    "!sel_can_back",
+                ),
+                (
+                    "mdi-arrow-right",
+                    (ctrl.sel_history, "[1]"),
+                    "Forward (Shift+B)",
+                    "!sel_can_fwd",
+                ),
+                (
+                    "mdi-chevron-left",
+                    (ctrl.sel_step, "[-1]"),
+                    "Previous member of the group ([)",
+                    "sel_members.length < 2",
+                ),
+                (
+                    "mdi-chevron-right",
+                    (ctrl.sel_step, "[1]"),
+                    "Next member of the group (])",
+                    "sel_members.length < 2",
+                ),
+                (
+                    "mdi-star-outline",
+                    ctrl.sel_central,
+                    "Up to the group's central (C)",
+                    "sel_members.length < 2",
+                ),
+                (
+                    "mdi-near-me",
+                    ctrl.sel_nearest,
+                    "Hop to the nearest galaxy (N)",
+                    "false",
+                ),
+            ):
+                v3.VBtn(
+                    icon=icon,
+                    size="x-small",
+                    variant="text",
+                    color="cyan",
+                    click=fn,
+                    title=tip,
+                    disabled=(dis,),
+                )
         # Closer zooms (Mpc/h), and the host halo.
         with html.Div(
             style=(
@@ -360,7 +427,9 @@ def build_selection(server, scene) -> None:
             gid=int(galaxies.galaxy_id[i]) if galaxies.galaxy_id[i] else None,
             idx=i,
             pos=pos,
+            mem=mem,
         )
+        _remember(sel["gid"], i)
         if host is not None and host != _int(state.nav_halo_idx):
             sel["halo_echo"] = host
             state.nav_halo_idx = host
@@ -442,6 +511,126 @@ def build_selection(server, scene) -> None:
             marker.set_details("", others)
         _push()
 
+    # Back / forward through what was selected: (GalaxyIndex, row).
+    hist: dict = {"items": [], "pos": -1, "nav": False}
+
+    def _remember(gid, i) -> None:
+        here = (gid, i)
+        items, pos = hist["items"], hist["pos"]
+        if hist["nav"] or (0 <= pos < len(items) and items[pos] == here):
+            hist["nav"] = False
+            _hist_state()
+            return
+        del items[pos + 1 :]
+        items.append(here)
+        del items[: max(len(items) - 50, 0)]
+        hist["pos"] = len(items) - 1
+        _hist_state()
+
+    def _hist_state() -> None:
+        state.sel_can_back = hist["pos"] > 0
+        state.sel_can_fwd = hist["pos"] < len(hist["items"]) - 1
+
+    def _go_row(i: int) -> None:
+        """Select row `i` as a galaxy."""
+        if _int(state.nav_gal_idx) == i:
+            state.sel_kind = "galaxy"
+            _select(i)
+        else:
+            state.nav_gal_idx = int(i)
+        state.flush()
+
+    @ctrl.set("sel_history")
+    def _sel_history(step):
+        pos = hist["pos"] + int(step)
+        if not 0 <= pos < len(hist["items"]):
+            return
+        gid, i = hist["items"][pos]
+        _, galaxies = _snap()
+        if gid is not None:
+            hit = np.flatnonzero(galaxies.galaxy_id == gid)
+            if len(hit) == 0:
+                state.sel_note = "That galaxy isn't in this snapshot."
+                return
+            i = int(hit[0])
+        hist["pos"] = pos
+        hist["nav"] = True
+        _go_row(i)
+
+    @ctrl.set("sel_step")
+    def _sel_step(step):
+        """The next / previous member of the group."""
+        mem, i = sel.get("mem"), sel.get("idx")
+        if mem is None or len(mem) < 2 or not state.sel_active:
+            return
+        k = int(np.flatnonzero(mem == i)[0]) if i in mem else 0
+        _go_row(int(mem[(k + int(step)) % len(mem)]))
+
+    @ctrl.set("sel_central")
+    def _sel_central():
+        mem = sel.get("mem")
+        if mem is None or not state.sel_active or mem[0] == sel.get("idx"):
+            return
+        _go_row(int(mem[0]))
+
+    near_trees: dict = {}
+
+    @ctrl.set("sel_nearest")
+    def _sel_nearest():
+        """Hop to the nearest other galaxy (in or out of the group)."""
+        from scipy.spatial import cKDTree
+
+        i = sel.get("idx")
+        if i is None or not state.sel_active:
+            return
+        _, galaxies = _snap()
+        key = (scene.active_model.name, scene.active_model.current_snap)
+        if near_trees.get("key") != key:
+            rows = np.flatnonzero(galaxies.stellar_mass > 0)
+            p = np.asarray(galaxies.positions[rows], float)
+            box = None
+            if not scene.is_lightcone:
+                box = float(scene.active_model.box_size)
+                p = np.mod(p, box)
+            near_trees.update(
+                key=key, rows=rows, tree=cKDTree(p, boxsize=box), box=box
+            )
+        t = near_trees
+        q = np.asarray(galaxies.positions[i], float)
+        if t["box"]:
+            q = np.mod(q, t["box"])
+        _, hits = t["tree"].query(q, k=min(4, len(t["rows"])))
+        for h in np.atleast_1d(hits):
+            if h < len(t["rows"]) and t["rows"][h] != i:
+                _go_row(int(t["rows"][h]))
+                return
+
+    # -- Find -----------------------------------------------------------
+
+    def _find(preset=None) -> None:
+        from visage.utils.find import find
+
+        preset = preset or state.find_preset
+        if not preset:
+            state.find_results = []
+            state.find_note = ""
+            return
+        _, galaxies = _snap()
+        box = (
+            None if scene.is_lightcone else float(scene.active_model.box_size)
+        )
+        res = find(galaxies, preset, box=box)
+        state.find_results = res
+        state.find_note = "" if res else "None in this snapshot."
+
+    @state.change("find_preset")
+    def _on_find_preset(find_preset=None, **_):
+        _find(find_preset)
+
+    @ctrl.set("find_select")
+    def _find_select(idx):
+        _go_row(int(idx))
+
     def _int(v):
         try:
             return int(v)
@@ -496,6 +685,8 @@ def build_selection(server, scene) -> None:
     @state.change("snap_num")
     def _on_snap(snap_num=None, **_):
         """Find the same galaxy in the new snapshot."""
+        if state.find_preset:
+            _find()
         gid = sel.get("gid")
         if gid is None or snap_num is None or not state.sel_active:
             return
@@ -509,7 +700,6 @@ def build_selection(server, scene) -> None:
             )
             _push()
             return
-        old = sel.get("pos")
         i = int(hit[0])
         _select(i, snap=int(snap_num))
         # (Its row number may differ in this snapshot; the galaxy / halo
@@ -517,13 +707,6 @@ def build_selection(server, scene) -> None:
         if _int(state.nav_gal_idx) != i:
             sel["kind_next"] = state.sel_kind
             state.nav_gal_idx = i
-        if state.sel_track and old is not None and sel["pos"] is not None:
-            cam = scene.plotter.camera
-            shift = sel["pos"] - old
-            cam.focal_point = tuple(np.asarray(cam.focal_point) + shift)
-            cam.position = tuple(np.asarray(cam.position) + shift)
-            scene.plotter.renderer.ResetCameraClippingRange()
-            _push()
 
     @ctrl.set("sel_refresh")
     def _sel_refresh():

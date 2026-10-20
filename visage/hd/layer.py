@@ -223,6 +223,7 @@ class HDGalaxyLayer:
         halo: bool = True,
         manage_fxaa: bool = True,
         magnify: float = 1.0,
+        icl: bool = True,
     ):
         """Build and draw the HD model of `gal` at world position `center`.
 
@@ -232,7 +233,8 @@ class HDGalaxyLayer:
         For a member of a group:
         `white` is its share of the group's common exposure (default: its
         own), `halo=False` leaves out the halo (gas, ICL, Rvir box) for a
-        satellite, and `manage_fxaa=False` leaves FXAA to the group."""
+        satellite, `icl=False` its intracluster light (the central's), and
+        `manage_fxaa=False` leaves FXAA to the group."""
         self.clear()
         # (By value: a prep built in a worker process holds a copy of gal.)
         if prep is None or prep["gal"] != gal:
@@ -269,6 +271,8 @@ class HDGalaxyLayer:
             gal=gal if halo else None,
             gas=gas,
             prep=prep["gpu"],
+            icl=icl,
+            magnify=magnify,
         )
         self._gas_on = bool(gas)
         self._gpu.set_gas(self._gas_on)
@@ -357,3 +361,56 @@ class HDGalaxyLayer:
         self._gpu.set_view_half(
             half_world / self._scale * self.recipe.unit_kpc
         )
+
+
+def _warm_galaxy(**kw) -> SageGalaxy:
+    """A small star-forming disk, for compiling the shaders."""
+    base = dict(
+        galaxy_index=1,
+        stellar_mass=1e10,
+        bulge_mass=1e9,
+        merger_bulge_mass=0.0,
+        instability_bulge_mass=1e9,
+        cold_gas=5e9,
+        h2_gas=1e9,
+        h1_gas=4e9,
+        metals_cold_gas=5e7,
+        bh_mass=1e6,
+        sfr_disk=1.0,
+        sfr_bulge=0.0,
+        disk_radius_kpc=3.0,
+        bulge_radius_kpc=0.5,
+        regime=0,
+        cgm_gas=1e10,
+        rvir_kpc=150.0,
+    )
+    base.update(kw)
+    return SageGalaxy(**base)
+
+
+def warm_up_prepare() -> dict:
+    """CPU side of the shader warm-up (run off the main thread)."""
+    return HDGalaxyLayer.prepare(_warm_galaxy(), "lite")
+
+
+def warm_up_shaders(plotter, prep: dict) -> None:
+    """Compile HD's two shader programs (with and without the halo gas) in
+    the app's OpenGL context now, so the first HD view doesn't wait ~1 s
+    for them.  The model is drawn once at a millionth of its size at the
+    focal point (nothing visible) and removed; VTK keeps the compiled
+    programs and reuses them for every galaxy, whose shader source is the
+    same."""
+    cam = plotter.renderer.GetActiveCamera()
+    focal = np.array(cam.GetFocalPoint(), float)
+    gal = prep["gal"]
+    for halo in (True, False):
+        lay = HDGalaxyLayer(plotter)
+        lay.show(gal, focal, None, 0.7, prep=prep, halo=halo)
+        m = lay._gpu.actor.GetUserMatrix()
+        for i in range(3):
+            for j in range(3):
+                m.SetElement(i, j, m.GetElement(i, j) * 1e-6)
+        try:
+            plotter.ren_win.Render()
+        finally:
+            lay.clear()

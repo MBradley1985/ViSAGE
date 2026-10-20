@@ -194,3 +194,67 @@ def test_hd_frames_the_selected_galaxy_not_the_central(panel):
     assert np.allclose(cam.focal_point, galaxies.positions[1] + off, atol=1e-5)
     ctrl.toggle_hd()
     state.flush()
+
+
+def test_browsing_members_central_neighbour_and_history(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _group(scene, [2, 4, 6], central=4)
+    state.nav_gal_idx = 2
+    state.flush()
+    order = [m["idx"] for m in state.sel_members]  # central first
+    assert order[0] == 4
+    nxt = order[(order.index(2) + 1) % 3]
+    ctrl.sel_step(1)
+    assert state.nav_gal_idx == nxt != 4
+    ctrl.sel_central()
+    assert state.nav_gal_idx == 4
+    # Back and forward through what was selected.
+    ctrl.sel_history(-1)
+    assert state.nav_gal_idx == nxt
+    ctrl.sel_history(-1)
+    assert state.nav_gal_idx == 2 and not state.sel_can_back
+    ctrl.sel_history(1)
+    ctrl.sel_history(1)
+    assert state.nav_gal_idx == 4 and not state.sel_can_fwd
+    # Nearest: the closest other galaxy.
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    galaxies.positions[9] = galaxies.positions[4] + 1e-4
+    ctrl.sel_nearest()
+    assert state.nav_gal_idx == 9
+
+
+def test_find_presets_list_galaxies_to_select(panel):
+    from visage.utils.find import PRESETS
+
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _group(scene, [2, 4], central=4)
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    for key in PRESETS:
+        state.find_preset = key
+        state.flush()
+        assert isinstance(state.find_results, list)
+    state.find_preset = "massive"
+    state.flush()
+    res = state.find_results
+    top = int(np.argmax(galaxies.stellar_mass))
+    assert res and res[0]["idx"] == top
+    state.find_preset = "pairs"
+    state.flush()
+    assert [r["idx"] for r in state.find_results][:1] in ([2], [4])
+    ctrl.find_select(top)
+    assert state.nav_gal_idx == top and state.sel_active
+
+
+def test_member_rings_merge_when_they_pile_up():
+    from visage.scene.selection_marker import merge_rings
+
+    c, r = merge_rings(
+        [[0, 0], [3, 0], [100, 100], [104, 101], [300, 0]],
+        10.0,
+        avoid=[300, 2],
+        avoid_r=15,
+    )
+    assert len(c) == 2  # two piles merged, the one on the target hidden
+    assert np.all(r >= 10.0) and np.all(r <= 30.0)

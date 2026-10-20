@@ -253,6 +253,8 @@ _SOFTWARE_RENDERERS = (
     "gdi generic",
     "microsoft basic render",
     "svga3d",
+    "software renderer",
+    "swiftshader",
 )
 
 
@@ -289,6 +291,22 @@ def parse_capabilities(text: str) -> GPUInfo | None:
         renderer=found["renderer"],
         version=found.get("version", ""),
     )
+
+
+def hd_unavailable_reason(info: GPUInfo | None) -> str:
+    """Why HD mode can't run on this renderer ("" if it can).
+
+    HD ray-marches every galaxy in a fragment shader each frame: on a GPU
+    that is instant, on software OpenGL it would stall the view for
+    seconds a frame.  VISAGE_HD=1 turns it on regardless."""
+    if os.environ.get("VISAGE_HD", "").strip() == "1":
+        return ""
+    if info is not None and info.software:
+        return (
+            f"HD needs a GPU; OpenGL is running on the CPU "
+            f"({info.renderer})."
+        )
+    return ""
 
 
 def report_renderer_once(ren_win, on_report) -> None:

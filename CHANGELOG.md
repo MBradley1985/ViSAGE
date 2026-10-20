@@ -8,6 +8,70 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **HD mode.** The **HD** button (next to Isolate, and on the selection
+  card) replaces the selected galaxy with a detailed 3D model built from
+  its SAGE properties, ray-marched on the GPU:
+  - disk or elliptical, several spiral-arm classes, bars and peanut
+    bulges, classical and pseudo-bulges, star clusters, HII regions and
+    dust;
+  - merger shells and tails, intracluster light, and an AGN nucleus;
+  - sizes, disk thickness and clumpiness that follow redshift.
+
+  If the galaxy is in a pair, group or cluster, every member is drawn at
+  its own place and spin, at the size it has in the normal view. The
+  surroundings come too: nearby massive galaxies in HD, and the cosmic web
+  out to 12 Mpc/h as glows. Close pairs and galaxies merging before the
+  next snapshot raise tidal bridges and tails, and satellites show
+  ram-pressure tails and stripping. Double-click picks galaxies inside HD.
+  **Esc** (or HD again) returns to the normal view.
+- **HD gas.** The card's **Gas** button gives every member of the group
+  its own halo gas: CGM with cold streams, hot gas with X-ray cavities,
+  winds, radio jets and Hα filaments. It is off by default.
+- **HD builds** run in background workers, with a progress card and a
+  **Cancel** button (or Esc). The workers start and the shaders compile a
+  few seconds after launch, and recent builds are cached (within a tenth
+  of RAM), so turning HD off and on again is immediate.
+- **Selection card** (**Show info**, at the end of the Structure tab):
+  - properties, with every field on demand;
+  - the host halo (the one the central sits on), and the group's members;
+  - Go, Isolate, HD and Gas, and a **Galaxy / Halo + group** switch that
+    sets what Go, Isolate and Focus act on.
+- **Following a galaxy:** the selection follows the galaxy through
+  snapshots by its GalaxyIndex.
+- **Browsing:** previous / next group member, up to the central, the
+  nearest galaxy, and back / forward history. These are on the card and on
+  keys: `[` `]` `C` `N` `B` `Shift+B`.
+- **Find** (Structure tab): preset lists to select from, such as the most
+  massive galaxies, richest clusters, Milky Way analogues, close pairs,
+  mergers, starbursts, quenched centrals, biggest black holes and
+  feedback-free starbursts.
+- Documentation: an HD Mode guide (User Guide → HD Mode).
+
+### Changed
+
+- **One selection marker.** A cyan ring sits on the selected galaxy, with
+  smaller rings on its group. The rings stay the same size on screen, and
+  rings that would pile up merge.
+- The **Target** and **Environment** tabs are gone:
+  - selection is by double-click, the card, Find or the Console;
+  - the environment filter (now with Pairs) is at the end of the
+    Structure tab.
+
+  The tabs are laid out in two rows.
+
+### Removed
+
+- The Highlight Galaxy / Highlight Members buttons and the separate Galaxy
+  / Group Info cards, replaced by the selection rings and card.
+
+### Notes
+
+- HD needs a GPU. On software OpenGL (llvmpipe, Remote Desktop, a VM
+  without drivers) the HD buttons are greyed out and say why;
+  `VISAGE_HD=1` turns HD on anyway.
+
 ## [2.7.4] — 2026-10-19
 
 ### Changed

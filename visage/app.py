@@ -176,8 +176,39 @@ def create_app(
     # Say which GPU actually renders, and warn when OpenGL has fallen back
     # to the CPU (Remote Desktop, a VM, missing drivers) — that, not
     # ViSAGE, is what makes the view sluggish.
+    def _schedule_hd_warm_up() -> None:
+        """A few seconds after start: spawn HD's build workers and compile
+        its shaders, so the first HD view doesn't wait for either."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        async def _warm() -> None:
+            from visage.hd.group import warm_pool
+            from visage.hd.layer import warm_up_prepare, warm_up_shaders
+
+            try:
+                warm_pool()
+                prep = await loop.run_in_executor(None, warm_up_prepare)
+                st = server.state
+                if not (st.hd_active or st.hd_building):
+                    warm_up_shaders(scene.plotter, prep)
+            except Exception as exc:  # only a head start; HD works without
+                print(f"HD warm-up skipped: {exc}", flush=True)
+
+        loop.call_later(3.0, lambda: loop.create_task(_warm()))
+
     def _on_renderer(info: system.GPUInfo) -> None:
         print(f"GPU      : {info.describe()}", flush=True)
+        hd_reason = system.hd_unavailable_reason(info)
+        if hd_reason:
+            # No GPU: HD mode is off (its button greyed out, saying why).
+            server.state.hd_available = False
+            server.state.hd_unavailable = hd_reason
+            print(f"HD mode  : off -- {hd_reason}", flush=True)
+        else:
+            _schedule_hd_warm_up()
         if not info.software:
             return
         msg = (
@@ -1387,6 +1418,7 @@ def create_app(
                                 "padding:22px 30px;min-width:420px;"
                                 "background:rgba(10,10,26,0.88);"
                                 "border:1px solid #06b6d4;"
+                                "pointer-events:auto;"
                             ),
                         ):
                             html.Div(
@@ -1403,13 +1435,27 @@ def create_app(
                                 height=10,
                                 rounded=True,
                             )
-                            html.Div(
-                                "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
+                            with html.Div(
                                 style=(
-                                    "font-size:1.1rem;color:#67e8f9;"
-                                    "margin-top:8px;text-align:right;"
+                                    "display:flex;align-items:center;"
+                                    "margin-top:8px;"
                                 ),
-                            )
+                            ):
+                                v3.VBtn(
+                                    "Cancel",
+                                    size="small",
+                                    variant="outlined",
+                                    color="#9ca3af",
+                                    click=server.controller.hd_cancel,
+                                    title="Stop building (Esc)",
+                                )
+                                html.Div(
+                                    "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
+                                    style=(
+                                        "flex:1;font-size:1.1rem;"
+                                        "color:#67e8f9;text-align:right;"
+                                    ),
+                                )
 
                     # Pre-rendered playback overlay — shown only during
                     # playback, where it flips through the cached frames. While

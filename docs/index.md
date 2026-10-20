@@ -16,8 +16,8 @@ ViSAGE renders dark matter haloes and SAGE galaxies together in a browser-based 
 | Structure mode | Layered galaxies: cold-gas envelope + outer CGM/Hot envelope, sized by SAGE fields |
 | Navigation | Fly to halo index, galaxy index, coordinates, or sub-box — focus mode masks everything outside |
 | Tab-aware Focus | One button that does the right thing on whatever tab you're in |
-| Double-click any point | Populates Target halo + galaxy IDs and (if Focus is active) carries the camera to the selection |
-| Point picking | Double-click anywhere in the viewport — works on every tab |
+| Selection | Double-click a galaxy: ringed with its group, a card with its properties and group, browsing by member / central / nearest / history, and a Find list of presets |
+| HD mode | A detailed 3D model of the selected galaxy and its whole group from its SAGE properties — arms, bars, bulges, dust, tidal features, halo gas — ray-marched on the GPU |
 | Multi-model | Switch between SAGE flavours of the same sim; overlay two compatible models simultaneously |
 | Lightcone Mode | Open a LightSAGE lightcone output in the same Explore UI; the snapshot slider becomes a redshift/time cut over the cone, plus an optional false-colour synthetic-photometry (SED) imaging layer |
 | Launch Mode wizard | Guided flows to clone/build/configure/run SAGE26, SAGEswarm, or LightSAGE, with a labelled parameter form for every config file |

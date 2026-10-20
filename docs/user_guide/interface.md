@@ -13,7 +13,7 @@ ViSAGE's browser UI has three main regions and a number of overlays that appear 
 │                  (overlays appear here:                      │ a │
 │                   loading spinner,                           │ n │
 │                   warning snackbar,                          │ e │
-│                   Galaxy / Group Info card)                  │ l │
+│                   selection card, HD build card)             │ l │
 ├──────────────────────────────────────────────────────────────┴───┤
 │ Info bar: position + nearest halo / galaxy on double-click       │
 └──────────────────────────────────────────────────────────────────┘
@@ -34,21 +34,19 @@ ViSAGE's browser UI has three main regions and a number of overlays that appear 
 
 ## Right tabs panel
 
-Nine tabs across a 3-column wrap layout:
+Seven tabs in two rows:
 
 | Tab | Purpose |
 |---|---|
-| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each) |
+| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter, **Show info** (the selection card) and **Find** |
 | Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime) |
 | Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
-| Target      | Fly to halo / galaxy by index, focus-zoom presets, Galaxy Info, Highlight Galaxy |
-| Environment | Halo selector, env-class checkboxes, Group Info, Highlight Members |
 | Coords      | Fly to arbitrary (x, y, z); **Draw Sphere** for interactive focus region |
 | Box         | Zoom to axis-aligned sub-box; **Draw Box** for interactive focus region |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 
-Above the tabs sit three row-spanning controls — **Reset Camera**, **Focus toggle**, and **Centre** — that work regardless of which tab is active.
+Above the tabs sit **Reset Camera**, **Focus**, **Centre**, **Isolate** and **HD**, which work regardless of which tab is active (see [Navigation](navigation.md)).
 
 ## Multi-box strip
 
@@ -66,17 +64,18 @@ The box strip is hidden in single-model mode.
 |---|---|
 | Loading spinner   | Dimmed cover while a new model loads from disk |
 | Warning snackbar  | Top of the render view; appears when an overlay attempt is rejected (e.g. incompatible box size) |
-| Galaxy Info card  | Top-right of the render view, semi-transparent; closed by × or by switching tabs |
-| Group Info card   | Same top-right slot as Galaxy Info; mutually exclusive (opening one closes the other) |
+| Selection rings   | A cyan ring on the selected galaxy, smaller rings on the rest of its group (merged where they would pile up) |
+| Selection card    | Top-left, draggable; opened by **Show info** — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
+| HD build card     | Centre, while an HD model builds: progress and **Cancel** (or Esc) |
 
 ## Info bar (bottom)
 
-Double-click any point in the render window to select the nearest galaxy. The info bar then shows:
+Double-click any point in the render window to select the galaxy there. The info bar then shows:
 
 * The world-space (x, y, z) you clicked
 * Nearest halo Mvir and index
 * Nearest galaxy stellar mass / sSFR / central-or-satellite / index
 
-The galaxy index field in the Target and Environment tabs updates automatically so you can immediately follow up with **Galaxy Info**, **Highlight Galaxy**, or **Group Info** without typing.
+The galaxy is then selected: ringed, with its card a click away (**Show info**).
 
 Single clicks (no double) are treated as pure camera interactions — they don't move selection and don't trigger any overlays.
