@@ -43,11 +43,11 @@ The Console also selects (`go to halo 42` selects that halo's central), and so d
 | ← → | Back and forward through what you've selected |
 | ‹ › | Previous / next member of the group |
 | ☆ | Up to the group's central |
-| Nearest | Hop to the nearest other galaxy |
+| Nearest | Hop to the nearest galaxy and fly there; amber rings mark the next nearest (the next hop larger). Hopping again carries on to the nearest not yet visited, so it never bounces back |
 | Zoom 3 / 5 / 10 | Fly in at that radius (Mpc/h), with focus |
 | Clear indicator | Remove the rings (the galaxy stays selected) |
 | Host halo · Go to halo | The halo the central sits on, and a flight to it |
-| Properties | Key properties; **All properties** lists every field |
+| Properties | Key properties; **All properties** lists every field (Approx Age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
 | Group | Every member (central first); click one to select it |
 
 ### Keys
@@ -60,11 +60,11 @@ The Console also selects (`go to halo 42` selects that halo's central), and so d
 | `B` / `Shift+B` | Back / forward |
 | `Esc` | Cancel an HD build, or leave HD |
 
-## Structure tab: environment filter and Find
+## Environment filter and Find
 
 The **Environment filter** at the end of the Structure tab shows only galaxies in the ticked environments: Field (< 10¹¹ M☉), Isolated (10¹¹–10¹²·⁵), Pairs, Groups (10¹²·⁵–10¹⁴) and Clusters (> 10¹⁴).
 
-**Find** lists galaxies worth a look in the current snapshot. Pick a preset; click a result to select it. The presets are:
+**Find**, at the end of the Filters tab, lists galaxies worth a look in the current snapshot. Pick a preset, then click a result to select it and fly there. The presets are:
 
 - most massive galaxies;
 - richest groups and clusters;

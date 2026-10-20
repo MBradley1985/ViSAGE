@@ -1660,6 +1660,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if galaxies.count == 0:
             raise ValueError("No galaxies loaded.")
 
+        if scope in ("target", "group") and state.nav_gal_idx is None:
+            raise ValueError("Select a galaxy first (double-click it).")
+
         if scope == "lightcone":
             return (
                 np.arange(galaxies.count, dtype=np.int64),
@@ -4422,6 +4425,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return
 
         state.hd_building = True
+        _hd["build_snap"] = scene.current_snap
         n = len(todo)
         word = (
             "galaxy" if len(idx) == 1 else "pair" if len(idx) == 2 else "group"
@@ -4467,6 +4471,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     entries[k]["prep"] = fut.result()
                 _hd_cache().put(key, [entries[k]["prep"] for k in todo])
                 _hd_show_group(entries, h, focus)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if _hd["build"] is token:
+                    import traceback
+
+                    traceback.print_exc()
+                    if _hd["group"] is not None:
+                        _hd["group"].clear()
+                    _hd["mode"] = None
+                    state.hd_active = False
+                    state.notice_text = f"HD build failed: {exc}"
+                    state.notice_color = "error"
+                    state.notice_show = True
             finally:
                 if _hd["build"] is token:
                     _hd["build"] = None
@@ -4537,7 +4555,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         grp = _hd_group()
         grp.show(entries, h, gas=bool(state.hd_gas))
         _hd["mode"] = "halo"
-        _hd["built_snap"] = state.snap_num
+        _hd["built_snap"] = _hd.get("build_snap", scene.current_snap)
+        _hd["build_snap"] = None
         halo_ctx = state.has("sel_kind") and str(state.sel_kind) == "halo"
         target = None
         if not halo_ctx and focus is not None:
@@ -4581,10 +4600,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @state.change("snap_num")
     def on_snap_change_hd(snap_num=None, **_):
-        if _hd["built_snap"] is not None and snap_num != _hd["built_snap"]:
+        shown = _hd["built_snap"] if not state.hd_building else None
+        building = _hd.get("build_snap") if state.hd_building else None
+        ref = shown if shown is not None else building
+        if ref is not None and snap_num != ref:
             _hd_drop()
 
     scene.register_model_change_callback(_hd_drop)
+    ctrl.hd_drop = _hd_drop
 
     @ctrl.set("hd_pick_candidates")
     def _hd_pick_candidates():
@@ -4751,9 +4774,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
             for label, value in [
                 ("Structure", "layers"),
                 ("Filters", "filters"),
-                ("Record", "record"),
-                ("Coords", "coords"),
                 _box_or_phot,
+                ("Coords", "coords"),
+                ("Record", "record"),
                 ("Console", "console"),
                 ("Library", "library"),
             ]:
@@ -4986,49 +5009,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style="margin-top:14px;",
                     title="Show the selected galaxy's card",
                 )
-
-                # Find: galaxies worth a look, by preset; a click selects.
-                v3.VDivider(style="margin:14px 0;")
-                v3.VLabel(
-                    "FIND",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#06b6d4;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                from visage.utils.find import PRESETS
-
-                v3.VSelect(
-                    v_model=("find_preset",),
-                    items=(
-                        [{"title": t, "value": k} for k, t in PRESETS.items()],
-                    ),
-                    label="Find…",
-                    clearable=True,
-                    hide_details=True,
-                    variant="outlined",
-                    color="cyan",
-                    density="compact",
-                )
-                html.Div(
-                    "{{ find_note }}",
-                    v_show=("find_note",),
-                    style="font-size:0.72rem;color:#9ca3af;padding:6px 2px;",
-                )
-                with html.Div(style="padding-top:4px;"):
-                    with html.Div(
-                        v_for="r in find_results",
-                        key="r.idx",
-                        click=(ctrl.find_select, "[r.idx]"),
-                        style=(
-                            "'font-size:0.74rem;padding:3px 6px;"
-                            "cursor:pointer;border-radius:4px;' + "
-                            "(r.idx === nav_gal_idx ? "
-                            "'background:rgba(34,211,238,0.18);"
-                            "color:#22d3ee;' : 'color:#e2e8f0;')",
-                        ),
-                    ):
-                        html.Span("{{ r.text }}")
 
             # Coords
             with v3.VSheet(
@@ -6525,6 +6505,51 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     prepend_icon="mdi-restore",
                     click=ctrl.reset_filters,
                 )
+
+                # Find: galaxies worth a look, by preset; a click selects.
+                v3.VDivider(style="margin:10px 0 4px;")
+                v3.VLabel(
+                    "FIND",
+                    style=(
+                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                        "color:#06b6d4;display:block;padding:4px 0 6px;"
+                    ),
+                )
+                from visage.utils.find import PRESETS
+
+                v3.VSelect(
+                    v_model=("find_preset",),
+                    items=(
+                        [{"title": t, "value": k} for k, t in PRESETS.items()],
+                    ),
+                    label="Find…",
+                    clearable=True,
+                    hide_details=True,
+                    variant="outlined",
+                    color="cyan",
+                    density="compact",
+                )
+                html.Div(
+                    "{{ find_note }}",
+                    v_show=("find_note",),
+                    style="font-size:0.72rem;color:#9ca3af;padding:6px 2px;",
+                )
+                with html.Div(
+                    style="padding-top:4px;max-height:220px;overflow-y:auto;"
+                ):
+                    with html.Div(
+                        v_for="r in find_results",
+                        key="r.idx",
+                        click=(ctrl.find_select, "[r.idx]"),
+                        style=(
+                            "'font-size:0.74rem;padding:3px 6px;"
+                            "cursor:pointer;border-radius:4px;' + "
+                            "(r.idx === nav_gal_idx ? "
+                            "'background:rgba(34,211,238,0.18);"
+                            "color:#22d3ee;' : 'color:#e2e8f0;')",
+                        ),
+                    ):
+                        html.Span("{{ r.text }}")
 
             # ── RECORD tab ─────────────────────────────────────
             with v3.VSheet(

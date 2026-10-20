@@ -41,9 +41,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Following a galaxy:** the selection follows the galaxy through
   snapshots by its GalaxyIndex.
 - **Browsing:** previous / next group member, up to the central, the
-  nearest galaxy, and back / forward history. These are on the card and on
+  nearest galaxy (flies there, with amber rings on the next nearest), and back / forward history. These are on the card and on
   keys: `[` `]` `C` `N` `B` `Shift+B`.
-- **Find** (Structure tab): preset lists to select from, such as the most
+- **Find** (Filters tab): preset lists to select from (a click selects and flies there), such as the most
   massive galaxies, richest clusters, Milky Way analogues, close pairs,
   mergers, starbursts, quenched centrals, biggest black holes and
   feedback-free starbursts.
@@ -59,7 +59,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - the environment filter (now with Pairs) is at the end of the
     Structure tab.
 
-  The tabs are laid out in two rows.
+  The tabs are laid out in two rows, with Box before Record.
+- The card's Approx Age says "Needs full SFH" when the catalogue has no
+  star-formation histories (SAGE `SaveFullSFH 0`).
 
 ### Removed
 

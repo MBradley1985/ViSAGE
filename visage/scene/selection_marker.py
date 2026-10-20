@@ -14,6 +14,7 @@ import numpy as np
 
 _TARGET_RGB = (0.13, 0.83, 0.93)  # cyan
 _MEMBER_RGB = (0.85, 0.90, 1.00)
+_NEAR_RGB = (1.00, 0.75, 0.20)  # amber: where the nearest-galaxy hop goes
 
 
 def _rings(centers: np.ndarray, radius, n: int = 48):
@@ -95,6 +96,7 @@ class SelectionMarker:
         self._pl = plotter
         self.target: np.ndarray | None = None
         self.members = np.zeros((0, 3))
+        self.near = np.zeros((0, 3))  # the next hops, nearest first
         self.label = ""
         self._actors: dict = {}
         self._observer = None
@@ -108,6 +110,7 @@ class SelectionMarker:
         if self.target is None or not np.allclose(p, self.target, atol=1e-6):
             self.label = ""
             self.members = np.zeros((0, 3))
+            self.near = np.zeros((0, 3))
         self.target = p
         self._ensure()
         self.update()
@@ -121,10 +124,21 @@ class SelectionMarker:
         )
         self.update()
 
+    def set_near(self, positions=None) -> None:
+        """Amber rings on the nearest galaxies (the first, the next hop,
+        drawn larger)."""
+        self.near = (
+            np.zeros((0, 3))
+            if positions is None or len(positions) == 0
+            else np.asarray(positions, float).reshape(-1, 3)
+        )
+        self.update()
+
     def clear(self) -> None:
         self.target = None
         self.label = ""
         self.members = np.zeros((0, 3))
+        self.near = np.zeros((0, 3))
         for a in self._actors.values():
             self._pl.renderer.RemoveViewProp(a)
         self._actors = {}
@@ -150,6 +164,7 @@ class SelectionMarker:
         for name, rgb, width, opacity in (
             ("target", _TARGET_RGB, 2.5, 1.0),
             ("members", _MEMBER_RGB, 1.5, 0.7),
+            ("near", _NEAR_RGB, 1.5, 0.9),
         ):
             mapper = vtk.vtkPolyDataMapper2D()
             mapper.SetInputData(vtk.vtkPolyData())
@@ -221,5 +236,16 @@ class SelectionMarker:
             )
         else:
             self._actors["members"].GetMapper().SetInputData(
+                _rings(np.zeros((0, 2)), 1.0)
+            )
+        if len(self.near):
+            nxy, nok = self._project(self.near)
+            r = np.full(len(nxy), 0.55 * r_target)
+            r[0] = 0.75 * r_target  # the next hop
+            self._actors["near"].GetMapper().SetInputData(
+                _rings(nxy[nok], r[nok])
+            )
+        else:
+            self._actors["near"].GetMapper().SetInputData(
                 _rings(np.zeros((0, 2)), 1.0)
             )

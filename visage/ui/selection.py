@@ -14,7 +14,7 @@ galaxy, and with it, from the catalogue itself:
 The selection is the galaxy, not its row in this snapshot: changing
 snapshot finds the same galaxy again by its persistent GalaxyIndex, or
 says it isn't there.
-Typing a halo index selects that halo's central.
+Selecting a halo (Console `go to halo N`) selects that halo's central.
 """
 
 from __future__ import annotations
@@ -380,6 +380,17 @@ def build_selection(server, scene) -> None:
         )
         return idx[order]
 
+    def _drawn(galaxies, i: int, ref: int) -> np.ndarray:
+        """Where galaxy `i` is drawn: its catalogue position in the normal
+        view; in HD, its periodic image nearest `ref` (HD lays a group
+        straddling the box edge out together)."""
+        if state.has("hd_active") and bool(state.hd_active):
+            return _unwrap(galaxies, i, ref)
+        return (
+            np.asarray(galaxies.positions[i], float)
+            + scene.active_model.offset
+        )
+
     def _unwrap(galaxies, i: int, ref: int) -> np.ndarray:
         p = np.asarray(galaxies.positions[i], float)
         if not scene.is_lightcone:
@@ -497,17 +508,17 @@ def build_selection(server, scene) -> None:
         state.sel_active = True  # (the card opens on Show info)
         if state.sel_info_open:
             _fill_info(i, snap)
-        others = [_unwrap(galaxies, int(k), lead) for k in mem if k != i]
+        others = [_drawn(galaxies, int(k), lead) for k in mem if k != i]
         marker = scene.camera.marker
         if halo_ctx:
             # The halo: ring on its central, the whole group ringed.
-            marker.set_target(cpos)
+            marker.set_target(_drawn(galaxies, lead, lead))
             marker.set_details(
                 "",
-                [_unwrap(galaxies, int(k), lead) for k in mem if k != lead],
+                [_drawn(galaxies, int(k), lead) for k in mem if k != lead],
             )
         else:
-            marker.set_target(pos)
+            marker.set_target(_drawn(galaxies, i, lead))
             marker.set_details("", others)
         _push()
 
@@ -517,7 +528,12 @@ def build_selection(server, scene) -> None:
     def _remember(gid, i) -> None:
         here = (gid, i)
         items, pos = hist["items"], hist["pos"]
-        if hist["nav"] or (0 <= pos < len(items) and items[pos] == here):
+        same = 0 <= pos < len(items) and (
+            items[pos][0] == gid if gid is not None else items[pos] == here
+        )
+        if same:
+            items[pos] = here  # (its row in this snapshot)
+        if hist["nav"] or same:
             hist["nav"] = False
             _hist_state()
             return
@@ -575,35 +591,78 @@ def build_selection(server, scene) -> None:
 
     near_trees: dict = {}
 
-    @ctrl.set("sel_nearest")
-    def _sel_nearest():
-        """Hop to the nearest other galaxy (in or out of the group)."""
+    def _nearest(i: int, n: int, skip=()) -> list[int]:
+        """Rows of the `n` galaxies nearest row `i` (periodic in a box),
+        nearest first: visible ones only (the filters and environment
+        checkboxes), not `i` nor any in `skip`."""
         from scipy.spatial import cKDTree
 
-        i = sel.get("idx")
-        if i is None or not state.sel_active:
-            return
         _, galaxies = _snap()
-        key = (scene.active_model.name, scene.active_model.current_snap)
+        ok = galaxies.stellar_mass > 0
+        mask = getattr(scene.galaxy_layer, "_filter_mask", None)
+        if mask is not None and len(mask) == galaxies.count:
+            ok = ok & mask
+        key = (
+            scene.active_model.name,
+            scene.active_model.current_snap,
+            hash(ok.tobytes()),
+        )
         if near_trees.get("key") != key:
-            rows = np.flatnonzero(galaxies.stellar_mass > 0)
+            rows = np.flatnonzero(ok)
             p = np.asarray(galaxies.positions[rows], float)
             box = None
             if not scene.is_lightcone:
                 box = float(scene.active_model.box_size)
                 p = np.mod(p, box)
             near_trees.update(
-                key=key, rows=rows, tree=cKDTree(p, boxsize=box), box=box
+                key=key,
+                rows=rows,
+                tree=cKDTree(p, boxsize=box) if len(rows) else None,
+                box=box,
             )
         t = near_trees
+        if t["tree"] is None:
+            return []
         q = np.asarray(galaxies.positions[i], float)
         if t["box"]:
             q = np.mod(q, t["box"])
-        _, hits = t["tree"].query(q, k=min(4, len(t["rows"])))
+        want = min(n + len(skip) + 1, len(t["rows"]))
+        _, hits = t["tree"].query(q, k=want)
+        out = []
         for h in np.atleast_1d(hits):
-            if h < len(t["rows"]) and t["rows"][h] != i:
-                _go_row(int(t["rows"][h]))
-                return
+            if h >= len(t["rows"]):
+                continue
+            r = int(t["rows"][h])
+            if r != i and r not in skip:
+                out.append(r)
+            if len(out) == n:
+                break
+        return out
+
+    @ctrl.set("sel_nearest")
+    def _sel_nearest():
+        """Hop to the nearest galaxy, fly there, and ring the next few
+        nearest (amber; the next hop larger).  Hopping again carries on to
+        the nearest one not yet visited on this run, so it never just
+        bounces back to where it came from."""
+        i = sel.get("idx")
+        if i is None or not state.sel_active:
+            return
+        seen = sel.get("hop_seen") if sel.get("hop_at") == i else None
+        seen = set(seen or ()) | {i}
+        nxt = _nearest(i, 1, seen)
+        if not nxt:
+            return
+        j = nxt[0]
+        _go_row(j)
+        seen.add(j)
+        sel["hop_seen"], sel["hop_at"] = seen, j
+        if hasattr(ctrl, "sel_go"):
+            ctrl.sel_go()
+        _, galaxies = _snap()
+        near = _nearest(j, 5, seen)
+        scene.camera.marker.set_near([_drawn(galaxies, k, j) for k in near])
+        _push()
 
     # -- Find -----------------------------------------------------------
 
@@ -629,7 +688,10 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("find_select")
     def _find_select(idx):
+        """A Find result clicked: select it and fly there."""
         _go_row(int(idx))
+        if hasattr(ctrl, "sel_go"):
+            ctrl.sel_go()
 
     def _int(v):
         try:
@@ -658,6 +720,8 @@ def build_selection(server, scene) -> None:
         # selection, unless it came from selecting a halo.
         state.sel_kind = sel.pop("kind_next", "galaxy")
         i = _int(nav_gal_idx)
+        if sel.pop("echo", None) == i:
+            return  # set by the snapshot follow, already selected
         if i is not None and i >= 0:
             _select(i)
 
@@ -688,12 +752,23 @@ def build_selection(server, scene) -> None:
         if state.find_preset:
             _find()
         gid = sel.get("gid")
-        if gid is None or snap_num is None or not state.sel_active:
+        if snap_num is None or not state.sel_active:
+            return
+        if gid is None:
+            # No GalaxyIndex in the catalogue: rows mean nothing across
+            # snapshots, so the selection ends here.
+            _sel_reset()
             return
         _, galaxies = _snap(int(snap_num))
         hit = np.flatnonzero(galaxies.galaxy_id == gid)
         if len(hit) == 0:
+            # Kept (by GalaxyIndex) for a snapshot it is in, but nothing
+            # here acts on a row that is now another galaxy.
             scene.camera.marker.clear()
+            sel.update(idx=None, mem=None)
+            if state.nav_gal_idx is not None:
+                sel["echo"] = None
+                state.nav_gal_idx = None
             state.sel_note = (
                 "Not in this snapshot (not formed yet, or merged into "
                 "another galaxy)."
@@ -706,7 +781,35 @@ def build_selection(server, scene) -> None:
         # context carries over.)
         if _int(state.nav_gal_idx) != i:
             sel["kind_next"] = state.sel_kind
+            sel["echo"] = i
             state.nav_gal_idx = i
+
+    @ctrl.set("sel_reset")
+    def _sel_reset(*_):
+        """Nothing selected (the model or box changed: rows and indices
+        refer to another catalogue)."""
+        scene.camera.marker.clear()
+        sel.update(gid=None, idx=None, mem=None, pos=None, host=None)
+        sel.pop("hop_seen", None)
+        hist.update(items=[], pos=-1, nav=False)
+        _hist_state()
+        state.sel_active = False
+        state.sel_show = False
+        state.sel_note = ""
+        if state.nav_gal_idx is not None:
+            sel["echo"] = None
+            state.nav_gal_idx = None
+        if state.find_preset:
+            _find()
+        _push()
+
+    scene.register_model_change_callback(_sel_reset)
+
+    @state.change("hd_active")
+    def _on_hd(**_):
+        # HD lays a group out round its central: the rings follow.
+        if state.sel_active and sel.get("idx") is not None:
+            _select(sel["idx"])
 
     @ctrl.set("sel_refresh")
     def _sel_refresh():

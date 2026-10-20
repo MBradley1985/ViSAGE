@@ -36,7 +36,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - **Double-click a galaxy** (any tab, and inside HD) to select it: a cyan ring on it and smaller rings on the rest of its FOF group (merged where they would pile up). The selection follows the galaxy through snapshots by its GalaxyIndex.
 - **Selection card** (**Show info**, Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
 - **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
-- **Find** (Structure tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it
+- **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it and fly there
 - **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU, with its surroundings out to 12 Mpc/h. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
 - **Enter to run** in every input field — Coords X/Y/Z, Box bounds, Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Zoom / Run / Take Screenshot button
 
@@ -307,11 +307,11 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 
 | Tab | Purpose |
 |---|---|
-| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); environment filter, Show info (selection card), Find |
-| Filters    | Range sliders for halo and galaxy properties |
-| Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
-| Coords     | Fly to arbitrary (x, y, z) — "Use Current Position" populates from camera; **Draw Sphere** places an interactive two-handle sphere (drag centre ball to translate, drag edge ball to resize); **Lock Sphere** commits it as the focus region |
+| Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); environment filter, Show info (selection card) |
+| Filters    | Range sliders for halo and galaxy properties; Find presets |
 | Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region. *In Lightcone Mode this tab becomes **Photometry**: a separate false-colour image layer built from a stack of synthetic-photometry filters (own Visible/Opacity, independent of the galaxies)* |
+| Coords     | Fly to arbitrary (x, y, z) — "Use Current Position" populates from camera; **Draw Sphere** places an interactive two-handle sphere (drag centre ball to translate, drag edge ball to resize); **Lock Sphere** commits it as the focus region |
+| Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
 | Library    | Browse stored screenshots / movies; double-click a row to open as a movable, resizable floating card over the viewport (multiple items open simultaneously); per-row delete button removes the file from disk immediately |
 

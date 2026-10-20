@@ -528,3 +528,51 @@ def test_no_halo_haze_with_gas_off(plotter):
     grp.set_gas(True)
     assert grp.members[0]._gas_on
     grp.clear()
+
+
+def test_snapshot_change_during_a_build_drops_it(hd_panel):
+    import asyncio
+
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+
+    async def run():
+        ctrl.toggle_hd()
+        assert state.hd_building
+        scene.active_model.set_snapshot(62)
+        state.snap_num = 62
+        state.flush()
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if not state.hd_building:
+                break
+        await asyncio.sleep(0.3)
+        assert not state.hd_active and not state.hd_building
+
+    asyncio.run(run())
+
+
+def test_a_failed_build_says_so(hd_panel, monkeypatch):
+    import asyncio
+
+    import visage.hd.group as group
+
+    server, _ = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+
+    def boom(*a):
+        raise RuntimeError("no luck")
+
+    monkeypatch.setattr(group, "prepare_member", boom)
+
+    async def run():
+        ctrl.toggle_hd()
+        for _ in range(200):
+            await asyncio.sleep(0.05)
+            if not state.hd_building:
+                break
+        assert not state.hd_active and "HD build failed" in state.notice_text
+
+    asyncio.run(run())

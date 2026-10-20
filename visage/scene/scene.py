@@ -623,6 +623,7 @@ class Scene:
             halos.positions,
             galaxies.positions,
         )
+        self._refit_clipping()
 
     def set_focus_sphere(
         self,
@@ -639,6 +640,7 @@ class Scene:
             halos.positions + off,
             galaxies.positions + off,
         )
+        self._refit_clipping()
 
     def set_focus_indices(
         self,
@@ -668,12 +670,24 @@ class Scene:
             halos.positions,
             galaxies.positions,
         )
+        self._refit_clipping()
 
     def clear_focus(self) -> None:
         self._focus_region = None
         for m in self._models.values():
             m.halo_layer.set_mask(None)
             m.galaxy_layer.set_mask(None)
+        self._refit_clipping()
+
+    def _refit_clipping(self) -> None:
+        """Fit the camera's depth range to what is now visible.  A fly-to
+        sets the camera while the old focus region is still all that is
+        visible; if that lies behind the new view, VTK collapses the range
+        to ~1e-18 and nothing draws until it is refitted."""
+        try:
+            self.plotter.renderer.ResetCameraClippingRange()
+        except Exception:
+            pass
 
     def _apply_focus_masks_for_layer(
         self,

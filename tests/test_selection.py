@@ -220,8 +220,14 @@ def test_browsing_members_central_neighbour_and_history(panel):
     # Nearest: the closest other galaxy.
     _, galaxies = scene.active_model.loader.get(scene.current_snap)
     galaxies.positions[9] = galaxies.positions[4] + 1e-4
+    galaxies.positions[11] = galaxies.positions[4] + 3e-4
     ctrl.sel_nearest()
     assert state.nav_gal_idx == 9
+    marker = scene.camera.marker
+    assert len(marker.near) == 5  # the next hops ringed
+    # Hopping on doesn't bounce back to 4 (nearest to 9) but carries on.
+    ctrl.sel_nearest()
+    assert state.nav_gal_idx == 11
 
 
 def test_find_presets_list_galaxies_to_select(panel):
@@ -245,6 +251,13 @@ def test_find_presets_list_galaxies_to_select(panel):
     assert [r["idx"] for r in state.find_results][:1] in ([2], [4])
     ctrl.find_select(top)
     assert state.nav_gal_idx == top and state.sel_active
+    # ...and the view flies to it.
+    off = scene.active_model.offset
+    assert np.allclose(
+        scene.plotter.camera.focal_point,
+        galaxies.positions[top] + off,
+        atol=1e-3,
+    )
 
 
 def test_member_rings_merge_when_they_pile_up():
@@ -258,3 +271,116 @@ def test_member_rings_merge_when_they_pile_up():
     )
     assert len(c) == 2  # two piles merged, the one on the target hidden
     assert np.all(r >= 10.0) and np.all(r <= 30.0)
+
+
+def _props(state):
+    return {p["label"]: p["value"] for p in state.sel_props}
+
+
+def _ids(scene):
+    model = scene.active_model
+    now, before = model.loader.get(63)[1], model.loader.get(62)[1]
+    now.galaxy_id[:] = np.arange(1000, 1000 + now.count)
+    before.galaxy_id[:] = np.arange(5000, 5000 + before.count)
+    return now, before
+
+
+def test_the_selection_holds_during_playback(panel):
+    """Image playback moves snap_num while the scene stays put: the card
+    must keep showing the same galaxy, not whatever has its row."""
+    server, scene = panel
+    state = server.state
+    now, before = _ids(scene)
+    before.galaxy_id[11] = now.galaxy_id[4]
+    state.snap_num = 63
+    state.nav_gal_idx = 4
+    state.flush()
+    state.snap_num = 62  # scene.current_snap stays 63
+    state.flush()
+    assert _props(state)["GalaxyIndex"] == "1004"
+
+
+def test_nothing_acts_on_a_galaxy_that_isnt_there(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _ids(scene)
+    state.snap_num = 63
+    state.nav_gal_idx = 4
+    state.flush()
+    scene.active_model.set_snapshot(62)
+    state.snap_num = 62
+    state.flush()
+    assert "Not in this snapshot" in state.sel_note
+    assert state.nav_gal_idx is None
+    ctrl.sel_nearest()  # nothing to hop from
+    ctrl.sel_step(1)
+    assert state.nav_gal_idx is None
+
+
+def test_rings_sit_where_galaxies_are_drawn_across_the_box_edge(panel):
+    server, scene = panel
+    state = server.state
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
+    galaxies.central_id[[2, 4]] = 99
+    galaxies.gal_type[2], galaxies.gal_type[4] = 1, 0
+    box = scene.active_model.box_size
+    galaxies.positions[4] = [box - 0.05, 30, 30]
+    galaxies.positions[2] = [0.05, 30, 30]
+    state.nav_gal_idx = 2
+    state.flush()
+    off = scene.active_model.offset
+    assert np.allclose(scene.camera.marker.target, galaxies.positions[2] + off)
+    assert np.allclose(
+        scene.camera.marker.members[0], galaxies.positions[4] + off
+    )
+
+
+def test_history_has_one_entry_per_galaxy_across_snapshots(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    now, before = _ids(scene)
+    before.galaxy_id[11] = now.galaxy_id[4]
+    state.snap_num = 63
+    state.nav_gal_idx = 7
+    state.flush()
+    state.nav_gal_idx = 4
+    state.flush()
+    scene.active_model.set_snapshot(62)
+    state.snap_num = 62
+    state.flush()
+    scene.active_model.set_snapshot(63)
+    state.snap_num = 63
+    state.flush()
+    ctrl.sel_history(-1)  # straight back to 7
+    assert state.nav_gal_idx == 7
+
+
+def test_a_long_fly_with_focus_on_still_draws(panel):
+    """Go far away with a focus region up: the depth range is refitted
+    (it collapsed to ~1e-18 and the view went black)."""
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    a, b = 0, int(
+        np.argmax(
+            np.linalg.norm(galaxies.positions - galaxies.positions[0], axis=1)
+        )
+    )
+    state.nav_gal_idx = a
+    state.flush()
+    ctrl.sel_go()
+    state.nav_gal_idx = b
+    state.flush()
+    ctrl.sel_go()
+    near, far = scene.plotter.camera.clipping_range
+    assert near > 1e-9 and far > 1.0
+
+
+def test_changing_model_or_box_clears_the_selection(panel):
+    server, _ = panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 3
+    state.flush()
+    ctrl.sel_reset()
+    assert not state.sel_active and state.nav_gal_idx is None

@@ -729,6 +729,12 @@ def create_app(
         if old_name == name:
             return
         _profiles[old_name] = save_profile(server.state)
+        # HD and the selection are of the old box's catalogue.
+        for hook in ("hd_drop", "sel_reset"):
+            try:
+                getattr(server.controller, hook)()
+            except Exception:
+                pass
         scene.set_active_box(name)
         server.state.active_box_name = name
         incoming = _profiles.get(name)

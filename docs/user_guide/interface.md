@@ -38,11 +38,11 @@ Seven tabs in two rows:
 
 | Tab | Purpose |
 |---|---|
-| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter, **Show info** (the selection card) and **Find** |
-| Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime) |
-| Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
-| Coords      | Fly to arbitrary (x, y, z); **Draw Sphere** for interactive focus region |
+| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter and **Show info** (the selection card) |
+| Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime); **Find** presets |
 | Box         | Zoom to axis-aligned sub-box; **Draw Box** for interactive focus region |
+| Coords      | Fly to arbitrary (x, y, z); **Draw Sphere** for interactive focus region |
+| Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 
