@@ -116,6 +116,13 @@ class GalaxyRecipe:
     pitch_deg: float = 18.0
     arm_sharpness: float = 4.0
     flocculence: float = 0.3
+    # Individual arms (model units / radians): class, strength, start and
+    # end radius, angular offset.  Empty -> n_arms identical full arms.
+    arm_class: str = "grand"
+    arm_amp: tuple = ()
+    arm_r0: tuple = ()
+    arm_r1: tuple = ()
+    arm_off: tuple = ()
     hz: float = 0.10
     bulge_a: float = 0.15  # Hernquist scale, in Rd
     bulge_q: float = 0.75
@@ -210,8 +217,11 @@ def _extras(
 
     # Intracluster stars: a faint, very extended envelope (~50 kpc).
     if g.ics > 0:
+        # Diffuse emission only (the ICL's look is its display overlay and
+        # stripped stars); capped, as ICS can exceed M* many times and its
+        # glow would otherwise haze over the whole view.
         out["l_icl"] = float(
-            0.5 * main_light * g.ics / max(g.stellar_mass, 1.0)
+            0.12 * main_light * min(g.ics / max(g.stellar_mass, 1.0), 1.0)
         )
         out["icl_a"] = float(np.clip(0.12 * g.rvir_kpc, 20, 120) / unit_kpc)
         notes.append(
@@ -243,7 +253,11 @@ def _extras(
     return out
 
 
-def recipe_from_sage(g: SageGalaxy) -> GalaxyRecipe:
+def recipe_from_sage(
+    g: SageGalaxy, arm_class: str | None = None
+) -> GalaxyRecipe:
+    """`arm_class` forces a disk's arm class (default: drawn from its
+    SAGE properties)."""
     rng = np.random.default_rng(int(g.galaxy_index) & 0x7FFFFFFF)
     gas_frac = g.cold_gas / max(g.cold_gas + g.stellar_mass, 1.0)
     bt = g.bt
@@ -309,15 +323,43 @@ def recipe_from_sage(g: SageGalaxy) -> GalaxyRecipe:
     pitch = float(np.clip(28.0 - 30.0 * bt + rng.normal(0, 2.5), 9.0, 30.0))
     ib_frac = g.instability_bulge_mass / max(g.stellar_mass, 1.0)
     barred = ib_frac > 0.06
-    if barred or lm > 10.8:
-        n_arms = 2
+    # Arm class (`arm_class` forces one): grand design, multi-arm (or 2 arms branching into 4),
+    # partial / not fully formed (lopsided, short arms) or flocculent.
+    if barred:
+        p_cls = (0.55, 0.25, 0.20, 0.0)
+    elif lm > 10.8:
+        p_cls = (0.45, 0.30, 0.25, 0.0)
+    elif gas_frac > 0.15 or lm < 10.0:
+        p_cls = (0.10, 0.25, 0.30, 0.35)
     else:
-        n_arms = int(rng.choice([2, 2, 3, 4], p=[0.4, 0.2, 0.25, 0.15]))
-    flocc = float(
+        p_cls = (0.30, 0.35, 0.25, 0.10)
+    drawn = str(
+        rng.choice(["grand", "multi", "partial", "flocculent"], p=p_cls)
+    )
+    arm_class = arm_class or drawn
+    # Gas richness places the flocculence within the class's range.
+    gasness = float(
         np.clip(
-            0.15 + 3.0 * gas_frac + 0.15 * (10.3 - lm) + rng.normal(0, 0.08),
-            0.1,
-            0.85,
+            (3.0 * gas_frac + 0.15 * (10.3 - lm) + rng.normal(0, 0.08)) / 0.75,
+            0.0,
+            1.0,
+        )
+    )
+    lo, hi = {
+        "grand": (0.05, 0.25),
+        "multi": (0.15, 0.4),
+        "partial": (0.3, 0.55),
+        "flocculent": (0.6, 0.85),
+    }[arm_class]
+    flocc = lo + (hi - lo) * gasness
+    pitch = float(
+        np.clip(
+            pitch
+            + {"grand": -3.0, "multi": 0.0, "partial": 3.0, "flocculent": 6.0}[
+                arm_class
+            ],
+            9.0,
+            35.0,
         )
     )
     sharp = float(np.clip(5.0 * (1 - flocc) + 1.5, 1.5, 6.0))
@@ -399,12 +441,25 @@ def recipe_from_sage(g: SageGalaxy) -> GalaxyRecipe:
             f"at {ex['ring_r']:.2f} Rd"
         )
 
+    arms = arm_layout(
+        arm_class,
+        extent,
+        max(bar_len, 0.3),
+        np.random.default_rng(rng.integers(1 << 31)),
+    )
+    notes.append(f"arms: {arm_class}, {len(arms[0])} arm(s)")
+
     return GalaxyRecipe(
         **ex,
         kind="disk",
         seed=int(rng.integers(1 << 31)),
         extent=extent,
-        n_arms=n_arms,
+        n_arms=len(arms[0]),
+        arm_class=arm_class,
+        arm_amp=arms[0],
+        arm_r0=arms[1],
+        arm_r1=arms[2],
+        arm_off=arms[3],
         pitch_deg=pitch,
         arm_sharpness=sharp,
         flocculence=flocc,
@@ -474,6 +529,86 @@ class PlaneMaps:
         ).reshape(xg.shape)
 
 
+def arm_layout(cls: str, extent: float, r_base: float, rng):
+    """Individual arms for an arm class: (amplitudes, start radii, end
+    radii, angular offsets), radii in model units."""
+    u = rng.uniform
+    amp, r0, r1, off = [], [], [], []
+
+    def arm(a, ra, rb, o):
+        amp.append(float(a))
+        r0.append(float(ra))
+        r1.append(float(rb))
+        off.append(float(o))
+
+    if cls == "grand":
+        for k in range(2):
+            arm(
+                u(0.9, 1.0),
+                r_base,
+                extent * u(0.95, 1.1),
+                k * np.pi + rng.normal(0, 0.1),
+            )
+    elif cls == "multi":
+        if rng.random() < 0.5:
+            # Two arms that each branch in the outer disk.
+            rb = r_base + u(1.0, 2.0)
+            for k in range(2):
+                o = k * np.pi + rng.normal(0, 0.1)
+                arm(u(0.85, 1.0), r_base, extent * u(0.9, 1.05), o)
+                arm(u(0.55, 0.8), rb, extent * u(0.8, 1.0), o + u(0.6, 1.0))
+        else:
+            m = int(rng.choice([3, 4]))
+            for k in range(m):
+                arm(
+                    u(0.6, 1.0),
+                    r_base * u(1.0, 1.8),
+                    extent * u(0.75, 1.05),
+                    2 * np.pi * k / m + rng.normal(0, 0.2),
+                )
+    elif cls == "partial":
+        # Not fully formed: lopsided, arms of unequal strength and length.
+        m = int(rng.choice([2, 3], p=[0.6, 0.4]))
+        for k in range(m):
+            arm(
+                1.0 if k == 0 else u(0.3, 0.7),
+                r_base * u(1.0, 2.5),
+                extent * u(0.45, 0.85),
+                2 * np.pi * k / m + rng.normal(0, 0.45),
+            )
+    else:
+        # Flocculent: many short arm segments.
+        for _ in range(int(rng.integers(6, 10))):
+            ra = u(0.6, 0.65 * extent)
+            arm(
+                u(0.4, 1.0),
+                ra,
+                min(ra * np.exp(u(0.5, 1.1)), extent),
+                u(0, 2 * np.pi),
+            )
+    return tuple(amp), tuple(r0), tuple(r1), tuple(off)
+
+
+def _arm_field(rc, r, th, lnr0, tanp, wobble, shift, sharp):
+    """Soft union of the recipe's individual arms (each a log spiral lobe
+    tapered between its start and end radius), peak 1."""
+    amps = rc.arm_amp or (1.0,) * rc.n_arms
+    r0s = rc.arm_r0 or (0.0,) * len(amps)
+    r1s = rc.arm_r1 or (1e9,) * len(amps)
+    offs = rc.arm_off or tuple(
+        2 * np.pi * k / len(amps) for k in range(len(amps))
+    )
+    base = th - (np.log(r) - lnr0) / tanp + 0.45 * wobble
+    out = np.ones_like(r)
+    for a, ra, rb, o in zip(amps, r0s, r1s, offs, strict=True):
+        d = np.angle(np.exp(1j * (base - o))) + shift
+        lobe = np.exp(-sharp * d * d)
+        taper = 1 / (1 + np.exp(-(r - ra) / (0.15 * max(ra, 0.2))))
+        taper *= 1 / (1 + np.exp((r - rb) / (0.12 * rb)))
+        out *= 1 - a * lobe * taper
+    return 1 - out
+
+
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     rng = np.random.default_rng(rc.seed)
     half = rc.extent * 1.6
@@ -512,13 +647,16 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
 
     # Spiral pattern.  The arm starts at the bar ends (or near the centre).
     r0 = max(rc.bar_len, 0.3)
-    phase = (
-        rc.n_arms * (th - np.log(np.maximum(r, r0) / r0) / tanp) + 0.9 * wobble
+    rr0 = np.maximum(r, r0)
+    arm_grand = _arm_field(
+        rc, rr0, th, np.log(r0), tanp, wobble, 0.0, rc.arm_sharpness
     )
-    arm_grand = ((1 + np.cos(phase)) / 2) ** rc.arm_sharpness
     floc = 1 / (1 + np.exp(-2.2 * fil))  # (0,1) filament field
+    # Flocculent light sits mostly on the arms (so their shapes and ends
+    # show), except in flocculent disks where it is the structure itself.
+    fl_base = 0.6 if rc.arm_class == "flocculent" else 0.25
     arm = (1 - rc.flocculence) * arm_grand + rc.flocculence * floc * (
-        0.6 + 0.8 * arm_grand
+        fl_base + 1.0 * arm_grand
     )
     # Arms fade inside the bar / bulge.
     inner = 1 - np.exp(-((r / max(rc.hole, 0.2)) ** 4))
@@ -544,8 +682,9 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     )
 
     # Dust lanes sit on the inner (concave) edge of the arm.
-    dphase = phase + 0.55
-    arm_d = ((1 + np.cos(dphase)) / 2) ** (rc.arm_sharpness + 1.5)
+    arm_d = _arm_field(
+        rc, rr0, th, np.log(r0), tanp, wobble, 0.275, rc.arm_sharpness + 1.5
+    )
     fil_d = 1 / (1 + np.exp(-3.5 * (fil + 0.3)))
     arm_dust = (
         (1 - rc.flocculence) * arm_d + rc.flocculence * fil_d * (0.4 + arm_d)
