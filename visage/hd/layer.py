@@ -45,6 +45,14 @@ def galaxy_basis(spin: np.ndarray | None, seed: int) -> np.ndarray:
     return np.column_stack([e1, e2, e3])
 
 
+# Texture resolutions per build quality.
+QUALITY = {
+    "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 112},
+    "group": {"map_n": 768, "npts": 1024, "exp_npix": 160, "atlas_n": 80},
+    "lite": {"map_n": 384, "npts": 512, "exp_npix": 96, "atlas_n": 48},
+}
+
+
 class Exposure:
     """White level of the tone map.
 
@@ -58,10 +66,12 @@ class Exposure:
 
     _PA = 25.0
 
-    def __init__(self, rc, maps, pts, npix: int = 256):
+    def __init__(self, rc, maps, pts, npix: int = 256, threads: int = 8):
         from visage.hd.raymarch import render, rot
 
-        face = render(rc, maps, pts, inc=0, pa=self._PA, npix=npix, threads=8)
+        face = render(
+            rc, maps, pts, inc=0, pa=self._PA, npix=npix, threads=threads
+        )
         lum = (face.total - face.points.get("agn", 0)).mean(axis=2)
         self.base = float(np.percentile(lum, 99.97)) or 1.0
         self._R = rot(0, self._PA)
@@ -101,6 +111,7 @@ class HDGalaxyLayer:
         self._gpu = GPUGalaxy(plotter)
         self._observer = None
         self._fxaa = None
+        self._white0 = 1.0
         self._gas_on = False
         self.gal: SageGalaxy | None = None
         self.recipe = None
@@ -110,21 +121,33 @@ class HDGalaxyLayer:
         return self._gpu.actor is not None
 
     @staticmethod
-    def prepare(gal: SageGalaxy) -> dict:
+    def prepare(gal: SageGalaxy, quality: str = "full") -> dict:
         """Everything CPU-heavy in a build (numpy only, so it can run on a
-        worker thread while the UI says what is happening)."""
+        worker thread while the UI says what is happening).  `quality`
+        (QUALITY key) sets texture resolutions: lower for the many members
+        of a group, each of which is small on screen."""
         from visage.hd.gpu import prepare
 
+        q = QUALITY[quality]
         rc = recipe_from_sage(gal)
-        maps = build_disk_maps(rc, n=1024) if rc.kind == "disk" else None
+        maps = build_disk_maps(rc, n=q["map_n"]) if rc.kind == "disk" else None
         pts = build_points(rc, maps)
         return {
             "gal": gal,
             "rc": rc,
             "maps": maps,
             "pts": pts,
-            "exposure": Exposure(rc, maps, pts),
-            "gpu": prepare(rc, maps, pts),
+            # Group members build in parallel processes: one thread each.
+            "exposure": Exposure(
+                rc,
+                maps,
+                pts,
+                npix=q["exp_npix"],
+                threads=8 if quality == "full" else 1,
+            ),
+            "gpu": prepare(
+                rc, maps, pts, npts=q["npts"], atlas_n=q["atlas_n"]
+            ),
         }
 
     def show(
@@ -135,11 +158,19 @@ class HDGalaxyLayer:
         hubble_h: float,
         gas: bool = False,
         prep: dict | None = None,
+        white: float | None = None,
+        halo: bool = True,
+        manage_fxaa: bool = True,
     ):
-        """Build and draw the HD model of `gal` at world position `center`
-        (`prep`: `prepare(gal)`, if already made)."""
+        """Build and draw the HD model of `gal` at world position `center`.
+
+        `prep`: `prepare(gal)`, if already made.  For a member of a group:
+        `white` is its share of the group's common exposure (default: its
+        own), `halo=False` leaves out the halo (gas, ICL, Rvir box) for a
+        satellite, and `manage_fxaa=False` leaves FXAA to the group."""
         self.clear()
-        if prep is None or prep["gal"] is not gal:
+        # (By value: a prep built in a worker process holds a copy of gal.)
+        if prep is None or prep["gal"] != gal:
             prep = self.prepare(gal)
         self.gal = gal
         rc, maps, pts = prep["rc"], prep["maps"], prep["pts"]
@@ -153,22 +184,24 @@ class HDGalaxyLayer:
         m[:3, :3] = self._R * self._scale
         m[:3, 3] = self._center
         self._exposure = prep["exposure"]
+        self._white0 = float(white) if white else self._exposure.base
         self._gpu.build(
             rc,
             maps,
             pts,
-            self._exposure.base,
+            self._white0,
             m,
-            gal=gal,
+            gal=gal if halo else None,
             gas=gas,
             prep=prep["gpu"],
         )
         self._gas_on = bool(gas)
         self._gpu.set_gas(self._gas_on)
         ren = self._pl.renderer
-        # The shader resolves single stars; FXAA would smear them.
-        self._fxaa = bool(ren.GetUseFXAA())
-        ren.SetUseFXAA(False)
+        if manage_fxaa:
+            # The shader resolves single stars; FXAA would smear them.
+            self._fxaa = bool(ren.GetUseFXAA())
+            ren.SetUseFXAA(False)
         # Camera uniforms are refreshed as each frame starts, so they follow
         # camera moves and window resizes alike.
         self._observer = (ren, ren.AddObserver("StartEvent", self._on_camera))
@@ -236,7 +269,9 @@ class HDGalaxyLayer:
         focal = np.array(cam.GetFocalPoint(), float)
         fx, fy, _ = self.to_model(focal)
         half_focal = np.linalg.norm(pos - focal) * tan_half / self._scale
-        self._gpu.set_white(self._exposure.white(fx, fy, half_focal))
+        # Auto-exposure relative to this galaxy's own base level.
+        auto = self._exposure.white(fx, fy, half_focal) / self._exposure.base
+        self._gpu.set_white(self._white0 * auto)
         self._gpu.set_view_half(
             half_world / self._scale * self.recipe.unit_kpc
         )

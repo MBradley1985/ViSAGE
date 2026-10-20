@@ -347,6 +347,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.isolate_active = False
     state.hd_active = False  # HD model of the selected galaxy (Target tab)
     state.hd_building = False  # its build is running (message shown)
+    state.hd_progress = ""  # the message
     state.hd_gas = False  # its halo-gas overlay
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
@@ -4222,7 +4223,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # HD galaxy — a detailed procedural 3D model of the selected galaxy
     # ------------------------------------------------------------------
 
-    _hd: dict = {"layer": None}
+    # "mode": what HD is showing -- "galaxy" (one galaxy) or "halo" (every
+    # member of a pair, group or cluster).
+    _hd: dict = {"layer": None, "group": None, "mode": None}
 
     def _hd_layer():
         if _hd["layer"] is None:
@@ -4231,13 +4234,42 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _hd["layer"] = HDGalaxyLayer(scene.plotter)
         return _hd["layer"]
 
+    def _hd_group():
+        if _hd["group"] is None:
+            from visage.hd.group import HDGroupLayer
+
+            _hd["group"] = HDGroupLayer(scene.plotter)
+        return _hd["group"]
+
+    def _hd_current():
+        return _hd["group"] if _hd["mode"] == "halo" else _hd["layer"]
+
     def _stop_hd() -> None:
-        """Drop the HD model (Isolate's teardown calls this too)."""
-        lay = _hd["layer"]
-        if lay is not None and lay.active:
-            lay.clear()
-            _push()
+        """Drop the HD model(s) (Isolate's teardown calls this too)."""
+        for lay in (_hd["layer"], _hd["group"]):
+            if lay is not None and lay.active:
+                lay.clear()
+                _push()
+        _hd["mode"] = None
         state.hd_active = False
+
+    def _hd_off() -> None:
+        """HD button pressed while on: back out to the standard 10 Mpc/h
+        view of the selected galaxy."""
+        _clear_draw_widgets()
+        state.isolate_active = False
+        state.focus_active = False
+        scene.clear_focus()
+        _stop_hd()
+        _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
+
+    def _running_loop():
+        import asyncio
+
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return None
 
     @ctrl.set("toggle_hd")
     def on_toggle_hd():
@@ -4246,9 +4278,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
         Like Isolate, but every catalogue object is hidden and the galaxy
         is drawn from its SAGE properties: disk or elliptical, arms, bar,
         clusters, HII regions, view-dependent dust, merger debris, ICL and
-        (with the Gas box) its halo gas.  Turning it off backs the camera
-        out to the standard 10 Mpc/h galaxy view; anything else that drops
-        Isolate also removes it.
+        (with the Gas box) its halo gas.  If the galaxy is in a pair, group
+        or cluster, the whole halo is drawn: every member at its own place
+        and spin, the halo's gas on the Gas box.  Turning it off backs the
+        camera out to the standard 10 Mpc/h galaxy view; anything else that
+        drops Isolate also removes it.
 
         In the app the CPU part of the build runs on a worker thread while
         a message says so; without a running event loop (tests, scripts)
@@ -4259,12 +4293,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if bool(state.hd_building):
             return
         if bool(state.hd_active):
-            _clear_draw_widgets()
-            state.isolate_active = False
-            state.focus_active = False
-            scene.clear_focus()
-            _stop_hd()
-            _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
+            _hd_off()
             return
 
         try:
@@ -4281,19 +4310,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
         gal = sage_galaxy_from_snapshot(galaxies, gidx, h)
         if gal.stellar_mass <= 0:
             return
+        # A pair, group or cluster: its whole halo.
+        members = _group_members(galaxies, gidx)
+        if len(members) > 1:
+            _hd_build_group(galaxies, members)
+            return
         center = galaxies.positions[gidx] + scene.active_model.offset
         spin = spin_vector(galaxies, gidx)
         lay = _hd_layer()
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+        loop = _running_loop()
         if loop is None:
             _hd_show(lay, gal, center, spin, h, lay.prepare(gal))
             return
 
         state.hd_building = True
+        state.hd_progress = "Building HD galaxy…"
         state.flush()
 
         async def _build():
@@ -4307,23 +4339,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         loop.create_task(_build())
 
-    def _hd_show(lay, gal, center, spin, h, prep) -> None:
-        """Draw the prepared HD model and frame it."""
+    def _hd_frame(center, R, radius: float) -> None:
+        """Camera at ~55 deg from the (central's) spin axis, `radius`
+        (Mpc/h) filling the view, sparkles around it, Isolate engaged."""
         import numpy as np
 
-        # The HD model stands in for this galaxy's dot, so hide everything.
-        scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
-        lay.show(gal, center, spin, h, gas=bool(state.hd_gas), prep=prep)
-
-        # Frame it at ~55 deg inclination: between the spin axis and the disk.
         cam = scene.plotter.camera
-        radius = lay.rvir_world if state.hd_gas else lay.radius_world
         dist = radius / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
-        e2, e3 = lay._R[:, 1], lay._R[:, 2]
+        e2, e3 = R[:, 1], R[:, 2]
         view = np.cos(np.deg2rad(55)) * e3 - np.sin(np.deg2rad(55)) * e2
         cx, cy, cz = (float(c) for c in center)
         cam.focal_point = (cx, cy, cz)
-        cam.position = tuple(float(v) for v in center + view * dist)
+        cam.position = tuple(
+            float(v) for v in np.asarray(center) + view * dist
+        )
         cam.up = tuple(float(v) for v in e3)
         scene.plotter.renderer.ResetCameraClippingRange()
 
@@ -4335,9 +4364,116 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _start_sparkles(_sparkle_target["center"], _sparkle_target["radius"])
         _push()
 
+    def _hd_show(lay, gal, center, spin, h, prep) -> None:
+        """Draw the prepared HD model and frame it."""
+        # The HD model stands in for this galaxy's dot, so hide everything.
+        scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
+        lay.show(gal, center, spin, h, gas=bool(state.hd_gas), prep=prep)
+        _hd["mode"] = "galaxy"
+        radius = lay.rvir_world if state.hd_gas else lay.radius_world
+        _hd_frame(center, lay._R, radius)
+
+    def _group_members(galaxies, gidx):
+        """The selected galaxy's FOF group (pair, group or cluster): member
+        indices, central first then by stellar mass."""
+        import numpy as np
+        from visage.utils.group_info import member_indices
+
+        if not np.any(galaxies.central_id):
+            # No CentralGalaxyIndex in the catalogue: membership unknown.
+            return np.array([gidx], dtype=np.int64)
+        idx = member_indices(galaxies, gidx)
+        idx = idx[galaxies.stellar_mass[idx] > 0]
+        order = np.lexsort(
+            (-galaxies.stellar_mass[idx], galaxies.gal_type[idx] != 0)
+        )
+        return idx[order]
+
+    def _hd_build_group(galaxies, idx) -> None:
+        """Every member of the group in HD at its own position and spin
+        (the most massive in full; the tail of a big cluster as glows),
+        with the halo's gas on the Gas box."""
+        import asyncio
+
+        from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
+        from visage.hd.group import plan, pool, prepare_member
+
+        h = float(scene._cfg.hubble_h)
+        off = scene.active_model.offset
+        entries = [
+            {
+                "gal": sage_galaxy_from_snapshot(galaxies, int(i), h),
+                "center": galaxies.positions[int(i)] + off,
+                "spin": spin_vector(galaxies, int(i)),
+                "prep": None,
+            }
+            for i in idx
+        ]
+        quality = plan([e["gal"] for e in entries])
+        todo = [k for k, q in enumerate(quality) if q is not None]
+
+        loop = _running_loop()
+        if loop is None:
+            from visage.hd.layer import HDGalaxyLayer
+
+            for k in todo:
+                entries[k]["prep"] = HDGalaxyLayer.prepare(
+                    entries[k]["gal"], quality[k]
+                )
+            _hd_show_group(entries, h)
+            return
+
+        state.hd_building = True
+        n = len(todo)
+        word = "pair" if len(entries) == 2 else "group"
+        state.hd_progress = f"Building HD {word}… 0/{n}"
+        state.flush()
+
+        async def _build():
+            try:
+                await asyncio.sleep(0.05)  # let the message reach the browser
+                try:
+                    ex = pool()
+                except Exception:
+                    ex = None
+
+                async def _prep(k):
+                    args = (prepare_member, entries[k]["gal"], quality[k])
+                    try:
+                        return await loop.run_in_executor(ex, *args)
+                    except Exception:
+                        # A broken worker pool: build it here instead.
+                        return await loop.run_in_executor(None, *args)
+
+                futs = {asyncio.ensure_future(_prep(k)): k for k in todo}
+                done = 0
+                for fut in asyncio.as_completed(list(futs)):
+                    await fut
+                    done += 1
+                    state.hd_progress = f"Building HD {word}… {done}/{n}"
+                    state.flush()
+                for fut, k in futs.items():
+                    entries[k]["prep"] = fut.result()
+                _hd_show_group(entries, h)
+            finally:
+                state.hd_building = False
+                state.flush()
+
+        loop.create_task(_build())
+
+    def _hd_show_group(entries, h) -> None:
+        scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
+        grp = _hd_group()
+        grp.show(entries, h, gas=bool(state.hd_gas))
+        _hd["mode"] = "halo"
+        radius = grp.radius_world
+        if state.hd_gas:
+            radius = max(radius, grp.rvir_world)
+        _hd_frame(grp.center, grp.basis, radius)
+
     @state.change("hd_gas")
     def on_hd_gas_change(hd_gas=False, **_):
-        lay = _hd["layer"]
+        lay = _hd_current()
         if lay is not None and lay.active:
             lay.set_gas(bool(hd_gas))
             _push()
@@ -4345,6 +4481,41 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # ------------------------------------------------------------------
     # UI helper
     # ------------------------------------------------------------------
+
+    def _hd_controls(click, btn_id, disabled, title):
+        """HD button + Gas checkbox (shared) + build message."""
+        with v3.VSheet(
+            color="transparent",
+            style="display:flex;align-items:center;gap:12px;padding:2px 0;",
+        ):
+            v3.VBtn(
+                "HD",
+                variant=("hd_active ? 'flat' : 'outlined'",),
+                color=("hd_active ? 'cyan' : '#FFD700'",),
+                density="compact",
+                prepend_icon="mdi-creation",
+                click=click,
+                loading=("hd_building",),
+                disabled=(f"hd_building || {disabled}",),
+                title=title,
+                id=btn_id,
+            )
+            v3.VCheckbox(
+                v_model=("hd_gas",),
+                label="Gas",
+                color="#FFD700",
+                hide_details=True,
+                density="compact",
+                title="Show the halo gas: CGM, hot gas, winds and jets",
+            )
+        v3.VLabel(
+            "{{ hd_progress }}",
+            v_show=("hd_building",),
+            style=(
+                "font-size:0.7rem;color:#67e8f9;display:block;"
+                "padding:2px 0 0;"
+            ),
+        )
 
     def _tf(v_model, label, on_enter=None, target_id=None):
         """Number-input helper. Enter binds via `target_id` (the id of
@@ -4721,42 +4892,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # HD model of the selected galaxy, then its gas overlay.
                 v3.VDivider(style="margin:14px 0 10px;")
-                with v3.VSheet(
-                    color="transparent",
-                    style="display:flex;align-items:center;gap:12px;padding:2px 0;",
-                ):
-                    v3.VBtn(
-                        "HD",
-                        variant=("hd_active ? 'flat' : 'outlined'",),
-                        color=("hd_active ? 'cyan' : '#FFD700'",),
-                        density="compact",
-                        prepend_icon="mdi-creation",
-                        click=ctrl.toggle_hd,
-                        loading=("hd_building",),
-                        disabled=(
-                            "hd_building || nav_gal_idx === null || nav_gal_idx < 0",
-                        ),
-                        title=(
-                            "Isolate the selected galaxy as a detailed 3D model "
-                            "built from its SAGE properties"
-                        ),
-                        id="btn-hd-galaxy",
-                    )
-                    v3.VCheckbox(
-                        v_model=("hd_gas",),
-                        label="Gas",
-                        color="#FFD700",
-                        hide_details=True,
-                        density="compact",
-                        title="Show the halo gas: CGM, hot gas, winds and jets",
-                    )
-                v3.VLabel(
-                    "Building HD galaxy…",
-                    v_show=("hd_building",),
-                    style=(
-                        "font-size:0.7rem;color:#67e8f9;display:block;"
-                        "padding:2px 0 0;"
-                    ),
+                _hd_controls(
+                    ctrl.toggle_hd,
+                    "btn-hd-galaxy",
+                    "nav_gal_idx === null || nav_gal_idx < 0",
+                    "Isolate the selected galaxy as a detailed 3D model "
+                    "built from its SAGE properties",
                 )
 
                 v3.VDivider(style="margin:14px 0 10px;")

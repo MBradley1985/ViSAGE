@@ -670,10 +670,16 @@ def icl_stars(gal, rc, px_proto):
     return pos, np.full(n, 0.7 * px_proto * 1.5), colour
 
 
-def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
+def prepare(
+    rc: GalaxyRecipe,
+    maps: PlaneMaps | None,
+    pts,
+    npts: int = 2048,
+    atlas_n: int = 112,
+) -> dict:
     """The CPU side of a build (numpy only, safe off the main thread): the
     texture arrays, the exact-star grid and the layout numbers the shader
-    needs."""
+    needs.  `npts` / `atlas_n`: splat and debris-volume resolution."""
     disk = rc.kind == "disk"
     E = rc.extent * (1.3 if disk else 1.0)
     px_proto = 2 * E / 1024.0
@@ -703,7 +709,6 @@ def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
             ]
         ).astype(np.float32)
         tex["mapTex"] = (m, "mip")
-        npts = 2048
         from concurrent.futures import ThreadPoolExecutor
 
         # Splats of what each level leaves out (the finest two at full
@@ -730,7 +735,6 @@ def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
     if vol:
         allpos = np.vstack([p.pos for p in vol])
         atlas_half = float(max(np.percentile(np.abs(allpos), 99.5), E))
-        atlas_n = 112
         atlas, nx, ny = _splat_volume(vol, atlas_half, atlas_n, px_proto)
         tex["atlasTex"] = (atlas, "linear")
         atlas_info = (atlas_half, atlas_n, nx, (nx * atlas_n, ny * atlas_n))
@@ -875,7 +879,12 @@ class GPUGalaxy:
         )
         from visage.hd.gpu_gas import GLSL_IMPL as gas_glsl
 
-        dec, impl = _DEC, _IMPL.replace("  //GAS::Impl", gas_glsl)
+        # No halo (a group's satellites): no gas code, whose uniforms would
+        # otherwise go undeclared.
+        dec = _DEC
+        impl = _IMPL.replace(
+            "  //GAS::Impl", gas_glsl if gal is not None else ""
+        )
         sp.AddFragmentShaderReplacement(
             "//VTK::PositionVC::Dec", True, dec, False
         )

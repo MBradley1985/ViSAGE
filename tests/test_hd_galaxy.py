@@ -314,3 +314,62 @@ def test_hd_builds_in_the_background_with_a_message(hd_panel):
         assert state.hd_active and not state.hd_building
 
     asyncio.run(run())
+
+
+def test_hd_draws_the_whole_group(hd_panel):
+    """A galaxy with company: HD draws every member of its FOF group, the
+    halo's gas on the central only, and backs out to 10 Mpc/h when off."""
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
+    galaxies.central_id[[0, 3, 5]] = 99  # a group of three
+    state.nav_gal_idx = 3
+    ctrl.toggle_hd()
+    state.flush()
+    assert state.hd_active and state.isolate_active
+    import gc
+
+    from visage.hd.group import HDGroupLayer
+
+    grp = [o for o in gc.get_objects() if isinstance(o, HDGroupLayer)][0]
+    assert len(grp.members) == 3 and grp.active
+    # Only the central carries the halo.
+    assert grp.members[0]._gpu.gas is not None
+    assert all(m._gpu.gas is None for m in grp.members[1:])
+    state.hd_gas = True
+    state.flush()
+    ctrl.toggle_hd()
+    state.flush()
+    assert not state.hd_active and not grp.active
+    cam = scene.plotter.camera
+    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
+    assert dist == pytest.approx(10.0)
+
+
+def test_group_plan_tiers():
+    from visage.hd.group import N_FULL, N_GROUP, N_HD, N_TOP, plan
+
+    gals = [_disk()] * 60
+    q = plan(gals)
+    assert q[:N_TOP] == ["full"] * N_TOP
+    assert set(q[N_TOP:N_GROUP]) == {"group"}
+    assert set(q[N_GROUP:N_HD]) == {"lite"}
+    assert q[N_HD:] == [None] * (60 - N_HD)
+    assert plan(gals[:N_FULL]) == ["full"] * N_FULL
+
+
+def test_group_members_build_in_the_process_pool():
+    """Member builds run in spawned workers: the galaxy goes over and the
+    prepared textures come back."""
+    from visage.hd import group
+
+    try:
+        res = group.pool().submit(group.prepare_member, _disk(), "lite")
+        prep = res.result(timeout=300)
+    finally:
+        if group._POOL["pool"] is not None:
+            group._POOL["pool"].shutdown()
+            group._POOL["pool"] = None
+    assert prep["rc"].kind == "disk"
+    assert prep["gpu"]["tex"]["mapTex"][0].shape == (384, 384, 3)
