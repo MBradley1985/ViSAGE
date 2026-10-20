@@ -33,7 +33,8 @@ _PICK_PX = 28.0  # how close (pixels) a double-click must be to a galaxy
 
 def _init_state(state) -> None:
     for k, v in {
-        "sel_show": False,
+        "sel_show": False,  # the card is open (Show info)
+        "sel_active": False,  # something is selected
         "sel_title": "",
         "sel_sub": "",
         "sel_props": [],
@@ -93,7 +94,7 @@ def selection_card(server) -> None:
                 size="x-small",
                 variant="text",
                 click=ctrl.sel_close,
-                title="Deselect",
+                title="Hide (Show info brings it back)",
             )
         html.Div(
             "{{ sel_note }}",
@@ -416,7 +417,7 @@ def build_selection(server, scene) -> None:
         ]
         state.sel_more = int(max(len(mem) - MAX_LISTED, 0))
         state.sel_note = note
-        state.sel_show = True
+        state.sel_active = True  # (the card opens on Show info)
         if state.sel_info_open:
             _fill_info(i, snap)
         others = [_unwrap(galaxies, int(k), lead) for k in mem if k != i]
@@ -425,12 +426,12 @@ def build_selection(server, scene) -> None:
             # The halo: ring on its central, the whole group ringed.
             marker.set_target(cpos)
             marker.set_details(
-                f"halo {host}",
+                "",
                 [_unwrap(galaxies, int(k), lead) for k in mem if k != lead],
             )
         else:
             marker.set_target(pos)
-            marker.set_details(f"{i} · {lm:.1f}", others)
+            marker.set_details("", others)
         _push()
 
     def _int(v):
@@ -488,7 +489,7 @@ def build_selection(server, scene) -> None:
     def _on_snap(snap_num=None, **_):
         """Find the same galaxy in the new snapshot."""
         gid = sel.get("gid")
-        if gid is None or snap_num is None or not state.sel_show:
+        if gid is None or snap_num is None or not state.sel_active:
             return
         _, galaxies = _snap(int(snap_num))
         hit = np.flatnonzero(galaxies.galaxy_id == gid)
@@ -527,10 +528,12 @@ def build_selection(server, scene) -> None:
         """The card, with every property open."""
         state.sel_info_open = True
         _sel_refresh()
+        state.sel_show = bool(state.sel_active)
 
     @ctrl.set("show_group_info")
     def _show_group_info():
         _sel_refresh()
+        state.sel_show = bool(state.sel_active)
 
     @ctrl.set("sel_query")
     def _sel_query(kind):
@@ -575,13 +578,21 @@ def build_selection(server, scene) -> None:
     @state.change("sel_kind")
     def _on_kind(**_):
         i = sel.get("idx")
-        if i is not None and state.sel_show:
+        if i is not None and state.sel_active:
             _select(i)
 
     @ctrl.set("sel_close")
     def _sel_close():
+        """Hide the card (the selection stays)."""
         state.sel_show = False
-        scene.camera.marker.clear()
+        _push()
+
+    @ctrl.set("sel_toggle_card")
+    def _sel_toggle_card():
+        """Show info / Hide info."""
+        if not state.sel_active:
+            return
+        state.sel_show = not bool(state.sel_show)
         _push()
 
     @ctrl.set("sel_clear_marker")

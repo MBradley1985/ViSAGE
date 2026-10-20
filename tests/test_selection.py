@@ -44,6 +44,10 @@ def test_selecting_a_galaxy_fills_the_card_and_marks_it(panel):
     _group(scene, [2, 4, 6], central=4)
     state.nav_gal_idx = 6
     state.flush()
+    # Selected (ringed), but the card waits for Show info.
+    assert state.sel_active and not state.sel_show
+    ctrl = server.controller
+    ctrl.sel_toggle_card()
     assert state.sel_show
     assert state.sel_title == "Galaxy 6"
     assert "satellite" in state.sel_sub
@@ -123,9 +127,9 @@ def test_selecting_by_typed_index_and_info(panel):
     state, ctrl = server.state, server.controller
     state.sel_q_gal = "7"
     ctrl.sel_query("galaxy")
-    assert state.nav_gal_idx == 7 and state.sel_show
+    assert state.nav_gal_idx == 7 and state.sel_active
     ctrl.sel_clear_marker()  # rings off, selection kept
-    assert state.sel_show and not server_scene_marker(panel).active
+    assert state.sel_active and not server_scene_marker(panel).active
     ctrl.sel_close()
     assert not state.sel_show
     ctrl.show_galaxy_info()  # Console "galaxy info": the card, all open

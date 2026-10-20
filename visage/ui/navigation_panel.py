@@ -4894,6 +4894,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
+                # The selection card (what's selected, its group, Go /
+                # Isolate / HD / Track).
+                v3.VBtn(
+                    "{{ sel_show ? 'Hide info' : 'Show info' }}",
+                    block=True,
+                    variant=("sel_show ? 'flat' : 'outlined'",),
+                    color="cyan",
+                    density="compact",
+                    prepend_icon="mdi-information-outline",
+                    disabled=("!sel_active",),
+                    click=ctrl.sel_toggle_card,
+                    style="margin-top:14px;",
+                    title="Show the selected galaxy's card",
+                )
 
             # Coords
             with v3.VSheet(
