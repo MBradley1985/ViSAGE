@@ -124,7 +124,13 @@ def test_selecting_by_typed_index_and_info(panel):
     state.sel_q_gal = "7"
     ctrl.sel_query("galaxy")
     assert state.nav_gal_idx == 7 and state.sel_show
+    ctrl.sel_clear_marker()  # rings off, selection kept
+    assert state.sel_show and not server_scene_marker(panel).active
     ctrl.sel_close()
     assert not state.sel_show
     ctrl.show_galaxy_info()  # Console "galaxy info": the card, all open
     assert state.sel_show and state.sel_info_open and state.sel_info_items
+
+
+def server_scene_marker(panel):
+    return panel[1].camera.marker

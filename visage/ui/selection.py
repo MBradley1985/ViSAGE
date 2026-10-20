@@ -153,6 +153,15 @@ def selection_card(server) -> None:
                     click=fn,
                     style="min-width:0;",
                 )
+            html.Div(style="flex:1;")
+            v3.VBtn(
+                "Clear indicator",
+                size="x-small",
+                variant="text",
+                color="#9ca3af",
+                click=ctrl.sel_clear_marker,
+                title="Remove the rings (the galaxy stays selected)",
+            )
         with html.Div(
             v_show=("sel_halo",),
             style=(
@@ -496,6 +505,12 @@ def build_selection(server, scene) -> None:
     @ctrl.set("sel_close")
     def _sel_close():
         state.sel_show = False
+        scene.camera.marker.clear()
+        _push()
+
+    @ctrl.set("sel_clear_marker")
+    def _sel_clear_marker():
+        """The rings off; the selection and its card stay."""
         scene.camera.marker.clear()
         _push()
 

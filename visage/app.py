@@ -305,7 +305,6 @@ def create_app(
         ("Structure", "layers"),
         ("Filters", "filters"),
         ("Record", "record"),
-        ("Target", "target"),
         ("Coords", "coords"),
         ("Box", "box"),
         ("Console", "console"),

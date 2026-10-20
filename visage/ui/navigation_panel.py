@@ -4027,22 +4027,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         halo_indices: list[int] = []
         gal_indices = np.array([], dtype=np.int64)
 
-        if state.nav_active_tab == "target" and 0 <= hidx < halos.count:
-            # Halo selection — keep the halo AND the galaxies of the FOF
-            # group sitting in it, so the group is actually populated.
-            halo_indices = [hidx]
-            halo_world = halos.positions[hidx] + off
-            if galaxies.count > 0:
-                d = np.linalg.norm(
-                    (galaxies.positions + off) - halo_world, axis=1
-                )
-                nearest = int(np.argmin(d))
-                rvir = float(halos.rvir[hidx]) if len(halos.rvir) else 0.0
-                # Only adopt the group if a galaxy actually lives in the
-                # halo — otherwise the nearest one could be far away.
-                if d[nearest] <= max(1.5 * rvir, 1e-3):
-                    gal_indices = member_indices(galaxies, nearest)
-        elif 0 <= gidx < galaxies.count:
+        if 0 <= gidx < galaxies.count:
             gal_indices = np.array([gidx], dtype=np.int64)
         elif 0 <= hidx < halos.count:
             halo_indices = [hidx]
@@ -4611,7 +4596,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "width:100%;flex-shrink:0;background:#111827;"
                 "border-radius:0;display:flex;flex-wrap:wrap;"
                 "justify-content:center;"
-                "height:auto;min-height:118px;padding-bottom:6px;"
+                "height:auto;min-height:0;padding-bottom:4px;"
             ),
         ):
             # A lightcone has no periodic box to zoom to, but it does have
@@ -4625,7 +4610,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ("Structure", "layers"),
                 ("Filters", "filters"),
                 ("Record", "record"),
-                ("Target", "target"),
                 ("Coords", "coords"),
                 _box_or_phot,
                 ("Console", "console"),
@@ -4635,8 +4619,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label,
                     value=value,
                     style=(
-                        "flex:0 0 33.333%;font-size:0.72rem;letter-spacing:0;"
-                        "min-width:0;height:34px;text-transform:none;"
+                        "flex:0 0 25%;font-size:0.66rem;letter-spacing:0;"
+                        "min-width:0;height:30px;text-transform:none;"
                         "font-weight:700;"
                     ),
                     color=(
@@ -4784,43 +4768,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
 
-            # Target tab — select a galaxy or halo by index (the selection
-            # card then shows it), and which environments to show.
-            with v3.VSheet(
-                color="transparent",
-                v_show=("nav_active_tab === 'target'",),
-            ):
-                v3.VLabel(
-                    "SELECT",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;"
-                        "letter-spacing:0.06em;color:#FFD700;"
-                        "display:block;padding:4px 0 6px;"
-                    ),
-                )
-                for label, key, kind in (
-                    ("Galaxy index", "sel_q_gal", "galaxy"),
-                    ("Halo index", "sel_q_halo", "halo"),
-                ):
-                    with v3.VSheet(
-                        color="transparent",
-                        style=(
-                            "display:flex;align-items:center;gap:4px;"
-                            "margin-bottom:8px;"
-                        ),
-                    ):
-                        with html.Div(style="flex:1;min-width:0;"):
-                            _tf(key, label, target_id=f"btn-sel-{kind}")
-                        v3.VBtn(
-                            "Select",
-                            variant="outlined",
-                            density="compact",
-                            color="#FFD700",
-                            click=(ctrl.sel_query, f"['{kind}']"),
-                            id=f"btn-sel-{kind}",
-                        )
-                v3.VDivider(style="margin:12px 0;")
-
+                # Which environments' galaxies to show.
+                v3.VDivider(style="margin:14px 0;")
                 v3.VLabel(
                     "ENVIRONMENT FILTER",
                     style=(
