@@ -39,7 +39,9 @@ from visage.hd.model import (
 # ----------------------------------------------------------------------
 
 
-def float_texture(rgb: np.ndarray, interpolate: bool = True):
+def float_texture(
+    rgb: np.ndarray, interpolate: bool = True, mipmap: bool = False
+):
     """(H, W, 3 or 4) float array -> VTK float texture (row 0 = y minimum)."""
     import vtk
     from vtkmodules.util.numpy_support import numpy_to_vtk
@@ -56,6 +58,9 @@ def float_texture(rgb: np.ndarray, interpolate: bool = True):
     tex.SetInputData(img)
     tex.SetColorModeToDirectScalars()
     tex.SetInterpolate(bool(interpolate))
+    # Mipmaps: the shader picks the level from the pixel footprint
+    # (textureLod), so maps seen from afar are filtered, not aliased.
+    tex.SetMipmap(bool(mipmap))
     tex.RepeatOff()
     tex.EdgeClampOn()
     return tex
@@ -162,42 +167,76 @@ def _rows(a: np.ndarray, width: int) -> np.ndarray:
     return out.reshape(h, width, c)
 
 
-def split_exact(pts, cell: float = GRID_CELL, per_cell: int = PER_CELL):
-    """Split the star populations: the brightest `per_cell` in each grid
-    cell are drawn exactly by the shader; the rest (crowded, faint stars
-    that blend into the smooth light anyway) stay splatted in a texture."""
+# Levels of detail for the exact stars: level L has cells 2^L times larger
+# and is drawn exactly while a pixel is up to 2^L * FP_MAX across, each
+# keeping the brightest PER_CELL stars per cell of the level below, so the
+# stars on screen stay pinpoints at any distance.
+N_LEVELS = 4
+
+
+def _subset(sel, mask):
     from visage.hd.model import Points
 
-    sel = [p for p in pts if p.name in _POINT_SIZE and len(p.lum)]
-    if not sel:
-        return [], []
-    pos = np.vstack([p.pos for p in sel])
-    lum = np.concatenate([p.lum for p in sel])
+    out, i = [], 0
+    for p in sel:
+        m = mask[i : i + len(p.lum)]
+        i += len(p.lum)
+        if m.any():
+            out.append(
+                Points(p.pos[m], p.lum[m], p.rgb[m], p.sigma[m], p.name)
+            )
+    return out
+
+
+def _brightest_per_cell(pos, lum, cand, cell, per_cell):
+    """Mask: among `cand`, the `per_cell` brightest in each cell."""
+    keep = np.zeros(len(lum), bool)
+    idx = np.flatnonzero(cand)
+    if len(idx) == 0:
+        return keep
     _, home = np.unique(
-        np.floor(pos / cell).astype(np.int64), axis=0, return_inverse=True
+        np.floor(pos[idx] / cell).astype(np.int64), axis=0, return_inverse=True
     )
     home = home.ravel()
-    order = np.lexsort((-lum, home))
+    order = np.lexsort((-lum[idx], home))
     first = np.r_[0, np.flatnonzero(np.diff(home[order])) + 1]
     start = np.repeat(first, np.diff(np.r_[first, len(order)]))
-    keep = np.empty(len(lum), bool)
-    keep[order] = (np.arange(len(order)) - start) < per_cell
+    sel = np.empty(len(idx), bool)
+    sel[order] = (np.arange(len(order)) - start) < per_cell
+    keep[idx[sel]] = True
+    return keep
+
+
+def split_levels(pts, n_levels: int = N_LEVELS, per_cell: int = PER_CELL):
+    """(exact, rest): exact[L] are the stars level L draws exactly (nested:
+    each level a subset of the one below); rest[L] are all the others, drawn
+    from splats while level L is in use (rest[n_levels] = every star)."""
+    sel = [p for p in pts if p.name in _POINT_SIZE and len(p.lum)]
+    if not sel:
+        return [[] for _ in range(n_levels)], [[] for _ in range(n_levels + 1)]
+    pos = np.vstack([p.pos for p in sel])
+    lum = np.concatenate([p.lum for p in sel])
     # The few stars far off the plane stay splatted: a thin grid is a short
     # walk for every ray.
-    keep &= np.abs(pos[:, 2]) < Z_EXACT
-    exact, rest, i = [], [], 0
-    for p in sel:
-        k = keep[i : i + len(p.lum)]
-        i += len(p.lum)
-        for out, m in ((exact, k), (rest, ~k)):
-            if m.any():
-                out.append(
-                    Points(p.pos[m], p.lum[m], p.rgb[m], p.sigma[m], p.name)
-                )
+    cand = np.abs(pos[:, 2]) < Z_EXACT
+    exact, rest = [], []
+    for L in range(n_levels):
+        cand = _brightest_per_cell(pos, lum, cand, GRID_CELL * 2**L, per_cell)
+        exact.append(_subset(sel, cand))
+        rest.append(_subset(sel, ~cand))
+    rest.append(sel)
     return exact, rest
 
 
-def point_grid(pts, px_proto: float, cell: float = GRID_CELL):
+def split_exact(pts, cell: float = GRID_CELL, per_cell: int = PER_CELL):
+    """Level 0 of `split_levels`: (exact stars, the rest)."""
+    exact, rest = split_levels(pts, 1, per_cell)
+    return exact[0], rest[0]
+
+
+def point_grid(
+    pts, px_proto: float, cell: float = GRID_CELL, fp_max: float = FP_MAX
+):
     """Bin point sources into a uniform 3D grid for the shader's walk.
 
     Each point is listed in every cell its 3-sigma sphere (at the largest
@@ -221,7 +260,7 @@ def point_grid(pts, px_proto: float, cell: float = GRID_CELL):
     pos = np.vstack(pos).astype(np.float64)
     sig = np.concatenate(sig)
     col = np.vstack(col)
-    r = 3.0 * np.sqrt(sig**2 + (0.6 * FP_MAX) ** 2)
+    r = 3.0 * np.sqrt(sig**2 + (0.6 * fp_max) ** 2)
     rmax = float(r.max())
     lo = pos.min(axis=0) - rmax - 1e-3
     hi = pos.max(axis=0) + rmax + 1e-3
@@ -254,9 +293,9 @@ def point_grid(pts, px_proto: float, cell: float = GRID_CELL):
         "lo": lo,
         "n": n,
         "cell": cell,
-        "idx": _rows(idx, _IDX_W),
-        "pos": _rows(a, _ENT_W),
-        "col": _rows(col[src].astype(np.float32), _ENT_W),
+        "idx": idx,
+        "pos": a,
+        "col": col[src].astype(np.float32),
     }
 
 
@@ -346,11 +385,18 @@ _IMPL = """//VTK::Light::Impl
   vec3 cp = ro + tc * rd;
   float bimp = length(cp);
 
-  // Stars drawn exactly (the point pass below) when a pixel is smaller
-  // than FP_MAX at the galaxy; the splatted textures when it is larger.
+  // Level of detail for the stars, from the pixel size at the galaxy:
+  // level LV is drawn exactly up to 2^LV * FP_MAX, crossfading into the
+  // next level (LV = uNLevels: splats only, beyond the coarsest level).
   float fpC = max(length(ro) , 1e-3) * uPixAng;
-  float wPts = uHasGrid > 0.5 ? 1.0 - smoothstep(0.5 * uFpMax, uFpMax, fpC) : 0.0;
-  float wTex = 1.0 - wPts;
+  float lf = clamp(log2(max(2.0 * fpC / uFpMax, 1e-6)), 0.0, uNLevels);
+  int LV = int(floor(lf));
+  float wLV = smoothstep(0.55, 1.0, lf - float(LV));
+  if (float(LV) >= uNLevels) { LV = int(uNLevels + 0.5); wLV = 0.0; }
+  #define REST(K, UA, UB, LA, LB) ((K) == 0 ? textureLod(rest0Tex, UA, LA).rgb \
+    : (K) == 1 ? textureLod(rest1Tex, UA, LA).rgb \
+    : (K) == 2 ? textureLod(rest2Tex, UB, LB).rgb \
+    : (K) == 3 ? textureLod(rest3Tex, UB, LB).rgb : textureLod(rest4Tex, UB, LB).rgb)
 
   // Only the regions that hold light are marched; the empty rest of the
   // box is jumped.  Disk slab, core sphere (the body for an elliptical),
@@ -422,13 +468,21 @@ _IMPL = """//VTK::Light::Impl
       // ray is nearest it within this step, not at the step's midpoint.
       vec2 pm = (ro + clamp(-ro.z * inv.z, t, t + dt) * rd).xy;
       if (inS && abs(pm.x) < uMapHalf && abs(pm.y) < uMapHalf) {
-        vec3 m = texture(mapTex, mapUV(pm, uMapHalf, uMapN)).rgb;
+        // Mip level from this point's pixel footprint.
+        float fpS = (t + 0.5 * dt) * uPixAng;
+        float lodM = max(log2(fpS * uMapN / (2.0 * uMapHalf)), 0.0);
+        vec3 m = textureLod(mapTex, mapUV(pm, uMapHalf, uMapN), lodM).rgb;
         e += m.r * pint(z0, z1, uHz, dt) * uOldRGB + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
         kap = m.b * pint(z0, z1, 0.045, dt);
         {
-          vec2 puv = mapUV(pm, uMapHalf, uPtsN);
-          e += uPtsGain * (wTex * texture(ptsThinTex, puv).rgb + texture(ptsFieldTex, puv).rgb)
-             * pint(z0, z1, 0.04, dt);
+          // Splatted stars: those the current level(s) don't draw exactly.
+          vec2 uA = mapUV(pm, uMapHalf, uPtsN);
+          vec2 uB = mapUV(pm, uMapHalf, 0.5 * uPtsN);
+          float lA = max(log2(fpS * uPtsN / (2.0 * uMapHalf)), 0.0);
+          float lB = max(lA - 1.0, 0.0);
+          vec3 rs = (1.0 - wLV) * REST(LV, uA, uB, lA, lB);
+          if (wLV > 0.0) rs += wLV * REST(LV + 1, uA, uB, lA, lB);
+          e += uPtsGain * rs * pint(z0, z1, 0.04, dt);
         }
       }
       if (inC) {
@@ -489,20 +543,29 @@ _IMPL = """//VTK::Light::Impl
   // the dust in front of it) and a profile about a pixel across, so a
   // bright star is a brighter point, not a bigger, saturated disc.
   vec3 starD = vec3(0.0);
-  if (wPts > 0.0) {
-    vec2 g = rayBox(ro, inv, uGridLo, uGridHi);
+  for (int pass = 0; pass < 2; pass++) {
+    int lv = LV + pass;
+    float wp = pass == 0 ? 1.0 - wLV : wLV;
+    if (wp <= 0.0 || float(lv) >= uNLevels) continue;
+    vec3 gLo = uGridLo0; vec3 gNf = uGridN0; float gCell = uGridCell0; float gBase = uIdxBase0;
+    if (lv == 1) { gLo = uGridLo1; gNf = uGridN1; gCell = uGridCell1; gBase = uIdxBase1; }
+    else if (lv == 2) { gLo = uGridLo2; gNf = uGridN2; gCell = uGridCell2; gBase = uIdxBase2; }
+    else if (lv == 3) { gLo = uGridLo3; gNf = uGridN3; gCell = uGridCell3; gBase = uIdxBase3; }
+    float fpMaxL = uFpMax * exp2(float(lv));
+    vec2 g = rayBox(ro, inv, gLo, gLo + gNf * gCell);
     float g0 = max(g.x, 0.0);
     if (g.y > g0) {
-      ivec3 N = ivec3(uGridN + 0.5);
+      ivec3 N = ivec3(gNf + 0.5);
+      int base = int(gBase + 0.5);
       vec3 q = ro + g0 * rd;
-      ivec3 c = clamp(ivec3(floor((q - uGridLo) / uGridCell)), ivec3(0), N - ivec3(1));
+      ivec3 c = clamp(ivec3(floor((q - gLo) / gCell)), ivec3(0), N - ivec3(1));
       ivec3 st = ivec3(rd.x > 0.0 ? 1 : -1, rd.y > 0.0 ? 1 : -1, rd.z > 0.0 ? 1 : -1);
-      vec3 tDel = abs(uGridCell * inv);
-      vec3 tMx = (uGridLo + (vec3(c) + step(vec3(0.0), rd)) * uGridCell - ro) * inv;
+      vec3 tDel = abs(gCell * inv);
+      vec3 tMx = (gLo + (vec3(c) + step(vec3(0.0), rd)) * gCell - ro) * inv;
       float tIn = g0;
       for (int k = 0; k < 1024; k++) {
         float tOut = min(min(tMx.x, tMx.y), tMx.z);
-        int id = c.x + N.x * (c.y + N.y * c.z);
+        int id = base + c.x + N.x * (c.y + N.y * c.z);
         vec3 oc = texelFetch(gIdxTex, ivec2(id % uIdxW, id / uIdxW), 0).rgb;
         int off = int(oc.r + 0.5);
         int cnt = int(oc.g + 0.5);
@@ -514,7 +577,7 @@ _IMPL = """//VTK::Light::Impl
           if (ts < tIn || ts >= tOut || ts <= 0.0) continue;
           vec3 dv = A.xyz - ro - ts * rd;
           float d2 = dot(dv, dv);
-          float fp = min(ts * uPixAng, uFpMax);
+          float fp = min(ts * uPixAng, fpMaxL);
           float s2 = A.w * A.w + 0.25 * fp * fp;
           if (d2 > 9.0 * s2) continue;
           float tauP = 0.0;
@@ -530,7 +593,7 @@ _IMPL = """//VTK::Light::Impl
           float sd2 = 0.5 * C.a * C.a;
           float pk = Lm / (6.2831853 * sd2) / uWhite0;
           float cpk = min(asinh(uQ * pk) / asinh(uQ), 1.0);
-          starD += cpk * (L / Lm) * exp(-0.5 * d2 / s2);
+          starD += wp * cpk * (L / Lm) * exp(-0.5 * d2 / s2);
         }
         if (tOut >= g.y) break;
         if (tMx.x <= tMx.y && tMx.x <= tMx.z) { c.x += st.x; tMx.x += tDel.x; }
@@ -561,7 +624,7 @@ _IMPL = """//VTK::Light::Impl
   vec3 outc = col / uWhite * f;
   float l2 = (outc.r + outc.g + outc.b) / 3.0;
   outc = clamp(vec3(l2) + uSat * (outc - vec3(l2)), 0.0, 1.0);
-  outc = screenB(outc, clamp(uPtsGain * wPts * starD, 0.0, 1.0));
+  outc = screenB(outc, clamp(uPtsGain * starD, 0.0, 1.0));
 
   // ICL envelope (display overlay, around the closest-approach point).
   if (uIclOpacity > 0.0) {
@@ -614,9 +677,10 @@ def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
     disk = rc.kind == "disk"
     E = rc.extent * (1.3 if disk else 1.0)
     px_proto = 2 * E / 1024.0
-    # Stars: the brightest in each cell drawn exactly, the rest splatted.
+    # Stars: per level of detail, the brightest in each cell drawn exactly,
+    # the rest splatted.
     stars = [p for p in pts if disk and p.name in _POINT_SIZE]
-    exact, rest = split_exact(stars)
+    exact, rest = split_levels(stars)
     # Point-like 3D sources (an elliptical's field stars and globular
     # clusters) are tiny splats; only diffuse 3D light (merger shells,
     # tails, streams) goes into the emissivity volume.
@@ -638,44 +702,69 @@ def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
                 maps.dust,
             ]
         ).astype(np.float32)
-        tex["mapTex"] = (m, True)
+        tex["mapTex"] = (m, "mip")
         npts = 2048
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(2) as ex:
-            a, b = ex.map(
-                lambda ps: _splat_plane(ps, maps.half, npts, px_proto),
-                (exact, rest),
+        # Splats of what each level leaves out (the finest two at full
+        # resolution; coarser levels are only used from further away).
+        sizes = [npts, npts] + [npts // 2] * (len(rest) - 2)
+        with ThreadPoolExecutor(len(rest)) as ex:
+            splats = list(
+                ex.map(
+                    lambda a: _splat_plane(a[0], maps.half, a[1], px_proto),
+                    zip(rest, sizes, strict=True),
+                )
             )
-        # Exact stars' splats stand in for them when zoomed far out; the
-        # rest are always drawn from their splats.
-        tex["ptsThinTex"] = (a, True)
-        tex["ptsFieldTex"] = (b, True)
+        for L, img in enumerate(splats):
+            tex[f"rest{L}Tex"] = (img, "mip")
         map_info = (maps.half, maps.old.shape[0], npts)
     else:
-        for k in ("mapTex", "ptsThinTex", "ptsFieldTex"):
-            tex[k] = (dummy3, True)
+        tex["mapTex"] = (dummy3, "mip")
+        for L in range(N_LEVELS + 1):
+            tex[f"rest{L}Tex"] = (dummy3, "mip")
         map_info = (1.0, 2, 2)
 
     atlas_info = None
-    tex["atlasTex"] = (dummy3, True)
+    tex["atlasTex"] = (dummy3, "linear")
     if vol:
         allpos = np.vstack([p.pos for p in vol])
         atlas_half = float(max(np.percentile(np.abs(allpos), 99.5), E))
         atlas_n = 112
         atlas, nx, ny = _splat_volume(vol, atlas_half, atlas_n, px_proto)
-        tex["atlasTex"] = (atlas, True)
+        tex["atlasTex"] = (atlas, "linear")
         atlas_info = (atlas_half, atlas_n, nx, (nx * atlas_n, ny * atlas_n))
 
-    grid = point_grid(exact, px_proto) if exact else None
+    # One grid per level, packed into one set of textures.
+    levels, idx, posl, coll = [], [], [], []
+    n_vox = n_ent = 0
+    for L, ex_L in enumerate(exact if disk else []):
+        g = (
+            point_grid(ex_L, px_proto, GRID_CELL * 2**L, FP_MAX * 2**L)
+            if ex_L
+            else None
+        )
+        if g is None:
+            break
+        i = g["idx"].copy()
+        i[:, 0] += n_ent
+        idx.append(i)
+        posl.append(g["pos"])
+        coll.append(g["col"])
+        levels.append(
+            {"lo": g["lo"], "n": g["n"], "cell": g["cell"], "base": n_vox}
+        )
+        n_vox += len(i)
+        n_ent += len(g["pos"])
+    grid = levels or None
     if grid is not None:
-        tex["gIdxTex"] = (grid["idx"], False)
-        tex["gPosTex"] = (grid["pos"], False)
-        tex["gColTex"] = (grid["col"], False)
+        tex["gIdxTex"] = (_rows(np.vstack(idx), _IDX_W), "nearest")
+        tex["gPosTex"] = (_rows(np.vstack(posl), _ENT_W), "nearest")
+        tex["gColTex"] = (_rows(np.vstack(coll), _ENT_W), "nearest")
     else:
-        tex["gIdxTex"] = (dummy3, False)
-        tex["gPosTex"] = (np.zeros((2, 2, 4), np.float32), False)
-        tex["gColTex"] = (np.zeros((2, 2, 4), np.float32), False)
+        tex["gIdxTex"] = (dummy3, "nearest")
+        tex["gPosTex"] = (np.zeros((2, 2, 4), np.float32), "nearest")
+        tex["gColTex"] = (np.zeros((2, 2, 4), np.float32), "nearest")
     return {
         "tex": tex,
         "sprinkle": sprinkle,
@@ -721,8 +810,8 @@ class GPUGalaxy:
         if prep is None:
             prep = prepare(rc, maps, pts)
         tex = {
-            k: float_texture(arr, interp)
-            for k, (arr, interp) in prep["tex"].items()
+            k: float_texture(arr, mode != "nearest", mode == "mip")
+            for k, (arr, mode) in prep["tex"].items()
         }
         sprinkle = prep["sprinkle"]
         map_half, map_n, npts = prep["map"]
@@ -825,16 +914,21 @@ class GPUGalaxy:
         )
         f("uDtCore", 0.004 if disk else 0.01)
         f("uIclR", float(min(4.0 * rc.icl_a, 1.75 * max(hx, hz))))
-        f("uHasGrid", 1.0 if grid is not None else 0.0)
+        f("uNLevels", float(len(grid) if grid else 0))
         f("uFpMax", FP_MAX)
         f("uPixAng", 1e-3)
-        g = grid or {"lo": np.zeros(3), "n": np.ones(3), "cell": 1.0}
-        u.SetUniform3f("uGridLo", [float(v) for v in g["lo"]])
-        u.SetUniform3f(
-            "uGridHi", [float(v) for v in g["lo"] + g["n"] * g["cell"]]
-        )
-        u.SetUniform3f("uGridN", [float(v) for v in g["n"]])
-        f("uGridCell", float(g["cell"]))
+        for L in range(N_LEVELS):
+            g = (grid or [])[L] if L < len(grid or []) else None
+            g = g or {
+                "lo": np.zeros(3),
+                "n": np.ones(3),
+                "cell": 1.0,
+                "base": 0,
+            }
+            u.SetUniform3f(f"uGridLo{L}", [float(v) for v in g["lo"]])
+            u.SetUniform3f(f"uGridN{L}", [float(v) for v in g["n"]])
+            f(f"uGridCell{L}", float(g["cell"]))
+            f(f"uIdxBase{L}", float(g["base"]))
         u.SetUniformi("uIdxW", _IDX_W)
         u.SetUniformi("uEntW", _ENT_W)
         f("uHasAtlas", 1.0 if has_atlas else 0.0)
