@@ -349,7 +349,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.hd_building = False  # its build is running (message shown)
     state.hd_progress = ""  # the message
     state.hd_percent = -1  # its progress, 0-100 (-1: indeterminate)
-    state.hd_gas = False  # its halo-gas overlay
+    state.hd_gas = True  # its halo-gas overlay (always on; no toggle)
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
     state.draw_box_active = False  # interactive box widget in Box tab
@@ -4557,9 +4557,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         grp.show(entries, h, gas=bool(state.hd_gas))
         _hd["mode"] = "halo"
         _hd["built_snap"] = state.snap_num
+        # Framed on the galaxies (zoom out for the halo gas).
         radius = grp.radius_world
-        if state.hd_gas:
-            radius = max(radius, grp.rvir_world)
         _hd_frame(
             grp.center, grp.basis, radius, keep_view=len(grp.members) > 1
         )
@@ -4650,15 +4649,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
         with v3.VSheet(
             color="transparent", style="padding:8px;flex-shrink:0;"
         ):
-            with v3.VRow(no_gutters=True, style="gap:6px;"):
-                with v3.VCol(style="padding:0;"):
+            # One line: Reset Camera takes the room the icon buttons leave.
+            with v3.VRow(no_gutters=True, style="gap:6px;flex-wrap:nowrap;"):
+                with v3.VCol(style="padding:0;min-width:0;"):
                     v3.VBtn(
                         "Reset Camera",
                         block=True,
                         variant="outlined",
                         color="cyan",
                         density="compact",
-                        style="min-width:0;",
+                        style=(
+                            "min-width:0;padding:0 6px;"
+                            "letter-spacing:0.02em;font-size:0.78rem;"
+                        ),
                         click=ctrl.reset_camera,
                     )
                 with v3.VCol(cols="auto", style="padding:0;"):
@@ -4707,16 +4710,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "3D models built from its SAGE properties"
                         ),
                         id="btn-hd-galaxy",
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
-                    v3.VBtn(
-                        icon="mdi-weather-windy",
-                        variant=("hd_gas ? 'flat' : 'outlined'",),
-                        density="compact",
-                        click="hd_gas = !hd_gas",
-                        color=("hd_gas ? 'cyan' : 'white'",),
-                        title="HD gas: CGM, hot gas, winds and jets",
-                        id="btn-hd-gas",
                     )
 
         v3.VDivider(style="flex-shrink:0;")
