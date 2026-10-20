@@ -47,6 +47,9 @@ def _init_state(state) -> None:
         "sel_group": "",
         "sel_q_gal": "",
         "sel_q_halo": "",
+        # What's selected: the galaxy, or its (host) halo with its group.
+        "sel_kind": "galaxy",
+        "sel_has_halo": False,
     }.items():
         if not state.has(k):
             state[k] = v
@@ -97,6 +100,30 @@ def selection_card(server) -> None:
             v_show=("sel_note",),
             style=("font-size:0.75rem;color:#fbbf24;padding:6px 12px 0;"),
         )
+        # Galaxy or its halo: what Go, Isolate and Focus act on.
+        with html.Div(style="padding:8px 12px 0;flex-shrink:0;"):
+            with v3.VBtnToggle(
+                v_model=("sel_kind",),
+                mandatory=True,
+                density="compact",
+                divided=True,
+                variant="outlined",
+                color="cyan",
+                style="height:26px;",
+            ):
+                v3.VBtn(
+                    "Galaxy",
+                    value="galaxy",
+                    size="small",
+                    style="text-transform:none;",
+                )
+                v3.VBtn(
+                    "Halo + group",
+                    value="halo",
+                    size="small",
+                    disabled=("!sel_has_halo",),
+                    style="text-transform:none;",
+                )
         # Actions.
         with html.Div(
             style="display:flex;gap:6px;padding:8px 12px;flex-shrink:0;"
@@ -175,7 +202,7 @@ def selection_card(server) -> None:
                 size="x-small",
                 variant="outlined",
                 color="#c084fc",
-                click=ctrl.go_to_halo,
+                click=ctrl.sel_go_halo,
                 title="Fly to the host halo (10 Mpc/h standoff)",
             )
         with html.Div(style="overflow-y:auto;padding:0 12px 10px;"):
@@ -334,10 +361,23 @@ def build_selection(server, scene) -> None:
         role = "central" if is_cen else "satellite"
         mvir_host = float(halos.masses[host]) if host is not None else 0.0
         kind = _classify(mvir_host, len(mem)) if len(mem) > 1 else "Isolated"
-        state.sel_title = f"Galaxy {i}"
-        state.sel_sub = f"{role} · log M* {lm:.2f} · {kind}" + (
-            f" of {len(mem)}" if len(mem) > 1 else ""
-        )
+        state.sel_has_halo = host is not None
+        halo_ctx = state.sel_kind == "halo" and host is not None
+        if state.sel_kind == "halo" and host is None:
+            state.sel_kind = "galaxy"
+        sel["host"] = host
+        if halo_ctx:
+            state.sel_title = f"Halo {host}"
+            state.sel_sub = (
+                f"{kind}"
+                + (f" of {len(mem)}" if len(mem) > 1 else "")
+                + f" · central galaxy {lead}"
+            )
+        else:
+            state.sel_title = f"Galaxy {i}"
+            state.sel_sub = f"{role} · log M* {lm:.2f} · {kind}" + (
+                f" of {len(mem)}" if len(mem) > 1 else ""
+            )
         sfr = float(galaxies.sfr[i])
         props = [
             ("Stellar mass", _fmt(ms, " M☉")),
@@ -381,8 +421,16 @@ def build_selection(server, scene) -> None:
             _fill_info(i, snap)
         others = [_unwrap(galaxies, int(k), lead) for k in mem if k != i]
         marker = scene.camera.marker
-        marker.set_target(pos)
-        marker.set_details(f"{i} · {lm:.1f}", others)
+        if halo_ctx:
+            # The halo: ring on its central, the whole group ringed.
+            marker.set_target(cpos)
+            marker.set_details(
+                f"halo {host}",
+                [_unwrap(galaxies, int(k), lead) for k in mem if k != lead],
+            )
+        else:
+            marker.set_target(pos)
+            marker.set_details(f"{i} · {lm:.1f}", others)
         _push()
 
     def _int(v):
@@ -408,6 +456,9 @@ def build_selection(server, scene) -> None:
 
     @state.change("nav_gal_idx")
     def _on_gal(nav_gal_idx=None, **_):
+        # A galaxy picked (double-click, the group list...) is a galaxy
+        # selection, unless it came from selecting a halo.
+        state.sel_kind = sel.pop("kind_next", "galaxy")
         i = _int(nav_gal_idx)
         if i is not None and i >= 0:
             _select(i)
@@ -426,7 +477,12 @@ def build_selection(server, scene) -> None:
         k = int(np.argmin(d))
         if d[k] < 2e-3:
             sel["halo_echo"] = h
-            state.nav_gal_idx = k
+            if _int(state.nav_gal_idx) == k:
+                state.sel_kind = "halo"
+                _select(k)
+            else:
+                sel["kind_next"] = "halo"
+                state.nav_gal_idx = k
 
     @state.change("snap_num")
     def _on_snap(snap_num=None, **_):
@@ -447,8 +503,10 @@ def build_selection(server, scene) -> None:
         old = sel.get("pos")
         i = int(hit[0])
         _select(i, snap=int(snap_num))
-        # (Its row number may differ in this snapshot.)
+        # (Its row number may differ in this snapshot; the galaxy / halo
+        # context carries over.)
         if _int(state.nav_gal_idx) != i:
+            sel["kind_next"] = state.sel_kind
             state.nav_gal_idx = i
         if state.sel_track and old is not None and sel["pos"] is not None:
             cam = scene.plotter.camera
@@ -499,8 +557,26 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_go")
     def _sel_go():
-        if hasattr(ctrl, "go_to_galaxy_enter"):
+        """Fly to what's selected: the galaxy, or its halo."""
+        if state.sel_kind == "halo" and hasattr(ctrl, "go_to_halo"):
+            ctrl.go_to_halo()
+        elif hasattr(ctrl, "go_to_galaxy_enter"):
             ctrl.go_to_galaxy_enter()
+
+    @ctrl.set("sel_go_halo")
+    def _sel_go_halo():
+        """Select the halo (with its group) and fly to it."""
+        state.sel_kind = "halo"
+        state.flush()
+        _sel_refresh()
+        if hasattr(ctrl, "go_to_halo"):
+            ctrl.go_to_halo()
+
+    @state.change("sel_kind")
+    def _on_kind(**_):
+        i = sel.get("idx")
+        if i is not None and state.sel_show:
+            _select(i)
 
     @ctrl.set("sel_close")
     def _sel_close():

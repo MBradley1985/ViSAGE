@@ -3915,12 +3915,36 @@ def build_navigation_panel(server, scene: Scene) -> None:
         tab = state.nav_active_tab
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
 
-        if tab not in ("coords", "box") and isinstance(state.nav_gal_idx, int):
+        halo_context = (
+            str(state.sel_kind) == "halo" if state.has("sel_kind") else False
+        )
+        if (
+            tab not in ("coords", "box")
+            and halo_context
+            and isinstance(state.nav_halo_idx, int)
+        ):
+            # Around the selected halo, at the halo standoff.
+            try:
+                hidx = int(state.nav_halo_idx)
+                d = float(state.nav_halo_distance)
+                if 0 <= hidx < halos.count:
+                    h = halos.positions[hidx] + scene.active_model.offset
+                    scene.set_focus_sphere(
+                        (float(h[0]), float(h[1]), float(h[2])), d
+                    )
+                    state.focus_active = True
+                    state.isolate_active = False
+            except Exception:
+                pass
+        elif tab not in ("coords", "box") and isinstance(
+            state.nav_gal_idx, int
+        ):
             try:
                 idx = int(state.nav_gal_idx)
                 radius = float(state.nav_gal_last_radius)
                 if 0 <= idx < galaxies.count:
-                    g = galaxies.positions[idx]
+                    # World coordinates (a side-by-side box is offset).
+                    g = galaxies.positions[idx] + scene.active_model.offset
                     scene.set_focus_sphere(
                         (float(g[0]), float(g[1]), float(g[2])), radius
                     )
@@ -3994,7 +4018,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("toggle_isolate")
     def on_toggle_isolate():
-        """Isolate the selected halo (with its FOF members) or galaxy.
+        """Isolate what's selected: the galaxy, or (in the selection's
+        halo context) the halo with every galaxy of its FOF group.
 
         Like Focus, but the keep-set is the selected object itself rather
         than a sphere/box around it: every other halo and galaxy is
@@ -4027,7 +4052,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
         halo_indices: list[int] = []
         gal_indices = np.array([], dtype=np.int64)
 
-        if 0 <= gidx < galaxies.count:
+        halo_context = (
+            str(state.sel_kind) == "halo" if state.has("sel_kind") else False
+        )
+        if halo_context and 0 <= hidx < halos.count:
+            # The halo is what's selected: keep it AND every galaxy of
+            # its FOF group, so the group is actually populated.
+            halo_indices = [hidx]
+            if 0 <= gidx < galaxies.count:
+                gal_indices = (
+                    member_indices(galaxies, gidx)
+                    if np.any(galaxies.central_id)
+                    else np.array([gidx], dtype=np.int64)
+                )
+        elif 0 <= gidx < galaxies.count:
             gal_indices = np.array([gidx], dtype=np.int64)
         elif 0 <= hidx < halos.count:
             halo_indices = [hidx]

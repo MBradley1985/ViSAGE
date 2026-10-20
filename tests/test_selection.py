@@ -134,3 +134,33 @@ def test_selecting_by_typed_index_and_info(panel):
 
 def server_scene_marker(panel):
     return panel[1].camera.marker
+
+
+def test_isolate_follows_the_galaxy_or_halo_context(panel):
+    """A halo selected (Console `halo N`, Go to halo, the card's switch)
+    isolates the halo with its whole group; a galaxy, just the galaxy."""
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _group(scene, [2, 4, 6], central=4)
+    gl = scene.active_model.galaxy_layer
+    # Selecting the halo: its central, in halo context.
+    state.nav_halo_idx = 0
+    state.flush()
+    assert state.nav_gal_idx == 4 and state.sel_kind == "halo"
+    assert state.sel_title == "Halo 0"
+    ctrl.toggle_isolate()
+    state.flush()
+    assert sorted(np.flatnonzero(gl._focus_mask)) == [2, 4, 6]
+    ctrl.toggle_isolate()
+    # A galaxy picked: galaxy context, isolate keeps just it.
+    state.nav_gal_idx = 6
+    state.flush()
+    assert state.sel_kind == "galaxy" and state.sel_title == "Galaxy 6"
+    ctrl.toggle_isolate()
+    state.flush()
+    assert list(np.flatnonzero(gl._focus_mask)) == [6]
+    ctrl.toggle_isolate()
+    # The card's switch back to the halo.
+    state.sel_kind = "halo"
+    state.flush()
+    assert state.sel_title == "Halo 0"
