@@ -329,11 +329,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Navigation state
     state.nav_halo_idx = 0
     state.nav_gal_idx = 0
-    state.nav_gal_last_radius = 10.0  # 10 Mpc/h — Target Go default
+    state.nav_gal_last_radius = 10.0  # radius of the last galaxy zoom (focus)
     state.nav_x = round(scene._cfg.box_size / 2, 2)
     state.nav_y = round(scene._cfg.box_size / 2, 2)
     state.nav_z = round(scene._cfg.box_size / 2, 2)
-    state.nav_distance = 10.0  # 10 Mpc/h — Target/Environment standoff
+    state.nav_distance = 10.0  # Coords sphere radius / standoff
+    # Target / Environment halo standoff: its own value, so drawing or
+    # filling the Coords sphere doesn't change where Go takes you.
+    state.nav_halo_distance = 10.0  # 10 Mpc/h
     state.nav_box_xmin = 0.0
     state.nav_box_xmax = round(scene._cfg.box_size / 2, 2)
     state.nav_box_ymin = 0.0
@@ -342,7 +345,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.nav_box_zmax = round(scene._cfg.box_size / 2, 2)
     state.focus_active = False
     state.isolate_active = False
-    state.hd_active = False  # HD model of the selected galaxy (Structure tab)
+    state.hd_active = False  # HD model of the selected galaxy (Target tab)
+    state.hd_building = False  # its build is running (message shown)
     state.hd_gas = False  # its halo-gas overlay
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
@@ -1437,7 +1441,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def on_go_to_halo():
         try:
             idx = int(state.nav_halo_idx)
-            d = float(state.nav_distance)
+            d = float(state.nav_halo_distance)
             scene.camera.go_to_halo(idx, d)
             # Always engage focus on Go (user can toggle it off afterwards)
             pos = scene.camera._halo_index.position_of(idx)
@@ -1474,9 +1478,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def on_go_to_galaxy_5():
         _go_to_galaxy_at_radius(10.0)  # 10 Mpc/h
 
+    # Go / Enter always use the default 10 Mpc/h; the 3 / 5 / 10 buttons are
+    # one-off zooms that don't change it.
+    _GALAXY_GO_RADIUS = 10.0
+
     @ctrl.set("go_to_galaxy_enter")
     def on_go_to_galaxy_enter():
-        _go_to_galaxy_at_radius(float(state.nav_gal_last_radius))
+        _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
 
     @ctrl.set("clear_indicator")
     def on_clear_indicator():
@@ -1555,7 +1563,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         """Fly to the chosen halo and snap nav_gal_idx to the FOF central there."""
         try:
             hidx = int(state.nav_halo_idx)
-            d = float(state.nav_distance)
+            d = float(state.nav_halo_distance)
         except (TypeError, ValueError):
             return
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
@@ -4027,7 +4035,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         elif tab == "environment":
             try:
                 hidx = int(state.nav_halo_idx)
-                d = float(state.nav_distance)
+                d = float(state.nav_halo_distance)
                 if 0 <= hidx < halos.count:
                     pos = scene.camera._halo_index.position_of(hidx)
                     scene.set_focus_sphere(
@@ -4238,18 +4246,25 @@ def build_navigation_panel(server, scene: Scene) -> None:
         Like Isolate, but every catalogue object is hidden and the galaxy
         is drawn from its SAGE properties: disk or elliptical, arms, bar,
         clusters, HII regions, view-dependent dust, merger debris, ICL and
-        (with the Gas box) its halo gas.  Turning it off, or anything that
-        drops Isolate, removes it.
-        """
-        import numpy as np
+        (with the Gas box) its halo gas.  Turning it off backs the camera
+        out to the standard 10 Mpc/h galaxy view; anything else that drops
+        Isolate also removes it.
 
+        In the app the CPU part of the build runs on a worker thread while
+        a message says so; without a running event loop (tests, scripts)
+        it builds in place.
+        """
+        import asyncio
+
+        if bool(state.hd_building):
+            return
         if bool(state.hd_active):
             _clear_draw_widgets()
             state.isolate_active = False
             state.focus_active = False
             scene.clear_focus()
             _stop_hd()
-            _push()
+            _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
             return
 
         try:
@@ -4267,13 +4282,38 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if gal.stellar_mass <= 0:
             return
         center = galaxies.positions[gidx] + scene.active_model.offset
+        spin = spin_vector(galaxies, gidx)
+        lay = _hd_layer()
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is None:
+            _hd_show(lay, gal, center, spin, h, lay.prepare(gal))
+            return
+
+        state.hd_building = True
+        state.flush()
+
+        async def _build():
+            try:
+                await asyncio.sleep(0.05)  # let the message reach the browser
+                prep = await loop.run_in_executor(None, lay.prepare, gal)
+                _hd_show(lay, gal, center, spin, h, prep)
+            finally:
+                state.hd_building = False
+                state.flush()
+
+        loop.create_task(_build())
+
+    def _hd_show(lay, gal, center, spin, h, prep) -> None:
+        """Draw the prepared HD model and frame it."""
+        import numpy as np
 
         # The HD model stands in for this galaxy's dot, so hide everything.
         scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
-        lay = _hd_layer()
-        lay.show(
-            gal, center, spin_vector(galaxies, gidx), h, gas=bool(state.hd_gas)
-        )
+        lay.show(gal, center, spin, h, gas=bool(state.hd_gas), prep=prep)
 
         # Frame it at ~55 deg inclination: between the spin axis and the disk.
         cam = scene.plotter.camera
@@ -4587,41 +4627,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
 
-                # HD model of the selected galaxy, then its gas overlay.
-                v3.VDivider(style="margin:14px 0;")
-                v3.VLabel(
-                    "HD GALAXY",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#FFD700;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with v3.VSheet(
-                    color="transparent",
-                    style="display:flex;align-items:center;gap:12px;padding:4px 0;",
-                ):
-                    v3.VBtn(
-                        "HD",
-                        variant=("hd_active ? 'flat' : 'outlined'",),
-                        color=("hd_active ? 'cyan' : '#FFD700'",),
-                        density="compact",
-                        click=ctrl.toggle_hd,
-                        disabled=("nav_gal_idx === null || nav_gal_idx < 0",),
-                        title=(
-                            "Isolate the selected galaxy as a detailed 3D model "
-                            "built from its SAGE properties"
-                        ),
-                        id="btn-hd-galaxy",
-                    )
-                    v3.VCheckbox(
-                        v_model=("hd_gas",),
-                        label="Gas",
-                        color="#FFD700",
-                        hide_details=True,
-                        density="compact",
-                        title="Show the halo gas: CGM, hot gas, winds and jets",
-                    )
-
             # Target (halo + galaxy combined)
             with v3.VSheet(
                 color="transparent",
@@ -4643,7 +4648,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
                 with v3.VSheet(color="transparent", style=_FIELD):
                     _tf(
-                        "nav_distance",
+                        "nav_halo_distance",
                         "Standoff (Mpc/h)",
                         on_enter=ctrl.go_to_halo,
                         target_id="btn-target-halo-go",
@@ -4714,6 +4719,46 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         click=ctrl.go_to_galaxy_5,
                     )
 
+                # HD model of the selected galaxy, then its gas overlay.
+                v3.VDivider(style="margin:14px 0 10px;")
+                with v3.VSheet(
+                    color="transparent",
+                    style="display:flex;align-items:center;gap:12px;padding:2px 0;",
+                ):
+                    v3.VBtn(
+                        "HD",
+                        variant=("hd_active ? 'flat' : 'outlined'",),
+                        color=("hd_active ? 'cyan' : '#FFD700'",),
+                        density="compact",
+                        prepend_icon="mdi-creation",
+                        click=ctrl.toggle_hd,
+                        loading=("hd_building",),
+                        disabled=(
+                            "hd_building || nav_gal_idx === null || nav_gal_idx < 0",
+                        ),
+                        title=(
+                            "Isolate the selected galaxy as a detailed 3D model "
+                            "built from its SAGE properties"
+                        ),
+                        id="btn-hd-galaxy",
+                    )
+                    v3.VCheckbox(
+                        v_model=("hd_gas",),
+                        label="Gas",
+                        color="#FFD700",
+                        hide_details=True,
+                        density="compact",
+                        title="Show the halo gas: CGM, hot gas, winds and jets",
+                    )
+                v3.VLabel(
+                    "Building HD galaxy…",
+                    v_show=("hd_building",),
+                    style=(
+                        "font-size:0.7rem;color:#67e8f9;display:block;"
+                        "padding:2px 0 0;"
+                    ),
+                )
+
                 v3.VDivider(style="margin:14px 0 10px;")
 
                 v3.VBtn(
@@ -4768,7 +4813,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
                 with v3.VSheet(color="transparent", style=_FIELD):
                     _tf(
-                        "nav_distance",
+                        "nav_halo_distance",
                         "Standoff (Mpc/h)",
                         on_enter=ctrl.go_to_env_halo,
                         target_id="btn-env-go",

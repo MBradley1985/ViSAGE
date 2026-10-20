@@ -1,4 +1,4 @@
-"""HD galaxy mode: recipe -> particles -> scene layer -> Structure-tab button."""
+"""HD galaxy mode: recipe -> GPU ray-marcher -> scene layer -> Target-tab button."""
 
 from __future__ import annotations
 
@@ -210,6 +210,25 @@ def test_hd_button_isolates_and_toggles_off(hd_panel):
     state.flush()
     assert not state.hd_active
     assert not state.isolate_active
+    # Off again backs out to the standard 10 Mpc/h view of the galaxy.
+    cam = scene.plotter.camera
+    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
+    assert dist == pytest.approx(10.0)
+
+
+def test_target_go_defaults_to_10_mpc(hd_panel):
+    """The 3 / 5 buttons are one-off zooms, and the Coords sphere no longer
+    shares the halo standoff: Go keeps its 10 Mpc/h default."""
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+    ctrl.go_to_galaxy_1()  # 3 Mpc/h
+    ctrl.go_to_galaxy_enter()
+    cam = scene.plotter.camera
+    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
+    assert dist == pytest.approx(10.0)
+    state.nav_distance = 0.5  # e.g. a drawn Coords sphere
+    assert state.nav_halo_distance == 10.0
 
 
 def test_dropping_isolate_removes_the_hd_model(hd_panel):
@@ -234,3 +253,64 @@ def test_threaded_raymarch_matches_single_thread():
     one = render(rc, maps, pts, inc=60, pa=20, npix=96, threads=1).total
     four = render(rc, maps, pts, inc=60, pa=20, npix=96, threads=4).total
     assert np.abs(four - one).sum() / np.abs(one).sum() < 1e-5
+
+
+def test_point_grid_lists_each_star_in_its_own_cell():
+    """Every exactly drawn star is listed in the cell that holds it (so the
+    shader's walk finds it wherever the ray's closest approach falls)."""
+    from visage.hd.gpu import point_grid, split_exact
+
+    rc = recipe_from_sage(_disk())
+    maps = build_disk_maps(rc, n=256)
+    pts = build_points(rc, maps)
+    exact, rest = split_exact(pts, per_cell=4)
+    n_in = sum(
+        len(p.lum) for p in pts if p.name in ("clusters", "hii", "field")
+    )
+    assert sum(len(p.lum) for p in exact + rest) == n_in
+    g = point_grid(exact, 0.01)
+    n = g["n"]
+    idx = g["idx"].reshape(-1, 3)[: int(np.prod(n))]
+    pos = g["pos"].reshape(-1, 4)
+    p = exact[0].pos[0]
+    c = np.floor((p - g["lo"]) / g["cell"]).astype(int)
+    off, cnt = idx[c[0] + n[0] * (c[1] + n[1] * c[2])][:2].astype(int)
+    assert np.any(np.all(np.isclose(pos[off : off + cnt, :3], p), axis=1))
+
+
+def test_exposure_only_darkens_when_zooming_in():
+    from visage.hd.layer import Exposure
+
+    rc = recipe_from_sage(_disk())
+    maps = build_disk_maps(rc, n=256)
+    ex = Exposure(rc, maps, build_points(rc, maps), npix=96)
+    assert ex.white(0, 0, 50.0) == ex.base
+    assert ex.white(0, 0, 0.3) > ex.base
+
+
+def test_noise_constants_match_the_noise():
+    from visage.hd.gpu_gas import _STDS, noise_std
+
+    assert noise_std("fbm2") == pytest.approx(_STDS["fbm2"], rel=1e-4)
+
+
+def test_hd_builds_in_the_background_with_a_message(hd_panel):
+    """In the app (a running event loop) the button returns at once with
+    the "Building" message up, and the model appears when the worker is
+    done."""
+    import asyncio
+
+    server, _ = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+
+    async def run():
+        ctrl.toggle_hd()
+        assert state.hd_building and not state.hd_active
+        for _ in range(400):
+            if not state.hd_building:
+                break
+            await asyncio.sleep(0.05)
+        assert state.hd_active and not state.hd_building
+
+    asyncio.run(run())

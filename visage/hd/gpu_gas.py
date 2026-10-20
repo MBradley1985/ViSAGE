@@ -76,17 +76,19 @@ def fbm2(p):
     return 0.5 * _vnoise(p) + 0.25 * _vnoise(p * 2.03)
 
 
-_STDS: dict = {}
+def noise_std(kind="fbm"):
+    """Standard deviation of each noise over 200k random points (slow: the
+    values are stored in `_STDS`, which a test checks against this)."""
+    pts = np.random.default_rng(0).uniform(-50, 50, (200_000, 3))
+    return float(np.std({"fbm": fbm, "fbm2": fbm2, "fbm6": fbm6}[kind](pts)))
+
+
+_STDS = {"fbm": 0.212785, "fbm2": 0.206308, "fbm6": 0.220944}
 
 
 def _std(kind="fbm"):
     """Standard deviation of each noise, to give it unit variance like the
     2D version's Gaussian random fields."""
-    if kind not in _STDS:
-        pts = np.random.default_rng(0).uniform(-50, 50, (200_000, 3))
-        _STDS[kind] = float(
-            np.std({"fbm": fbm, "fbm2": fbm2, "fbm6": fbm6}[kind](pts))
-        )
     return _STDS[kind]
 
 

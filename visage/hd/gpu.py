@@ -39,23 +39,23 @@ from visage.hd.model import (
 # ----------------------------------------------------------------------
 
 
-def float_texture(rgb: np.ndarray):
-    """(H, W, 3) float array -> VTK float texture (row 0 = y minimum)."""
+def float_texture(rgb: np.ndarray, interpolate: bool = True):
+    """(H, W, 3 or 4) float array -> VTK float texture (row 0 = y minimum)."""
     import vtk
     from vtkmodules.util.numpy_support import numpy_to_vtk
 
-    h, w, _ = rgb.shape
+    h, w, nc = rgb.shape
     img = vtk.vtkImageData()
     img.SetDimensions(w, h, 1)
     arr = numpy_to_vtk(
-        np.ascontiguousarray(rgb.reshape(-1, 3), np.float32), deep=True
+        np.ascontiguousarray(rgb.reshape(-1, nc), np.float32), deep=True
     )
     arr.SetName("rgb")
     img.GetPointData().SetScalars(arr)
     tex = vtk.vtkTexture()
     tex.SetInputData(img)
     tex.SetColorModeToDirectScalars()
-    tex.InterpolateOn()
+    tex.SetInterpolate(bool(interpolate))
     tex.RepeatOff()
     tex.EdgeClampOn()
     return tex
@@ -64,29 +64,37 @@ def float_texture(rgb: np.ndarray):
 def _splat_plane(pts, half, n, px_proto):
     """Deposit disk-plane point populations into an emissivity-per-area map
     (RGB, n x n over [-half, half]^2), blurred by each population's PSF."""
-    img = np.zeros((n, n, 3), np.float64)
     cell = 2 * half / n
+    layers: dict = {}
     for p in pts:
         fx = (p.pos[:, 0] + half) / cell - 0.5
         fy = (p.pos[:, 1] + half) / cell - 0.5
         ok = (fx >= 0) & (fx < n - 1) & (fy >= 0) & (fy < n - 1)
         sig = np.maximum(p.sigma * px_proto / cell, 0.6)
-        cls = np.round(sig * 2) / 2
+        # PSF classes a factor of 2 apart: one blur per class.
+        cls = 2.0 ** np.round(np.log2(sig))
         for s in np.unique(cls[ok]):
             m = ok & (cls == s)
             x0, y0 = fx[m].astype(int), fy[m].astype(int)
             wx, wy = fx[m] - x0, fy[m] - y0
             val = p.lum[m, None] * p.rgb[m] / (cell * cell)
-            layer = np.zeros_like(img)
+            layer = layers.setdefault(float(s), np.zeros((3, n * n)))
             for dx, dy, w in (
                 (0, 0, (1 - wx) * (1 - wy)),
                 (1, 0, wx * (1 - wy)),
                 (0, 1, (1 - wx) * wy),
                 (1, 1, wx * wy),
             ):
+                flat = (y0 + dy) * n + (x0 + dx)
                 for c in range(3):
-                    np.add.at(layer[..., c], (y0 + dy, x0 + dx), val[:, c] * w)
-            img += gaussian_filter(layer, (s, s, 0))
+                    layer[c] += np.bincount(
+                        flat, weights=val[:, c] * w, minlength=n * n
+                    )
+    img = np.zeros((n, n, 3), np.float64)
+    for s, layer in layers.items():
+        img += gaussian_filter(
+            layer.reshape(3, n, n).astype(np.float32), (0, s, s), truncate=3.0
+        ).transpose(1, 2, 0)
     return img.astype(np.float32)
 
 
@@ -123,6 +131,130 @@ def _splat_volume(pts, half, n, px_proto):
         tx, ty = k % nx, k // nx
         atlas[ty * n : (ty + 1) * n, tx * n : (tx + 1) * n] = vol[k]
     return atlas, nx, ny
+
+
+# Point sources drawn exactly by the shader: each one's own PSF, sized to
+# the screen pixel, so clusters, HII regions and field stars stay sharp at
+# any zoom.  Intrinsic sizes (fraction of the offline PSF, `Points.sigma`).
+_POINT_SIZE = {
+    "clusters": 0.2,
+    "ring": 0.2,
+    "field": 0.0,  # stars are points: always one pixel across
+    "hii": 0.8,
+    "ring_hii": 0.8,
+}
+# Beyond this pixel footprint (model units) the stars are sub-pixel and the
+# splatted textures take over.
+FP_MAX = 0.02
+GRID_CELL = 0.1
+PER_CELL = 8
+Z_EXACT = 0.25
+_ENT_W = 4096
+_IDX_W = 2048
+
+
+def _rows(a: np.ndarray, width: int) -> np.ndarray:
+    """(N, C) -> (ceil(N / width), width, C), zero padded."""
+    n, c = a.shape
+    h = max(1, -(-n // width))
+    out = np.zeros((h * width, c), np.float32)
+    out[:n] = a
+    return out.reshape(h, width, c)
+
+
+def split_exact(pts, cell: float = GRID_CELL, per_cell: int = PER_CELL):
+    """Split the star populations: the brightest `per_cell` in each grid
+    cell are drawn exactly by the shader; the rest (crowded, faint stars
+    that blend into the smooth light anyway) stay splatted in a texture."""
+    from visage.hd.model import Points
+
+    sel = [p for p in pts if p.name in _POINT_SIZE and len(p.lum)]
+    if not sel:
+        return [], []
+    pos = np.vstack([p.pos for p in sel])
+    lum = np.concatenate([p.lum for p in sel])
+    _, home = np.unique(
+        np.floor(pos / cell).astype(np.int64), axis=0, return_inverse=True
+    )
+    home = home.ravel()
+    order = np.lexsort((-lum, home))
+    first = np.r_[0, np.flatnonzero(np.diff(home[order])) + 1]
+    start = np.repeat(first, np.diff(np.r_[first, len(order)]))
+    keep = np.empty(len(lum), bool)
+    keep[order] = (np.arange(len(order)) - start) < per_cell
+    # The few stars far off the plane stay splatted: a thin grid is a short
+    # walk for every ray.
+    keep &= np.abs(pos[:, 2]) < Z_EXACT
+    exact, rest, i = [], [], 0
+    for p in sel:
+        k = keep[i : i + len(p.lum)]
+        i += len(p.lum)
+        for out, m in ((exact, k), (rest, ~k)):
+            if m.any():
+                out.append(
+                    Points(p.pos[m], p.lum[m], p.rgb[m], p.sigma[m], p.name)
+                )
+    return exact, rest
+
+
+def point_grid(pts, px_proto: float, cell: float = GRID_CELL):
+    """Bin point sources into a uniform 3D grid for the shader's walk.
+
+    Each point is listed in every cell its 3-sigma sphere (at the largest
+    footprint drawn exactly) touches; the shader counts a point only in the
+    cell holding the ray's closest approach to it, so nothing is counted
+    twice.  Returns None if there are no points.
+    """
+    pos, sig, col = [], [], []
+    for p in pts:
+        k = _POINT_SIZE.get(p.name)
+        if k is None or len(p.lum) == 0:
+            continue
+        pos.append(p.pos)
+        sig.append(k * p.sigma * px_proto)
+        col.append(p.lum[:, None] * p.rgb)
+    if not pos:
+        return None
+    pos = np.vstack(pos).astype(np.float64)
+    sig = np.concatenate(sig)
+    col = np.vstack(col)
+    r = 3.0 * np.sqrt(sig**2 + (0.6 * FP_MAX) ** 2)
+    rmax = float(r.max())
+    lo = pos.min(axis=0) - rmax - 1e-3
+    hi = pos.max(axis=0) + rmax + 1e-3
+    n = np.maximum(np.ceil((hi - lo) / cell).astype(int), 1)
+    hi = lo + n * cell
+    i0 = np.floor((pos - r[:, None] - lo) / cell).astype(int)
+    i1 = np.floor((pos + r[:, None] - lo) / cell).astype(int)
+    span = int((i1 - i0).max()) + 1
+    vox, src = [], []
+    for dx in range(span):
+        for dy in range(span):
+            for dz in range(span):
+                c = i0 + (dx, dy, dz)
+                ok = np.all(c <= i1, axis=1)
+                c = np.clip(c[ok], 0, n - 1)
+                vox.append(c[:, 0] + n[0] * (c[:, 1] + n[1] * c[:, 2]))
+                src.append(np.flatnonzero(ok))
+    vox = np.concatenate(vox)
+    src = np.concatenate(src)
+    order = np.argsort(vox, kind="stable")
+    vox, src = vox[order], src[order]
+    nvox = int(np.prod(n))
+    count = np.bincount(vox, minlength=nvox)
+    offset = np.concatenate([[0], np.cumsum(count)[:-1]])
+    idx = np.zeros((nvox, 3), np.float32)
+    idx[:, 0] = offset
+    idx[:, 1] = count
+    a = np.column_stack([pos[src], sig[src]]).astype(np.float32)
+    return {
+        "lo": lo,
+        "n": n,
+        "cell": cell,
+        "idx": _rows(idx, _IDX_W),
+        "pos": _rows(a, _ENT_W),
+        "col": _rows(col[src].astype(np.float32), _ENT_W),
+    }
 
 
 # ----------------------------------------------------------------------
@@ -173,6 +305,26 @@ float fbm6(vec3 p) {
 float fbm2(vec3 p) {
   return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03);
 }
+// Exact integral over one step of a sech^2 layer (z0 -> z1 along the ray),
+// times dt / dz: no banding however coarse the step through a thin layer.
+float pint(float z0, float z1, float h, float dt) {
+  float dz = z1 - z0;
+  if (abs(dz) < 0.05 * h) return sech2(0.5 * (z0 + z1), h) * dt;
+  return 0.5 * (tanh(clamp(z1 / h, -15.0, 15.0)) - tanh(clamp(z0 / h, -15.0, 15.0)))
+         * dt / dz;
+}
+vec2 rayBox(vec3 ro, vec3 inv, vec3 lo, vec3 hi) {
+  vec3 a = (lo - ro) * inv;
+  vec3 b = (hi - ro) * inv;
+  return vec2(max(max(min(a.x, b.x), min(a.y, b.y)), min(a.z, b.z)),
+              min(min(max(a.x, b.x), max(a.y, b.y)), max(a.z, b.z)));
+}
+vec2 raySphere(vec3 ro, vec3 rd, float r) {
+  float b = dot(ro, rd);
+  float d = b * b - (dot(ro, ro) - r * r);
+  if (d <= 0.0) return vec2(1e30, -1e30);
+  return vec2(-b - sqrt(d), -b + sqrt(d));
+}
 float gauss2(float b, float s) { return exp(-0.5 * b * b / (s * s)) / (6.2831853 * s * s); }
 vec3 screenB(vec3 a, vec3 b) { return 1.0 - (1.0 - a) * (1.0 - b); }
 //GAS::Dec
@@ -182,119 +334,202 @@ _IMPL = """//VTK::Light::Impl
   vec3 ro = uCam;
   vec3 rd = normalize(posMC - uCam);
   vec3 inv = 1.0 / rd;
-  vec3 ta = (uBoxLo - ro) * inv;
-  vec3 tb = (uBoxHi - ro) * inv;
-  vec3 tmn = min(ta, tb);
-  vec3 tmx = max(ta, tb);
-  float t0 = max(max(max(tmn.x, tmn.y), tmn.z), 0.0);
-  float t1 = min(min(tmx.x, tmx.y), tmx.z);
+  vec2 tb = rayBox(ro, inv, uBoxLo, uBoxHi);
+  float t0 = max(tb.x, 0.0);
+  float t1 = tb.y;
 
   // Closest approach to the centre (nucleus, AGN, ICL, gas overlays).
   float tc = max(-dot(ro, rd), 0.0);
   vec3 cp = ro + tc * rd;
   float bimp = length(cp);
 
-  // Step sizes: fine inside the disk's own slab (|x|,|y| < map half,
-  // |z| < zcut) and the core sphere (the body sphere for ellipticals), the
-  // debris volume's cell size inside its cube, coarse elsewhere -- and
-  // never step over the start of a finer region.
-  vec3 dLo = vec3(-uMapHalf, -uMapHalf, -uZCut);
-  vec3 dHi = vec3(uMapHalf, uMapHalf, uZCut);
-  vec3 da = (dLo - ro) * inv;
-  vec3 db = (dHi - ro) * inv;
-  float slabA = max(max(min(da.x, db.x), min(da.y, db.y)), min(da.z, db.z));
-  float slabB = min(min(max(da.x, db.x), max(da.y, db.y)), max(da.z, db.z));
-  if (uIsDisk < 0.5 || slabB < slabA) { slabA = 1e30; slabB = -1e30; }
-  float bco = dot(ro, rd);
-  float disc = bco * bco - (dot(ro, ro) - uRCore * uRCore);
-  float cA = 1e30, cB = -1e30;
-  if (disc > 0.0) { cA = -bco - sqrt(disc); cB = -bco + sqrt(disc); }
-  vec3 aa = (vec3(-uAtlasHalf) - ro) * inv;
-  vec3 ab = (vec3(uAtlasHalf) - ro) * inv;
-  float atA = max(max(min(aa.x, ab.x), min(aa.y, ab.y)), min(aa.z, ab.z));
-  float atB = min(min(max(aa.x, ab.x), max(aa.y, ab.y)), max(aa.z, ab.z));
-  if (uHasAtlas < 0.5 || atB < atA) { atA = 1e30; atB = -1e30; }
-  float dtFine = clamp(0.3 * 0.045 / max(abs(rd.z), 1e-3), 0.004, 0.03);
-  if (uIsDisk < 0.5) dtFine = 0.04;
+  // Stars drawn exactly (the point pass below) when a pixel is smaller
+  // than FP_MAX at the galaxy; the splatted textures when it is larger.
+  float fpC = max(length(ro) , 1e-3) * uPixAng;
+  float wPts = uHasGrid > 0.5 ? 1.0 - smoothstep(0.5 * uFpMax, uFpMax, fpC) : 0.0;
+  float wTex = 1.0 - wPts;
+
+  // Only the regions that hold light are marched; the empty rest of the
+  // box is jumped.  Disk slab, core sphere (the body for an elliptical),
+  // debris cube, ICL sphere.
+  vec2 rS = vec2(1e30, -1e30);
+  if (uIsDisk > 0.5)
+    rS = rayBox(ro, inv, vec3(-uMapHalf, -uMapHalf, -uZCut), vec3(uMapHalf, uMapHalf, uZCut));
+  vec2 rC = raySphere(ro, rd, uRCore);
+  vec2 rA = vec2(1e30, -1e30);
+  if (uHasAtlas > 0.5) rA = rayBox(ro, inv, vec3(-uAtlasHalf), vec3(uAtlasHalf));
+  vec2 rI = vec2(1e30, -1e30);
+  if (uLIcl > 0.0) rI = raySphere(ro, rd, uIclR);
+  rS = vec2(max(rS.x, t0), min(rS.y, t1));
+  rC = vec2(max(rC.x, t0), min(rC.y, t1));
+  rA = vec2(max(rA.x, t0), min(rA.y, t1));
+  rI = vec2(max(rI.x, t0), min(rI.y, t1));
+  float rz = abs(rd.z);
   float dtAtlas = 2.0 * uAtlasHalf / uAtlasN;
-  float dtCoarse = max((t1 - t0) / 64.0, dtFine);
+  float dtIcl = max((rI.y - rI.x) / 40.0, 1e-3);
+  float tEnd = max(max(rS.y, rC.y), max(rA.y, rI.y));
 
   vec3 col = vec3(0.0);
   vec3 tau = vec3(0.0);
   float tauC = 0.0;
   bool passedC = false;
-  float t = t0;
+  float t = min(min(rS.x, rC.x), min(rA.x, rI.x));
   for (int it = 0; it < 4096; it++) {
-    if (t >= t1 || float(it) >= uMaxSteps) break;
-    bool fine = (t >= slabA && t <= slabB) || (t >= cA && t <= cB);
-    bool inAtlas = t >= atA && t <= atB;
-    float dt = fine ? dtFine : (inAtlas ? dtAtlas : dtCoarse);
-    if (!fine) {
-      if (t < slabA) dt = min(dt, max(slabA - t, 1e-4));
-      if (t < cA) dt = min(dt, max(cA - t, 1e-4));
-      if (!inAtlas && t < atA) dt = min(dt, max(atA - t, 1e-4));
+    if (t >= tEnd || float(it) >= uMaxSteps) break;
+    bool inS = t >= rS.x && t < rS.y;
+    bool inC = t >= rC.x && t < rC.y;
+    bool inA = t >= rA.x && t < rA.y;
+    bool inI = t >= rI.x && t < rI.y;
+    if (!(inS || inC || inA || inI)) {
+      float nx = 1e30;
+      if (rS.x > t && rS.x < rS.y) nx = min(nx, rS.x);
+      if (rC.x > t && rC.x < rC.y) nx = min(nx, rC.x);
+      if (rA.x > t && rA.x < rA.y) nx = min(nx, rA.x);
+      if (rI.x > t && rI.x < rI.y) nx = min(nx, rI.x);
+      if (nx >= 1e29) break;
+      if (!passedC && nx >= tc) { tauC = tau.g; passedC = true; }
+      t = nx;
+      continue;
     }
-    dt = min(dt, t1 - t);
+    float dt = 1e30;
+    if (inS) {
+      // Every layer is integrated exactly in z, so steps can grow away from
+      // the midplane; near it they stay short enough to follow the maps.
+      float zs = abs(ro.z + t * rd.z);
+      dt = clamp((0.03 + 0.5 * zs) / max(rz, 1e-3), 0.004, zs < 0.15 ? 0.03 : 0.08);
+    }
+    if (inC) dt = min(dt, clamp(0.2 * length(ro + t * rd), uDtCore, 1.0));
+    if (inA) dt = min(dt, dtAtlas);
+    if (inI) dt = min(dt, dtIcl);
+    // Never step over the start of a finer region.
+    if (t < rS.x) dt = min(dt, rS.x - t);
+    if (t < rC.x) dt = min(dt, rC.x - t);
+    if (t < rA.x) dt = min(dt, rA.x - t);
+    dt = max(min(dt, tEnd - t), 1e-4);
     vec3 p = ro + (t + 0.5 * dt) * rd;
-    vec3 e = vec3(0.0);
-    float kappa = 0.0;
+    float z0 = ro.z + t * rd.z;
+    float z1 = z0 + dt * rd.z;
+    vec3 e = vec3(0.0);  // emission integrated over the step
+    float kap = 0.0;     // dust optical depth over the step
     if (uIsDisk > 0.5) {
-      if (abs(p.x) < uMapHalf && abs(p.y) < uMapHalf) {
-        vec3 m = texture(mapTex, mapUV(p.xy, uMapHalf, uMapN)).rgb;
-        e += m.r * sech2(p.z, uHz) * uOldRGB + m.g * sech2(p.z, 0.06) * uYoungRGB;
-        kappa = m.b * sech2(p.z, 0.045);
-        vec2 puv = mapUV(p.xy, uMapHalf, uPtsN);
-        e += texture(ptsThinTex, puv).rgb * sech2(p.z, 0.045)
-           + texture(ptsFieldTex, puv).rgb * sech2(p.z, 0.03);
+      // The layers' light sits at the midplane: sample the maps where the
+      // ray is nearest it within this step, not at the step's midpoint.
+      vec2 pm = (ro + clamp(-ro.z * inv.z, t, t + dt) * rd).xy;
+      if (inS && abs(pm.x) < uMapHalf && abs(pm.y) < uMapHalf) {
+        vec3 m = texture(mapTex, mapUV(pm, uMapHalf, uMapN)).rgb;
+        e += m.r * pint(z0, z1, uHz, dt) * uOldRGB + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
+        kap = m.b * pint(z0, z1, 0.045, dt);
+        {
+          vec2 puv = mapUV(pm, uMapHalf, uPtsN);
+          e += (wTex * texture(ptsThinTex, puv).rgb + texture(ptsFieldTex, puv).rgb)
+             * pint(z0, z1, 0.04, dt);
+        }
       }
-      float bul = uLBulge * hernq(p, uBulgeA, uBulgeQ, vec3(1.0));
-      if (uBarLen > 0.0) {
-        float bx = uBarLen, by = uBarLen * uBarAxis;
-        float bar = exp(-(pow(abs(p.x) / bx, 2.4) + pow(abs(p.y) / by, 2.4)));
-        bul += uLBar * bar * sech2(p.z, 0.12) / (3.14159265 * bx * by * 0.92);
+      if (inC) {
+        float bul = uLBulge * hernq(p, uBulgeA, uBulgeQ, vec3(1.0)) * dt;
+        if (uBarLen > 0.0) {
+          float bx = uBarLen, by = uBarLen * uBarAxis;
+          float bar = exp(-(pow(abs(p.x) / bx, 2.4) + pow(abs(p.y) / by, 2.4)));
+          bul += uLBar * bar * pint(z0, z1, 0.12, dt) / (3.14159265 * bx * by * 0.92);
+        }
+        e += bul * uBulgeRGB;
       }
-      e += bul * uBulgeRGB;
-    } else {
-      e += uCoreFrac * hernq(p, 0.22, 1.0, uEllAxes) * uBulgeRGB
-         + (1.0 - uCoreFrac) * hernq(p, uEnvA, 1.0, uEllAxes) * (uOldRGB * 0.95 + 0.05);
+    } else if (inC) {
+      e += (uCoreFrac * hernq(p, 0.22, 1.0, uEllAxes) * uBulgeRGB
+         + (1.0 - uCoreFrac) * hernq(p, uEnvA, 1.0, uEllAxes) * (uOldRGB * 0.95 + 0.05)) * dt;
       if (uDustLane > 0.0) {
         float rr = length(p.xz);
-        kappa = uDustLane * 2.5 * exp(-rr / 0.25) * (1.0 - exp(-pow(rr / 0.05, 2.0)))
-              * sech2(p.y, 0.02);
+        float y0 = ro.y + t * rd.y;
+        kap = uDustLane * 2.5 * exp(-rr / 0.25) * (1.0 - exp(-pow(rr / 0.05, 2.0)))
+            * pint(y0, y0 + dt * rd.y, 0.02, dt);
       }
     }
-    if (uLIcl > 0.0) e += uLIcl * hernq(p, uIclA, 0.85, vec3(1.0)) * (uOldRGB * 0.9 + 0.08);
-    if (uHasAtlas > 0.5) {
+    if (inI) e += uLIcl * hernq(p, uIclA, 0.85, vec3(1.0)) * (uOldRGB * 0.9 + 0.08) * dt;
+    if (inA) {
       // 3D emissivity volume stored as a 2D atlas of z slices (inlined:
       // samplers are declared after the PositionVC::Dec block).
       vec3 q = (p + uAtlasHalf) / (2.0 * uAtlasHalf);
       if (all(greaterThanEqual(q, vec3(0.0))) && all(lessThanEqual(q, vec3(1.0)))) {
         float zf = q.z * uAtlasN - 0.5;
-        float z0 = clamp(floor(zf), 0.0, uAtlasN - 1.0);
-        float z1 = min(z0 + 1.0, uAtlasN - 1.0);
-        float fz = clamp(zf - z0, 0.0, 1.0);
+        float za = clamp(floor(zf), 0.0, uAtlasN - 1.0);
+        float zb = min(za + 1.0, uAtlasN - 1.0);
+        float fz = clamp(zf - za, 0.0, 1.0);
         vec2 inT = clamp(q.xy * uAtlasN, 0.5, uAtlasN - 0.5);
-        vec2 a0 = vec2(mod(z0, uAtlasNx), floor(z0 / uAtlasNx)) * uAtlasN + inT;
-        vec2 a1 = vec2(mod(z1, uAtlasNx), floor(z1 / uAtlasNx)) * uAtlasN + inT;
+        vec2 a0 = vec2(mod(za, uAtlasNx), floor(za / uAtlasNx)) * uAtlasN + inT;
+        vec2 a1 = vec2(mod(zb, uAtlasNx), floor(zb / uAtlasNx)) * uAtlasN + inT;
         e += mix(texture(atlasTex, a0 / uAtlasSize).rgb,
-                 texture(atlasTex, a1 / uAtlasSize).rgb, fz);
+                 texture(atlasTex, a1 / uAtlasSize).rgb, fz) * dt;
       }
     }
-    vec3 att = exp(-(tau + 0.5 * kappa * dt * uDustK) );
-    col += e * dt * att;
-    tau += kappa * dt * uDustK;
+    vec3 att = exp(-(tau + 0.5 * kap * uDustK));
+    col += e * att;
+    tau += kap * uDustK;
     if (!passedC && t + dt >= tc) { tauC = tau.g; passedC = true; }
     t += dt;
   }
   if (!passedC) tauC = tau.g;
 
+  // Point sources, exactly: walk the grid cells the ray crosses (3D DDA);
+  // each star counts in the cell holding the ray's closest approach to it,
+  // with its own PSF widened to the pixel footprint there, dimmed by the
+  // dust in front of it.
+  if (wPts > 0.0) {
+    vec3 colP = vec3(0.0);
+    vec2 g = rayBox(ro, inv, uGridLo, uGridHi);
+    float g0 = max(g.x, 0.0);
+    if (g.y > g0) {
+      ivec3 N = ivec3(uGridN + 0.5);
+      vec3 q = ro + g0 * rd;
+      ivec3 c = clamp(ivec3(floor((q - uGridLo) / uGridCell)), ivec3(0), N - ivec3(1));
+      ivec3 st = ivec3(rd.x > 0.0 ? 1 : -1, rd.y > 0.0 ? 1 : -1, rd.z > 0.0 ? 1 : -1);
+      vec3 tDel = abs(uGridCell * inv);
+      vec3 tMx = (uGridLo + (vec3(c) + step(vec3(0.0), rd)) * uGridCell - ro) * inv;
+      float tIn = g0;
+      for (int k = 0; k < 1024; k++) {
+        float tOut = min(min(tMx.x, tMx.y), tMx.z);
+        int id = c.x + N.x * (c.y + N.y * c.z);
+        vec3 oc = texelFetch(gIdxTex, ivec2(id % uIdxW, id / uIdxW), 0).rgb;
+        int off = int(oc.r + 0.5);
+        int cnt = int(oc.g + 0.5);
+        for (int j = 0; j < cnt; j++) {
+          int en = off + j;
+          ivec2 ec = ivec2(en % uEntW, en / uEntW);
+          vec4 A = texelFetch(gPosTex, ec, 0);
+          float ts = dot(A.xyz - ro, rd);
+          if (ts < tIn || ts >= tOut || ts <= 0.0) continue;
+          vec3 dv = A.xyz - ro - ts * rd;
+          float d2 = dot(dv, dv);
+          float fp = min(ts * uPixAng, uFpMax);
+          float s2 = A.w * A.w + 0.36 * fp * fp;
+          if (d2 > 9.0 * s2) continue;
+          float tauP = 0.0;
+          if (uIsDisk > 0.5 && abs(A.x) < uMapHalf && abs(A.y) < uMapHalf) {
+            float k0 = texture(mapTex, mapUV(A.xy, uMapHalf, uMapN)).b;
+            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.08);
+          }
+          colP += texelFetch(gColTex, ec, 0).rgb * exp(-0.5 * d2 / s2) / (6.2831853 * s2)
+                * exp(-tauP * uDustK);
+        }
+        if (tOut >= g.y) break;
+        if (tMx.x <= tMx.y && tMx.x <= tMx.z) { c.x += st.x; tMx.x += tDel.x; }
+        else if (tMx.y <= tMx.z) { c.y += st.y; tMx.y += tDel.y; }
+        else { c.z += st.z; tMx.z += tDel.z; }
+        if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, N))) break;
+        tIn = tOut;
+      }
+    }
+    col += wPts * colP;
+  }
+
   // Nucleus and AGN glow (analytic PSFs, dimmed by the dust at the centre).
   vec3 tC = exp(-0.5 * tauC * uDustK);
+  // Point-like cores are a pixel across at any zoom, not a fixed size.
+  float fpN = min(fpC, uPixProto);
   if (uLNuc > 0.0)
-    col += uLNuc * gauss2(bimp, max(uNucSig, 0.8 * uPixProto)) * vec3(1.0, 0.93, 0.85) * tC;
+    col += uLNuc * gauss2(bimp, max(uNucSig, 0.8 * fpN)) * vec3(1.0, 0.93, 0.85) * tC;
   if (uAgn > 0.0) {
     float L = 8.0 * uAgn;
-    col += L * (gauss2(bimp, 0.9 * uPixProto) + 0.15 * gauss2(bimp, 4.0 * uPixProto)
+    col += L * (gauss2(bimp, 0.9 * fpN) + 0.15 * gauss2(bimp, 4.0 * fpN)
               + 0.05 * gauss2(bimp, uFrameProto / 60.0)) * vec3(0.85, 0.92, 1.0) * tC;
   }
 
@@ -350,6 +585,84 @@ def icl_stars(gal, rc, px_proto):
     return pos, np.full(n, 0.7 * px_proto * 1.5), colour
 
 
+def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
+    """The CPU side of a build (numpy only, safe off the main thread): the
+    texture arrays, the exact-star grid and the layout numbers the shader
+    needs."""
+    disk = rc.kind == "disk"
+    E = rc.extent * (1.3 if disk else 1.0)
+    px_proto = 2 * E / 1024.0
+    # Stars: the brightest in each cell drawn exactly, the rest splatted.
+    stars = [p for p in pts if disk and p.name in _POINT_SIZE]
+    exact, rest = split_exact(stars)
+    # Point-like 3D sources (an elliptical's field stars and globular
+    # clusters) are tiny splats; only diffuse 3D light (merger shells,
+    # tails, streams) goes into the emissivity volume.
+    sprinkle = [
+        p for p in pts if not disk and p.name in ("field", "globulars")
+    ]
+    vol = [p for p in pts if p.name in ("shells", "tails", "stream")]
+
+    tex = {}
+    dummy3 = np.zeros((2, 2, 3), np.float32)
+    if disk:
+        dA = (2 * maps.half / (maps.old.shape[0] - 1)) ** 2
+        n_old = 1.0 / (maps.old.sum() * dA)
+        n_young = 1.0 / (maps.young.sum() * dA)
+        m = np.dstack(
+            [
+                rc.l_disk * n_old * maps.old,
+                rc.l_young * 1.2 * n_young * maps.young,
+                maps.dust,
+            ]
+        ).astype(np.float32)
+        tex["mapTex"] = (m, True)
+        npts = 2048
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(2) as ex:
+            a, b = ex.map(
+                lambda ps: _splat_plane(ps, maps.half, npts, px_proto),
+                (exact, rest),
+            )
+        # Exact stars' splats stand in for them when zoomed far out; the
+        # rest are always drawn from their splats.
+        tex["ptsThinTex"] = (a, True)
+        tex["ptsFieldTex"] = (b, True)
+        map_info = (maps.half, maps.old.shape[0], npts)
+    else:
+        for k in ("mapTex", "ptsThinTex", "ptsFieldTex"):
+            tex[k] = (dummy3, True)
+        map_info = (1.0, 2, 2)
+
+    atlas_info = None
+    tex["atlasTex"] = (dummy3, True)
+    if vol:
+        allpos = np.vstack([p.pos for p in vol])
+        atlas_half = float(max(np.percentile(np.abs(allpos), 99.5), E))
+        atlas_n = 112
+        atlas, nx, ny = _splat_volume(vol, atlas_half, atlas_n, px_proto)
+        tex["atlasTex"] = (atlas, True)
+        atlas_info = (atlas_half, atlas_n, nx, (nx * atlas_n, ny * atlas_n))
+
+    grid = point_grid(exact, px_proto) if exact else None
+    if grid is not None:
+        tex["gIdxTex"] = (grid["idx"], False)
+        tex["gPosTex"] = (grid["pos"], False)
+        tex["gColTex"] = (grid["col"], False)
+    else:
+        tex["gIdxTex"] = (dummy3, False)
+        tex["gPosTex"] = (np.zeros((2, 2, 4), np.float32), False)
+        tex["gColTex"] = (dummy3, False)
+    return {
+        "tex": tex,
+        "sprinkle": sprinkle,
+        "map": map_info,
+        "atlas": atlas_info,
+        "grid": grid,
+    }
+
+
 class GPUGalaxy:
     """The GPU ray-marched galaxy as one VTK actor."""
 
@@ -367,9 +680,12 @@ class GPUGalaxy:
         user_matrix: np.ndarray,
         gal=None,
         gas=None,
+        prep=None,
     ):
         """Create the actor.  `user_matrix` (4x4) maps galaxy-frame model
-        units to world coordinates; `gas` is an optional GasSpec."""
+        units to world coordinates; `gas` is an optional GasSpec.  `prep` is
+        `prepare(rc, maps, pts)`, if already made (e.g. on a worker
+        thread)."""
         import pyvista as pv
         import vtk
 
@@ -380,57 +696,22 @@ class GPUGalaxy:
         self.frame_proto = 2 * E
         px_proto = 2 * E / 1024.0
 
-        # Split point populations: thin disk-plane ones -> textures, the
-        # rest (3D) -> the emissivity volume.
-        thin_names = {"clusters", "hii", "ring", "ring_hii"}
-        thin = [p for p in pts if disk and p.name in thin_names]
-        field = [p for p in pts if disk and p.name == "field"]
-        # Point-like 3D sources (an elliptical's field stars and globular
-        # clusters) are tiny splats; only diffuse 3D light (merger shells,
-        # tails, streams) goes into the emissivity volume.
-        sprinkle = [
-            p for p in pts if not disk and p.name in ("field", "globulars")
-        ]
-        vol = [p for p in pts if p.name in ("shells", "tails", "stream")]
-
-        tex = {}
-        if disk:
-            dA = (2 * maps.half / (maps.old.shape[0] - 1)) ** 2
-            n_old = 1.0 / (maps.old.sum() * dA)
-            n_young = 1.0 / (maps.young.sum() * dA)
-            m = np.dstack(
-                [
-                    rc.l_disk * n_old * maps.old,
-                    rc.l_young * 1.2 * n_young * maps.young,
-                    maps.dust,
-                ]
-            ).astype(np.float32)
-            tex["mapTex"] = float_texture(m)
-            npts = 2048
-            tex["ptsThinTex"] = float_texture(
-                _splat_plane(thin, maps.half, npts, px_proto)
-            )
-            tex["ptsFieldTex"] = float_texture(
-                _splat_plane(field, maps.half, npts, px_proto)
-            )
-            map_half, map_n = maps.half, maps.old.shape[0]
-        else:
-            dummy = np.zeros((2, 2, 3), np.float32)
-            for k in ("mapTex", "ptsThinTex", "ptsFieldTex"):
-                tex[k] = float_texture(dummy)
-            map_half, map_n, npts = 1.0, 2, 2
-
-        has_atlas = bool(vol)
-        atlas_half, atlas_n, atlas_nx, atlas_size = 1.0, 2, 1, (2, 2)
-        if has_atlas:
-            allpos = np.vstack([p.pos for p in vol])
-            atlas_half = float(max(np.percentile(np.abs(allpos), 99.5), E))
-            atlas_n = 112
-            atlas, nx, ny = _splat_volume(vol, atlas_half, atlas_n, px_proto)
-            tex["atlasTex"] = float_texture(atlas)
-            atlas_nx, atlas_size = nx, (nx * atlas_n, ny * atlas_n)
-        else:
-            tex["atlasTex"] = float_texture(np.zeros((2, 2, 3), np.float32))
+        if prep is None:
+            prep = prepare(rc, maps, pts)
+        tex = {
+            k: float_texture(arr, interp)
+            for k, (arr, interp) in prep["tex"].items()
+        }
+        sprinkle = prep["sprinkle"]
+        map_half, map_n, npts = prep["map"]
+        has_atlas = prep["atlas"] is not None
+        atlas_half, atlas_n, atlas_nx, atlas_size = prep["atlas"] or (
+            1.0,
+            2,
+            1,
+            (2, 2),
+        )
+        grid = prep["grid"]
 
         # Bounding box of everything optical (gas extends it if on).
         if disk:
@@ -517,9 +798,23 @@ class GPUGalaxy:
         f(
             "uRCore",
             float(
-                max(8 * rc.bulge_a, 1.3 * rc.bar_len, 0.5) if disk else 1.5 * E
+                max(8 * rc.bulge_a, 1.3 * rc.bar_len, 0.5) if disk else 3.0 * E
             ),
         )
+        f("uDtCore", 0.004 if disk else 0.01)
+        f("uIclR", float(min(4.0 * rc.icl_a, 1.75 * max(hx, hz))))
+        f("uHasGrid", 1.0 if grid is not None else 0.0)
+        f("uFpMax", FP_MAX)
+        f("uPixAng", 1e-3)
+        g = grid or {"lo": np.zeros(3), "n": np.ones(3), "cell": 1.0}
+        u.SetUniform3f("uGridLo", [float(v) for v in g["lo"]])
+        u.SetUniform3f(
+            "uGridHi", [float(v) for v in g["lo"] + g["n"] * g["cell"]]
+        )
+        u.SetUniform3f("uGridN", [float(v) for v in g["n"]])
+        f("uGridCell", float(g["cell"]))
+        u.SetUniformi("uIdxW", _IDX_W)
+        u.SetUniformi("uEntW", _ENT_W)
         f("uHasAtlas", 1.0 if has_atlas else 0.0)
         f("uAtlasHalf", float(atlas_half))
         f("uAtlasN", float(atlas_n))
@@ -635,10 +930,29 @@ class GPUGalaxy:
             "uStreamNorm", float(self.gas.stream_norm(half_kpc))
         )
 
-    def set_camera(self, cam_model: np.ndarray) -> None:
-        """Camera position in the galaxy frame (model units)."""
+    def set_pixel(self, fp_model: float) -> None:
+        """Keep the star splats about a pixel across (`fp_model`: one
+        screen pixel at the galaxy, model units) rather than a fixed size
+        that balloons as the camera closes in."""
+        a = getattr(self, "sprinkle_actor", None)
+        if a is not None:
+            proto = self.frame_proto / 1024.0
+            a.mapper.SetScaleFactor(float(min(1.0, 1.5 * fp_model / proto)))
+
+    def set_white(self, white: float) -> None:
+        """Tone-map white level (see `layer.Exposure`)."""
+        if self._uni is not None:
+            self._uni.SetUniformf("uWhite", float(white))
+
+    def set_camera(
+        self, cam_model: np.ndarray, pix_ang: float | None = None
+    ) -> None:
+        """Camera position in the galaxy frame (model units) and the angle
+        one screen pixel subtends (radians)."""
         if self._uni is not None:
             self._uni.SetUniform3f("uCam", [float(v) for v in cam_model])
+            if pix_ang is not None:
+                self._uni.SetUniformf("uPixAng", float(pix_ang))
 
     def clear(self) -> None:
         for a in (self.actor, getattr(self, "sprinkle_actor", None)):

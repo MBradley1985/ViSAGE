@@ -45,14 +45,52 @@ def galaxy_basis(spin: np.ndarray | None, seed: int) -> np.ndarray:
     return np.column_stack([e1, e2, e3])
 
 
-def exposure(rc, maps, pts) -> float:
-    """White level of the tone map, fixed per galaxy: as the offline renders,
-    the 99.97th percentile of a face-on view (AGN excluded)."""
-    from visage.hd.raymarch import render
+class Exposure:
+    """White level of the tone map.
 
-    face = render(rc, maps, pts, inc=0, pa=25, npix=256, threads=8)
-    lum = (face.total - face.points.get("agn", 0)).mean(axis=2)
-    return float(np.percentile(lum, 99.97)) or 1.0
+    The base level is fixed per galaxy as in the offline renders: the
+    99.97th percentile of a face-on view (AGN excluded).  Zoomed into a
+    region brighter than the galaxy as a whole, the level rises with that
+    region's mean surface brightness, as a camera's auto-exposure would, so
+    the inner disk and bulge don't wash out; it never drops below the base,
+    so the whole-galaxy view is unchanged.
+    """
+
+    _PA = 25.0
+
+    def __init__(self, rc, maps, pts, npix: int = 256):
+        from visage.hd.raymarch import render, rot
+
+        face = render(rc, maps, pts, inc=0, pa=self._PA, npix=npix, threads=8)
+        lum = (face.total - face.points.get("agn", 0)).mean(axis=2)
+        self.base = float(np.percentile(lum, 99.97)) or 1.0
+        self._R = rot(0, self._PA)
+        self._E = float(face.half_width)
+        self._n = lum.shape[0]
+        self._pix = 2 * self._E / (self._n - 1)
+        # Summed-area table: O(1) box means.
+        self._sat = np.pad(lum.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+        self._k = self.base / max(self._box_mean(0.0, 0.0, self._E), 1e-30)
+
+    def _box_mean(self, x: float, y: float, half: float) -> float:
+        """Mean face-on surface brightness over a square of half-width
+        `half` centred on galaxy-frame (x, y); outside the image counts as
+        dark."""
+        ox, oy, _ = self._R @ np.array([x, y, 0.0])
+        n = self._n
+        c0 = int(np.clip(np.floor((ox - half + self._E) / self._pix), 0, n))
+        c1 = int(np.clip(np.ceil((ox + half + self._E) / self._pix), 0, n))
+        r0 = int(np.clip(np.floor((self._E - oy - half) / self._pix), 0, n))
+        r1 = int(np.clip(np.ceil((self._E - oy + half) / self._pix), 0, n))
+        side = max(2 * half / self._pix, 1.0)
+        S = self._sat
+        tot = S[r1, c1] - S[r0, c1] - S[r1, c0] + S[r0, c0]
+        return float(tot) / (side * side)
+
+    def white(self, x: float, y: float, half: float) -> float:
+        """White level for a view of half-width `half` (model units)
+        centred on galaxy-frame (x, y)."""
+        return max(self.base, self._k * self._box_mean(x, y, half))
 
 
 class HDGalaxyLayer:
@@ -62,6 +100,7 @@ class HDGalaxyLayer:
         self._pl = plotter
         self._gpu = GPUGalaxy(plotter)
         self._observer = None
+        self._fxaa = None
         self._gas_on = False
         self.gal: SageGalaxy | None = None
         self.recipe = None
@@ -70,16 +109,41 @@ class HDGalaxyLayer:
     def active(self) -> bool:
         return self._gpu.actor is not None
 
-    def show(
-        self, gal: SageGalaxy, center, spin, hubble_h: float, gas: bool = False
-    ):
-        """Build and draw the HD model of `gal` at world position `center`."""
-        self.clear()
-        self.gal = gal
+    @staticmethod
+    def prepare(gal: SageGalaxy) -> dict:
+        """Everything CPU-heavy in a build (numpy only, so it can run on a
+        worker thread while the UI says what is happening)."""
+        from visage.hd.gpu import prepare
+
         rc = recipe_from_sage(gal)
-        self.recipe = rc
         maps = build_disk_maps(rc, n=1024) if rc.kind == "disk" else None
         pts = build_points(rc, maps)
+        return {
+            "gal": gal,
+            "rc": rc,
+            "maps": maps,
+            "pts": pts,
+            "exposure": Exposure(rc, maps, pts),
+            "gpu": prepare(rc, maps, pts),
+        }
+
+    def show(
+        self,
+        gal: SageGalaxy,
+        center,
+        spin,
+        hubble_h: float,
+        gas: bool = False,
+        prep: dict | None = None,
+    ):
+        """Build and draw the HD model of `gal` at world position `center`
+        (`prep`: `prepare(gal)`, if already made)."""
+        self.clear()
+        if prep is None or prep["gal"] is not gal:
+            prep = self.prepare(gal)
+        self.gal = gal
+        rc, maps, pts = prep["rc"], prep["maps"], prep["pts"]
+        self.recipe = rc
 
         self._R = galaxy_basis(spin, rc.seed)
         self._scale = rc.unit_kpc * hubble_h / 1000.0  # model units -> Mpc/h
@@ -88,26 +152,39 @@ class HDGalaxyLayer:
         m = np.eye(4)
         m[:3, :3] = self._R * self._scale
         m[:3, 3] = self._center
+        self._exposure = prep["exposure"]
         self._gpu.build(
-            rc, maps, pts, exposure(rc, maps, pts), m, gal=gal, gas=gas
+            rc,
+            maps,
+            pts,
+            self._exposure.base,
+            m,
+            gal=gal,
+            gas=gas,
+            prep=prep["gpu"],
         )
         self._gas_on = bool(gas)
         self._gpu.set_gas(self._gas_on)
-        cam = self._pl.renderer.GetActiveCamera()
-        self._observer = (
-            cam,
-            cam.AddObserver("ModifiedEvent", self._on_camera),
-        )
+        ren = self._pl.renderer
+        # The shader resolves single stars; FXAA would smear them.
+        self._fxaa = bool(ren.GetUseFXAA())
+        ren.SetUseFXAA(False)
+        # Camera uniforms are refreshed as each frame starts, so they follow
+        # camera moves and window resizes alike.
+        self._observer = (ren, ren.AddObserver("StartEvent", self._on_camera))
         self._on_camera()
 
     def clear(self):
         if self._observer is not None:
-            cam, tag = self._observer
+            ren, tag = self._observer
             try:
-                cam.RemoveObserver(tag)
+                ren.RemoveObserver(tag)
             except Exception:
                 pass
             self._observer = None
+        if self._fxaa is not None:
+            self._pl.renderer.SetUseFXAA(self._fxaa)
+            self._fxaa = None
         self._gpu.clear()
         self.gal = None
         self.recipe = None
@@ -141,14 +218,25 @@ class HDGalaxyLayer:
         )
 
     def _on_camera(self, *_):
-        """Keep the shader's camera (galaxy frame) and view size current."""
+        """Keep the shader's camera (galaxy frame), pixel size and view size
+        current."""
         if not self.active:
             return
-        cam = self._pl.renderer.GetActiveCamera()
+        ren = self._pl.renderer
+        cam = ren.GetActiveCamera()
         pos = np.array(cam.GetPosition(), float)
-        self._gpu.set_camera(self.to_model(pos))
+        tan_half = np.tan(np.deg2rad(cam.GetViewAngle()) / 2.0)
+        height = max(int(ren.GetSize()[1]), 1)
+        cam_model = self.to_model(pos)
+        pix_ang = 2.0 * tan_half / height
+        self._gpu.set_camera(cam_model, pix_ang)
+        self._gpu.set_pixel(float(np.linalg.norm(cam_model)) * pix_ang)
         dist = np.linalg.norm(pos - self._center)
-        half_world = dist * np.tan(np.deg2rad(cam.GetViewAngle()) / 2.0)
+        half_world = dist * tan_half
+        focal = np.array(cam.GetFocalPoint(), float)
+        fx, fy, _ = self.to_model(focal)
+        half_focal = np.linalg.norm(pos - focal) * tan_half / self._scale
+        self._gpu.set_white(self._exposure.white(fx, fy, half_focal))
         self._gpu.set_view_half(
             half_world / self._scale * self.recipe.unit_kpc
         )

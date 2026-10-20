@@ -1,7 +1,7 @@
 # HD isolate prototype
 
 Procedural high-definition render of a single SAGE galaxy, built only from
-its catalogue properties. Prototype for an HD button in the Structure tab,
+its catalogue properties. Prototype for the HD button in the Target tab,
 followed by a Gas checkbox (gas overlay off by default).
 
 SAGE has no resolved structure inside a galaxy, so arm patterns, cluster
