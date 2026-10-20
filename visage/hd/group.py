@@ -1,6 +1,9 @@
 """HD mode for a whole halo: a pair, group or cluster.
 
-Every member of the FOF group is drawn at its own position and spin.  The
+Every member of the FOF group is drawn at its own position and spin, with
+its surroundings: the most massive neighbours outside the group in HD too,
+and every other galaxy out to R_WEB as glows, so the group sits at its
+node of the cosmic web.  Close pairs raise tidal bridges and tails.  The
 most massive ones get the full HD model (at a texture resolution that
 falls with rank, as each is small on screen); any long tail of a big
 cluster is drawn as soft glows.  All members share one exposure, so their
@@ -19,7 +22,7 @@ import os
 
 import numpy as np
 
-from visage.hd.layer import HDGalaxyLayer
+from visage.hd.layer import HDGalaxyLayer, magnification
 from visage.hd.model import (
     CGM_RGB,
     HOT_GAS_RGB,
@@ -39,27 +42,46 @@ N_FULL = 5
 N_TOP = 4
 N_GROUP = 16
 N_HD = 40
+# Surroundings: HD for the N_NEIGH most massive neighbours (M* > M_NEIGH)
+# within R_NEIGH; glows for everything within R_WEB (Mpc/h).
+R_WEB = 12.0
+R_NEIGH = 1.5
+N_NEIGH = 16
+M_NEIGH = 1e9
+# Tidal features: neighbours closer than R_TIDAL (kpc) and at least
+# TIDAL_RATIO of the galaxy's mass.
+R_TIDAL = 100.0
+TIDAL_RATIO = 0.1
 
 
-def normal_mode_radius_kpc(gal: SageGalaxy, hubble_h: float) -> float:
-    """The radius of a galaxy's stellar (disk) layer in the normal view
-    (visage.scene.galaxy_layer: 0.22 Rvir, by disk mass), in kpc."""
-    r_outer = max(gal.rvir_kpc * hubble_h / 1000.0, 0.02)  # Mpc/h
-    disk = max(gal.stellar_mass - gal.bulge_mass, 1.0)
-    f = float(np.clip((np.log10(disk) - 7.0) / 5.0, 0.0, 1.0))
-    return r_outer * 0.22 * (0.35 + 0.65 * f) * 1000.0 / hubble_h
-
-
-# Most a member is enlarged to match its normal-mode size.
-MAX_MAGNIFY = 5.0
-
-
-def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
-    """How much to enlarge a member's stars so they fill its normal-mode
-    stellar layer (true size when that is already smaller)."""
-    visible = rc.extent * rc.unit_kpc * 0.8  # kpc
-    r = normal_mode_radius_kpc(gal, hubble_h) / max(visible, 1e-6)
-    return float(np.clip(r, 1.0, MAX_MAGNIFY))
+def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
+    """For each entry with an HD build, its close neighbours' (direction,
+    distance in Mpc/h, strength): stronger the closer and the more massive
+    the neighbour relative to the galaxy."""
+    hd = [k for k, e in enumerate(entries) if e.get("quality")]
+    pos = np.array([np.asarray(entries[k]["center"], float) for k in hd])
+    out = {k: [] for k in hd}
+    for a, ka in enumerate(hd):
+        ma = entries[ka]["gal"].stellar_mass
+        found = []
+        for b, kb in enumerate(hd):
+            if a == b:
+                continue
+            d = pos[b] - pos[a]
+            sep = float(np.linalg.norm(d))
+            sep_kpc = sep * 1000.0 / hubble_h
+            ratio = entries[kb]["gal"].stellar_mass / max(ma, 1.0)
+            if sep_kpc >= R_TIDAL or ratio < TIDAL_RATIO:
+                continue
+            strength = float(
+                np.clip((R_TIDAL - sep_kpc) / 70.0, 0.0, 1.0)
+                * np.clip(np.sqrt(ratio), 0.0, 1.0)
+            )
+            if strength > 0.1:
+                found.append((d / max(sep, 1e-12), sep, strength))
+        found.sort(key=lambda x: -x[2])
+        out[ka] = found[:max_partners]
+    return out
 
 
 def display_luminosity(gal: SageGalaxy, kind: str) -> float:
@@ -86,9 +108,11 @@ def plan(gals: list[SageGalaxy]) -> list[str | None]:
     ]
 
 
-def prepare_member(gal: SageGalaxy, quality: str) -> dict:
+def prepare_member(
+    gal: SageGalaxy, quality: str, context: dict | None = None
+) -> dict:
     """Pool worker: the CPU side of one member's build."""
-    return HDGalaxyLayer.prepare(gal, quality)
+    return HDGalaxyLayer.prepare(gal, quality, context)
 
 
 _POOL: dict = {"pool": None}
@@ -115,7 +139,8 @@ class HDGroupLayer:
 
     def __init__(self, plotter):
         self._pl = plotter
-        self.members: list[HDGalaxyLayer] = []
+        self.members: list[HDGalaxyLayer] = []  # the group's own
+        self.neighbours: list[HDGalaxyLayer] = []  # around it
         self._glow = None
         self._glow_data = None
         self._halo = None
@@ -130,8 +155,9 @@ class HDGroupLayer:
         return any(m.active for m in self.members)
 
     def show(self, entries, hubble_h: float, gas: bool = False):
-        """Draw the group.  `entries`: dicts with gal, center, spin and
-        prep (None for a glow), central first."""
+        """Draw the group.  `entries`: dicts with gal, center, spin, prep
+        (None for a glow), "role" ("member" / "neighbour") and "magnify"
+        (bool); the central first."""
         self.clear()
         ren = self._pl.renderer
         self._fxaa = bool(ren.GetUseFXAA())
@@ -151,6 +177,11 @@ class HDGroupLayer:
                 continue
             lay = HDGalaxyLayer(self._pl)
             lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
+            mag = (
+                magnification(e["gal"], e["prep"]["rc"], hubble_h)
+                if e.get("magnify", True)
+                else 1.0
+            )
             lay.show(
                 e["gal"],
                 e["center"],
@@ -161,9 +192,12 @@ class HDGroupLayer:
                 white=w_common / lum,
                 halo=i == 0,
                 manage_fxaa=False,
-                magnify=magnification(e["gal"], e["prep"]["rc"], hubble_h),
+                magnify=mag,
             )
-            self.members.append(lay)
+            if e.get("role", "member") == "member":
+                self.members.append(lay)
+            else:
+                self.neighbours.append(lay)
             e["layer"] = lay
         self.center = np.asarray(lead["center"], float)
         self._add_glows(
@@ -200,6 +234,10 @@ class HDGroupLayer:
             )
             col.append(b * rgb)
             hd.append(e.get("layer"))
+        # The web fades out over its outer 30% (no hard edge to the sphere).
+        r_lead = np.linalg.norm(np.array(pos) - np.array(pos[0]), axis=1)
+        fade = np.clip((R_WEB - r_lead) / (0.3 * R_WEB), 0.0, 1.0)
+        col = list(np.array(col) * fade[:, None])
         self._glow_data = {
             "pos": np.array(pos),
             "rad": np.array(rad),
@@ -251,7 +289,9 @@ class HDGroupLayer:
             rad.append(r * (0.5 + 0.5 * f))
             rgb = np.asarray(CGM_RGB if cgm else HOT_GAS_RGB, float)
             col.append((0.06 + 0.16 * f) * rgb / max(rgb.max(), 1e-6))
-        self._halo_rgb = np.array(col, np.float32)
+        r_lead = np.linalg.norm(np.array(pos) - np.array(pos[0]), axis=1)
+        fade = np.clip((R_WEB - r_lead) / (0.3 * R_WEB), 0.0, 1.0)
+        self._halo_rgb = (np.array(col) * fade[:, None]).astype(np.float32)
         cloud = pv.PolyData(np.array(pos))
         cloud["rgb"] = self._halo_rgb.copy()
         cloud["radius"] = np.array(rad, np.float32)
@@ -303,9 +343,10 @@ class HDGroupLayer:
         self._cloud["rgb"] = (d["rgb"] * w[:, None]).astype(np.float32)
 
     def clear(self):
-        for m in self.members:
+        for m in self.members + self.neighbours:
             m.clear()
         self.members = []
+        self.neighbours = []
         if self._observer is not None:
             try:
                 self._pl.renderer.RemoveObserver(self._observer)
@@ -352,8 +393,8 @@ class HDGroupLayer:
         return float(max(r[0], np.percentile(r, 75)))
 
     def member_at(self, center) -> HDGalaxyLayer | None:
-        """The HD member drawn at world position `center`."""
-        for m in self.members:
+        """The HD galaxy (member or neighbour) at world position `center`."""
+        for m in self.members + self.neighbours:
             if np.allclose(m._center, center, atol=1e-6):
                 return m
         return None

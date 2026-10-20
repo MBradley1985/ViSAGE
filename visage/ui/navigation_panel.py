@@ -4233,6 +4233,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         "group": None,
         "mode": None,
         "built_snap": None,  # the snapshot the HD model shows
+        "lead": None,  # catalogue index of the halo's central
     }
 
     def _hd_layer():
@@ -4289,16 +4290,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
         clusters, HII regions, view-dependent dust, merger debris, ICL and
         (with the Gas box) its halo gas.  If the galaxy is in a pair, group
         or cluster, the whole halo is drawn: every member at its own place
-        and spin, the halo's gas on the Gas box.  Turning it off backs the
-        camera out to the standard 10 Mpc/h galaxy view; anything else that
-        drops Isolate also removes it.
+        and spin.  Its surroundings come too (nearby galaxies in HD, the
+        cosmic web out to a few Mpc/h as glows) and close pairs raise tidal
+        features.  Turning it off backs the camera out to the standard
+        10 Mpc/h galaxy view; anything else that drops Isolate also removes
+        it.
 
-        In the app the CPU part of the build runs on a worker thread while
-        a message says so; without a running event loop (tests, scripts)
-        it builds in place.
+        In the app the builds run in worker processes while a message
+        counts them; without a running event loop (tests, scripts) it
+        builds in place.
         """
-        import asyncio
-
         if bool(state.hd_building):
             return
         if bool(state.hd_active):
@@ -4313,40 +4314,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if not 0 <= gidx < galaxies.count:
             return
 
-        from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
-
-        h = float(scene._cfg.hubble_h)
-        gal = sage_galaxy_from_snapshot(galaxies, gidx, h)
-        if gal.stellar_mass <= 0:
+        if galaxies.stellar_mass[gidx] <= 0:
             return
-        # A pair, group or cluster: its whole halo.
-        members = _group_members(galaxies, gidx)
-        if len(members) > 1:
-            _hd_build_group(galaxies, members)
-            return
-        center = galaxies.positions[gidx] + scene.active_model.offset
-        spin = spin_vector(galaxies, gidx)
-        lay = _hd_layer()
-
-        loop = _running_loop()
-        if loop is None:
-            _hd_show(lay, gal, center, spin, h, lay.prepare(gal))
-            return
-
-        state.hd_building = True
-        state.hd_progress = "Building HD galaxy…"
-        state.flush()
-
-        async def _build():
-            try:
-                await asyncio.sleep(0.05)  # let the message reach the browser
-                prep = await loop.run_in_executor(None, lay.prepare, gal)
-                _hd_show(lay, gal, center, spin, h, prep)
-            finally:
-                state.hd_building = False
-                state.flush()
-
-        loop.create_task(_build())
+        # Its halo (just the galaxy if alone, else the pair, group or
+        # cluster) and its surroundings.
+        _hd_build_group(galaxies, _group_members(galaxies, gidx))
 
     def _hd_frame(center, R, radius: float, keep_view: bool = False) -> None:
         """`radius` (Mpc/h) filling the view, sparkles around it, Isolate
@@ -4383,16 +4355,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _start_sparkles(_sparkle_target["center"], _sparkle_target["radius"])
         _push()
 
-    def _hd_show(lay, gal, center, spin, h, prep) -> None:
-        """Draw the prepared HD model and frame it."""
-        # The HD model stands in for this galaxy's dot, so hide everything.
-        scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
-        lay.show(gal, center, spin, h, gas=bool(state.hd_gas), prep=prep)
-        _hd["mode"] = "galaxy"
-        _hd["built_snap"] = state.snap_num
-        radius = lay.rvir_world if state.hd_gas else lay.radius_world
-        _hd_frame(center, lay._R, radius)
-
     def _group_members(galaxies, gidx):
         """The selected galaxy's FOF group (pair, group or cluster): member
         indices, central first then by stellar mass."""
@@ -4424,41 +4386,104 @@ def build_navigation_panel(server, scene: Scene) -> None:
         return p + scene.active_model.offset
 
     def _hd_build_group(galaxies, idx) -> None:
-        """Every member of the group in HD at its own position and spin
-        (the most massive in full; the tail of a big cluster as glows),
-        with the halo's gas on the Gas box."""
+        """HD for the selected galaxy's halo and its surroundings.
+
+        Every member of the group (just the galaxy, if it is alone) at its
+        own position and spin; the most massive neighbours within R_NEIGH in
+        HD too, and every other galaxy out to R_WEB as glows, so the cosmic
+        web around it shows; tidal bridges and tails between close pairs.
+        The halo's gas is on the Gas box."""
         import asyncio
 
+        import numpy as np
+
         from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
-        from visage.hd.group import plan, pool, prepare_member
+        from visage.hd.group import (
+            M_NEIGH,
+            N_NEIGH,
+            R_NEIGH,
+            R_WEB,
+            plan,
+            pool,
+            prepare_member,
+            tidal_partners,
+        )
 
         h = float(scene._cfg.hubble_h)
-        entries = [
-            {
-                "gal": sage_galaxy_from_snapshot(galaxies, int(i), h),
-                "center": _member_position(galaxies, int(i), int(idx[0])),
-                "spin": spin_vector(galaxies, int(i)),
+        lead = int(idx[0])
+        _hd["lead"] = lead
+
+        # Neighbours: everything else within R_WEB (periodic, as drawn).
+        off = scene.active_model.offset
+        d = galaxies.positions - galaxies.positions[lead]
+        if not scene.is_lightcone:
+            box = float(scene.active_model.box_size)
+            d = d - box * np.round(d / box)
+        allpos = galaxies.positions[lead] + d + off
+        p_lead = allpos[lead]
+        dist = np.linalg.norm(allpos - p_lead, axis=1)
+        is_member = np.zeros(galaxies.count, bool)
+        is_member[idx] = True
+        near = np.flatnonzero(
+            ~is_member & (dist < R_WEB) & (galaxies.stellar_mass > 0)
+        )
+        near = near[np.argsort(-galaxies.stellar_mass[near])]
+        hd_near = [
+            k
+            for k in near
+            if dist[k] < R_NEIGH and galaxies.stellar_mass[k] > M_NEIGH
+        ][:N_NEIGH]
+        glow_near = [k for k in near if k not in set(hd_near)]
+
+        def entry(k, role, quality, magnify):
+            return {
+                "gal": sage_galaxy_from_snapshot(galaxies, int(k), h),
+                "center": allpos[int(k)],
+                "spin": spin_vector(galaxies, int(k)),
                 "prep": None,
+                "role": role,
+                "quality": quality,
+                "magnify": magnify,
             }
-            for i in idx
-        ]
-        quality = plan([e["gal"] for e in entries])
-        todo = [k for k, q in enumerate(quality) if q is not None]
+
+        group_q = plan(
+            [sage_galaxy_from_snapshot(galaxies, int(k), h) for k in idx]
+        )
+        many = len(idx) > 1  # a lone galaxy keeps its true size
+        entries = (
+            [
+                entry(k, "member", q, many)
+                for k, q in zip(idx, group_q, strict=True)
+            ]
+            + [entry(k, "neighbour", "lite", True) for k in hd_near]
+            + [entry(k, "neighbour", None, True) for k in glow_near]
+        )
+        partners = tidal_partners(entries, h)
+        todo = [k for k, e in enumerate(entries) if e["quality"]]
+
+        def args(k):
+            e = entries[k]
+            ctx = {
+                "spin": e["spin"],
+                "hubble_h": h,
+                "magnify": e["magnify"],
+                "partners": partners.get(k, []),
+            }
+            return (prepare_member, e["gal"], e["quality"], ctx)
 
         loop = _running_loop()
         if loop is None:
-            from visage.hd.layer import HDGalaxyLayer
-
             for k in todo:
-                entries[k]["prep"] = HDGalaxyLayer.prepare(
-                    entries[k]["gal"], quality[k]
-                )
+                fn, *a = args(k)
+                entries[k]["prep"] = fn(*a)
             _hd_show_group(entries, h)
             return
 
         state.hd_building = True
         n = len(todo)
-        word = "pair" if len(entries) == 2 else "group"
+        word = (
+            "galaxy" if len(idx) == 1 else "pair" if len(idx) == 2 else "group"
+        )
         state.hd_progress = f"Building HD {word}… 0/{n}"
         state.flush()
 
@@ -4471,12 +4496,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ex = None
 
                 async def _prep(k):
-                    args = (prepare_member, entries[k]["gal"], quality[k])
                     try:
-                        return await loop.run_in_executor(ex, *args)
+                        return await loop.run_in_executor(ex, *args(k))
                     except Exception:
                         # A broken worker pool: build it here instead.
-                        return await loop.run_in_executor(None, *args)
+                        return await loop.run_in_executor(None, *args(k))
 
                 futs = {asyncio.ensure_future(_prep(k)): k for k in todo}
                 done = 0
@@ -4495,8 +4519,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         loop.create_task(_build())
 
     def _hd_go_to_member() -> bool:
-        """If HD is showing a group and the Galaxy index is one of its HD
-        members, fly to it (keeping the view direction) and return True."""
+        """If HD is on and the Galaxy index is one of the galaxies drawn in
+        HD (a member or a neighbour), fly to it (keeping the view
+        direction) and return True."""
         import numpy as np
 
         grp = _hd["group"]
@@ -4509,10 +4534,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _, galaxies = scene.active_model.loader.get(scene.current_snap)
         if not 0 <= gidx < galaxies.count:
             return False
-        members = _group_members(galaxies, gidx)
-        if len(members) == 0:
-            return False
-        center = _member_position(galaxies, gidx, int(members[0]))
+        center = _member_position(galaxies, gidx, int(_hd["lead"]))
         m = grp.member_at(center)
         if m is None:
             return False
@@ -4535,7 +4557,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         radius = grp.radius_world
         if state.hd_gas:
             radius = max(radius, grp.rvir_world)
-        _hd_frame(grp.center, grp.basis, radius, keep_view=True)
+        _hd_frame(
+            grp.center, grp.basis, radius, keep_view=len(grp.members) > 1
+        )
 
     def _hd_drop(*_) -> None:
         """HD shows one snapshot of one model: changing either drops it

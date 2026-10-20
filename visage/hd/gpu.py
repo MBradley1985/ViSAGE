@@ -693,7 +693,7 @@ def prepare(
     sprinkle = [
         p for p in pts if not disk and p.name in ("field", "globulars")
     ]
-    vol = [p for p in pts if p.name in ("shells", "tails", "stream")]
+    vol = [p for p in pts if p.name in ("shells", "tails", "stream", "tidal")]
 
     tex = {}
     dummy3 = np.zeros((2, 2, 3), np.float32)

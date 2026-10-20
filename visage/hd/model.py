@@ -937,6 +937,45 @@ def _stream(rc, rng, lum_tot, rgb, n=20000):
     return Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.0), "stream")
 
 
+def tidal_points(
+    rc: GalaxyRecipe, direction, sep: float, strength: float, seed: int
+) -> Points:
+    """Tidal features raised by a close neighbour (Toomre & Toomre): a
+    bridge reaching toward it and a counter-tail flung out on the far side,
+    both trailing the disk's rotation (about +z).  `direction`: unit vector
+    to the neighbour and `sep` its distance, in this galaxy's model frame;
+    `strength` (0-1) from closeness and mass ratio.  Old-star light with a
+    blue tint from star formation the encounter triggers."""
+    rng = np.random.default_rng(seed)
+    u = np.asarray(direction, float)
+    u = u / max(np.linalg.norm(u), 1e-9)
+    e = rc.extent
+    main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
+    n = int(8000 + 24000 * strength)
+    bridge = rng.random(n) < 0.45
+    s = rng.random(n) ** 0.8  # more stars near the root
+    phi0 = np.arctan2(u[1], u[0])
+    r0 = 0.85 * e
+    # Bridge: out to about half way to the neighbour.
+    lb = max(0.5 * sep, r0 + 0.6 * e)
+    # Tail: longer the stronger the encounter.
+    lt = (1.2 + 2.0 * strength) * e
+    r = np.where(bridge, r0 + s * (lb - r0), r0 + s * lt)
+    phi = np.where(bridge, phi0 - 0.5 * s, phi0 + np.pi + 1.1 * s)
+    # Leaving the disk plane toward (bridge) / away from (tail) the
+    # neighbour's height.
+    z = np.where(bridge, 1.0, -0.5) * r * u[2] * s
+    w = 0.05 * e + 0.2 * e * s
+    pos = np.c_[
+        r * np.cos(phi) + rng.normal(0, 1, n) * w,
+        r * np.sin(phi) + rng.normal(0, 1, n) * w,
+        z + rng.normal(0, 1, n) * 0.4 * w,
+    ]
+    lum = np.full(n, 0.12 * strength * main_light / n) * (1.25 - s)
+    rgb = 0.75 * np.asarray(rc.old_rgb, float) + 0.25 * np.asarray(YOUNG_RGB)
+    return Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.2), "tidal")
+
+
 def _nuclear_ring(rc, rng, n=3000):
     """Star-forming ring around the bulge (driven by SfrBulge)."""
     th = rng.uniform(0, 2 * np.pi, n)

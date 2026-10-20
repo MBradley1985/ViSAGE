@@ -45,6 +45,27 @@ def galaxy_basis(spin: np.ndarray | None, seed: int) -> np.ndarray:
     return np.column_stack([e1, e2, e3])
 
 
+def normal_mode_radius_kpc(gal: SageGalaxy, hubble_h: float) -> float:
+    """The radius of a galaxy's stellar (disk) layer in the normal view
+    (visage.scene.galaxy_layer: 0.22 Rvir, by disk mass), in kpc."""
+    r_outer = max(gal.rvir_kpc * hubble_h / 1000.0, 0.02)  # Mpc/h
+    disk = max(gal.stellar_mass - gal.bulge_mass, 1.0)
+    f = float(np.clip((np.log10(disk) - 7.0) / 5.0, 0.0, 1.0))
+    return r_outer * 0.22 * (0.35 + 0.65 * f) * 1000.0 / hubble_h
+
+
+# Most a member is enlarged to match its normal-mode size.
+MAX_MAGNIFY = 5.0
+
+
+def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
+    """How much to enlarge a member's stars so they fill its normal-mode
+    stellar layer (true size when that is already smaller)."""
+    visible = rc.extent * rc.unit_kpc * 0.8  # kpc
+    r = normal_mode_radius_kpc(gal, hubble_h) / max(visible, 1e-6)
+    return float(np.clip(r, 1.0, MAX_MAGNIFY))
+
+
 # Texture resolutions per build quality.
 QUALITY = {
     "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 112},
@@ -122,17 +143,41 @@ class HDGalaxyLayer:
         return self._gpu.actor is not None
 
     @staticmethod
-    def prepare(gal: SageGalaxy, quality: str = "full") -> dict:
+    def prepare(
+        gal: SageGalaxy, quality: str = "full", context: dict | None = None
+    ) -> dict:
         """Everything CPU-heavy in a build (numpy only, so it can run on a
         worker thread while the UI says what is happening).  `quality`
         (QUALITY key) sets texture resolutions: lower for the many members
-        of a group, each of which is small on screen."""
+        of a group, each of which is small on screen.
+
+        `context` (a galaxy among others): "spin", "hubble_h", "magnify"
+        (bool) and "partners", a list of (unit vector to the neighbour in
+        world coordinates, distance in Mpc/h, strength) for the tidal
+        features close neighbours raise."""
         from visage.hd.gpu import prepare
+        from visage.hd.model import tidal_points
 
         q = QUALITY[quality]
         rc = recipe_from_sage(gal)
         maps = build_disk_maps(rc, n=q["map_n"]) if rc.kind == "disk" else None
         pts = build_points(rc, maps)
+        ctx = context or {}
+        if ctx.get("partners"):
+            h = ctx["hubble_h"]
+            R = galaxy_basis(ctx.get("spin"), rc.seed)
+            mag = magnification(gal, rc, h) if ctx.get("magnify") else 1.0
+            mpch_per_unit = rc.unit_kpc * mag * h / 1000.0
+            for k, (u, sep, strength) in enumerate(ctx["partners"]):
+                pts.append(
+                    tidal_points(
+                        rc,
+                        R.T @ np.asarray(u, float),
+                        sep / mpch_per_unit,
+                        strength,
+                        rc.seed + 101 + k,
+                    )
+                )
         return {
             "gal": gal,
             "rc": rc,
