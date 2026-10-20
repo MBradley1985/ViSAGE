@@ -348,6 +348,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.hd_active = False  # HD model of the selected galaxy (Target tab)
     state.hd_building = False  # its build is running (message shown)
     state.hd_progress = ""  # the message
+    state.hd_percent = -1  # its progress, 0-100 (-1: indeterminate)
     state.hd_gas = False  # its halo-gas overlay
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
@@ -4485,6 +4486,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             "galaxy" if len(idx) == 1 else "pair" if len(idx) == 2 else "group"
         )
         state.hd_progress = f"Building HD {word}… 0/{n}"
+        state.hd_percent = 0
         state.flush()
 
         async def _build():
@@ -4508,6 +4510,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     await fut
                     done += 1
                     state.hd_progress = f"Building HD {word}… {done}/{n}"
+                    state.hd_percent = int(100 * done / max(n, 1))
                     state.flush()
                 for fut, k in futs.items():
                     entries[k]["prep"] = fut.result()
@@ -4590,41 +4593,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # ------------------------------------------------------------------
     # UI helper
     # ------------------------------------------------------------------
-
-    def _hd_controls(click, btn_id, disabled, title):
-        """HD button + Gas checkbox (shared) + build message."""
-        with v3.VSheet(
-            color="transparent",
-            style="display:flex;align-items:center;gap:12px;padding:2px 0;",
-        ):
-            v3.VBtn(
-                "HD",
-                variant=("hd_active ? 'flat' : 'outlined'",),
-                color=("hd_active ? 'cyan' : '#FFD700'",),
-                density="compact",
-                prepend_icon="mdi-creation",
-                click=click,
-                loading=("hd_building",),
-                disabled=(f"hd_building || {disabled}",),
-                title=title,
-                id=btn_id,
-            )
-            v3.VCheckbox(
-                v_model=("hd_gas",),
-                label="Gas",
-                color="#FFD700",
-                hide_details=True,
-                density="compact",
-                title="Show the halo gas: CGM, hot gas, winds and jets",
-            )
-        v3.VLabel(
-            "{{ hd_progress }}",
-            v_show=("hd_building",),
-            style=(
-                "font-size:0.7rem;color:#67e8f9;display:block;"
-                "padding:2px 0 0;"
-            ),
-        )
 
     def _tf(v_model, label, on_enter=None, target_id=None):
         """Number-input helper. Enter binds via `target_id` (the id of
@@ -4719,6 +4687,36 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         click=ctrl.toggle_isolate,
                         color=("isolate_active ? 'cyan' : 'white'",),
                         title="Isolate selected halo/galaxy",
+                    )
+                with v3.VCol(cols="auto", style="padding:0;"):
+                    v3.VBtn(
+                        "HD",
+                        variant=("hd_active ? 'flat' : 'outlined'",),
+                        density="compact",
+                        click=ctrl.toggle_hd,
+                        color=("hd_active ? 'cyan' : '#FFD700'",),
+                        loading=("hd_building",),
+                        disabled=(
+                            "hd_building || nav_gal_idx === null "
+                            "|| nav_gal_idx < 0",
+                        ),
+                        style="min-width:0;padding:0 8px;",
+                        title=(
+                            "HD: the selected galaxy (its whole pair, group "
+                            "or cluster, with its surroundings) as detailed "
+                            "3D models built from its SAGE properties"
+                        ),
+                        id="btn-hd-galaxy",
+                    )
+                with v3.VCol(cols="auto", style="padding:0;"):
+                    v3.VBtn(
+                        icon="mdi-weather-windy",
+                        variant=("hd_gas ? 'flat' : 'outlined'",),
+                        density="compact",
+                        click="hd_gas = !hd_gas",
+                        color=("hd_gas ? 'cyan' : 'white'",),
+                        title="HD gas: CGM, hot gas, winds and jets",
+                        id="btn-hd-gas",
                     )
 
         v3.VDivider(style="flex-shrink:0;")
@@ -4998,16 +4996,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="#FFD700",
                         click=ctrl.go_to_galaxy_5,
                     )
-
-                # HD model of the selected galaxy, then its gas overlay.
-                v3.VDivider(style="margin:14px 0 10px;")
-                _hd_controls(
-                    ctrl.toggle_hd,
-                    "btn-hd-galaxy",
-                    "nav_gal_idx === null || nav_gal_idx < 0",
-                    "Isolate the selected galaxy as a detailed 3D model "
-                    "built from its SAGE properties",
-                )
 
                 v3.VDivider(style="margin:14px 0 10px;")
 

@@ -1371,6 +1371,44 @@ def create_app(
                     # Story Mode text / equation overlays (over the render).
                     build_story_overlays(server)
 
+                    # HD build message: what is being built and how far.
+                    with html.Div(
+                        v_show=("hd_building",),
+                        style=(
+                            "position:absolute;inset:0;z-index:7;"
+                            "display:flex;align-items:center;"
+                            "justify-content:center;pointer-events:none;"
+                        ),
+                    ):
+                        with v3.VCard(
+                            style=(
+                                "padding:22px 30px;min-width:420px;"
+                                "background:rgba(10,10,26,0.88);"
+                                "border:1px solid #06b6d4;"
+                            ),
+                        ):
+                            html.Div(
+                                "{{ hd_progress }}",
+                                style=(
+                                    "font-size:1.5rem;font-weight:600;"
+                                    "color:#e2e8f0;margin-bottom:12px;"
+                                ),
+                            )
+                            v3.VProgressLinear(
+                                model_value=("hd_percent",),
+                                indeterminate=("hd_percent < 0",),
+                                color="cyan",
+                                height=10,
+                                rounded=True,
+                            )
+                            html.Div(
+                                "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
+                                style=(
+                                    "font-size:1.1rem;color:#67e8f9;"
+                                    "margin-top:8px;text-align:right;"
+                                ),
+                            )
+
                     # Pre-rendered playback overlay — shown only during
                     # playback, where it flips through the cached frames. While
                     # frames are being rendered the live view stays put (the
