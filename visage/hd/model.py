@@ -618,6 +618,8 @@ def recipe_from_sage(
         notes.append(
             f"z={g.redshift:.1f}{' FFB' if g.ffb else ''} -> {clumps} giant clumps"
         )
+        l_young *= CLUMPY["young"]
+        n_clusters = max(int(n_clusters * CLUMPY["clusters"]), 50)
     # Satellites: ram pressure and tides strip the gas disk from the
     # outside in, the longer since infall and the more of the subhalo
     # lost; star formation (young light, dust) stops beyond the cut.
@@ -724,6 +726,28 @@ class PlaneMaps:
         return map_coordinates(
             arr, [iy.ravel(), ix.ravel()], order=1, mode="constant", cval=0.0
         ).reshape(xg.shape)
+
+
+# Clumpy (high-z / FFB) disks: how their young light and giant clumps are
+# drawn.  young / clusters scale the young light and the number of young
+# clusters; amp, base, width and wing shape the giant clumps against the
+# young disk; conc, spread and hii how the clusters and HII regions follow
+# them (higher conc: more on the clumps).
+# Chosen by the user from options on SAGE26 galaxies ("E5", a little more
+# diffuse): a calm disk, young light only faintly gathered into clumps.
+CLUMPY = dict(
+    young=0.28,
+    clusters=0.08,
+    amp=0.12,
+    base=1.0,
+    width=(0.35, 0.7),
+    wing=0.5,
+    conc=1.0,
+    spread=1.5,
+    hii=1.2,
+)
+# Merger debris (shells, tails, streams): its share of the galaxy's light.
+DEBRIS = 0.65
 
 
 def arm_layout(cls: str, extent: float, r_base: float, rng):
@@ -889,13 +913,16 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         for _ in range(rc.clumps):
             rr = rc.extent * 0.75 * np.sqrt(crng.random())
             tt = crng.uniform(0, 2 * np.pi)
-            w = crng.uniform(0.25, 0.5)
+            w = crng.uniform(*CLUMPY["width"])
             d2 = (x - rr * np.cos(tt)) ** 2 + (y - rr * np.sin(tt)) ** 2
             giant += crng.uniform(0.5, 1.0) * (
                 np.exp(-d2 / (2 * w * w))
-                + 0.3 * np.exp(-d2 / (2 * (2.2 * w) ** 2))
+                + CLUMPY["wing"] * np.exp(-d2 / (2 * (2.2 * w) ** 2))
             )
-        young = 0.5 * young + 1.7 * giant * np.exp(-r / 3.0) * outer_cut
+        young = (
+            CLUMPY["base"] * young
+            + CLUMPY["amp"] * giant * np.exp(-r / 3.0) * outer_cut
+        )
 
     # Dust lanes sit on the inner (concave) edge of the arm.
     arm_d = _arm_field(
@@ -996,12 +1023,12 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         # (A clumpy disk's clusters spread through the turbulent disk
         # between its giant clumps too, not only on them.)
         n_cx = max(rc.n_clusters // 6, 10)
-        conc = 1.0 if rc.clumps else 1.3
+        conc = CLUMPY["conc"] if rc.clumps else 1.3
         cx, cy = _sample_map(maps.young**conc, maps.half, n_cx, rng)
         k = rng.integers(2, 11, n_cx)
         csz = np.repeat(rng.uniform(0.015, 0.06, n_cx), k)
         if rc.clumps:
-            csz *= 1.8
+            csz *= CLUMPY["spread"]
         px = np.repeat(cx, k) + rng.normal(0, 1, k.sum()) * csz
         py = np.repeat(cy, k) + rng.normal(0, 1, k.sum()) * csz
         m = len(px)
@@ -1022,7 +1049,7 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
 
         # HII regions: follow H2 where young stars are, soft and fuzzy.
         hx, hy = _sample_map(
-            (maps.h2 * maps.young) ** (0.95 if rc.clumps else 1.2),
+            (maps.h2 * maps.young) ** (CLUMPY["hii"] if rc.clumps else 1.2),
             maps.half,
             rc.n_hii,
             rng,
@@ -1099,11 +1126,17 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         out.append(_halpha_filaments(rc, rng, 0.6 * rc.halpha * main_light))
     # Merger debris (both kinds), all in old-star colours.
     if rc.shells > 0:
-        out.append(_shells(rc, rng, 0.05 * rc.shells * main_light, old_rgb))
+        out.append(
+            _shells(rc, rng, DEBRIS * 0.05 * rc.shells * main_light, old_rgb)
+        )
     if rc.tails > 0:
-        out.append(_tails(rc, rng, 0.08 * rc.tails * main_light, old_rgb))
+        out.append(
+            _tails(rc, rng, DEBRIS * 0.08 * rc.tails * main_light, old_rgb)
+        )
     if rc.stream > 0:
-        out.append(_stream(rc, rng, 0.025 * rc.stream * main_light, old_rgb))
+        out.append(
+            _stream(rc, rng, DEBRIS * 0.025 * rc.stream * main_light, old_rgb)
+        )
     return out
 
 
