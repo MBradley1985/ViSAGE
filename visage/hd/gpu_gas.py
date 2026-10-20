@@ -153,7 +153,11 @@ GLSL_IMPL = """
       }
       st *= 1.0 - exp(-pow(R / (0.04 * rvir), 2.0));
       float fil = exp(-pow(fbm2(cpk / (0.5 * rvir) + vec3(37.0)) / uFbm2Std / 0.35, 2.0));
-      float clump = exp(0.55 * fbm6(cpk / (0.08 * rvir) + vec3(51.0)) / uFbm6Std);
+      // Lognormal clumping, with the bright tail soft-capped so one rare
+      // clump on a stream near the core can't outshine the whole halo.
+      float zc = fbm6(cpk / (0.08 * rvir) + vec3(51.0)) / uFbm6Std;
+      if (zc > 0.0) zc = 1.2 * (1.0 - 2.0 / (exp(2.0 * zc / 1.2) + 1.0));
+      float clump = exp(0.55 * zc);
       float cgm = env * (0.12 + 0.8 * st + 0.35 * fil) * clump;
       cgm *= exp(-pow(R / (0.95 * rvir), 8.0));
       gas += uStreamAmp * (cgm / uStreamNorm) * uCgmRGB;
@@ -316,7 +320,9 @@ class GasSpec:
         fil = np.exp(
             -((fbm2(P / (0.5 * rv) + 37.0) / _std("fbm2") / 0.35) ** 2)
         )
-        clump = np.exp(0.55 * fbm6(P / (0.08 * rv) + 51.0) / _std("fbm6"))
+        zc = fbm6(P / (0.08 * rv) + 51.0) / _std("fbm6")
+        zc = np.where(zc > 0, 1.2 * np.tanh(zc / 1.2), zc)
+        clump = np.exp(0.55 * zc)
         cgm = (
             env
             * (0.12 + 0.8 * st + 0.35 * fil)
