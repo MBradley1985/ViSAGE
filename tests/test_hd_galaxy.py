@@ -342,7 +342,11 @@ def test_hd_draws_the_whole_group(hd_panel):
     state.flush()
     ctrl.go_to_galaxy_enter()
     assert state.hd_active and grp.active
-    target = galaxies.positions[5] + scene.active_model.offset
+    # (at its periodic image nearest the central, as the group is drawn)
+    box = float(scene.active_model.box_size)
+    central = grp.members[0]._center - scene.active_model.offset
+    d = galaxies.positions[5] - central
+    target = central + d - box * np.round(d / box) + scene.active_model.offset
     assert np.allclose(scene.plotter.camera.focal_point, target, atol=1e-4)
     state.hd_gas = True
     state.flush()
@@ -380,3 +384,45 @@ def test_group_members_build_in_the_process_pool():
             group._POOL["pool"] = None
     assert prep["rc"].kind == "disk"
     assert prep["gpu"]["tex"]["mapTex"][0].shape == (384, 384, 3)
+
+
+def test_hd_is_dropped_when_the_snapshot_changes(hd_panel):
+    server, _ = hd_panel
+    state, ctrl = server.state, server.controller
+    state.snap_num = 63
+    state.nav_gal_idx = 0
+    state.flush()
+    ctrl.toggle_hd()
+    state.flush()
+    assert state.hd_active
+    state.snap_num = 62
+    state.flush()
+    assert not state.hd_active and not state.isolate_active
+
+
+def test_group_across_the_box_edge_stays_together(hd_panel):
+    """Members on the far side of the periodic box are drawn at their image
+    next to the central; everyone else exactly on the catalogue position."""
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    box = float(scene.active_model.box_size)
+    galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
+    galaxies.central_id[[0, 1]] = 77
+    galaxies.gal_type[0], galaxies.gal_type[1] = 0, 1
+    galaxies.positions[0] = [0.5, 30.0, 30.0]
+    galaxies.positions[1] = [box - 0.3, 30.2, 30.0]  # just across the edge
+    state.nav_gal_idx = 0
+    ctrl.toggle_hd()
+    state.flush()
+    import gc
+
+    from visage.hd.group import HDGroupLayer
+
+    grp = [o for o in gc.get_objects() if isinstance(o, HDGroupLayer)][0]
+    off = scene.active_model.offset
+    centers = sorted(m._center[0] - off[0] for m in grp.members)
+    assert centers == pytest.approx([-0.3, 0.5], abs=1e-4)
+    assert grp.radius_world < 2.0  # framed on the pair, not the whole box
+    ctrl.toggle_hd()
+    state.flush()

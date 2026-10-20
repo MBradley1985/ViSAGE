@@ -4228,7 +4228,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     # "mode": what HD is showing -- "galaxy" (one galaxy) or "halo" (every
     # member of a pair, group or cluster).
-    _hd: dict = {"layer": None, "group": None, "mode": None}
+    _hd: dict = {
+        "layer": None,
+        "group": None,
+        "mode": None,
+        "built_snap": None,  # the snapshot the HD model shows
+    }
 
     def _hd_layer():
         if _hd["layer"] is None:
@@ -4254,6 +4259,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 lay.clear()
                 _push()
         _hd["mode"] = None
+        _hd["built_snap"] = None
         state.hd_active = False
 
     def _hd_off() -> None:
@@ -4383,6 +4389,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
         lay.show(gal, center, spin, h, gas=bool(state.hd_gas), prep=prep)
         _hd["mode"] = "galaxy"
+        _hd["built_snap"] = state.snap_num
         radius = lay.rvir_world if state.hd_gas else lay.radius_world
         _hd_frame(center, lay._R, radius)
 
@@ -4402,6 +4409,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         return idx[order]
 
+    def _member_position(galaxies, i: int, ref: int):
+        """World position of member `i`, at its periodic image nearest the
+        group's central `ref` (a group straddling the box edge stays
+        together); identical to the catalogue position otherwise."""
+        import numpy as np
+
+        p = np.asarray(galaxies.positions[i], float)
+        if not scene.is_lightcone:
+            box = float(scene.active_model.box_size)
+            c = np.asarray(galaxies.positions[ref], float)
+            d = p - c
+            p = c + d - box * np.round(d / box)
+        return p + scene.active_model.offset
+
     def _hd_build_group(galaxies, idx) -> None:
         """Every member of the group in HD at its own position and spin
         (the most massive in full; the tail of a big cluster as glows),
@@ -4412,11 +4433,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         from visage.hd.group import plan, pool, prepare_member
 
         h = float(scene._cfg.hubble_h)
-        off = scene.active_model.offset
         entries = [
             {
                 "gal": sage_galaxy_from_snapshot(galaxies, int(i), h),
-                "center": galaxies.positions[int(i)] + off,
+                "center": _member_position(galaxies, int(i), int(idx[0])),
                 "spin": spin_vector(galaxies, int(i)),
                 "prep": None,
             }
@@ -4489,7 +4509,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _, galaxies = scene.active_model.loader.get(scene.current_snap)
         if not 0 <= gidx < galaxies.count:
             return False
-        center = galaxies.positions[gidx] + scene.active_model.offset
+        members = _group_members(galaxies, gidx)
+        if len(members) == 0:
+            return False
+        center = _member_position(galaxies, gidx, int(members[0]))
         m = grp.member_at(center)
         if m is None:
             return False
@@ -4508,10 +4531,30 @@ def build_navigation_panel(server, scene: Scene) -> None:
         grp = _hd_group()
         grp.show(entries, h, gas=bool(state.hd_gas))
         _hd["mode"] = "halo"
+        _hd["built_snap"] = state.snap_num
         radius = grp.radius_world
         if state.hd_gas:
             radius = max(radius, grp.rvir_world)
         _hd_frame(grp.center, grp.basis, radius, keep_view=True)
+
+    def _hd_drop(*_) -> None:
+        """HD shows one snapshot of one model: changing either drops it
+        (as it drops Isolate), so nothing is left at stale positions."""
+        if not bool(state.hd_active) and not bool(state.hd_building):
+            return
+        _clear_draw_widgets()
+        state.isolate_active = False
+        state.focus_active = False
+        scene.clear_focus()
+        _stop_hd()
+        _push()
+
+    @state.change("snap_num")
+    def on_snap_change_hd(snap_num=None, **_):
+        if _hd["built_snap"] is not None and snap_num != _hd["built_snap"]:
+            _hd_drop()
+
+    scene.register_model_change_callback(_hd_drop)
 
     @state.change("hd_gas")
     def on_hd_gas_change(hd_gas=False, **_):
