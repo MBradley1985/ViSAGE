@@ -112,12 +112,30 @@ GLSL_IMPL = """
     float rvir = uRvirKpc;
     vec3 gas = vec3(0.0);
 
+    // Spin axis (galaxy +z) projected on the image plane.
+    vec3 ax = vec3(0.0, 0.0, 1.0) - rd.z * rd;
+    float proj = length(ax);
+    vec3 axd = proj > 1e-3 ? ax / proj : ex;
+    float along = dot(cpk, axd);
+    float perp = length(cpk - along * axd);
+
     if (uHotOpacity > 0.0) {
       float sb = pow(1.0 + pow(R / (0.15 * rvir), 2.0), -0.5) * exp(-pow(R / rvir, 8.0));
       if (uHotLog > 0.5) sb = log(1.0 + sb / 0.02) / log(1.0 + 1.0 / 0.02);
       float wob = exp(0.3 * fbm(cpk / (0.25 * rvir) + vec3(11.0)) / uFbmStd);
       sb *= 1.0 - 0.85 * exp(-pow(R / (1.6 * uRinKpc * wob), 2.0));
       sb /= (uHotLog > 0.5 ? uHotNormLog : uHotNormLin);
+      if (uCavAmp > 0.0) {
+        // X-ray cavities: bubbles the radio jets inflate at the AGN heating
+        // radius, along the jet axis, with slightly brighter rims.
+        for (int k = 0; k < 2; k++) {
+          float sgn = k == 0 ? 1.0 : -1.0;
+          vec3 c = sgn * uCavR * max(proj, 0.3) * axd;
+          float d = length(cpk - c) / (0.55 * uCavR);
+          sb *= 1.0 - 0.8 * uCavAmp * exp(-pow(d, 4.0));
+          sb *= 1.0 + 0.35 * uCavAmp * exp(-pow((d - 1.0) / 0.18, 2.0));
+        }
+      }
       float tex = exp(0.15 * fbm(cpk / (0.06 * rvir) + vec3(23.0)) / uFbmStd);
       gas += uHotOpacity * sb * tex * uHotRGB;
     }
@@ -140,13 +158,6 @@ GLSL_IMPL = """
       cgm *= exp(-pow(R / (0.95 * rvir), 8.0));
       gas += uStreamAmp * (cgm / uStreamNorm) * uCgmRGB;
     }
-
-    // Spin axis (galaxy +z) projected on the image plane.
-    vec3 ax = vec3(0.0, 0.0, 1.0) - rd.z * rd;
-    float proj = length(ax);
-    vec3 axd = proj > 1e-3 ? ax / proj : ex;
-    float along = dot(cpk, axd);
-    float perp = length(cpk - along * axd);
 
     if (uJetAmp > 0.0) {
       float pj = max(proj, 0.25);
@@ -217,6 +228,41 @@ class GasSpec:
             float(np.clip(8 * gal.outflow_rate**0.35, 4, 40))
             + self.disk_r * 0.5
         )
+        # Winds reach further the more gas has been blown right out of the
+        # halo (SAGE's ejected reservoir).
+        halo_gas = gal.hot_gas + gal.cgm_gas + gal.ejected
+        if gal.ejected > 0 and halo_gas > 0:
+            self.wind_len *= 1.0 + 1.5 * float(gal.ejected / halo_gas)
+
+        # Cavities where radio-mode heating reaches (hot haloes).
+        self.cav_r = 0.0
+        self.cav = 0.0
+        if (
+            gal.regime == 1
+            and gal.hot_gas > 0
+            and self.jet > 0
+            and 0 < gal.r_heat_kpc < 0.5 * self.rvir
+        ):
+            self.cav_r = float(max(gal.r_heat_kpc, 10.0))
+            self.cav = float(np.clip(0.4 + 0.6 * self.jet, 0.0, 1.0))
+
+        # Gas colours tinted by their metallicity.
+        self.hot_rgb = np.asarray(HOT_GAS_RGB, float)
+        if gal.hot_gas > 0 and gal.metals_hot > 0:
+            zh = np.clip(
+                np.log10(gal.metals_hot / gal.hot_gas / 0.02), -1.0, 0.3
+            )
+            self.hot_rgb = self.hot_rgb * np.array(
+                [1 + 0.12 * zh, 1.0, 1 - 0.08 * zh]
+            )
+        self.cgm_rgb = np.asarray(CGM_RGB, float)
+        if gal.cgm_gas > 0 and gal.metals_cgm > 0:
+            zc = np.clip(
+                np.log10(gal.metals_cgm / gal.cgm_gas / 0.02), -1.5, 0.3
+            )
+            self.cgm_rgb = self.cgm_rgb * np.array(
+                [1.0, 1 + 0.1 * zc, 1 - 0.1 * zc]
+            )
         self.wind_open = float(
             np.deg2rad(np.clip(25 + 5 * gal.mass_loading, 20, 45))
         )
@@ -300,7 +346,9 @@ class GasSpec:
         f("uWindLen", float(self.wind_len))
         f("uWindOpen", float(self.wind_open))
         f("uDiskRKpc", float(self.disk_r))
-        u.SetUniform3f("uHotRGB", [float(v) for v in HOT_GAS_RGB])
-        u.SetUniform3f("uCgmRGB", [float(v) for v in CGM_RGB])
+        u.SetUniform3f("uHotRGB", [float(v) for v in self.hot_rgb])
+        u.SetUniform3f("uCgmRGB", [float(v) for v in self.cgm_rgb])
+        f("uCavR", float(self.cav_r))
+        f("uCavAmp", float(self.cav))
         u.SetUniform3f("uJetRGB", [float(v) for v in JET_RGB])
         u.SetUniform3f("uWindRGB", [float(v) for v in WIND_RGB])

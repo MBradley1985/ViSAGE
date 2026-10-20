@@ -21,7 +21,25 @@ def _field(snap, name, i, default=0.0):
     return float(arr[i])
 
 
-def sage_galaxy_from_snapshot(snap, i: int, hubble_h: float) -> SageGalaxy:
+def cosmic_time_gyr(a: float, hubble_h: float, omega_m: float) -> float:
+    """Age of a flat LCDM universe at scale factor `a`, Gyr."""
+    ol = 1.0 - omega_m
+    t_h = 9.7779 / hubble_h  # 1/H0 in Gyr
+    return float(
+        2.0
+        / (3.0 * np.sqrt(ol))
+        * t_h
+        * np.arcsinh(np.sqrt(ol / omega_m) * max(a, 1e-4) ** 1.5)
+    )
+
+
+def sage_galaxy_from_snapshot(
+    snap,
+    i: int,
+    hubble_h: float,
+    snap_table=None,
+    omega_m: float = 0.25,
+) -> SageGalaxy:
     """One galaxy of a GalaxySnapshot, in the physical units the recipe uses.
 
     Snapshot masses are already in Msun; radii are Mpc/h (-> kpc).  Fields
@@ -31,6 +49,20 @@ def sage_galaxy_from_snapshot(snap, i: int, hubble_h: float) -> SageGalaxy:
     """
     kpc = 1e3 / hubble_h
     mass = 1e10 / hubble_h
+    # The snapshot's redshift, and (satellites) the time since infall: SAGE
+    # writes TimeOfInfall as the snapshot it became a satellite.
+    z, t_inf = 0.0, -1.0
+    if snap_table is not None:
+        sn = int(getattr(snap, "snap_num", -1))
+        if 0 <= sn < snap_table.count:
+            z = float(snap_table.snap_to_z(sn))
+            s_in = int(_field(snap, "time_of_infall", i))
+            if 0 < s_in <= sn and int(_field(snap, "gal_type", i)) > 0:
+                t_inf = cosmic_time_gyr(
+                    snap_table.snap_to_a(sn), hubble_h, omega_m
+                ) - cosmic_time_gyr(
+                    snap_table.snap_to_a(s_in), hubble_h, omega_m
+                )
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
         stellar_mass=_field(snap, "stellar_mass", i),
@@ -63,6 +95,32 @@ def sage_galaxy_from_snapshot(snap, i: int, hubble_h: float) -> SageGalaxy:
         rcool_to_rvir=_extra(snap, "RcoolToRvir", i, -1.0),
         concentration=_field(snap, "concentration", i, 8.0),
         heating_log=_field(snap, "heating", i),
+        redshift=z,
+        ffb=int(_field(snap, "ffb_regime", i)),
+        vel=tuple(_extra(snap, f"Vel{c}", i) for c in "xyz"),
+        vmax=_field(snap, "vmax", i),
+        vel_disp=_extra(snap, "VelDisp", i),
+        mvir=_field(snap, "mvir", i) * mass,
+        infall_mvir=_extra(snap, "infallMvir", i) * mass,
+        infall_stellar_mass=_extra(snap, "infallStellarMass", i) * mass,
+        t_since_infall_gyr=t_inf,
+        merge_type=int(_extra(snap, "mergeType", i)),
+        merger_bulge_radius_kpc=_field(snap, "merger_bulge_radius", i) * kpc,
+        instability_bulge_radius_kpc=(
+            _field(snap, "instability_bulge_radius", i) * kpc
+        ),
+        metals_bulge=_field(snap, "metals_bulge_mass", i),
+        metals_hot=_field(snap, "metals_hot_gas", i),
+        metals_cgm=_field(snap, "metals_cgm_gas", i),
+        metals_ics=_field(snap, "metals_ics", i),
+        sfr_disk_z=_field(snap, "sfr_disk_z", i),
+        ejected=_field(snap, "ejected_mass", i),
+        ics_disrupt=_extra(snap, "ICS_disrupt", i) * mass,
+        ics_accrete=_extra(snap, "ICS_accrete", i) * mass,
+        r_heat_kpc=_extra(snap, "r_heat", i) * kpc,
+        tcool_gyr=_extra(snap, "tcool", i),
+        tff_gyr=_extra(snap, "tff", i),
+        mdot_cool=_extra(snap, "mdot_cool", i),
     )
 
 

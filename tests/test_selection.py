@@ -119,6 +119,7 @@ def test_nothing_is_selected_at_startup(panel):
     server, scene = panel
     state = server.state
     assert state.nav_gal_idx is None and not state.sel_show
+    assert not state.hd_gas  # gas starts off (the card's Gas button)
     assert not scene.camera.marker.active
 
 

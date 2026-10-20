@@ -68,19 +68,72 @@ FIELDS = [
     "Concentration",
     "Heating",
 ]
+# Optional (newer SAGE26 outputs); missing ones read as zero.
+OPTIONAL = [
+    "Posx",
+    "Posy",
+    "Posz",
+    "Velx",
+    "Vely",
+    "Velz",
+    "Vmax",
+    "VelDisp",
+    "Mvir",
+    "infallMvir",
+    "infallStellarMass",
+    "TimeOfInfall",
+    "mergeType",
+    "MergerBulgeRadius",
+    "InstabilityBulgeRadius",
+    "MetalsBulgeMass",
+    "MetalsHotGas",
+    "MetalsCGMgas",
+    "MetalsIntraClusterStars",
+    "SfrDiskZ",
+    "EjectedMass",
+    "ICS_disrupt",
+    "ICS_accrete",
+    "r_heat",
+    "tcool",
+    "tff",
+    "mdot_cool",
+    "FFBRegime",
+    "CentralGalaxyIndex",
+    "Spinx",
+    "Spiny",
+    "Spinz",
+]
 
 
-def load(sim="millennium"):
-    """z=0 galaxies of one SAGE26 run, every model_N.hdf5 file stacked."""
-    snap = SIMS[sim]
+def load(sim="millennium", snap=None):
+    """One snapshot (default z=0) of a SAGE26 run, every model_N.hdf5 file
+    stacked."""
+    snap = SIMS[sim] if snap is None else int(snap)
     files = sorted((SAGE26_OUT / sim).glob("model_[0-9]*.hdf5"))
-    parts = {k: [] for k in FIELDS}
+    parts = {k: [] for k in FIELDS + OPTIONAL}
     for p in files:
         with h5py.File(p, "r") as f:
             h = float(f["Header/Simulation"].attrs["hubble_h"])
-            for k in FIELDS:
-                parts[k].append(f[f"Snap_{snap}/{k}"][:])
+            om = float(f["Header/Simulation"].attrs["omega_matter"])
+            zs = np.asarray(f["Header/snapshot_redshifts"][:], float)
+            grp = f[f"Snap_{snap}"]
+            z = float(grp.attrs.get("redshift", zs[snap]))
+            n = len(grp["StellarMass"])
+            for k in FIELDS + OPTIONAL:
+                parts[k].append(grp[k][:] if k in grp else np.zeros(n))
     g = {k: np.concatenate(v) for k, v in parts.items()}
+    g["redshift"], g["snap"], g["hubble_h"] = z, snap, h
+    # Time since infall (TimeOfInfall is the snapshot it became a satellite).
+    from visage.hd.adapter import cosmic_time_gyr
+
+    t_now = cosmic_time_gyr(1 / (1 + z), h, om)
+    s_in = g["TimeOfInfall"].astype(int)
+    a_in = 1 / (1 + zs[np.clip(s_in, 0, len(zs) - 1)])
+    g["t_since_infall"] = np.where(
+        (g["Type"] > 0) & (s_in > 0) & (s_in <= snap),
+        t_now - np.array([cosmic_time_gyr(a, h, om) for a in a_in]),
+        -1.0,
+    )
     for k in [
         "StellarMass",
         "BulgeMass",
@@ -96,9 +149,26 @@ def load(sim="millennium"):
         "MetalsStellarMass",
         "QuasarModeBHaccretionMass",
         "IntraClusterStars",
+        "Mvir",
+        "infallMvir",
+        "infallStellarMass",
+        "MetalsBulgeMass",
+        "MetalsHotGas",
+        "MetalsCGMgas",
+        "MetalsIntraClusterStars",
+        "EjectedMass",
+        "ICS_disrupt",
+        "ICS_accrete",
     ]:
         g[k] = g[k].astype(np.float64) * 1e10 / h
-    for k in ["DiskRadius", "BulgeRadius", "Rvir"]:
+    for k in [
+        "DiskRadius",
+        "BulgeRadius",
+        "Rvir",
+        "MergerBulgeRadius",
+        "InstabilityBulgeRadius",
+        "r_heat",
+    ]:
         g[k] = g[k].astype(np.float64) * 1e3 / h  # kpc
     g["sim"] = sim
     return g
@@ -137,6 +207,30 @@ def to_galaxy(g, i) -> SageGalaxy:
         rcool_to_rvir=float(g["RcoolToRvir"][i]),
         concentration=float(g["Concentration"][i]),
         heating_log=float(g["Heating"][i]),
+        redshift=float(g["redshift"]),
+        ffb=int(g["FFBRegime"][i]),
+        vel=(float(g["Velx"][i]), float(g["Vely"][i]), float(g["Velz"][i])),
+        vmax=float(g["Vmax"][i]),
+        vel_disp=float(g["VelDisp"][i]),
+        mvir=float(g["Mvir"][i]),
+        infall_mvir=float(g["infallMvir"][i]),
+        infall_stellar_mass=float(g["infallStellarMass"][i]),
+        t_since_infall_gyr=float(g["t_since_infall"][i]),
+        merge_type=int(g["mergeType"][i]),
+        merger_bulge_radius_kpc=float(g["MergerBulgeRadius"][i]),
+        instability_bulge_radius_kpc=float(g["InstabilityBulgeRadius"][i]),
+        metals_bulge=float(g["MetalsBulgeMass"][i]),
+        metals_hot=float(g["MetalsHotGas"][i]),
+        metals_cgm=float(g["MetalsCGMgas"][i]),
+        metals_ics=float(g["MetalsIntraClusterStars"][i]),
+        sfr_disk_z=float(g["SfrDiskZ"][i]),
+        ejected=float(g["EjectedMass"][i]),
+        ics_disrupt=float(g["ICS_disrupt"][i]),
+        ics_accrete=float(g["ICS_accrete"][i]),
+        r_heat_kpc=float(g["r_heat"][i]),
+        tcool_gyr=float(g["tcool"][i]),
+        tff_gyr=float(g["tff"][i]),
+        mdot_cool=float(g["mdot_cool"][i]),
     )
 
 

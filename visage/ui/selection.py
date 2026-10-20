@@ -65,7 +65,7 @@ def selection_card(server) -> None:
         classes="sage-popout",
         style=(
             "position:absolute;top:32px;left:24px;"
-            "width:300px;max-height:calc(100% - 56px);"
+            "width:330px;max-height:calc(100% - 56px);"
             "display:flex;flex-direction:column;"
             "background:rgba(17,24,39,0.88);backdrop-filter:blur(6px);"
             "border:1px solid #0e7490;color:#e2e8f0;z-index:5;"
@@ -127,7 +127,7 @@ def selection_card(server) -> None:
                 )
         # Actions.
         with html.Div(
-            style="display:flex;gap:6px;padding:8px 12px;flex-shrink:0;"
+            style="display:flex;gap:5px;padding:8px 12px;flex-shrink:0;"
         ):
             v3.VBtn(
                 "Go",
@@ -151,6 +151,14 @@ def selection_card(server) -> None:
                 color=("hd_active ? 'cyan' : '#FFD700'",),
                 loading=("hd_building",),
                 click=ctrl.toggle_hd,
+            )
+            v3.VBtn(
+                "Gas",
+                size="small",
+                variant=("hd_gas ? 'flat' : 'outlined'",),
+                color="#a3e635",
+                click="hd_gas = !hd_gas",
+                title="HD halo gas: CGM, hot gas, winds and jets",
             )
             v3.VBtn(
                 "Track",

@@ -224,7 +224,7 @@ COMPONENTS = [
         True,
     ),
     (
-        "Merger debris + ICL\nTimeOfLastMajor/MinorMerger,\nIntraClusterStars",
+        "Debris, ICL, cooling filaments\nTime of last mergers, ICS_disrupt,\nmdot_cool vs r_heat",
         {**_DISK_OFF, **_CORE_OFF, "uPtsGain": 0.0},
         True,
     ),

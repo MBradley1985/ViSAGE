@@ -152,9 +152,11 @@ class HDGalaxyLayer:
         of a group, each of which is small on screen.
 
         `context` (a galaxy among others): "spin", "hubble_h", "magnify"
-        (bool) and "partners", a list of (unit vector to the neighbour in
-        world coordinates, distance in Mpc/h, strength) for the tidal
-        features close neighbours raise."""
+        (bool); "partners", a list of (unit vector to the neighbour in
+        world coordinates, distance in Mpc/h, strength, orbit sense) for
+        the tidal features close neighbours raise; "ram" and "strip",
+        (world direction, strength) for a satellite's ram-pressure tail and
+        tidal streams."""
         from visage.hd.gpu import prepare
         from visage.hd.model import tidal_points
 
@@ -163,12 +165,24 @@ class HDGalaxyLayer:
         maps = build_disk_maps(rc, n=q["map_n"]) if rc.kind == "disk" else None
         pts = build_points(rc, maps)
         ctx = context or {}
+        if ctx.get("ram") or ctx.get("strip"):
+            from visage.hd.model import jelly_points, strip_points
+
+            R = galaxy_basis(ctx.get("spin"), rc.seed)
+            if ctx.get("ram"):
+                d, st = ctx["ram"]
+                pts += jelly_points(rc, R.T @ np.asarray(d), st, rc.seed + 211)
+            if ctx.get("strip"):
+                d, st = ctx["strip"]
+                pts.append(
+                    strip_points(rc, R.T @ np.asarray(d), st, rc.seed + 223)
+                )
         if ctx.get("partners"):
             h = ctx["hubble_h"]
             R = galaxy_basis(ctx.get("spin"), rc.seed)
             mag = magnification(gal, rc, h) if ctx.get("magnify") else 1.0
             mpch_per_unit = rc.unit_kpc * mag * h / 1000.0
-            for k, (u, sep, strength) in enumerate(ctx["partners"]):
+            for k, (u, sep, strength, sense) in enumerate(ctx["partners"]):
                 pts.append(
                     tidal_points(
                         rc,
@@ -176,6 +190,7 @@ class HDGalaxyLayer:
                         sep / mpch_per_unit,
                         strength,
                         rc.seed + 101 + k,
+                        sense,
                     )
                 )
         return {

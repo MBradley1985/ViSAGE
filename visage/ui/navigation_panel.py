@@ -350,7 +350,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.hd_building = False  # its build is running (message shown)
     state.hd_progress = ""  # the message
     state.hd_percent = -1  # its progress, 0-100 (-1: indeterminate)
-    state.hd_gas = True  # its halo-gas overlay (always on; no toggle)
+    state.hd_gas = False  # its halo-gas overlay (the card's Gas button)
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
     state.draw_box_active = False  # interactive box widget in Box tab
@@ -4308,10 +4308,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
             plan,
             pool,
             prepare_member,
+            satellite_context,
             tidal_partners,
         )
 
         h = float(scene._cfg.hubble_h)
+        cosmo = (scene._snap_table, float(scene._cfg.omega))
         lead = int(idx[0])
         _hd["lead"] = lead
 
@@ -4340,7 +4342,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         def entry(k, role, quality, magnify):
             return {
                 "idx": int(k),
-                "gal": sage_galaxy_from_snapshot(galaxies, int(k), h),
+                "gal": sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo),
                 "center": allpos[int(k)],
                 "spin": spin_vector(galaxies, int(k)),
                 "prep": None,
@@ -4350,7 +4352,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
             }
 
         group_q = plan(
-            [sage_galaxy_from_snapshot(galaxies, int(k), h) for k in idx]
+            [
+                sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo)
+                for k in idx
+            ]
         )
         many = len(idx) > 1  # a lone galaxy keeps its true size
         entries = (
@@ -4362,6 +4367,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             + [entry(k, "neighbour", None, True) for k in glow_near]
         )
         partners = tidal_partners(entries, h)
+        sat_ctx = satellite_context(entries, h)
         todo = [k for k, e in enumerate(entries) if e["quality"]]
 
         def args(k):
@@ -4371,6 +4377,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "hubble_h": h,
                 "magnify": e["magnify"],
                 "partners": partners.get(k, []),
+                **sat_ctx.get(k, {}),
             }
             return (prepare_member, e["gal"], e["quality"], ctx)
 

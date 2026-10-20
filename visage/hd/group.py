@@ -54,22 +54,53 @@ R_TIDAL = 100.0
 TIDAL_RATIO = 0.1
 
 
+def _orbit_sense(entry_a, entry_b, d) -> float:
+    """+1 if b orbits a the way a's disk turns (prograde: strong tidal
+    tails), -1 if against it (retrograde), from their relative velocity."""
+    va = np.asarray(entry_a["gal"].vel, float)
+    vb = np.asarray(entry_b["gal"].vel, float)
+    spin = entry_a.get("spin")
+    if spin is None or not np.any(vb - va):
+        return 1.0
+    L = np.cross(d, vb - va)
+    return 1.0 if float(np.dot(L, spin)) >= 0 else -1.0
+
+
+# Galaxies flagged to merge before the next snapshot (SAGE mergeType):
+# (strength on the merging galaxy, strength on the one it merges into).
+MERGE_STRENGTH = {1: (0.75, 0.2), 2: (0.9, 0.9), 4: (1.0, 0.0)}
+
+
 def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
-    """For each entry with an HD build, its close neighbours' (direction,
-    distance in Mpc/h, strength): stronger the closer and the more massive
-    the neighbour relative to the galaxy."""
+    """For each entry with an HD build, its tidal partners' (direction,
+    distance in Mpc/h, strength, orbit sense).
+
+    Close neighbours (within R_TIDAL) raise features stronger the closer
+    and the more massive they are; a galaxy SAGE has merging before the
+    next snapshot interacts with the galaxy it merges into (the nearest
+    more massive one) at any distance, by merger type.  Prograde
+    encounters (orbit turning with the disk) raise stronger tails."""
     hd = [k for k, e in enumerate(entries) if e.get("quality")]
-    pos = np.array([np.asarray(entries[k]["center"], float) for k in hd])
-    out = {k: [] for k in hd}
-    for a, ka in enumerate(hd):
+    pos = {k: np.asarray(entries[k]["center"], float) for k in hd}
+    found = {k: {} for k in hd}
+
+    def add(ka, kb, strength):
+        d = pos[kb] - pos[ka]
+        sep = float(np.linalg.norm(d))
+        u = d / max(sep, 1e-12)
+        sense = _orbit_sense(entries[ka], entries[kb], d)
+        strength *= 1.0 if sense > 0 else 0.6
+        if strength > found[ka].get(kb, (0, 0, 0, 0))[2]:
+            found[ka][kb] = (u, sep, float(strength), sense)
+
+    for ka in hd:
         ma = entries[ka]["gal"].stellar_mass
-        found = []
-        for b, kb in enumerate(hd):
-            if a == b:
+        for kb in hd:
+            if ka == kb:
                 continue
-            d = pos[b] - pos[a]
-            sep = float(np.linalg.norm(d))
-            sep_kpc = sep * 1000.0 / hubble_h
+            sep_kpc = (
+                float(np.linalg.norm(pos[kb] - pos[ka])) * 1000.0 / hubble_h
+            )
             ratio = entries[kb]["gal"].stellar_mass / max(ma, 1.0)
             if sep_kpc >= R_TIDAL or ratio < TIDAL_RATIO:
                 continue
@@ -78,9 +109,87 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
                 * np.clip(np.sqrt(ratio), 0.0, 1.0)
             )
             if strength > 0.1:
-                found.append((d / max(sep, 1e-12), sep, strength))
-        found.sort(key=lambda x: -x[2])
-        out[ka] = found[:max_partners]
+                add(ka, kb, strength)
+        # A merger about to happen.
+        mt = entries[ka]["gal"].merge_type
+        if mt in MERGE_STRENGTH:
+            heavier = [
+                kb
+                for kb in hd
+                if kb != ka and entries[kb]["gal"].stellar_mass >= ma
+            ]
+            if heavier:
+                kb = min(
+                    heavier, key=lambda k: np.linalg.norm(pos[k] - pos[ka])
+                )
+                s_a, s_b = MERGE_STRENGTH[mt]
+                add(ka, kb, s_a)
+                if s_b > 0:
+                    add(kb, ka, s_b)
+    return {
+        k: sorted(v.values(), key=lambda x: -x[2])[:max_partners]
+        for k, v in found.items()
+    }
+
+
+# Ram pressure: log10(rho_ICM v^2 / (Sigma_* Sigma_gas)) in the units of
+# `ram_pressure` -- calibrated on Millennium SAGE26 satellites in hot haloes
+# (the strongest ~30 per cent get visible tails).
+RAM_LO = -8.0
+RAM_SPAN = 1.3
+
+
+def ram_pressure(
+    sat: SageGalaxy, host: SageGalaxy, r_kpc: float, v_kms: float
+) -> float:
+    """Ram pressure on a satellite's gas against what holds it, as a
+    0-1 tail strength: the host's hot gas (an isothermal core profile)
+    times the speed squared, over the disk's star x gas surface density."""
+    if host.hot_gas <= 0 or sat.cold_gas <= 0 or v_kms <= 0:
+        return 0.0
+    rc = 0.1 * max(host.rvir_kpc, 20.0)
+    rho = host.hot_gas / rc**3 / (1 + (r_kpc / rc) ** 2)
+    rd, _, _ = display_sizes(sat)
+    restore = sat.stellar_mass * sat.cold_gas / max(rd, 0.1) ** 4
+    lam = np.log10(rho * v_kms**2 / max(restore, 1e-30))
+    return float(np.clip((lam - RAM_LO) / RAM_SPAN, 0.0, 1.0))
+
+
+def satellite_context(entries, hubble_h: float) -> dict:
+    """For satellites of the group's (hot) central: their ram-pressure
+    tail and tidal streams, as (world direction, strength)."""
+    out: dict = {}
+    if not entries:
+        return out
+    host = entries[0]
+    hg = host["gal"]
+    hpos = np.asarray(host["center"], float)
+    hvel = np.asarray(hg.vel, float)
+    for k, e in enumerate(entries[1:], start=1):
+        g = e["gal"]
+        if not e.get("quality") or g.gtype == 0 or e.get("role") != "member":
+            continue
+        d = np.asarray(e["center"], float) - hpos
+        r_kpc = float(np.linalg.norm(d)) * 1000.0 / hubble_h
+        v = np.asarray(g.vel, float) - hvel
+        speed = float(np.linalg.norm(v))
+        if speed <= 0:
+            continue
+        vdir = v / speed
+        ctx = {}
+        if hg.regime == 1:
+            st = ram_pressure(g, hg, r_kpc, speed)
+            if st > 0.05:
+                ctx["ram"] = (-vdir, st)  # the tail trails the motion
+        if g.infall_mvir > 0 and g.mvir > 0:
+            f_dm = g.mvir / g.infall_mvir
+            if f_dm < 0.35:
+                ctx["strip"] = (
+                    vdir,
+                    float(np.clip((0.35 - f_dm) / 0.3, 0.2, 1.0)),
+                )
+        if ctx:
+            out[k] = ctx
     return out
 
 

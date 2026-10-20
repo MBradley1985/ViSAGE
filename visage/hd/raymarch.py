@@ -192,6 +192,10 @@ def render(
                 e_bul = rc.l_bulge * hernquist(
                     xg, yg, zg, rc.bulge_a, rc.bulge_q
                 )
+                if rc.l_pseudo > 0:
+                    e_bul = e_bul + rc.l_pseudo * hernquist(
+                        xg, yg, zg, rc.pseudo_a, rc.pseudo_q
+                    )
                 if bar_ax > 0:
                     ax_, ay_ = bar_ax, bar_ax * rc.bar_axis
                     bar = np.exp(

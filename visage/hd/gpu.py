@@ -158,6 +158,19 @@ _ENT_W = 4096
 _IDX_W = 2048
 
 
+# Point populations drawn as diffuse light in the 3D emissivity volume.
+VOLUME_POPS = (
+    "shells",
+    "tails",
+    "stream",
+    "tidal",
+    "iclstream",
+    "halpha",
+    "jelly",
+    "strip",
+)
+
+
 def _rows(a: np.ndarray, width: int) -> np.ndarray:
     """(N, C) -> (ceil(N / width), width, C), zero padded."""
     n, c = a.shape
@@ -487,10 +500,17 @@ _IMPL = """//VTK::Light::Impl
       }
       if (inC) {
         float bul = uLBulge * hernq(p, uBulgeA, uBulgeQ, vec3(1.0)) * dt;
+        // Pseudo-bulge: compact and flattened (instability-built).
+        if (uLPseudo > 0.0) bul += uLPseudo * hernq(p, uPseudoA, uPseudoQ, vec3(1.0)) * dt;
         if (uBarLen > 0.0) {
           float bx = uBarLen, by = uBarLen * uBarAxis;
           float bar = exp(-(pow(abs(p.x) / bx, 2.4) + pow(abs(p.y) / by, 2.4)));
-          bul += uLBar * bar * pint(z0, z1, 0.12, dt) / (3.14159265 * bx * by * 0.92);
+          // A buckled bar is thickest half way out: boxy / peanut-shaped
+          // seen edge-on.
+          float hb = 0.12;
+          if (uPeanut > 0.0)
+            hb = 0.07 + 0.4 * uPeanut * exp(-pow((abs(p.x) / bx - 0.5) / 0.25, 2.0));
+          bul += uLBar * bar * pint(z0, z1, hb, dt) / (3.14159265 * bx * by * 0.92);
         }
         e += bul * uBulgeRGB;
       }
@@ -635,7 +655,7 @@ _IMPL = """//VTK::Light::Impl
                * (1.0 - exp(-pow(R / (0.35 * uIclRin), 2.0)))
                * exp(-pow(R / (2.2 * uIclRin), 2.0))
                * exp(0.2 * fbm(cp * 3.0 / uIclRin));
-    vec3 icl = clamp(uIclOpacity * 0.8 * prof * vec3(1.0, 0.82, 0.6), 0.0, 1.0);
+    vec3 icl = clamp(uIclOpacity * 0.8 * prof * uIclRGB, 0.0, 1.0);
     outc = screenB(outc, icl);
   }
   //GAS::Impl
@@ -666,7 +686,7 @@ def icl_stars(gal, rc, px_proto):
     f = float(np.clip((np.log10(gal.ics) - 9.0) / 3.0, 0.0, 1.0))
     opacity = 0.025 + 0.1 * f
     c = np.clip(opacity * 1.3 * rng.uniform(0.3, 1.0, n), 0.0, 1.0)
-    colour = c[:, None] * np.array([1.0, 0.82, 0.6])
+    colour = c[:, None] * np.asarray(rc.icl_rgb)
     return pos, np.full(n, 0.7 * px_proto * 1.5), colour
 
 
@@ -691,9 +711,14 @@ def prepare(
     # clusters) are tiny splats; only diffuse 3D light (merger shells,
     # tails, streams) goes into the emissivity volume.
     sprinkle = [
-        p for p in pts if not disk and p.name in ("field", "globulars")
+        p
+        for p in pts
+        if (not disk and p.name in ("field", "globulars"))
+        or p.name == "jellyknots"  # star-forming knots in a jellyfish tail
     ]
-    vol = [p for p in pts if p.name in ("shells", "tails", "stream", "tidal")]
+    # Diffuse 3D light: merger debris, tidal features, ICL streams, cooling
+    # filaments, ram-pressure tails.
+    vol = [p for p in pts if p.name in VOLUME_POPS]
 
     tex = {}
     dummy3 = np.zeros((2, 2, 3), np.float32)
@@ -905,6 +930,11 @@ class GPUGalaxy:
         f("uBarLen", float(rc.bar_len if disk else 0.0))
         f("uBarAxis", float(rc.bar_axis))
         f("uLBar", float(rc.l_bar))
+        f("uLPseudo", float(rc.l_pseudo if disk else 0.0))
+        f("uPseudoA", float(rc.pseudo_a))
+        f("uPseudoQ", float(rc.pseudo_q))
+        f("uPeanut", float(rc.peanut if disk else 0.0))
+        u.SetUniform3f("uIclRGB", [float(v) for v in rc.icl_rgb])
         u.SetUniform3f("uOldRGB", [float(v) for v in rc.old_rgb])
         u.SetUniform3f("uBulgeRGB", [float(v) for v in rc.bulge_rgb])
         u.SetUniform3f("uYoungRGB", [float(v) for v in YOUNG_RGB])

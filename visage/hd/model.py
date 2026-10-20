@@ -34,6 +34,13 @@ CLUSTER_RGB = np.array([0.62, 0.78, 1.00])
 # Teal-green, as in the Hubble (SHO) palette where H-alpha maps to green
 # and [OIII] to blue.
 HII_RGB = np.array([0.40, 1.00, 0.78])
+# HII colour by metallicity: metal-poor gas is hotter, brighter in [OIII]
+# (cyan); metal-rich, greener.  HII_RGB sits at about half solar.
+HII_POOR_RGB = np.array([0.30, 0.92, 1.00])
+HII_RICH_RGB = np.array([0.45, 1.00, 0.62])
+# Cooling-flow filaments (H-alpha) in cluster cores; ram-pressure tails.
+HALPHA_RGB = np.array([1.00, 0.36, 0.46])
+ICL_RGB = np.array([1.00, 0.82, 0.60])
 GC_RGB = np.array([1.00, 0.85, 0.65])
 # Gas-halo overlay (X-ray / CGM composite style, not optical light).
 HOT_GAS_RGB = np.array([0.62, 0.45, 1.00])
@@ -84,6 +91,35 @@ class SageGalaxy:
     concentration: float = 8.0
     mass_loading: float = 1.5
     heating_log: float = 0.0  # radio-mode AGN heating, log10 erg/s
+    # -- the snapshot and the halo --
+    redshift: float = 0.0
+    ffb: int = 0  # feedback-free starburst halo (FFBRegime)
+    vel: tuple = (0.0, 0.0, 0.0)  # km/s, box frame
+    vmax: float = 0.0  # km/s (halo)
+    vel_disp: float = 0.0  # km/s (halo)
+    mvir: float = 0.0  # Msun
+    # -- satellites --
+    infall_mvir: float = 0.0  # Msun (subhalo mass when it fell in)
+    infall_stellar_mass: float = 0.0  # Msun
+    t_since_infall_gyr: float = -1.0  # <0: a central
+    merge_type: int = 0  # 1 minor, 2 major, 4 disrupting (before next snap)
+    # -- structure --
+    merger_bulge_radius_kpc: float = 0.0  # classical bulge
+    instability_bulge_radius_kpc: float = 0.0  # pseudo-bulge
+    # -- metals (Msun) --
+    metals_bulge: float = 0.0
+    metals_hot: float = 0.0
+    metals_cgm: float = 0.0
+    metals_ics: float = 0.0
+    sfr_disk_z: float = 0.0  # metal mass fraction of star-forming gas
+    # -- gas cycle --
+    ejected: float = 0.0  # Msun
+    ics_disrupt: float = 0.0  # Msun (in-situ ICS)
+    ics_accrete: float = 0.0  # Msun (accreted ICS)
+    r_heat_kpc: float = 0.0  # AGN heating radius
+    tcool_gyr: float = 0.0
+    tff_gyr: float = 0.0
+    mdot_cool: float = 0.0  # hot-halo cooling rate (relative units)
 
     @property
     def bt(self) -> float:
@@ -163,6 +199,19 @@ class GalaxyRecipe:
     )
     n_gc: int = 0
     dust_lane: float = 0.0
+    # Pseudo-bulge (instability-built: compact, flattened) beside the
+    # classical (merger) bulge above; peanut: the bar's vertical buckle.
+    l_pseudo: float = 0.0
+    pseudo_a: float = 0.08
+    pseudo_q: float = 0.35
+    peanut: float = 0.0
+    clumps: int = 0  # giant star-forming clumps (high-z / FFB disks)
+    trunc_r: float = 0.0  # gas/young-star disk cut-off radius (0 = none)
+    hii_rgb: tuple = tuple(HII_RGB)
+    icl_rgb: tuple = tuple(ICL_RGB)
+    icl_streams: float = 0.0  # streams feeding the ICL (0-1)
+    halpha: float = 0.0  # cluster-core cooling filaments (0-1)
+    halpha_len: float = 0.0  # their reach, model units
     unit_kpc: float = 1.0  # physical size of one model length unit
     notes: list = field(default_factory=list)
 
@@ -179,6 +228,12 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     r50_late = 0.10 * m**0.14 * (1 + m / 3.98e10) ** 0.25
     rd_rel = r50_late / 1.678
     r50_early = 2.88e-6 * m**0.56
+    # Galaxies were smaller at fixed mass in the past (van der Wel et al.
+    # 2014): late types ~ (1+z)^-0.75, early types ~ (1+z)^-1.  A
+    # feedback-free starburst is more compact still.
+    zf = 1.0 + max(g.redshift, 0.0)
+    rd_rel *= zf**-0.75 * (0.6 if g.ffb else 1.0)
+    r50_early *= zf**-1.0
     mod_d = (
         np.clip((g.disk_radius_kpc / rd_rel) ** 0.25, 0.75, 1.35)
         if g.disk_radius_kpc > 0
@@ -205,15 +260,74 @@ def _extras(
     rng,
 ) -> dict:
     """Properties both kinds share: colour, ICL, merger debris, AGN."""
-    # Stellar metallicity tints the old light: metal-rich -> redder.
-    zs = np.clip(np.log10(max(g.stellar_metallicity, 1e-3)), -1.0, 0.5)
-    tint = np.array([1.0, 0.80 - 0.06 * zs, 0.56 - 0.12 * zs])
+
+    # Metallicity tints old light (metal-rich -> redder): the disk by its
+    # own stars' metallicity, the bulge by the bulge's.
+    def tint(z_solar):
+        zs = np.clip(np.log10(max(z_solar, 1e-3)), -1.0, 0.5)
+        return np.array([1.0, 0.80 - 0.06 * zs, 0.56 - 0.12 * zs])
+
+    z_disk = g.stellar_metallicity
+    z_bulge = g.stellar_metallicity
+    if g.metals_bulge > 0 and g.bulge_mass > 0:
+        z_bulge = g.metals_bulge / g.bulge_mass / 0.02
+        disk_m = g.stellar_mass - g.bulge_mass
+        if disk_m > 0:
+            z_disk = (
+                max(g.metals_stellar_mass - g.metals_bulge, 0.0)
+                / disk_m
+                / 0.02
+            )
     out = dict(
-        old_rgb=tuple(tint), bulge_rgb=tuple(tint * np.array([1.0, 0.9, 0.82]))
+        old_rgb=tuple(tint(z_disk)),
+        bulge_rgb=tuple(tint(z_bulge) * np.array([1.0, 0.9, 0.82])),
     )
     notes.append(
-        f"Z*={g.stellar_metallicity:.2f} Zsun -> old-star tint {np.round(tint, 2)}"
+        f"Z(disk)={z_disk:.2f}, Z(bulge)={z_bulge:.2f} Zsun -> old-star tints"
     )
+    # HII colour from the star-forming gas's metallicity.
+    if g.sfr_disk_z > 0:
+        f = float(np.clip((np.log10(g.sfr_disk_z / 0.02) + 1.0) / 1.5, 0, 1))
+        out["hii_rgb"] = tuple(HII_POOR_RGB * (1 - f) + HII_RICH_RGB * f)
+    # ICL colour from its metallicity, and streams where satellites were
+    # recently torn apart into it (in-situ ICS).
+    if g.ics > 0 and g.metals_ics > 0:
+        zi = np.clip(np.log10(g.metals_ics / g.ics / 0.02), -1.0, 0.3)
+        out["icl_rgb"] = tuple(
+            ICL_RGB * np.array([1.0, 1.0 - 0.05 * zi, 1.0 - 0.18 * zi])
+        )
+    if g.ics_disrupt > 0:
+        out["icl_streams"] = float(
+            np.clip((np.log10(g.ics_disrupt) - 10.5) / 1.5, 0.0, 1.0)
+        )
+    # Cluster cores: where the hot atmosphere still cools -- faster than
+    # ~10 free-fall times where SAGE has tcool/tff, or (hot regime) with a
+    # cooling radius reaching beyond the AGN-heated core r_heat -- gas
+    # rains out into cold H-alpha filaments (Perseus-like), brighter the
+    # more is cooling.
+    # (SAGE's radio-mode heating reaches past the cooling radius in every
+    # cluster-mass halo, so in practice this picks out the rare ~1e12 Msun
+    # hot haloes still cooling: gas raining onto the galaxy.)
+    unstable = 0.0
+    if g.regime == 1 and g.mdot_cool > 0 and g.mvir > 1e12:
+        if g.tcool_gyr > 0 and g.tff_gyr > 0:
+            unstable = float(np.clip((10 - g.tcool_gyr / g.tff_gyr) / 8, 0, 1))
+        if g.rcool_to_rvir > 0:
+            rcool = g.rcool_to_rvir * g.rvir_kpc
+            net = (rcool - g.r_heat_kpc) / max(rcool, 1e-6)
+            unstable = max(unstable, float(np.clip(net / 0.6, 0, 1)))
+    if unstable > 0.5:
+        out["halpha"] = float(
+            unstable * np.clip(np.log10(g.mdot_cool) / 2.2, 0.25, 1.0)
+        )
+        reach = np.clip(0.15 * g.rvir_kpc, 20.0, 80.0)
+        if g.r_heat_kpc > 0:
+            reach = min(reach, 0.8 * g.r_heat_kpc)
+        out["halpha_len"] = float(max(reach, 8.0) / unit_kpc)
+        notes.append(
+            f"core still cooling ({unstable:.2f}) -> H-alpha filaments "
+            f"{out['halpha']:.2f}"
+        )
 
     # Intracluster stars: a faint, very extended envelope (~50 kpc).
     if g.ics > 0:
@@ -278,6 +392,11 @@ def recipe_from_sage(
         mfac = np.clip((lm - 10.0) / 2.0, 0.0, 1.0)
         b = rng.uniform(0.68 + 0.2 * mfac, 0.9 + 0.08 * mfac)
         c = b * rng.uniform(0.6 + 0.25 * mfac, 0.9)
+        # Rotation support (halo Vmax / dispersion): fast rotators are
+        # flatter, slow rotators rounder.
+        if g.vmax > 0 and g.vel_disp > 0:
+            c *= float(np.clip(1.25 - 0.18 * g.vmax / g.vel_disp, 0.7, 1.1))
+            c = min(c, b)
         env_a = float(0.6 + 0.6 * mfac)
         core_frac = float(0.5 - 0.2 * mfac)
         n_gc = int(np.clip(30 * (g.stellar_mass / 1e10) ** 1.2, 20, 4000))
@@ -321,6 +440,9 @@ def recipe_from_sage(
     # Hubble sequence: bigger bulge -> tighter arms; more gas -> more arms
     # and more flocculent structure.  Massive disks are grand-design.
     pitch = float(np.clip(28.0 - 30.0 * bt + rng.normal(0, 2.5), 9.0, 30.0))
+    # Faster rotation (more shear) winds the arms tighter.
+    if g.vmax > 0:
+        pitch -= 6.0 * float(np.clip((g.vmax - 150.0) / 150.0, -1.0, 1.0))
     ib_frac = g.instability_bulge_mass / max(g.stellar_mass, 1.0)
     barred = ib_frac > 0.06
     # Arm class (`arm_class` forces one): grand design, multi-arm (or 2 arms branching into 4),
@@ -336,6 +458,14 @@ def recipe_from_sage(
     drawn = str(
         rng.choice(["grand", "multi", "partial", "flocculent"], p=p_cls)
     )
+    # High-z gas-rich disks are turbulent and clumpy rather than spiral;
+    # a feedback-free starburst always is.
+    p_clumpy = float(
+        np.clip((g.redshift - 0.8) / 1.2, 0.0, 0.85)
+        * np.clip(gas_frac / 0.2, 0.3, 1.0)
+    )
+    if g.ffb or rng.random() < p_clumpy:
+        drawn = "clumpy"
     arm_class = arm_class or drawn
     # Gas richness places the flocculence within the class's range.
     gasness = float(
@@ -350,27 +480,48 @@ def recipe_from_sage(
         "multi": (0.15, 0.4),
         "partial": (0.3, 0.55),
         "flocculent": (0.6, 0.85),
+        "clumpy": (0.7, 0.9),
     }[arm_class]
     flocc = lo + (hi - lo) * gasness
     pitch = float(
         np.clip(
             pitch
-            + {"grand": -3.0, "multi": 0.0, "partial": 3.0, "flocculent": 6.0}[
-                arm_class
-            ],
+            + {
+                "grand": -3.0,
+                "multi": 0.0,
+                "partial": 3.0,
+                "flocculent": 6.0,
+                "clumpy": 8.0,
+            }[arm_class],
             9.0,
             35.0,
         )
     )
     sharp = float(np.clip(5.0 * (1 - flocc) + 1.5, 1.5, 6.0))
-    # Low-mass disks are thicker.
+    # Low-mass disks are thicker; so are high-z (turbulent) disks and
+    # dispersion-supported ones (halo sigma / Vmax).
     hz = float(np.clip(0.10 * 10 ** (-0.15 * (lm - 10.5)), 0.08, 0.2))
+    hz *= 1.0 + 0.5 * min(max(g.redshift, 0.0), 3.0)
+    if g.vmax > 0 and g.vel_disp > 0:
+        # (steep: the population's sigma/Vmax spans only ~0.45-0.65)
+        hz *= float(np.clip(((g.vel_disp / g.vmax) / 0.55) ** 6, 0.6, 2.0))
+    hz = float(min(hz, 0.45))
 
-    # Bulge: classical (merger) part is round, instability part flattened.
+    # Bulges: the classical (merger-built) one round, at its own radius;
+    # the pseudo-bulge (instability-built) compact and flattened at its own.
     rb = g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 0.2 * rd
+    split = g.merger_bulge_radius_kpc > 0 or g.instability_bulge_radius_kpc > 0
+    if split and g.merger_bulge_radius_kpc > 0:
+        rb = g.merger_bulge_radius_kpc
     bulge_a = float(np.clip(rb / rd / (1 + np.sqrt(2)), 0.03, 0.4))
     merger_share = g.merger_bulge_mass / max(g.bulge_mass, 1.0)
-    bulge_q = float(0.5 + 0.4 * merger_share)
+    bulge_q = float(0.85 if split else 0.5 + 0.4 * merger_share)
+    rp = g.instability_bulge_radius_kpc
+    pseudo_a = float(
+        np.clip(
+            (rp if rp > 0 else 0.1 * rd) / rd / (1 + np.sqrt(2)), 0.02, 0.25
+        )
+    )
 
     # Bar: at most ~8% of M* goes into the bar; the rest of the
     # instability-grown bulge is a compact, flattened pseudobulge.  This
@@ -382,16 +533,27 @@ def recipe_from_sage(
         bar_mass = min(g.instability_bulge_mass, 0.08 * g.stellar_mass)
         bar_frac = bar_mass / max(g.stellar_mass, 1.0)
         bar_len = float(np.clip(0.9 + 10.0 * bar_frac, 0.9, 1.8))
-        l_bar = 0.9 * OLD_LIGHT * bar_mass / max(disk_mass, 1.0)
+        l_bar = 1.8 * OLD_LIGHT * bar_mass / max(disk_mass, 1.0)
         notes.append(
             f"instability bulge {ib_frac:.2f} of M* -> bar {bar_frac:.2f} of M*, "
             f"half-length {bar_len:.1f} Rd; rest pseudobulge"
         )
-    l_bulge = OLD_LIGHT * (g.bulge_mass - bar_mass) / max(disk_mass, 1.0)
+    if split:
+        l_bulge = OLD_LIGHT * g.merger_bulge_mass / max(disk_mass, 1.0)
+        l_pseudo = (
+            OLD_LIGHT
+            * max(g.instability_bulge_mass - bar_mass, 0.0)
+            / max(disk_mass, 1.0)
+        )
+    else:
+        l_bulge = OLD_LIGHT * (g.bulge_mass - bar_mass) / max(disk_mass, 1.0)
+        l_pseudo = 0.0
 
     # Young light relative to the old disk scales with specific SFR.
     ssfr_disk = g.sfr_disk / max(disk_mass, 1.0)
     l_young = float(np.clip(0.55 * (ssfr_disk / 1e-10) ** 0.7, 0.01, 1.5))
+    if g.ffb:
+        l_young = min(1.5 * l_young + 0.2, 2.0)  # very blue
     n_clusters = int(np.clip(6000 * max(g.sfr_disk, 1e-3) ** 0.5, 400, 20000))
     # HII regions: number follows the molecular gas reservoir.
     n_hii = int(np.clip(350 * (g.h2_gas / 1e9) ** 0.8, 10, 3000))
@@ -448,6 +610,36 @@ def recipe_from_sage(
         np.random.default_rng(rng.integers(1 << 31)),
     )
     notes.append(f"arms: {arm_class}, {len(arms[0])} arm(s)")
+    clumps = 0
+    if arm_class == "clumpy":
+        clumps = int(
+            np.clip(4 + 6 * gas_frac / 0.3 + (3 if g.ffb else 0), 4, 12)
+        )
+        notes.append(
+            f"z={g.redshift:.1f}{' FFB' if g.ffb else ''} -> {clumps} giant clumps"
+        )
+    # Satellites: ram pressure and tides strip the gas disk from the
+    # outside in, the longer since infall and the more of the subhalo
+    # lost; star formation (young light, dust) stops beyond the cut.
+    trunc_r = 0.0
+    if g.gtype > 0 and g.t_since_infall_gyr >= 0:
+        f_dm = (
+            np.clip(g.mvir / g.infall_mvir, 0.0, 1.0)
+            if g.infall_mvir > 0
+            else 1.0
+        )
+        keep = (
+            1.0
+            - 0.55 * (1 - np.exp(-g.t_since_infall_gyr / 1.5))
+            - 0.35 * (1 - f_dm)
+        )
+        keep = float(np.clip(keep, 0.25, 1.0))
+        if keep < 0.97:
+            trunc_r = keep * extent
+            notes.append(
+                f"satellite {g.t_since_infall_gyr:.1f} Gyr since infall, "
+                f"subhalo {f_dm:.2f} of infall -> gas disk cut at {keep:.2f} of R"
+            )
 
     return GalaxyRecipe(
         **ex,
@@ -468,6 +660,11 @@ def recipe_from_sage(
         bulge_q=bulge_q,
         bar_len=bar_len,
         l_bar=l_bar,
+        l_pseudo=float(l_pseudo),
+        pseudo_a=pseudo_a,
+        peanut=float(1.0 if bar_len > 0 else 0.0),
+        clumps=clumps,
+        trunc_r=trunc_r,
         hole=float(max(bar_len * 0.9, 2.5 * bulge_a, 0.25)),
         hi_scale=hi_scale,
         arm_old_amp=float(0.45 * min(1.0, gas_frac / 0.08)),
@@ -541,6 +738,8 @@ def arm_layout(cls: str, extent: float, r_base: float, rng):
         r1.append(float(rb))
         off.append(float(o))
 
+    if cls == "clumpy":
+        return (), (), (), ()
     if cls == "grand":
         for k in range(2):
             arm(
@@ -680,6 +879,20 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * np.exp(0.6 * clumps - 0.18)
         * outer_cut
     )
+    giant = np.zeros_like(r)
+    if rc.clumps:
+        # Giant star-forming clumps (high-z / feedback-free disks): a few
+        # kpc-scale complexes dominating the young light and the gas.
+        crng = np.random.default_rng(rc.seed + 31)
+        for _ in range(rc.clumps):
+            rr = rc.extent * 0.75 * np.sqrt(crng.random())
+            tt = crng.uniform(0, 2 * np.pi)
+            w = crng.uniform(0.18, 0.4)
+            giant += crng.uniform(0.5, 1.0) * np.exp(
+                -((x - rr * np.cos(tt)) ** 2 + (y - rr * np.sin(tt)) ** 2)
+                / (2 * w * w)
+            )
+        young = 0.35 * young + 2.5 * giant * np.exp(-r / 3.0) * outer_cut
 
     # Dust lanes sit on the inner (concave) edge of the arm.
     arm_d = _arm_field(
@@ -695,6 +908,8 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 - 0.7 * np.exp(-((r / 1.2) ** 2)))
         * (0.15 + arm_dust)
     )
+    if rc.clumps:
+        h2 = h2 + 1.5 * giant * np.exp(-r / 3.0)
     dust = (h2 + 0.35 * hi) * outer_cut * inner
     # Normalise the total dust column to that of a smooth exponential disk
     # with face-on optical depth tau0 at its centre (2 pi tau0 Rd^2).  An
@@ -726,6 +941,11 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
                 lane *= (sgn * x > 0.9 * rr) & (sgn * x < 1.05 * rc.bar_len)
                 dust += 1.2 * rc.ring * lane * clump
 
+    if rc.trunc_r > 0:
+        # Stripped satellite: no gas (so no young stars or dust) beyond
+        # the cut; the old disk carries on, redder for it.
+        cut = 1 / (1 + np.exp((r - rc.trunc_r) / 0.2))
+        young, dust, h2, hi = young * cut, dust * cut, h2 * cut, hi * cut
     return PlaneMaps(
         half=half,
         old=old.astype(np.float32),
@@ -807,7 +1027,7 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
             Points(
                 np.c_[hx, hy, rng.normal(0, 0.03, m)],
                 lum,
-                np.tile(HII_RGB, (m, 1)),
+                np.tile(np.asarray(rc.hii_rgb), (m, 1)),
                 rng.uniform(1.0, 2.0, m),
                 "hii",
             )
@@ -862,6 +1082,10 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         )
         main_light = 1.0
 
+    if rc.icl_streams > 0:
+        out.append(_icl_streams(rc, rng, 0.5 * rc.icl_streams * main_light))
+    if rc.halpha > 0:
+        out.append(_halpha_filaments(rc, rng, 0.6 * rc.halpha * main_light))
     # Merger debris (both kinds), all in old-star colours.
     if rc.shells > 0:
         out.append(_shells(rc, rng, 0.05 * rc.shells * main_light, old_rgb))
@@ -870,6 +1094,55 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
     if rc.stream > 0:
         out.append(_stream(rc, rng, 0.025 * rc.stream * main_light, old_rgb))
     return out
+
+
+def _icl_streams(rc, rng, lum_tot, n=16000):
+    """Arcs of stripped stars feeding the intracluster light: the remains
+    of satellites recently torn apart in this halo."""
+    r_in = 1.2 * rc.extent
+    k = int(rng.integers(2, 6))
+    pos, lum = [], []
+    for _ in range(k):
+        u, v, _ = _random_frame(rng)
+        rs = r_in * rng.uniform(0.5, 1.6)
+        th0 = rng.uniform(0, 2 * np.pi)
+        span = rng.uniform(0.6, 1.6) * np.pi
+        m = n // k
+        th = th0 + span * rng.random(m)
+        r = rs * (1 + 0.15 * np.sin(2 * (th - th0)))
+        jit = rng.normal(0, 0.04 * rs, (m, 3))
+        pos.append(
+            (r * np.cos(th))[:, None] * u + (r * np.sin(th))[:, None] * v + jit
+        )
+        lum.append(np.full(m, 1.0) * (0.5 + (th - th0) / span))
+    pos, lum = np.vstack(pos), np.concatenate(lum)
+    lum *= lum_tot / lum.sum()
+    rgb = np.tile(np.asarray(rc.icl_rgb), (len(lum), 1))
+    return Points(pos, lum, rgb, np.full(len(lum), 1.1), "iclstream")
+
+
+def _halpha_filaments(rc, rng, lum_tot, n=12000):
+    """Cold gas raining out of a cluster core's hot atmosphere: thin,
+    wandering H-alpha filaments radiating from the central galaxy."""
+    k = int(6 + 8 * rc.halpha)
+    pos, lum = [], []
+    for _ in range(k):
+        m = n // k
+        d = rng.normal(size=3)
+        d /= np.linalg.norm(d)
+        length = rc.halpha_len * rng.uniform(0.35, 1.0)
+        t = rng.random(m) ** 0.8
+        # A gently bending path: the direction drifts along the filament.
+        bend = rng.normal(size=3) * 0.35
+        path = (d[None, :] + t[:, None] * bend[None, :]) * (t * length)[
+            :, None
+        ]
+        pos.append(path + rng.normal(0, 0.012 * length, (m, 3)))
+        lum.append(1.2 - t)
+    pos, lum = np.vstack(pos), np.concatenate(lum)
+    lum *= lum_tot / lum.sum()
+    rgb = np.tile(HALPHA_RGB, (len(lum), 1))
+    return Points(pos, lum, rgb, np.full(len(lum), 0.9), "halpha")
 
 
 def _random_frame(rng):
@@ -938,14 +1211,21 @@ def _stream(rc, rng, lum_tot, rgb, n=20000):
 
 
 def tidal_points(
-    rc: GalaxyRecipe, direction, sep: float, strength: float, seed: int
+    rc: GalaxyRecipe,
+    direction,
+    sep: float,
+    strength: float,
+    seed: int,
+    sense: float = 1.0,
 ) -> Points:
     """Tidal features raised by a close neighbour (Toomre & Toomre): a
     bridge reaching toward it and a counter-tail flung out on the far side,
     both trailing the disk's rotation (about +z).  `direction`: unit vector
     to the neighbour and `sep` its distance, in this galaxy's model frame;
-    `strength` (0-1) from closeness and mass ratio.  Old-star light with a
-    blue tint from star formation the encounter triggers."""
+    `strength` (0-1) from closeness and mass ratio; `sense` (+-1) the
+    orbit's turn about the disk axis, which way the features curve.
+    Old-star light with a blue tint from star formation the encounter
+    triggers."""
     rng = np.random.default_rng(seed)
     u = np.asarray(direction, float)
     u = u / max(np.linalg.norm(u), 1e-9)
@@ -961,7 +1241,9 @@ def tidal_points(
     # Tail: longer the stronger the encounter.
     lt = (1.2 + 2.0 * strength) * e
     r = np.where(bridge, r0 + s * (lb - r0), r0 + s * lt)
-    phi = np.where(bridge, phi0 - 0.5 * s, phi0 + np.pi + 1.1 * s)
+    phi = np.where(
+        bridge, phi0 - 0.5 * sense * s, phi0 + np.pi + 1.1 * sense * s
+    )
     # Leaving the disk plane toward (bridge) / away from (tail) the
     # neighbour's height.
     z = np.where(bridge, 1.0, -0.5) * r * u[2] * s
@@ -971,9 +1253,93 @@ def tidal_points(
         r * np.sin(phi) + rng.normal(0, 1, n) * w,
         z + rng.normal(0, 1, n) * 0.4 * w,
     ]
-    lum = np.full(n, 0.12 * strength * main_light / n) * (1.25 - s)
+    lum = np.full(n, 0.3 * strength * main_light / n) * (1.25 - s)
     rgb = 0.75 * np.asarray(rc.old_rgb, float) + 0.25 * np.asarray(YOUNG_RGB)
     return Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.2), "tidal")
+
+
+def jelly_points(
+    rc: GalaxyRecipe, direction, strength: float, seed: int
+) -> list[Points]:
+    """A ram-pressure-stripped ("jellyfish") gas tail: the galaxy's gas
+    pushed out behind it by the hot halo it is ploughing through, forming
+    stars as it goes -- blue knots and pink H-alpha streaks trailing
+    along `direction` (model frame, away from the motion)."""
+    rng = np.random.default_rng(seed)
+    u = np.asarray(direction, float)
+    u = u / max(np.linalg.norm(u), 1e-9)
+    a = np.cross(u, [0.0, 0.0, 1.0])
+    if np.linalg.norm(a) < 1e-3:
+        a = np.cross(u, [1.0, 0.0, 0.0])
+    a /= np.linalg.norm(a)
+    b = np.cross(u, a)
+    e = rc.extent
+    length = (1.5 + 3.5 * strength) * e
+    n = int(6000 + 14000 * strength)
+    # Streamers start across the disk's trailing side and fan out.
+    k = int(5 + 7 * strength)
+    starts = rng.normal(0, 0.35 * e, (k, 2))
+    which = rng.integers(0, k, n)
+    t = rng.random(n) ** 0.7
+    spread = 0.05 * e + 0.15 * e * t
+    off = starts[which] * (1 + 0.6 * t[:, None])
+    pos = (
+        (0.4 * e + t * length)[:, None] * u
+        + (off[:, 0] + rng.normal(0, 1, n) * spread)[:, None] * a
+        + (off[:, 1] + rng.normal(0, 1, n) * spread)[:, None] * b
+    )
+    main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
+    # (Bright for its surface: real tails stand out in H-alpha imaging.)
+    total = 3.0 * strength * main_light
+    # Ionised gas: diffuse pink streamers.
+    lum = 1.15 - t
+    lum = lum * 0.45 * total / lum.sum()
+    gas = Points(
+        pos, lum, np.tile(HALPHA_RGB, (n, 1)), np.full(n, 1.0), "jelly"
+    )
+    # Stars formed in the tail: compact blue knots along the streamers.
+    m = int(200 + 900 * strength)
+    w = (1.15 - t) / (1.15 - t).sum()
+    pick = rng.choice(n, m, p=w)
+    klum = rng.pareto(1.6, m) + 1
+    klum *= 0.55 * total / klum.sum()
+    knots = Points(
+        pos[pick] + rng.normal(0, 0.02 * e, (m, 3)),
+        klum,
+        np.tile(YOUNG_RGB * 1.1, (m, 1)),
+        rng.uniform(0.5, 1.0, m),
+        "jellyknots",
+    )
+    return [gas, knots]
+
+
+def strip_points(
+    rc: GalaxyRecipe, direction, strength: float, seed: int
+) -> Points:
+    """Tidal stripping of a satellite deep in its host: leading and
+    trailing streams of its stars along the orbit (`direction`, model
+    frame), the more of its subhalo it has lost the longer."""
+    rng = np.random.default_rng(seed)
+    u = np.asarray(direction, float)
+    u = u / max(np.linalg.norm(u), 1e-9)
+    side = np.cross(u, [0.0, 0.0, 1.0])
+    if np.linalg.norm(side) < 1e-3:
+        side = np.cross(u, [1.0, 0.0, 0.0])
+    side /= np.linalg.norm(side)
+    e = rc.extent
+    n = int(6000 + 12000 * strength)
+    sgn = np.where(rng.random(n) < 0.5, 1.0, -1.0)
+    t = rng.random(n) ** 0.8
+    length = (2.0 + 4.0 * strength) * e
+    r = 0.7 * e + t * length
+    # Streams bend gently (the orbit curves).
+    pos = (sgn * r)[:, None] * u + (0.12 * r**2 / length)[:, None] * side
+    pos += rng.normal(0, 1, (n, 3)) * (0.05 * e + 0.08 * e * t)[:, None]
+    main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
+    lum = (1.2 - t) * 0.8 * strength * main_light
+    lum /= max(n, 1) * (1.2 - t).mean()
+    rgb = np.tile(np.asarray(rc.old_rgb), (n, 1))
+    return Points(pos, lum, rgb, np.full(n, 1.1), "strip")
 
 
 def _nuclear_ring(rc, rng, n=3000):
