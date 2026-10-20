@@ -140,8 +140,8 @@ _POINT_SIZE = {
     "clusters": 0.2,
     "ring": 0.2,
     "field": 0.0,  # stars are points: always one pixel across
-    "hii": 0.8,
-    "ring_hii": 0.8,
+    "hii": 0.35,
+    "ring_hii": 0.35,
 }
 # Beyond this pixel footprint (model units) the stars are sub-pixel and the
 # splatted textures take over.
@@ -212,7 +212,10 @@ def point_grid(pts, px_proto: float, cell: float = GRID_CELL):
             continue
         pos.append(p.pos)
         sig.append(k * p.sigma * px_proto)
-        col.append(p.lum[:, None] * p.rgb)
+        # Light, plus the offline PSF width (sets each one's brightness).
+        col.append(
+            np.column_stack([p.lum[:, None] * p.rgb, p.sigma * px_proto])
+        )
     if not pos:
         return None
     pos = np.vstack(pos).astype(np.float64)
@@ -470,11 +473,13 @@ _IMPL = """//VTK::Light::Impl
   if (!passedC) tauC = tau.g;
 
   // Point sources, exactly: walk the grid cells the ray crosses (3D DDA);
-  // each star counts in the cell holding the ray's closest approach to it,
-  // with its own PSF widened to the pixel footprint there, dimmed by the
-  // dust in front of it.
+  // each star counts in the cell holding the ray's closest approach to it.
+  // Stars are drawn in display space: each gets the tone-mapped brightness
+  // of its own peak at the offline renders' scale (dimmed and reddened by
+  // the dust in front of it) and a profile about a pixel across, so a
+  // bright star is a brighter point, not a bigger, saturated disc.
+  vec3 starD = vec3(0.0);
   if (wPts > 0.0) {
-    vec3 colP = vec3(0.0);
     vec2 g = rayBox(ro, inv, uGridLo, uGridHi);
     float g0 = max(g.x, 0.0);
     if (g.y > g0) {
@@ -500,15 +505,22 @@ _IMPL = """//VTK::Light::Impl
           vec3 dv = A.xyz - ro - ts * rd;
           float d2 = dot(dv, dv);
           float fp = min(ts * uPixAng, uFpMax);
-          float s2 = A.w * A.w + 0.36 * fp * fp;
+          float s2 = A.w * A.w + 0.25 * fp * fp;
           if (d2 > 9.0 * s2) continue;
           float tauP = 0.0;
           if (uIsDisk > 0.5 && abs(A.x) < uMapHalf && abs(A.y) < uMapHalf) {
             float k0 = texture(mapTex, mapUV(A.xy, uMapHalf, uMapN)).b;
             tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.08);
           }
-          colP += texelFetch(gColTex, ec, 0).rgb * exp(-0.5 * d2 / s2) / (6.2831853 * s2)
-                * exp(-tauP * uDustK);
+          vec4 C = texelFetch(gColTex, ec, 0);
+          vec3 L = C.rgb * exp(-tauP * uDustK);
+          float Lm = max((L.r + L.g + L.b) / 3.0, 1e-30);
+          // Peak at the offline PSF width (a little sharper), against the
+          // galaxy's base exposure: the same brightness at any zoom.
+          float sd2 = 0.5 * C.a * C.a;
+          float pk = Lm / (6.2831853 * sd2) / uWhite0;
+          float cpk = min(asinh(uQ * pk) / asinh(uQ), 1.0);
+          starD += cpk * (L / Lm) * exp(-0.5 * d2 / s2);
         }
         if (tOut >= g.y) break;
         if (tMx.x <= tMx.y && tMx.x <= tMx.z) { c.x += st.x; tMx.x += tDel.x; }
@@ -518,7 +530,6 @@ _IMPL = """//VTK::Light::Impl
         tIn = tOut;
       }
     }
-    col += wPts * colP;
   }
 
   // Nucleus and AGN glow (analytic PSFs, dimmed by the dust at the centre).
@@ -540,6 +551,7 @@ _IMPL = """//VTK::Light::Impl
   vec3 outc = col / uWhite * f;
   float l2 = (outc.r + outc.g + outc.b) / 3.0;
   outc = clamp(vec3(l2) + uSat * (outc - vec3(l2)), 0.0, 1.0);
+  outc = screenB(outc, clamp(wPts * starD, 0.0, 1.0));
 
   // ICL envelope (display overlay, around the closest-approach point).
   if (uIclOpacity > 0.0) {
@@ -653,7 +665,7 @@ def prepare(rc: GalaxyRecipe, maps: PlaneMaps | None, pts) -> dict:
     else:
         tex["gIdxTex"] = (dummy3, False)
         tex["gPosTex"] = (np.zeros((2, 2, 4), np.float32), False)
-        tex["gColTex"] = (dummy3, False)
+        tex["gColTex"] = (np.zeros((2, 2, 4), np.float32), False)
     return {
         "tex": tex,
         "sprinkle": sprinkle,
@@ -824,6 +836,7 @@ class GPUGalaxy:
         )
         u.SetUniform3f("uDustK", [float(v) for v in DUST_K])
         f("uWhite", float(white))
+        f("uWhite0", float(white))
         f("uQ", 40.0)
         f("uSat", 1.05)
         f("uLNuc", float(rc.l_nucleus))
