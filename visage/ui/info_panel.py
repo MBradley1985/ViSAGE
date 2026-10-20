@@ -8,6 +8,8 @@ from trame.widgets import vuetify3 as v3
 
 from visage.scene.scene import Scene
 
+# Galaxies this close to the cursor (pixels) all count as under it.
+_PICK_NEAR_PX = 12.0
 _DOUBLE_CLICK_THRESHOLD = (
     0.45  # seconds between two clicks to count as double-click
 )
@@ -51,6 +53,11 @@ def build_info_panel(server, scene: Scene) -> None:
 
     def _on_pick(point):
         """Fires on every left-click; only selects on a fast second click."""
+        # In HD the catalogue is hidden: picking there is done among the
+        # galaxies HD draws (visage.ui.selection), and a click must not
+        # switch box (which would drop HD).
+        if bool(state.hd_active) if state.has("hd_active") else False:
+            return
         now = time.monotonic()
         dt, _last_click[0] = now - _last_click[0], now
 
@@ -119,6 +126,7 @@ def build_info_panel(server, scene: Scene) -> None:
                 renderer = scene.plotter.renderer
                 sx, sy = scene.plotter.iren.get_event_position()
                 best_dist2 = float("inf")
+                close = []  # within a few pixels of the cursor
                 for local_i in near_local:
                     abs_idx = int(visible[local_i])
                     pos = galaxies.positions[abs_idx] + off
@@ -128,9 +136,15 @@ def build_info_panel(server, scene: Scene) -> None:
                     renderer.WorldToDisplay()
                     dp = renderer.GetDisplayPoint()
                     d2 = (dp[0] - sx) ** 2 + (dp[1] - sy) ** 2
+                    if d2 < _PICK_NEAR_PX**2:
+                        close.append(abs_idx)
                     if d2 < best_dist2:
                         best_dist2 = d2
                         gidx = abs_idx
+                # Under the cursor, the galaxy you can see wins: the most
+                # massive there, not a dwarf a pixel closer.
+                if close:
+                    gidx = max(close, key=lambda k: galaxies.stellar_mass[k])
 
                 if gidx is not None:
                     gpos = galaxies.positions[gidx] + off
@@ -154,35 +168,8 @@ def build_info_panel(server, scene: Scene) -> None:
             elif bool(state.groupinfo_show):
                 ctrl.show_group_info()
 
-        # ── Halo selection ────────────────────────────────────────────────
-        # Search nearest VISIBLE halo to the selected galaxy position rather than
-        # the raw click point — ensures halo and galaxy are from the same
-        # environment and avoids landing on a halo from a filtered-out type.
-        if halos.count > 0:
-            search_pt = tuple(gpos) if gpos is not None else tuple(point)
-            hmask = scene.halo_layer._combined_mask()
-            if hmask is not None:
-                h_visible = np.where(hmask)[0]
-                hidx = None
-                if len(h_visible) > 0:
-                    htree = _cached_tree(
-                        _halo_tree_cache,
-                        halos.positions,
-                        h_visible,
-                        off,
-                        active.name,
-                        active.current_snap,
-                    )
-                    _, hhit = htree.query(search_pt)
-                    hidx = int(h_visible[hhit])
-            else:
-                hidx = scene.camera._halo_index.nearest(search_pt)
-
-            if hidx is not None:
-                hm = halos.masses[hidx]
-                lines.append(f"Halo Mvir = {hm:.2e} Msun (idx {hidx})")
-                state.nav_halo_idx = int(hidx)
-
+        # The host halo follows from the galaxy (visage.ui.selection), so it
+        # is the halo the galaxy's group lives in, not just the nearest one.
         state.pick_info = "   |   ".join(lines)
         state.flush()
         _push()

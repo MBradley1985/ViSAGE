@@ -149,6 +149,7 @@ class HDGroupLayer:
         self._fxaa = None
         self._near_tol = None
         self.center = np.zeros(3)
+        self.picks = ([], np.zeros((0, 3)))
 
     @property
     def active(self) -> bool:
@@ -200,6 +201,12 @@ class HDGroupLayer:
                 self.neighbours.append(lay)
             e["layer"] = lay
         self.center = np.asarray(lead["center"], float)
+        self.picks = (
+            [e["idx"] for e in entries if e.get("idx") is not None],
+            np.array(
+                [e["center"] for e in entries if e.get("idx") is not None]
+            ),
+        )
         self._add_glows(
             entries, hubble_h, display_luminosity(lead["gal"], k_lead)
         )

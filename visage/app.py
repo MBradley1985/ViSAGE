@@ -130,6 +130,7 @@ html, body, .v-application { background: #000000 !important; }
 )
 # fmt: on
 from visage.ui.info_panel import build_info_panel
+from visage.ui.selection import build_selection, selection_card
 from visage.ui.navigation_panel import build_navigation_panel
 from visage.ui.toolbar import build_toolbar
 from visage.ui.story_mode import (
@@ -1371,6 +1372,9 @@ def create_app(
                     # Story Mode text / equation overlays (over the render).
                     build_story_overlays(server)
 
+                    # The selection card (selected galaxy, group, actions).
+                    selection_card(server)
+
                     # HD build message: what is being built and how far.
                     with html.Div(
                         v_show=("hd_building",),
@@ -1901,6 +1905,7 @@ def create_app(
                     elevation=0,
                 ):
                     build_navigation_panel(server, scene)
+                    build_selection(server, scene)
 
         with layout.footer as footer:
             footer.height = 0

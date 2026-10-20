@@ -4328,7 +4328,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         the members keep the layout they had in the normal view."""
         import numpy as np
 
-        scene.camera._clear_indicator()  # Go's target marker
+        scene.camera._clear_indicator(keep_marker=True)  # old markers
         scene.camera._clear_member_indicators()
         cam = scene.plotter.camera
         dist = radius / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
@@ -4438,6 +4438,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         def entry(k, role, quality, magnify):
             return {
+                "idx": int(k),
                 "gal": sage_galaxy_from_snapshot(galaxies, int(k), h),
                 "center": allpos[int(k)],
                 "spin": spin_vector(galaxies, int(k)),
@@ -4581,6 +4582,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _hd_drop()
 
     scene.register_model_change_callback(_hd_drop)
+
+    @ctrl.set("hd_pick_candidates")
+    def _hd_pick_candidates():
+        """(catalogue indices, world positions) of everything HD draws."""
+        grp = _hd["group"]
+        if _hd["mode"] != "halo" or grp is None or not grp.active:
+            return None
+        return grp.picks
 
     @state.change("hd_gas")
     def on_hd_gas_change(hd_gas=False, **_):
