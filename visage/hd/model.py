@@ -882,17 +882,20 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     giant = np.zeros_like(r)
     if rc.clumps:
         # Giant star-forming clumps (high-z / feedback-free disks): a few
-        # kpc-scale complexes dominating the young light and the gas.
+        # kpc-scale complexes in the young light and the gas -- broad, with
+        # soft wings, so they blend into the turbulent disk around them
+        # rather than sitting on it as separate balls.
         crng = np.random.default_rng(rc.seed + 31)
         for _ in range(rc.clumps):
             rr = rc.extent * 0.75 * np.sqrt(crng.random())
             tt = crng.uniform(0, 2 * np.pi)
-            w = crng.uniform(0.18, 0.4)
-            giant += crng.uniform(0.5, 1.0) * np.exp(
-                -((x - rr * np.cos(tt)) ** 2 + (y - rr * np.sin(tt)) ** 2)
-                / (2 * w * w)
+            w = crng.uniform(0.25, 0.5)
+            d2 = (x - rr * np.cos(tt)) ** 2 + (y - rr * np.sin(tt)) ** 2
+            giant += crng.uniform(0.5, 1.0) * (
+                np.exp(-d2 / (2 * w * w))
+                + 0.3 * np.exp(-d2 / (2 * (2.2 * w) ** 2))
             )
-        young = 0.35 * young + 2.5 * giant * np.exp(-r / 3.0) * outer_cut
+        young = 0.5 * young + 1.7 * giant * np.exp(-r / 3.0) * outer_cut
 
     # Dust lanes sit on the inner (concave) edge of the arm.
     arm_d = _arm_field(
@@ -990,10 +993,15 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
     if rc.kind == "disk":
         # Young star clusters: sample complexes on the young map, then
         # scatter members around each complex (clusters of clusters).
+        # (A clumpy disk's clusters spread through the turbulent disk
+        # between its giant clumps too, not only on them.)
         n_cx = max(rc.n_clusters // 6, 10)
-        cx, cy = _sample_map(maps.young**1.3, maps.half, n_cx, rng)
+        conc = 1.0 if rc.clumps else 1.3
+        cx, cy = _sample_map(maps.young**conc, maps.half, n_cx, rng)
         k = rng.integers(2, 11, n_cx)
         csz = np.repeat(rng.uniform(0.015, 0.06, n_cx), k)
+        if rc.clumps:
+            csz *= 1.8
         px = np.repeat(cx, k) + rng.normal(0, 1, k.sum()) * csz
         py = np.repeat(cy, k) + rng.normal(0, 1, k.sum()) * csz
         m = len(px)
@@ -1014,7 +1022,10 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
 
         # HII regions: follow H2 where young stars are, soft and fuzzy.
         hx, hy = _sample_map(
-            (maps.h2 * maps.young) ** 1.2, maps.half, rc.n_hii, rng
+            (maps.h2 * maps.young) ** (0.95 if rc.clumps else 1.2),
+            maps.half,
+            rc.n_hii,
+            rng,
         )
         k = rng.integers(1, 5, rc.n_hii)
         hx = np.repeat(hx, k) + rng.normal(0, 0.025, k.sum())
