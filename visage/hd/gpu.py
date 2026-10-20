@@ -402,7 +402,10 @@ _IMPL = """//VTK::Light::Impl
       dt = clamp((0.03 + 0.5 * zs) / max(rz, 1e-3), 0.004, zs < 0.15 ? 0.03 : 0.08);
     }
     if (inC) dt = min(dt, clamp(0.2 * length(ro + t * rd), uDtCore, 1.0));
-    if (inA) dt = min(dt, dtAtlas);
+    // Inside the body the step stays the body's own (finer steps there
+    // would integrate the smooth light differently and outline the debris
+    // cube); the debris volume is sub-sampled within the step instead.
+    if (inA && !inC) dt = min(dt, dtAtlas);
     if (inI) dt = min(dt, dtIcl);
     // Never step over the start of a finer region.
     if (t < rS.x) dt = min(dt, rS.x - t);
@@ -424,7 +427,7 @@ _IMPL = """//VTK::Light::Impl
         kap = m.b * pint(z0, z1, 0.045, dt);
         {
           vec2 puv = mapUV(pm, uMapHalf, uPtsN);
-          e += (wTex * texture(ptsThinTex, puv).rgb + texture(ptsFieldTex, puv).rgb)
+          e += uPtsGain * (wTex * texture(ptsThinTex, puv).rgb + texture(ptsFieldTex, puv).rgb)
              * pint(z0, z1, 0.04, dt);
         }
       }
@@ -451,18 +454,25 @@ _IMPL = """//VTK::Light::Impl
     if (inA) {
       // 3D emissivity volume stored as a 2D atlas of z slices (inlined:
       // samplers are declared after the PositionVC::Dec block).
-      vec3 q = (p + uAtlasHalf) / (2.0 * uAtlasHalf);
-      if (all(greaterThanEqual(q, vec3(0.0))) && all(lessThanEqual(q, vec3(1.0)))) {
-        float zf = q.z * uAtlasN - 0.5;
-        float za = clamp(floor(zf), 0.0, uAtlasN - 1.0);
-        float zb = min(za + 1.0, uAtlasN - 1.0);
-        float fz = clamp(zf - za, 0.0, 1.0);
-        vec2 inT = clamp(q.xy * uAtlasN, 0.5, uAtlasN - 0.5);
-        vec2 a0 = vec2(mod(za, uAtlasNx), floor(za / uAtlasNx)) * uAtlasN + inT;
-        vec2 a1 = vec2(mod(zb, uAtlasNx), floor(zb / uAtlasNx)) * uAtlasN + inT;
-        e += mix(texture(atlasTex, a0 / uAtlasSize).rgb,
-                 texture(atlasTex, a1 / uAtlasSize).rgb, fz) * dt;
+      int ns = int(clamp(ceil(dt / dtAtlas), 1.0, 8.0));
+      vec3 acc = vec3(0.0);
+      for (int k = 0; k < 8; k++) {
+        if (k >= ns) break;
+        vec3 pa = ro + (t + (float(k) + 0.5) / float(ns) * dt) * rd;
+        vec3 q = (pa + uAtlasHalf) / (2.0 * uAtlasHalf);
+        if (all(greaterThanEqual(q, vec3(0.0))) && all(lessThanEqual(q, vec3(1.0)))) {
+          float zf = q.z * uAtlasN - 0.5;
+          float za = clamp(floor(zf), 0.0, uAtlasN - 1.0);
+          float zb = min(za + 1.0, uAtlasN - 1.0);
+          float fz = clamp(zf - za, 0.0, 1.0);
+          vec2 inT = clamp(q.xy * uAtlasN, 0.5, uAtlasN - 0.5);
+          vec2 a0 = vec2(mod(za, uAtlasNx), floor(za / uAtlasNx)) * uAtlasN + inT;
+          vec2 a1 = vec2(mod(zb, uAtlasNx), floor(zb / uAtlasNx)) * uAtlasN + inT;
+          acc += mix(texture(atlasTex, a0 / uAtlasSize).rgb,
+                     texture(atlasTex, a1 / uAtlasSize).rgb, fz);
+        }
       }
+      e += acc * dt / float(ns);
     }
     vec3 att = exp(-(tau + 0.5 * kap * uDustK));
     col += e * att;
@@ -551,7 +561,7 @@ _IMPL = """//VTK::Light::Impl
   vec3 outc = col / uWhite * f;
   float l2 = (outc.r + outc.g + outc.b) / 3.0;
   outc = clamp(vec3(l2) + uSat * (outc - vec3(l2)), 0.0, 1.0);
-  outc = screenB(outc, clamp(wPts * starD, 0.0, 1.0));
+  outc = screenB(outc, clamp(uPtsGain * wPts * starD, 0.0, 1.0));
 
   // ICL envelope (display overlay, around the closest-approach point).
   if (uIclOpacity > 0.0) {
@@ -837,6 +847,7 @@ class GPUGalaxy:
         u.SetUniform3f("uDustK", [float(v) for v in DUST_K])
         f("uWhite", float(white))
         f("uWhite0", float(white))
+        f("uPtsGain", 1.0)  # star sources on (component views switch it)
         f("uQ", 40.0)
         f("uSat", 1.05)
         f("uLNuc", float(rc.l_nucleus))
