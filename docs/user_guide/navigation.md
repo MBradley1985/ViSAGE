@@ -14,12 +14,13 @@ PyVista's standard trackball controls apply inside the render window:
 
 ## Persistent header controls
 
-Five buttons sit above the tab panel and work no matter which tab is active:
+Six buttons sit above the tab panel and work no matter which tab is active:
 
 | Button | Action |
 |---|---|
 | Reset Camera | Returns to a full-box view from outside the box |
 | Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
+| Info (i) | Opens or closes the selection card |
 | Centre (✛ crosshair icon) | Places the camera AT the box centre, looking out |
 | Isolate (🔍 magnifier icon) | Shows only the selection: the galaxy, or (in halo context) its halo and whole group |
 | HD | Detailed 3D model of the selection and its group — see [HD Mode](hd_mode.md) |
@@ -32,7 +33,7 @@ The Console also selects (`go to halo 42` selects that halo's central), and so d
 
 ### The selection card
 
-**Show info** (at the end of the Structure tab) opens the card:
+The **i** button in the header (or **Show info** at the end of the Structure tab) opens the card:
 
 | Part | What it does |
 |---|---|

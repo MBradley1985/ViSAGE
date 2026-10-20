@@ -34,7 +34,7 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 
 ### Selection & inspection
 - **Double-click a galaxy** (any tab, and inside HD) to select it: a cyan ring on it and smaller rings on the rest of its FOF group (merged where they would pile up). The selection follows the galaxy through snapshots by its GalaxyIndex.
-- **Selection card** (**Show info**, Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
+- **Selection card** (the **i** button beside Focus, or **Show info** in the Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
 - **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
 - **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it and fly there
 - **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU, with its surroundings out to 12 Mpc/h. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.

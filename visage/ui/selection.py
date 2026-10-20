@@ -883,8 +883,12 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_toggle_card")
     def _sel_toggle_card():
-        """Show info / Hide info."""
+        """Show info / Hide info (the header's i button and the
+        Structure tab's button)."""
         if not state.sel_active:
+            state.notice_text = "Double-click a galaxy to select it first."
+            state.notice_color = "info"
+            state.notice_show = True
             return
         state.sel_show = not bool(state.sel_show)
         _push()

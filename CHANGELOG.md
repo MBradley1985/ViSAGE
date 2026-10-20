@@ -33,7 +33,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   **Cancel** button (or Esc). The workers start and the shaders compile a
   few seconds after launch, and recent builds are cached (within a tenth
   of RAM), so turning HD off and on again is immediate.
-- **Selection card** (**Show info**, at the end of the Structure tab):
+- **Selection card** (the **i** button beside Focus, or **Show info** at the
+  end of the Structure tab):
   - properties, with every field on demand;
   - the host halo (the one the central sits on), and the group's members;
   - Go, Isolate, HD and Gas, and a **Galaxy / Halo + group** switch that

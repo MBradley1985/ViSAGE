@@ -384,3 +384,14 @@ def test_changing_model_or_box_clears_the_selection(panel):
     state.flush()
     ctrl.sel_reset()
     assert not state.sel_active and state.nav_gal_idx is None
+
+
+def test_info_button_needs_a_selection(panel):
+    server, _ = panel
+    state, ctrl = server.state, server.controller
+    ctrl.sel_toggle_card()  # nothing selected: says so, no card
+    assert not state.sel_show and state.notice_show
+    state.nav_gal_idx = 3
+    state.flush()
+    ctrl.sel_toggle_card()
+    assert state.sel_show
