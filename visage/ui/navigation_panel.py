@@ -4339,21 +4339,31 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         loop.create_task(_build())
 
-    def _hd_frame(center, R, radius: float) -> None:
-        """Camera at ~55 deg from the (central's) spin axis, `radius`
-        (Mpc/h) filling the view, sparkles around it, Isolate engaged."""
+    def _hd_frame(center, R, radius: float, keep_view: bool = False) -> None:
+        """`radius` (Mpc/h) filling the view, sparkles around it, Isolate
+        engaged.  The camera looks from ~55 deg off the galaxy's spin axis,
+        or (`keep_view`, for a group) along the current line of sight, so
+        the members keep the layout they had in the normal view."""
         import numpy as np
 
+        scene.camera._clear_indicator()  # Go's target marker
+        scene.camera._clear_member_indicators()
         cam = scene.plotter.camera
         dist = radius / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
-        e2, e3 = R[:, 1], R[:, 2]
-        view = np.cos(np.deg2rad(55)) * e3 - np.sin(np.deg2rad(55)) * e2
+        if keep_view:
+            view = np.subtract(cam.position, cam.focal_point)
+            view = view / max(np.linalg.norm(view), 1e-12)
+            up = cam.up
+        else:
+            e2, e3 = R[:, 1], R[:, 2]
+            view = np.cos(np.deg2rad(55)) * e3 - np.sin(np.deg2rad(55)) * e2
+            up = e3
         cx, cy, cz = (float(c) for c in center)
         cam.focal_point = (cx, cy, cz)
         cam.position = tuple(
             float(v) for v in np.asarray(center) + view * dist
         )
-        cam.up = tuple(float(v) for v in e3)
+        cam.up = tuple(float(v) for v in up)
         scene.plotter.renderer.ResetCameraClippingRange()
 
         _sparkle_target["center"] = (cx, cy, cz)
@@ -4469,7 +4479,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         radius = grp.radius_world
         if state.hd_gas:
             radius = max(radius, grp.rvir_world)
-        _hd_frame(grp.center, grp.basis, radius)
+        _hd_frame(grp.center, grp.basis, radius, keep_view=True)
 
     @state.change("hd_gas")
     def on_hd_gas_change(hd_gas=False, **_):

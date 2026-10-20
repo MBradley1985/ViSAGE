@@ -20,7 +20,13 @@ import os
 import numpy as np
 
 from visage.hd.layer import HDGalaxyLayer
-from visage.hd.model import OLD_LIGHT, SageGalaxy, display_sizes
+from visage.hd.model import (
+    CGM_RGB,
+    HOT_GAS_RGB,
+    OLD_LIGHT,
+    SageGalaxy,
+    display_sizes,
+)
 
 # Light scale for a shared exposure (as scripts/hd_galaxy/grid.py).
 M_REF = 3e10
@@ -91,6 +97,8 @@ class HDGroupLayer:
         self.members: list[HDGalaxyLayer] = []
         self._glow = None
         self._glow_data = None
+        self._halo = None
+        self._halo_rgb = None
         self._observer = None
         self._fxaa = None
         self.center = np.zeros(3)
@@ -134,6 +142,7 @@ class HDGroupLayer:
         self._add_glows(
             entries, hubble_h, display_luminosity(lead["gal"], k_lead)
         )
+        self._add_halos(entries, hubble_h, gas)
         self._observer = ren.AddObserver("StartEvent", self._update_glows)
         self._update_glows()
 
@@ -189,6 +198,61 @@ class HDGroupLayer:
         self._glow = a
         self._cloud = cloud
 
+    def _add_halos(self, entries, hubble_h, gas):
+        """Every member's halo as a soft glow the size of its normal-mode
+        splat (Rvir, scaled by its gas mass as there), tinted by whichever
+        of CGM or hot gas dominates: the galaxy keeps its true size and
+        sits inside the same footprint it has in the normal view.  The
+        central's glow gives way to its full gas render when Gas is on."""
+        import pyvista as pv
+
+        from visage.utils.sizing import galaxy_world_radii_rvir
+
+        pos, rad, col = [], [], []
+        for e in entries:
+            g = e["gal"]
+            r = float(
+                galaxy_world_radii_rvir(
+                    np.array([g.rvir_kpc * hubble_h / 1000.0])
+                )[0]
+            )
+            cgm = g.cgm_gas >= g.hot_gas
+            m = max(g.cgm_gas if cgm else g.hot_gas, 1.0)
+            lo, hi = (7.0, 11.5) if cgm else (7.0, 14.0)
+            f = float(np.clip((np.log10(m) - lo) / (hi - lo), 0.0, 1.0))
+            pos.append(np.asarray(e["center"], float))
+            rad.append(r * (0.5 + 0.5 * f))
+            rgb = np.asarray(CGM_RGB if cgm else HOT_GAS_RGB, float)
+            col.append((0.06 + 0.16 * f) * rgb / max(rgb.max(), 1e-6))
+        self._halo_rgb = np.array(col, np.float32)
+        cloud = pv.PolyData(np.array(pos))
+        cloud["rgb"] = self._halo_rgb.copy()
+        cloud["radius"] = np.array(rad, np.float32)
+        a = self._pl.add_mesh(
+            cloud,
+            scalars="rgb",
+            rgb=True,
+            style="points_gaussian",
+            emissive=True,
+            show_scalar_bar=False,
+            render=False,
+            reset_camera=False,
+            pickable=False,
+        )
+        a.mapper.SetScaleArray("radius")
+        a.mapper.SetScaleFactor(1.0)
+        self._halo = a
+        self._halo_cloud = cloud
+        self._halo_gas(gas)
+
+    def _halo_gas(self, on: bool):
+        if self._halo_rgb is None:
+            return
+        rgb = self._halo_rgb.copy()
+        if on:
+            rgb[0] = 0.0  # the central's full gas render takes over
+        self._halo_cloud["rgb"] = rgb
+
     def _update_glows(self, *_):
         """Per frame: each glow at least ~2.5 px across, faded out once the
         member's HD model is ~8 px across."""
@@ -225,6 +289,10 @@ class HDGroupLayer:
             self._pl.remove_actor(self._glow, render=False)
             self._glow = None
             self._glow_data = None
+        if self._halo is not None:
+            self._pl.remove_actor(self._halo, render=False)
+            self._halo = None
+            self._halo_rgb = None
         if self._fxaa is not None:
             self._pl.renderer.SetUseFXAA(self._fxaa)
             self._fxaa = None
@@ -233,6 +301,7 @@ class HDGroupLayer:
         """The group's gas is the central's halo."""
         if self.members:
             self.members[0].set_gas(on)
+        self._halo_gas(on)
 
     # -- geometry ------------------------------------------------------
 
