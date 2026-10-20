@@ -4220,7 +4220,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return
         # Its halo (just the galaxy if alone, else the pair, group or
         # cluster) and its surroundings.
-        _hd_build_group(galaxies, _group_members(galaxies, gidx))
+        _hd_build_group(galaxies, _group_members(galaxies, gidx), gidx)
 
     def _hd_frame(center, R, radius: float, keep_view: bool = False) -> None:
         """`radius` (Mpc/h) filling the view, sparkles around it, Isolate
@@ -4287,7 +4287,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             p = c + d - box * np.round(d / box)
         return p + scene.active_model.offset
 
-    def _hd_build_group(galaxies, idx) -> None:
+    def _hd_build_group(galaxies, idx, focus: int | None = None) -> None:
         """HD for the selected galaxy's halo and its surroundings.
 
         Every member of the group (just the galaxy, if it is alone) at its
@@ -4379,7 +4379,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             for k in todo:
                 fn, *a = args(k)
                 entries[k]["prep"] = fn(*a)
-            _hd_show_group(entries, h)
+            _hd_show_group(entries, h, focus)
             return
 
         state.hd_building = True
@@ -4416,7 +4416,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     state.flush()
                 for fut, k in futs.items():
                     entries[k]["prep"] = fut.result()
-                _hd_show_group(entries, h)
+                _hd_show_group(entries, h, focus)
             finally:
                 state.hd_building = False
                 state.flush()
@@ -4453,16 +4453,42 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _push()
         return True
 
-    def _hd_show_group(entries, h) -> None:
+    def _hd_show_group(entries, h, focus: int | None = None) -> None:
+        """Draw the built HD scene and frame it on what's selected: in
+        the selection's halo context the whole group around its central;
+        otherwise the selected galaxy itself (the rest of its group and
+        its surroundings drawn around it)."""
         scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
         grp = _hd_group()
         grp.show(entries, h, gas=bool(state.hd_gas))
         _hd["mode"] = "halo"
         _hd["built_snap"] = state.snap_num
-        # Framed on the galaxies (zoom out for the halo gas).
-        radius = grp.radius_world
+        halo_ctx = state.has("sel_kind") and str(state.sel_kind) == "halo"
+        target = None
+        if not halo_ctx and focus is not None:
+            target = next(
+                (
+                    e
+                    for e in entries
+                    if e.get("idx") == focus and e.get("layer")
+                ),
+                None,
+            )
+        if target is not None:
+            lay = target["layer"]
+            _hd_frame(
+                lay._center,
+                lay._R,
+                lay.radius_world,
+                keep_view=len(grp.members) > 1,
+            )
+            return
+        # The group (zoom out for the halo gas).
         _hd_frame(
-            grp.center, grp.basis, radius, keep_view=len(grp.members) > 1
+            grp.center,
+            grp.basis,
+            grp.radius_world,
+            keep_view=len(grp.members) > 1,
         )
 
     def _hd_drop(*_) -> None:

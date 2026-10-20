@@ -164,3 +164,28 @@ def test_isolate_follows_the_galaxy_or_halo_context(panel):
     state.sel_kind = "halo"
     state.flush()
     assert state.sel_title == "Halo 0"
+
+
+def test_hd_frames_the_selected_galaxy_not_the_central(panel):
+    """A pair, the satellite selected: HD draws both but centres on the
+    satellite; in halo context it frames the group around the central."""
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = _group(scene, [1, 8], central=1)
+    galaxies.positions[8] = galaxies.positions[1] + [0.15, 0.0, 0.0]
+    off = scene.active_model.offset
+    state.nav_gal_idx = 8
+    state.flush()
+    ctrl.toggle_hd()
+    state.flush()
+    cam = scene.plotter.camera
+    assert np.allclose(cam.focal_point, galaxies.positions[8] + off, atol=1e-5)
+    ctrl.toggle_hd()
+    state.flush()
+    state.sel_kind = "halo"
+    state.flush()
+    ctrl.toggle_hd()
+    state.flush()
+    assert np.allclose(cam.focal_point, galaxies.positions[1] + off, atol=1e-5)
+    ctrl.toggle_hd()
+    state.flush()
