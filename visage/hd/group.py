@@ -41,6 +41,27 @@ N_GROUP = 16
 N_HD = 40
 
 
+def normal_mode_radius_kpc(gal: SageGalaxy, hubble_h: float) -> float:
+    """The radius of a galaxy's stellar (disk) layer in the normal view
+    (visage.scene.galaxy_layer: 0.22 Rvir, by disk mass), in kpc."""
+    r_outer = max(gal.rvir_kpc * hubble_h / 1000.0, 0.02)  # Mpc/h
+    disk = max(gal.stellar_mass - gal.bulge_mass, 1.0)
+    f = float(np.clip((np.log10(disk) - 7.0) / 5.0, 0.0, 1.0))
+    return r_outer * 0.22 * (0.35 + 0.65 * f) * 1000.0 / hubble_h
+
+
+# Most a member is enlarged to match its normal-mode size.
+MAX_MAGNIFY = 5.0
+
+
+def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
+    """How much to enlarge a member's stars so they fill its normal-mode
+    stellar layer (true size when that is already smaller)."""
+    visible = rc.extent * rc.unit_kpc * 0.8  # kpc
+    r = normal_mode_radius_kpc(gal, hubble_h) / max(visible, 1e-6)
+    return float(np.clip(r, 1.0, MAX_MAGNIFY))
+
+
 def display_luminosity(gal: SageGalaxy, kind: str) -> float:
     """Relative brightness of a galaxy in a shared exposure."""
     if kind == "disk":
@@ -101,6 +122,7 @@ class HDGroupLayer:
         self._halo_rgb = None
         self._observer = None
         self._fxaa = None
+        self._near_tol = None
         self.center = np.zeros(3)
 
     @property
@@ -114,6 +136,10 @@ class HDGroupLayer:
         ren = self._pl.renderer
         self._fxaa = bool(ren.GetUseFXAA())
         ren.SetUseFXAA(False)
+        # Let the camera close in on a few-kpc galaxy without the near
+        # clipping plane (set by the Rvir-sized gas box) cutting it.
+        self._near_tol = ren.GetNearClippingPlaneTolerance()
+        ren.SetNearClippingPlaneTolerance(1e-5)
         lead = entries[0]
         k_lead = lead["prep"]["rc"].kind
         # Shared exposure, anchored on the central.
@@ -135,6 +161,7 @@ class HDGroupLayer:
                 white=w_common / lum,
                 halo=i == 0,
                 manage_fxaa=False,
+                magnify=magnification(e["gal"], e["prep"]["rc"], hubble_h),
             )
             self.members.append(lay)
             e["layer"] = lay
@@ -296,6 +323,9 @@ class HDGroupLayer:
         if self._fxaa is not None:
             self._pl.renderer.SetUseFXAA(self._fxaa)
             self._fxaa = None
+        if self._near_tol is not None:
+            self._pl.renderer.SetNearClippingPlaneTolerance(self._near_tol)
+            self._near_tol = None
 
     def set_gas(self, on: bool):
         """The group's gas is the central's halo."""
@@ -320,6 +350,13 @@ class HDGroupLayer:
         if len(r) <= 10:
             return float(max(r))
         return float(max(r[0], np.percentile(r, 75)))
+
+    def member_at(self, center) -> HDGalaxyLayer | None:
+        """The HD member drawn at world position `center`."""
+        for m in self.members:
+            if np.allclose(m._center, center, atol=1e-6):
+                return m
+        return None
 
     @property
     def rvir_world(self) -> float:

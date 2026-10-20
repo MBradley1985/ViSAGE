@@ -111,6 +111,7 @@ class HDGalaxyLayer:
         self._gpu = GPUGalaxy(plotter)
         self._observer = None
         self._fxaa = None
+        self._near_tol = None
         self._white0 = 1.0
         self._gas_on = False
         self.gal: SageGalaxy | None = None
@@ -161,10 +162,14 @@ class HDGalaxyLayer:
         white: float | None = None,
         halo: bool = True,
         manage_fxaa: bool = True,
+        magnify: float = 1.0,
     ):
         """Build and draw the HD model of `gal` at world position `center`.
 
-        `prep`: `prepare(gal)`, if already made.  For a member of a group:
+        `prep`: `prepare(gal)`, if already made.  `magnify` draws the stars
+        that many times their true size (a group member, to match its
+        normal-mode splat) while the halo (gas, ICL) keeps its true size.
+        For a member of a group:
         `white` is its share of the group's common exposure (default: its
         own), `halo=False` leaves out the halo (gas, ICL, Rvir box) for a
         satellite, and `manage_fxaa=False` leaves FXAA to the group."""
@@ -174,6 +179,16 @@ class HDGalaxyLayer:
             prep = self.prepare(gal)
         self.gal = gal
         rc, maps, pts = prep["rc"], prep["maps"], prep["pts"]
+        if magnify != 1.0:
+            import dataclasses
+
+            # One model unit is now `magnify` times more kpc on screen; the
+            # halo is laid out in kpc, so it keeps its true size.
+            rc = dataclasses.replace(
+                rc,
+                unit_kpc=rc.unit_kpc * magnify,
+                icl_a=rc.icl_a / magnify,
+            )
         self.recipe = rc
 
         self._R = galaxy_basis(spin, rc.seed)
@@ -202,6 +217,10 @@ class HDGalaxyLayer:
             # The shader resolves single stars; FXAA would smear them.
             self._fxaa = bool(ren.GetUseFXAA())
             ren.SetUseFXAA(False)
+            # Let the camera close in on a few-kpc galaxy without the near
+            # clipping plane (set by the Rvir-sized gas box) cutting it.
+            self._near_tol = ren.GetNearClippingPlaneTolerance()
+            ren.SetNearClippingPlaneTolerance(1e-5)
         # Camera uniforms are refreshed as each frame starts, so they follow
         # camera moves and window resizes alike.
         self._observer = (ren, ren.AddObserver("StartEvent", self._on_camera))
@@ -218,6 +237,9 @@ class HDGalaxyLayer:
         if self._fxaa is not None:
             self._pl.renderer.SetUseFXAA(self._fxaa)
             self._fxaa = None
+        if self._near_tol is not None:
+            self._pl.renderer.SetNearClippingPlaneTolerance(self._near_tol)
+            self._near_tol = None
         self._gpu.clear()
         self.gal = None
         self.recipe = None

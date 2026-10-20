@@ -1485,6 +1485,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("go_to_galaxy_enter")
     def on_go_to_galaxy_enter():
+        # In HD of a group, Go flies to that member and keeps HD on.
+        if _hd_go_to_member():
+            return
         _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
 
     @ctrl.set("clear_indicator")
@@ -4470,6 +4473,35 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 state.flush()
 
         loop.create_task(_build())
+
+    def _hd_go_to_member() -> bool:
+        """If HD is showing a group and the Galaxy index is one of its HD
+        members, fly to it (keeping the view direction) and return True."""
+        import numpy as np
+
+        grp = _hd["group"]
+        if _hd["mode"] != "halo" or grp is None or not grp.active:
+            return False
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            return False
+        _, galaxies = scene.active_model.loader.get(scene.current_snap)
+        if not 0 <= gidx < galaxies.count:
+            return False
+        center = galaxies.positions[gidx] + scene.active_model.offset
+        m = grp.member_at(center)
+        if m is None:
+            return False
+        cam = scene.plotter.camera
+        view = np.subtract(cam.position, cam.focal_point)
+        view = view / max(np.linalg.norm(view), 1e-12)
+        dist = m.radius_world / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
+        cam.focal_point = tuple(float(v) for v in center)
+        cam.position = tuple(float(v) for v in center + view * dist)
+        scene.plotter.renderer.ResetCameraClippingRange()
+        _push()
+        return True
 
     def _hd_show_group(entries, h) -> None:
         scene.set_focus_indices(halo_indices=[], galaxy_indices=[])

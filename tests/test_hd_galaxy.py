@@ -337,6 +337,13 @@ def test_hd_draws_the_whole_group(hd_panel):
     # Only the central carries the halo.
     assert grp.members[0]._gpu.gas is not None
     assert all(m._gpu.gas is None for m in grp.members[1:])
+    # Go to a member while in HD: the camera flies to it, HD stays on.
+    state.nav_gal_idx = 5
+    state.flush()
+    ctrl.go_to_galaxy_enter()
+    assert state.hd_active and grp.active
+    target = galaxies.positions[5] + scene.active_model.offset
+    assert np.allclose(scene.plotter.camera.focal_point, target, atol=1e-4)
     state.hd_gas = True
     state.flush()
     ctrl.toggle_hd()
