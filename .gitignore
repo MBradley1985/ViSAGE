@@ -78,3 +78,7 @@ sage_library/
 # Personal stories in sage_stories/ stay local (covered by *.json above);
 # ship a story by adding it to visage/examples/ instead.
 .pypirc
+
+# Developer scripts (HD prototype, figure sheets, catalogue helper):
+# local only, not part of ViSAGE.
+scripts/

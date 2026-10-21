@@ -89,4 +89,4 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 ## Fields not used for visuals
 
-`Concentration`, `ICS_accrete` and `infallStellarMass` are read but don't change the picture. `Cooling` is used only by the offline prototype in `scripts/hd_galaxy`.
+`Concentration`, `ICS_accrete` and `infallStellarMass` are read but don't change the picture. `Cooling` was used only by an early offline prototype.
