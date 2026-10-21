@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.1] — 2026-10-21
+
 ### Changed
 
 - The info (**i**) button now sits to the left of Focus.
