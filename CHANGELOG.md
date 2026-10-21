@@ -8,6 +8,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- HD no longer draws the background cosmic-web glows (every galaxy out to
+  12 Mpc/h); the group, its massive neighbours and tidal features remain.
+
 ## [2.8.1] — 2026-10-21
 
 ### Changed

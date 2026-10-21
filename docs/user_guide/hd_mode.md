@@ -29,7 +29,7 @@ The full list of components, the SAGE26 fields each one uses and how, is in [HD 
 If the selected galaxy is in a FOF group, HD draws every member at its own position and spin:
 
 - **Members** are drawn at the size they have in the normal view, so the group keeps its layout. The halo gas keeps its true size.
-- **Neighbours:** the 16 most massive galaxies (M\* > 10⁹ M☉) within 1.5 Mpc/h are drawn in HD too. Everything within 12 Mpc/h appears as soft glows, so the group sits in its part of the cosmic web.
+- **Neighbours:** the 16 most massive galaxies (M\* > 10⁹ M☉) within 1.5 Mpc/h are drawn in HD too.
 - **Tidal features:** close pairs (within 100 kpc, mass ratio above 1:10) and galaxies that SAGE merges before the next snapshot raise tidal bridges and tails. These are stronger for prograde encounters.
 - **Satellites** in hot haloes can show ram-pressure ("jellyfish") tails and tidal stripping.
 

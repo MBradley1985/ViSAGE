@@ -1,9 +1,8 @@
 """HD mode for a whole halo: a pair, group or cluster.
 
 Every member of the FOF group is drawn at its own position and spin, with
-its surroundings: the most massive neighbours outside the group in HD too,
-and every other galaxy out to R_WEB as glows, so the group sits at its
-node of the cosmic web.  Close pairs raise tidal bridges and tails.  The
+the most massive neighbours outside the group in HD too.  Close pairs raise
+tidal bridges and tails.  The
 most massive ones get the full HD model (at a texture resolution that
 falls with rank, as each is small on screen); any long tail of a big
 cluster is drawn as soft glows.  All members share one exposure, so their
@@ -44,8 +43,8 @@ N_TOP = 4
 N_GROUP = 16
 N_HD = 40
 # Surroundings: HD for the N_NEIGH most massive neighbours (M* > M_NEIGH)
-# within R_NEIGH; glows for everything within R_WEB (Mpc/h).
-R_WEB = 12.0
+# within R_NEIGH (Mpc/h).  (No background glows for the wider cosmic web:
+# the user found them distracting.)
 R_NEIGH = 1.5
 N_NEIGH = 16
 M_NEIGH = 1e9
@@ -457,10 +456,6 @@ class HDGroupLayer:
             )
             col.append(b * rgb)
             hd.append(e.get("layer"))
-        # The web fades out over its outer 30% (no hard edge to the sphere).
-        r_lead = np.linalg.norm(np.array(pos) - np.array(pos[0]), axis=1)
-        fade = np.clip((R_WEB - r_lead) / (0.3 * R_WEB), 0.0, 1.0)
-        col = list(np.array(col) * fade[:, None])
         self._glow_data = {
             "pos": np.array(pos),
             "rad": np.array(rad),
