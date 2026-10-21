@@ -81,8 +81,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 |---|---|---|
 | Group members | `CentralGalaxyIndex`, `Type`, `Pos*` | Every member of the FOF group is drawn at its own position, magnified to its normal-view size (at most 5×). A galaxy alone in its halo is drawn at true size. |
 | Spin and orientation | `Spinx`, `Spiny`, `Spinz` | Each disk's plane is set by its spin vector. |
-| Neighbours | `Pos*`, `StellarMass` | The 16 most massive galaxies (M\* > 10⁹ M☉) within 1.5 Mpc/h are drawn in HD. Everything within 12 Mpc/h is drawn as glows: blue if sSFR > 10⁻¹¹ yr⁻¹, otherwise orange. |
-| Tidal bridges and tails | `Pos*`, `StellarMass`, `Vel*`, `Spin*` | Neighbours within 100 kpc with mass ratio above 1:10 raise tidal features. These are stronger the closer and more massive the neighbour, and weaker (×0.6) for retrograde encounters. |
+| Tidal bridges and tails | `Pos*`, `StellarMass`, `Vel*`, `Spin*` | Group members within 100 kpc of each other with mass ratio above 1:10 raise tidal features. These are stronger the closer and more massive the companion, and weaker (×0.6) for retrograde encounters. |
 | Merger about to happen | `mergeType` | A galaxy SAGE merges before the next snapshot interacts with the nearest more massive galaxy, at a strength set by the merger type. |
 | Jellyfish (ram-pressure) tail | `Vel*`, `Pos*`, `HotGas` (host), `Rvir` (host), `StellarMass`, `ColdGas`, `DiskRadius` | The strength is ρ_ICM v² against the disk's restoring force (Σ\* Σ_gas). It is calibrated on SAGE26 so that about 27% of satellites in hot haloes get a tail and about 1% a full one. The tail is a pink Hα streamer with blue knots, trailing the motion. It is brightened to undo the group's shared exposure, and ram pressure also strips up to half the satellite's CGM. |
 | Tidal stripping (satellites) | `Mvir`, `infallMvir` | A satellite that has lost more than 65% of its infall subhalo mass sheds stars into tidal streams. |

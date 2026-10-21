@@ -1,6 +1,6 @@
 # HD Mode
 
-HD replaces the selected galaxy's splat with a detailed 3D model built from its SAGE properties, ray-marched on the GPU every frame. If the galaxy has company, HD draws its whole pair, group or cluster, along with its surroundings.
+HD replaces the selected galaxy's splat with a detailed 3D model built from its SAGE properties, ray-marched on the GPU every frame. If the galaxy has company, HD draws its whole pair, group or cluster. Only the group is drawn: no other galaxies or background.
 
 Select a galaxy (double-click it), then press **HD**. The button sits next to Isolate (🔍) at the top of the right panel, and also on the selection card. Press **HD** again, or **Esc**, to go back to the normal view at a 10 Mpc/h standoff.
 
@@ -24,12 +24,11 @@ Sizes shrink with redshift as in the size–mass relation, and disks at high red
 
 The full list of components, the SAGE26 fields each one uses and how, is in [HD Galaxy Components](../physics/hd_components.md).
 
-## Groups, clusters and surroundings
+## Groups and clusters
 
 If the selected galaxy is in a FOF group, HD draws every member at its own position and spin:
 
 - **Members** are drawn at the size they have in the normal view, so the group keeps its layout. The halo gas keeps its true size.
-- **Neighbours:** the 16 most massive galaxies (M\* > 10⁹ M☉) within 1.5 Mpc/h are drawn in HD too. Everything within 12 Mpc/h appears as soft glows, so the group sits in its part of the cosmic web.
 - **Tidal features:** close pairs (within 100 kpc, mass ratio above 1:10) and galaxies that SAGE merges before the next snapshot raise tidal bridges and tails. These are stronger for prograde encounters.
 - **Satellites** in hot haloes can show ram-pressure ("jellyfish") tails and tidal stripping.
 

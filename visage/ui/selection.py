@@ -908,7 +908,7 @@ def build_selection(server, scene) -> None:
     # -- picking inside HD ---------------------------------------------
     # The catalogue is hidden in HD and the models aren't pickable, so a
     # double-click there picks among the galaxies HD draws (members,
-    # neighbours, the web), by their position on screen.
+    # the group's members), by their position on screen.
     clicks = {"t": 0.0, "xy": (0, 0)}
 
     def _hd_pick(obj, _ev):
