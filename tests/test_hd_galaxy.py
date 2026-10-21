@@ -576,3 +576,21 @@ def test_a_failed_build_says_so(hd_panel, monkeypatch):
         assert not state.hd_active and "HD build failed" in state.notice_text
 
     asyncio.run(run())
+
+
+def test_jellyfish_tail_gets_back_what_the_shared_exposure_takes():
+    from types import SimpleNamespace as NS
+
+    from visage.hd.group import tail_gains
+
+    def entry(gal, base):
+        rc = recipe_from_sage(gal)
+        return {"gal": gal, "prep": {"rc": rc, "exposure": NS(base=base)}}
+
+    central = entry(_disk(stellar_mass=3e11, galaxy_index=1), 1.0)
+    sat = entry(_disk(stellar_mass=3e9, galaxy_index=2), 1.0)
+    gains = tail_gains([central, sat], {1: {"ram": ((1, 0, 0), 0.8)}})
+    assert gains[1] > 2.0  # dimmed next to a 100x brighter central
+    # Not dimmed (a satellite about as bright as its central): left alone.
+    twin = entry(_disk(stellar_mass=3e11, galaxy_index=3), 1.0)
+    assert tail_gains([central, twin], {1: {"ram": ((1, 0, 0), 0.8)}}) == {}

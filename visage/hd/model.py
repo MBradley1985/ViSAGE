@@ -1302,13 +1302,21 @@ def tidal_points(
     return Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.2), "tidal")
 
 
+# Jellyfish tails: brightness (x the galaxy's light) and how it splits
+# between pink H-alpha streamers and blue star-forming knots.
+JELLY = dict(gain=1.0, halpha=0.45, knots=0.55)
+
+
 def jelly_points(
-    rc: GalaxyRecipe, direction, strength: float, seed: int
+    rc: GalaxyRecipe, direction, strength: float, seed: int, gain: float = 1.0
 ) -> list[Points]:
     """A ram-pressure-stripped ("jellyfish") gas tail: the galaxy's gas
     pushed out behind it by the hot halo it is ploughing through, forming
     stars as it goes -- blue knots and pink H-alpha streaks trailing
-    along `direction` (model frame, away from the motion)."""
+    along `direction` (model frame, away from the motion).  `gain`
+    brightens it to undo a group's shared exposure, which dims a satellite
+    next to a much brighter central: the tail then looks as it does at the
+    satellite's own exposure."""
     rng = np.random.default_rng(seed)
     u = np.asarray(direction, float)
     u = u / max(np.linalg.norm(u), 1e-9)
@@ -1334,10 +1342,10 @@ def jelly_points(
     )
     main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
     # (Bright for its surface: real tails stand out in H-alpha imaging.)
-    total = 3.0 * strength * main_light
+    total = 3.0 * JELLY["gain"] * gain * strength * main_light
     # Ionised gas: diffuse pink streamers.
     lum = 1.15 - t
-    lum = lum * 0.45 * total / lum.sum()
+    lum = lum * JELLY["halpha"] * total / lum.sum()
     gas = Points(
         pos, lum, np.tile(HALPHA_RGB, (n, 1)), np.full(n, 1.0), "jelly"
     )
@@ -1346,7 +1354,7 @@ def jelly_points(
     w = (1.15 - t) / (1.15 - t).sum()
     pick = rng.choice(n, m, p=w)
     klum = rng.pareto(1.6, m) + 1
-    klum *= 0.55 * total / klum.sum()
+    klum *= JELLY["knots"] * total / klum.sum()
     knots = Points(
         pos[pick] + rng.normal(0, 0.02 * e, (m, 3)),
         klum,

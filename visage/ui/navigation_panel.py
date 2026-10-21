@@ -4331,6 +4331,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             pool,
             prepare_member,
             satellite_context,
+            tail_gains,
             tidal_partners,
         )
 
@@ -4420,6 +4421,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
             for k in todo:
                 fn, *a = args(k)
                 entries[k]["prep"] = fn(*a)
+            # Jellyfish tails the shared exposure dims: rebuilt brighter.
+            for k, gain in tail_gains(entries, sat_ctx).items():
+                sat_ctx[k]["tail_gain"] = gain
+                fn, *a = args(k)
+                entries[k]["prep"] = fn(*a)
             _hd_cache().put(key, [entries[k]["prep"] for k in todo])
             _hd_show_group(entries, h, focus)
             return
@@ -4469,6 +4475,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     state.flush()
                 for fut, k in futs.items():
                     entries[k]["prep"] = fut.result()
+                # Jellyfish tails the shared exposure dims: rebuilt
+                # brighter (one more build each, in parallel).
+                gains = tail_gains(entries, sat_ctx)
+                for k, gain in gains.items():
+                    sat_ctx[k]["tail_gain"] = gain
+                redo = {k: asyncio.ensure_future(_prep(k)) for k in gains}
+                _hd["futs"] = list(redo.values())
+                for k, fut in redo.items():
+                    entries[k]["prep"] = await fut
+                    if _hd["build"] is not token:
+                        return
                 _hd_cache().put(key, [entries[k]["prep"] for k in todo])
                 _hd_show_group(entries, h, focus)
             except asyncio.CancelledError:

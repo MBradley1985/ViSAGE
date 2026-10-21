@@ -67,6 +67,12 @@ def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
 
 
 # Texture resolutions per build quality.
+# A jellyfish's own CGM streams fade with its ram pressure: by up to
+# CGM_STRIP of their strength at full ram pressure (the user found 1.0 too
+# much: some CGM stays).
+STRIP_CGM = True
+CGM_STRIP = 0.5
+
 QUALITY = {
     "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 112},
     "group": {"map_n": 768, "npts": 1024, "exp_npix": 160, "atlas_n": 80},
@@ -171,7 +177,13 @@ class HDGalaxyLayer:
             R = galaxy_basis(ctx.get("spin"), rc.seed)
             if ctx.get("ram"):
                 d, st = ctx["ram"]
-                pts += jelly_points(rc, R.T @ np.asarray(d), st, rc.seed + 211)
+                pts += jelly_points(
+                    rc,
+                    R.T @ np.asarray(d),
+                    st,
+                    rc.seed + 211,
+                    gain=ctx.get("tail_gain", 1.0),
+                )
             if ctx.get("strip"):
                 d, st = ctx["strip"]
                 pts.append(
@@ -209,6 +221,8 @@ class HDGalaxyLayer:
             "gpu": prepare(
                 rc, maps, pts, npts=q["npts"], atlas_n=q["atlas_n"]
             ),
+            # Ram-pressure strength (0 if none): it strips the CGM too.
+            "ram": float(ctx["ram"][1]) if ctx.get("ram") else 0.0,
         }
 
     def show(
@@ -274,6 +288,18 @@ class HDGalaxyLayer:
             icl=icl,
             magnify=magnify,
         )
+        gs = self._gpu.gas
+        if (
+            STRIP_CGM
+            and gs is not None
+            and prep.get("ram", 0.0) > 0
+            and gs.stream_amp > 0
+        ):
+            # Ram pressure strips a satellite's diffuse CGM before its disk
+            # gas: a jellyfish keeps little of it, so its tail isn't lost
+            # in its own CGM streams.
+            gs.stream_amp *= max(0.0, 1.0 - CGM_STRIP * prep["ram"])
+            gs.set_uniforms(self._gpu._uni, on=bool(gas))
         self._gas_on = bool(gas)
         self._gpu.set_gas(self._gas_on)
         ren = self._pl.renderer

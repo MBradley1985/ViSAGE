@@ -26,6 +26,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   next snapshot raise tidal bridges and tails, and satellites show
   ram-pressure tails and stripping. Double-click picks galaxies inside HD.
   **Esc** (or HD again) returns to the normal view.
+- **Jellyfish satellites.** Ram pressure in a hot halo strips a satellite's
+  gas into a pink Hα tail with blue star-forming knots. The tail is brightened
+  to undo the group's shared exposure, so it shows next to a bright central;
+  the ram pressure also strips part of the satellite's own CGM. Tail strength
+  is calibrated on SAGE26: about a quarter of satellites in hot haloes get a
+  tail, about 1% a full one.
 - **HD gas.** The card's **Gas** button gives every member of the group
   its own halo gas: CGM with cold streams, hot gas with X-ray cavities,
   winds, radio jets and Hα filaments. It is off by default.

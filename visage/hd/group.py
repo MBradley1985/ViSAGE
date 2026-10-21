@@ -136,8 +136,10 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
 # Ram pressure: log10(rho_ICM v^2 / (Sigma_* Sigma_gas)) in the units of
 # `ram_pressure` -- calibrated on Millennium SAGE26 satellites in hot haloes
 # (the strongest ~30 per cent get visible tails).
-RAM_LO = -8.0
-RAM_SPAN = 1.3
+# log10(ram pressure / restoring force) mapped to a 0-1 tail strength:
+# among SAGE26 satellites in hot haloes ~27% get a tail and ~1% a full one.
+RAM_LO = -7.8
+RAM_SPAN = 2.0
 
 
 def ram_pressure(
@@ -154,6 +156,36 @@ def ram_pressure(
     restore = sat.stellar_mass * sat.cold_gas / max(rd, 0.1) ** 4
     lam = np.log10(rho * v_kms**2 / max(restore, 1e-30))
     return float(np.clip((lam - RAM_LO) / RAM_SPAN, 0.0, 1.0))
+
+
+# Cap on a jellyfish tail's exposure compensation.
+TAIL_GAIN_MAX = 10.0
+
+
+def tail_gains(entries, sat_ctx) -> dict:
+    """Jellyfish tails dimmed by the group's shared exposure, and by how
+    much: {entry index: gain}.  The group draws every member at the
+    central's exposure scaled by brightness ~ M*^0.35, which can dim a
+    satellite several times next to a bright central; its tail, faint to
+    begin with, then vanishes.  The gain brings the tail back to how it
+    looks at the satellite's own exposure (built preps needed: it is the
+    exact ratio of the two exposures, as show() sets them)."""
+    lead = entries[0]
+    if not lead.get("prep"):
+        return {}
+    w_common = lead["prep"]["exposure"].base * display_luminosity(
+        lead["gal"], lead["prep"]["rc"].kind
+    )
+    out = {}
+    for k, ctx in sat_ctx.items():
+        e = entries[k]
+        if "ram" not in ctx or not e.get("prep"):
+            continue
+        lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
+        f = (w_common / lum) / max(e["prep"]["exposure"].base, 1e-12)
+        if f > 1.15:
+            out[k] = float(min(f, TAIL_GAIN_MAX))
+    return out
 
 
 def satellite_context(entries, hubble_h: float) -> dict:

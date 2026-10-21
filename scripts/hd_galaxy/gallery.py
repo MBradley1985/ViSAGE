@@ -250,9 +250,11 @@ def picks_highz():
     return out
 
 
-def render(v, galaxies, gid, inc=55.0):
+def render(v, galaxies, gid, inc=55.0, both=False):
     """The galaxy as the viewer's HD draws it (gas on), seen `inc` degrees
-    from its spin axis, the view +-HALF_KPC across."""
+    from its spin axis, the view +-HALF_KPC across.  `both`: also with gas
+    off, from the same build and view (gas is a shader switch); returns
+    ((gas on, gas off), magnification)."""
     from viewer_shots import capture
 
     from visage.hd.group import HDGroupLayer
@@ -290,6 +292,12 @@ def render(v, galaxies, gid, inc=55.0):
     v.scene.plotter.renderer.ResetCameraClippingRange()
     v.scene.camera.marker.clear()
     img = capture(v.scene)
+    if both:
+        st.hd_gas = False
+        st.flush()
+        img = (img, capture(v.scene))
+        st.hd_gas = True
+        st.flush()
     ctrl.toggle_hd()
     st.flush()
     return img, mag
@@ -341,28 +349,34 @@ def sheet(panels, title, path, ncol):
 def main():
     OUT.mkdir(exist_ok=True)
     v = Viewer(npix=700)
-    panels = []
+    panels, bare = [], []
     g = load("millennium")
     galaxies = v.snapshot(63)
     for label, k, note in picks_z0(g):
-        img, mag = render(v, galaxies, int(g["GalaxyIndex"][k]))
+        (img, off), mag = render(
+            v, galaxies, int(g["GalaxyIndex"][k]), both=True
+        )
         sub = f"z = 0 · log M* {_lm(g)[k]:.1f}"
         sub += f" · drawn ×{mag:.1f}" if mag > 1.05 else ""
         sub += f"\n{note}" if note else ""
         panels.append((img, label, sub))
+        bare.append((off, f"{label} · no gas", sub))
         print(label, flush=True)
     for snap, gs, label, k, note in picks_highz():
         galaxies = v.snapshot(snap)
-        img, mag = render(v, galaxies, int(gs["GalaxyIndex"][k]))
+        (img, off), mag = render(
+            v, galaxies, int(gs["GalaxyIndex"][k]), both=True
+        )
         sub = f"z = {gs['redshift']:.1f} · log M* {_lm(gs)[k]:.1f}"
         sub += f" · drawn ×{mag:.1f}" if mag > 1.05 else ""
         sub += f"\n{note}" if note else ""
         panels.append((img, label, sub))
+        bare.append((off, f"{label} · no gas", sub))
         print(label, flush=True)
     sheet(
-        panels,
-        "Galaxies SAGE26 produces, as ViSAGE HD draws them (gas on) -- "
-        "Millennium, each ±10 kpc of the galaxy",
+        panels + bare,
+        "Galaxies SAGE26 produces, as ViSAGE HD draws them -- Millennium, "
+        "each ±10 kpc of the galaxy; top four rows gas on, bottom four gas off",
         OUT / "gallery_gas.png",
         6,
     )
