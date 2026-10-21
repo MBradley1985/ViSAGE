@@ -20,7 +20,6 @@ from visage.utils.sizing import galaxy_world_radii_rvir, glow_crowding
 from visage.io.halo_reader import HaloSnapshot, load_halo_snapshot
 from visage.io.snapshot_table import SnapshotTable
 
-
 # Background loads (preload / prefetch) hold off until this monotonic time.
 # The view pushes it forward with every frame it sends while the camera
 # moves, so snapshot reading does not compete with rendering for the CPU;

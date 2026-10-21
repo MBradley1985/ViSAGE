@@ -327,13 +327,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state, ctrl = server.state, server.controller
 
     # Navigation state
-    state.nav_halo_idx = 0
-    state.nav_gal_idx = 0
-    state.nav_gal_last_radius = 10.0  # 10 Mpc/h — Target Go default
+    # Nothing selected until the user picks something (None = no selection).
+    state.nav_halo_idx = None
+    state.nav_gal_idx = None
+    state.nav_gal_last_radius = 10.0  # radius of the last galaxy zoom (focus)
     state.nav_x = round(scene._cfg.box_size / 2, 2)
     state.nav_y = round(scene._cfg.box_size / 2, 2)
     state.nav_z = round(scene._cfg.box_size / 2, 2)
-    state.nav_distance = 10.0  # 10 Mpc/h — Target/Environment standoff
+    state.nav_distance = 10.0  # Coords sphere radius / standoff
+    # Target / Environment halo standoff: its own value, so drawing or
+    # filling the Coords sphere doesn't change where Go takes you.
+    state.nav_halo_distance = 10.0  # 10 Mpc/h
     state.nav_box_xmin = 0.0
     state.nav_box_xmax = round(scene._cfg.box_size / 2, 2)
     state.nav_box_ymin = 0.0
@@ -342,6 +346,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.nav_box_zmax = round(scene._cfg.box_size / 2, 2)
     state.focus_active = False
     state.isolate_active = False
+    state.hd_active = False  # HD model of the selected galaxy (Target tab)
+    state.hd_building = False  # its build is running (message shown)
+    state.hd_progress = ""  # the message
+    state.hd_percent = -1  # its progress, 0-100 (-1: indeterminate)
+    state.hd_gas = False  # its halo-gas overlay (the card's Gas button)
+    # HD needs a GPU: off (and why) when OpenGL runs on the CPU.
+    if not state.has("hd_available"):
+        state.hd_available = True
+        state.hd_unavailable = ""
     state.nav_active_tab = "layers"
     state.draw_sphere_active = False  # interactive sphere widget in Coords tab
     state.draw_box_active = False  # interactive box widget in Box tab
@@ -1435,7 +1448,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def on_go_to_halo():
         try:
             idx = int(state.nav_halo_idx)
-            d = float(state.nav_distance)
+            d = float(state.nav_halo_distance)
             scene.camera.go_to_halo(idx, d)
             # Always engage focus on Go (user can toggle it off afterwards)
             pos = scene.camera._halo_index.position_of(idx)
@@ -1472,9 +1485,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def on_go_to_galaxy_5():
         _go_to_galaxy_at_radius(10.0)  # 10 Mpc/h
 
+    # Go / Enter always use the default 10 Mpc/h; the 3 / 5 / 10 buttons are
+    # one-off zooms that don't change it.
+    _GALAXY_GO_RADIUS = 10.0
+
     @ctrl.set("go_to_galaxy_enter")
     def on_go_to_galaxy_enter():
-        _go_to_galaxy_at_radius(float(state.nav_gal_last_radius))
+        # In HD of a group, Go flies to that member and keeps HD on.
+        if _hd_go_to_member():
+            return
+        _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
 
     @ctrl.set("clear_indicator")
     def on_clear_indicator():
@@ -1553,7 +1573,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         """Fly to the chosen halo and snap nav_gal_idx to the FOF central there."""
         try:
             hidx = int(state.nav_halo_idx)
-            d = float(state.nav_distance)
+            d = float(state.nav_halo_distance)
         except (TypeError, ValueError):
             return
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
@@ -1582,40 +1602,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.flush()
         _push()
 
-    @ctrl.set("show_galaxy_info")
-    def on_show_galaxy_info():
-        from visage.utils.galaxy_info import build_galaxy_info
-
-        try:
-            gidx = int(state.nav_gal_idx)
-        except (TypeError, ValueError):
-            return
-        _, galaxies = scene.active_model.loader.get(scene.current_snap)
-        if gidx < 0 or gidx >= galaxies.count:
-            return
-
-        # Show the info panel only — do NOT move the camera or change focus.
-        info = build_galaxy_info(
-            galaxies=galaxies,
-            fields_available=scene.active_model.fields_available,
-            idx=gidx,
-            snap_table=scene._snap_table,
-            hubble_h=scene._cfg.hubble_h,
-        )
-        state.galinfo_items = [
-            {"label": k, "value": v} for k, v in info.items()
-        ]
-        state.galinfo_show = True
-        # Close any other right-side overlay
-        state.groupinfo_show = False
-        state.flush()
-        _push()
-
-    @ctrl.set("hide_galaxy_info")
-    def on_hide_galaxy_info():
-        state.galinfo_show = False
-        state.flush()
-
     def _find_central_pos_and_extent(galaxies, gidx) -> tuple:
         """Return (central_position, group_extent_mpch, central_idx_in_galaxies)."""
         import numpy as np
@@ -1642,55 +1628,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         return central_pos, extent, central_idx
 
-    @ctrl.set("show_group_info")
-    def on_show_group_info():
-        from visage.utils.group_info import build_group_info
-        import numpy as np
-
-        try:
-            gidx = int(state.nav_gal_idx)
-        except (TypeError, ValueError):
-            return
-        _, galaxies = scene.active_model.loader.get(scene.current_snap)
-        if gidx < 0 or gidx >= galaxies.count:
-            return
-        info = build_group_info(
-            galaxies=galaxies,
-            fields_available=scene.active_model.fields_available,
-            idx=gidx,
-            hubble_h=scene._cfg.hubble_h,
-        )
-        state.groupinfo_items = [
-            {"label": k, "value": v} for k, v in info.items()
-        ]
-        state.groupinfo_show = True
-        # Mutually exclusive with the other right-side overlays
-        state.galinfo_show = False
-
-        # Place the standard small red circle on the FOF central — same
-        # indicator style used by the Galaxy info action.
-        central_pos, _extent, _central_idx = _find_central_pos_and_extent(
-            galaxies, gidx
-        )
-        if central_pos is not None:
-            off = scene.active_model.offset
-            scene.camera._add_circle_indicator(
-                (
-                    float(central_pos[0] + off[0]),
-                    float(central_pos[1] + off[1]),
-                    float(central_pos[2] + off[2]),
-                ),
-                0.0,
-            )
-        state.flush()
-        _push()
-
-    @ctrl.set("hide_group_info")
-    def on_hide_group_info():
-        state.groupinfo_show = False
-        state.flush()
-        _push()
-
     # ------------------------------------------------------------------
     # Export catalogue
     # ------------------------------------------------------------------
@@ -1705,7 +1642,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         else []
     ) + [
         {"title": "Current Filters", "value": "filters"},
-        {"title": "Target Galaxy", "value": "target"},
+        {"title": "Selected Galaxy", "value": "target"},
         {"title": "Group Members", "value": "group"},
         {"title": "Coords Sphere", "value": "coords"},
         {"title": "Box Region", "value": "box"},
@@ -1722,6 +1659,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _, galaxies = scene.active_model.loader.get(scene.current_snap)
         if galaxies.count == 0:
             raise ValueError("No galaxies loaded.")
+
+        if scope in ("target", "group") and state.nav_gal_idx is None:
+            raise ValueError("Select a galaxy first (double-click it).")
 
         if scope == "lightcone":
             return (
@@ -1833,7 +1773,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     _SCOPE_LABELS = {
         "lightcone": "Whole Lightcone",
         "filters": "Current Filters",
-        "target": "Target Galaxy",
+        "target": "Selected Galaxy",
         "group": "Group Members",
         "coords": "Coords Sphere",
         "box": "Box Region",
@@ -1910,14 +1850,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         state.export_busy = False
         state.flush()
-
-    # Auto-refresh whichever info card is open when the selection changes.
-    @state.change("nav_gal_idx")
-    def _refresh_info_on_selection(**_):
-        if bool(state.galinfo_show):
-            ctrl.show_galaxy_info()
-        elif bool(state.groupinfo_show):
-            ctrl.show_group_info()
 
     # Cache the last-highlighted set so re-toggling re-shows the SAME
     # positions even if the snapshot or nav_gal_idx have drifted in between.
@@ -2191,24 +2123,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
         lib_items = list(getattr(state, "library_items", []))
         if lib_items:
             pil_img = _draw_library_cards(pil_img, lib_items)
-        # Galaxy Info — only visible when Target tab is active
-        if (
-            bool(getattr(state, "galinfo_show", False))
-            and str(getattr(state, "nav_active_tab", "")) == "target"
-        ):
-            items = list(getattr(state, "galinfo_items", []))
+        # The selection card.
+        if bool(getattr(state, "sel_show", False)):
+            items = list(getattr(state, "sel_props", []))
             if items:
                 pil_img = _draw_info_panel(
-                    pil_img, items, "Galaxy Information"
+                    pil_img, items, str(getattr(state, "sel_title", ""))
                 )
-        # Group Info — only visible when Environment tab is active
-        elif (
-            bool(getattr(state, "groupinfo_show", False))
-            and str(getattr(state, "nav_active_tab", "")) == "environment"
-        ):
-            items = list(getattr(state, "groupinfo_items", []))
-            if items:
-                pil_img = _draw_info_panel(pil_img, items, "Group Information")
         if bool(getattr(state, "console_popout_show", False)):
             pil_img = _draw_console_popout(pil_img)
         return pil_img
@@ -2572,15 +2493,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             sc = _record_state["scale"]
             has_overlays = (
                 bool(getattr(state, "library_items", []))
-                or (
-                    bool(getattr(state, "galinfo_show", False))
-                    and str(getattr(state, "nav_active_tab", "")) == "target"
-                )
-                or (
-                    bool(getattr(state, "groupinfo_show", False))
-                    and str(getattr(state, "nav_active_tab", ""))
-                    == "environment"
-                )
+                or bool(getattr(state, "sel_show", False))
                 or bool(getattr(state, "console_popout_show", False))
             )
 
@@ -4009,27 +3922,38 @@ def build_navigation_panel(server, scene: Scene) -> None:
         tab = state.nav_active_tab
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
 
-        if tab == "target":
+        halo_context = (
+            str(state.sel_kind) == "halo" if state.has("sel_kind") else False
+        )
+        if (
+            tab not in ("coords", "box")
+            and halo_context
+            and isinstance(state.nav_halo_idx, int)
+        ):
+            # Around the selected halo, at the halo standoff.
             try:
-                idx = int(state.nav_gal_idx)
-                radius = float(state.nav_gal_last_radius)
-                if 0 <= idx < galaxies.count:
-                    g = galaxies.positions[idx]
+                hidx = int(state.nav_halo_idx)
+                d = float(state.nav_halo_distance)
+                if 0 <= hidx < halos.count:
+                    h = halos.positions[hidx] + scene.active_model.offset
                     scene.set_focus_sphere(
-                        (float(g[0]), float(g[1]), float(g[2])), radius
+                        (float(h[0]), float(h[1]), float(h[2])), d
                     )
                     state.focus_active = True
                     state.isolate_active = False
             except Exception:
                 pass
-        elif tab == "environment":
+        elif tab not in ("coords", "box") and isinstance(
+            state.nav_gal_idx, int
+        ):
             try:
-                hidx = int(state.nav_halo_idx)
-                d = float(state.nav_distance)
-                if 0 <= hidx < halos.count:
-                    pos = scene.camera._halo_index.position_of(hidx)
+                idx = int(state.nav_gal_idx)
+                radius = float(state.nav_gal_last_radius)
+                if 0 <= idx < galaxies.count:
+                    # World coordinates (a side-by-side box is offset).
+                    g = galaxies.positions[idx] + scene.active_model.offset
                     scene.set_focus_sphere(
-                        (float(pos[0]), float(pos[1]), float(pos[2])), d
+                        (float(g[0]), float(g[1]), float(g[2])), radius
                     )
                     state.focus_active = True
                     state.isolate_active = False
@@ -4097,10 +4021,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
         that clears the isolate state."""
         if not isolate_active:
             _stop_sparkles()
+            _stop_hd()
 
     @ctrl.set("toggle_isolate")
     def on_toggle_isolate():
-        """Isolate the selected halo (with its FOF members) or galaxy.
+        """Isolate what's selected: the galaxy, or (in the selection's
+        halo context) the halo with every galaxy of its FOF group.
 
         Like Focus, but the keep-set is the selected object itself rather
         than a sphere/box around it: every other halo and galaxy is
@@ -4133,21 +4059,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
         halo_indices: list[int] = []
         gal_indices = np.array([], dtype=np.int64)
 
-        if state.nav_active_tab == "environment" and 0 <= hidx < halos.count:
-            # Halo selection — keep the halo AND the galaxies of the FOF
-            # group sitting in it, so the group is actually populated.
+        halo_context = (
+            str(state.sel_kind) == "halo" if state.has("sel_kind") else False
+        )
+        if halo_context and 0 <= hidx < halos.count:
+            # The halo is what's selected: keep it AND every galaxy of
+            # its FOF group, so the group is actually populated.
             halo_indices = [hidx]
-            halo_world = halos.positions[hidx] + off
-            if galaxies.count > 0:
-                d = np.linalg.norm(
-                    (galaxies.positions + off) - halo_world, axis=1
+            if 0 <= gidx < galaxies.count:
+                gal_indices = (
+                    member_indices(galaxies, gidx)
+                    if np.any(galaxies.central_id)
+                    else np.array([gidx], dtype=np.int64)
                 )
-                nearest = int(np.argmin(d))
-                rvir = float(halos.rvir[hidx]) if len(halos.rvir) else 0.0
-                # Only adopt the group if a galaxy actually lives in the
-                # halo — otherwise the nearest one could be far away.
-                if d[nearest] <= max(1.5 * rvir, 1e-3):
-                    gal_indices = member_indices(galaxies, nearest)
         elif 0 <= gidx < galaxies.count:
             gal_indices = np.array([gidx], dtype=np.int64)
         elif 0 <= hidx < halos.count:
@@ -4208,6 +4132,516 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _push()
 
     # ------------------------------------------------------------------
+    # HD galaxy — a detailed procedural 3D model of the selected galaxy
+    # ------------------------------------------------------------------
+
+    # "mode": what HD is showing -- "galaxy" (one galaxy) or "halo" (every
+    # member of a pair, group or cluster).
+    _hd: dict = {
+        "layer": None,
+        "group": None,
+        "mode": None,
+        "built_snap": None,  # the snapshot the HD model shows
+        "lead": None,  # catalogue index of the halo's central
+        "build": None,  # token of the build in progress (None: cancelled)
+        "futs": [],  # its pending futures
+        "cache": None,  # recent builds (BuildCache)
+    }
+
+    def _hd_cache():
+        if _hd["cache"] is None:
+            from visage.hd.group import BuildCache, default_cache_budget
+
+            _hd["cache"] = BuildCache(default_cache_budget())
+        return _hd["cache"]
+
+    def _hd_layer():
+        if _hd["layer"] is None:
+            from visage.hd.layer import HDGalaxyLayer
+
+            _hd["layer"] = HDGalaxyLayer(scene.plotter)
+        return _hd["layer"]
+
+    def _hd_group():
+        if _hd["group"] is None:
+            from visage.hd.group import HDGroupLayer
+
+            _hd["group"] = HDGroupLayer(scene.plotter)
+        return _hd["group"]
+
+    def _hd_current():
+        return _hd["group"] if _hd["mode"] == "halo" else _hd["layer"]
+
+    def _stop_hd() -> None:
+        """Drop the HD model(s) (Isolate's teardown calls this too)."""
+        for lay in (_hd["layer"], _hd["group"]):
+            if lay is not None and lay.active:
+                lay.clear()
+                _push()
+        _hd["mode"] = None
+        _hd["built_snap"] = None
+        state.hd_active = False
+
+    def _hd_off() -> None:
+        """HD button pressed while on: back out to the standard 10 Mpc/h
+        view of the selected galaxy."""
+        _clear_draw_widgets()
+        state.isolate_active = False
+        state.focus_active = False
+        scene.clear_focus()
+        _stop_hd()
+        _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
+
+    def _running_loop():
+        import asyncio
+
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+    @ctrl.set("toggle_hd")
+    def on_toggle_hd():
+        """Isolate the selected galaxy and replace its dot with the HD model.
+
+        Like Isolate, but every catalogue object is hidden and the galaxy
+        is drawn from its SAGE properties: disk or elliptical, arms, bar,
+        clusters, HII regions, view-dependent dust, merger debris, ICL and
+        (with the Gas box) its halo gas.  If the galaxy is in a pair, group
+        or cluster, the whole halo is drawn: every member at its own place
+        and spin.  Its surroundings come too (nearby galaxies in HD, the
+        cosmic web out to a few Mpc/h as glows) and close pairs raise tidal
+        features.  Turning it off backs the camera out to the standard
+        10 Mpc/h galaxy view; anything else that drops Isolate also removes
+        it.
+
+        In the app the builds run in worker processes while a message
+        counts them; without a running event loop (tests, scripts) it
+        builds in place.
+        """
+        if bool(state.hd_building):
+            return
+        if bool(state.hd_active):
+            _hd_off()
+            return
+        if not bool(state.hd_available):
+            state.notice_text = state.hd_unavailable or "HD needs a GPU."
+            state.notice_color = "warning"
+            state.notice_show = True
+            return
+
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            gidx = -1
+        halos, galaxies = scene.active_model.loader.get(scene.current_snap)
+        if not 0 <= gidx < galaxies.count:
+            return
+
+        if galaxies.stellar_mass[gidx] <= 0:
+            return
+        # Its halo (just the galaxy if alone, else the pair, group or
+        # cluster) and its surroundings.
+        _hd_build_group(galaxies, _group_members(galaxies, gidx), gidx)
+
+    def _hd_frame(center, R, radius: float, keep_view: bool = False) -> None:
+        """`radius` (Mpc/h) filling the view, sparkles around it, Isolate
+        engaged.  The camera looks from ~55 deg off the galaxy's spin axis,
+        or (`keep_view`, for a group) along the current line of sight, so
+        the members keep the layout they had in the normal view."""
+        import numpy as np
+
+        scene.camera._clear_indicator(keep_marker=True)  # old markers
+        scene.camera._clear_member_indicators()
+        cam = scene.plotter.camera
+        dist = radius / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
+        if keep_view:
+            view = np.subtract(cam.position, cam.focal_point)
+            view = view / max(np.linalg.norm(view), 1e-12)
+            up = cam.up
+        else:
+            e2, e3 = R[:, 1], R[:, 2]
+            view = np.cos(np.deg2rad(55)) * e3 - np.sin(np.deg2rad(55)) * e2
+            up = e3
+        cx, cy, cz = (float(c) for c in center)
+        cam.focal_point = (cx, cy, cz)
+        cam.position = tuple(
+            float(v) for v in np.asarray(center) + view * dist
+        )
+        cam.up = tuple(float(v) for v in up)
+        scene.plotter.renderer.ResetCameraClippingRange()
+
+        _sparkle_target["center"] = (cx, cy, cz)
+        _sparkle_target["radius"] = max(radius, 1e-3)
+        state.focus_active = True
+        state.isolate_active = True
+        state.hd_active = True
+        _start_sparkles(_sparkle_target["center"], _sparkle_target["radius"])
+        _push()
+
+    def _group_members(galaxies, gidx):
+        """The selected galaxy's FOF group (pair, group or cluster): member
+        indices, central first then by stellar mass."""
+        import numpy as np
+        from visage.utils.group_info import member_indices
+
+        if not np.any(galaxies.central_id):
+            # No CentralGalaxyIndex in the catalogue: membership unknown.
+            return np.array([gidx], dtype=np.int64)
+        idx = member_indices(galaxies, gidx)
+        idx = idx[galaxies.stellar_mass[idx] > 0]
+        order = np.lexsort(
+            (-galaxies.stellar_mass[idx], galaxies.gal_type[idx] != 0)
+        )
+        return idx[order]
+
+    def _member_position(galaxies, i: int, ref: int):
+        """World position of member `i`, at its periodic image nearest the
+        group's central `ref` (a group straddling the box edge stays
+        together); identical to the catalogue position otherwise."""
+        import numpy as np
+
+        p = np.asarray(galaxies.positions[i], float)
+        if not scene.is_lightcone:
+            box = float(scene.active_model.box_size)
+            c = np.asarray(galaxies.positions[ref], float)
+            d = p - c
+            p = c + d - box * np.round(d / box)
+        return p + scene.active_model.offset
+
+    def _hd_build_group(galaxies, idx, focus: int | None = None) -> None:
+        """HD for the selected galaxy's halo and its surroundings.
+
+        Every member of the group (just the galaxy, if it is alone) at its
+        own position and spin; the most massive neighbours within R_NEIGH in
+        HD too, and every other galaxy out to R_WEB as glows, so the cosmic
+        web around it shows; tidal bridges and tails between close pairs.
+        The halo's gas is on the Gas box."""
+        import asyncio
+
+        import numpy as np
+
+        from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
+        from visage.hd.group import (
+            M_NEIGH,
+            N_NEIGH,
+            R_NEIGH,
+            R_WEB,
+            plan,
+            pool,
+            prepare_member,
+            satellite_context,
+            tail_gains,
+            tidal_partners,
+        )
+
+        h = float(scene._cfg.hubble_h)
+        cosmo = (scene._snap_table, float(scene._cfg.omega))
+        lead = int(idx[0])
+        _hd["lead"] = lead
+
+        # Neighbours: everything else within R_WEB (periodic, as drawn).
+        off = scene.active_model.offset
+        d = galaxies.positions - galaxies.positions[lead]
+        if not scene.is_lightcone:
+            box = float(scene.active_model.box_size)
+            d = d - box * np.round(d / box)
+        allpos = galaxies.positions[lead] + d + off
+        p_lead = allpos[lead]
+        dist = np.linalg.norm(allpos - p_lead, axis=1)
+        is_member = np.zeros(galaxies.count, bool)
+        is_member[idx] = True
+        near = np.flatnonzero(
+            ~is_member & (dist < R_WEB) & (galaxies.stellar_mass > 0)
+        )
+        near = near[np.argsort(-galaxies.stellar_mass[near])]
+        hd_near = [
+            k
+            for k in near
+            if dist[k] < R_NEIGH and galaxies.stellar_mass[k] > M_NEIGH
+        ][:N_NEIGH]
+        glow_near = [k for k in near if k not in set(hd_near)]
+
+        def entry(k, role, quality, magnify):
+            return {
+                "idx": int(k),
+                "gal": sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo),
+                "center": allpos[int(k)],
+                "spin": spin_vector(galaxies, int(k)),
+                "prep": None,
+                "role": role,
+                "quality": quality,
+                "magnify": magnify,
+            }
+
+        group_q = plan(
+            [
+                sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo)
+                for k in idx
+            ]
+        )
+        many = len(idx) > 1  # a lone galaxy keeps its true size
+        entries = (
+            [
+                entry(k, "member", q, many)
+                for k, q in zip(idx, group_q, strict=True)
+            ]
+            + [entry(k, "neighbour", "lite", True) for k in hd_near]
+            + [entry(k, "neighbour", None, True) for k in glow_near]
+        )
+        partners = tidal_partners(entries, h)
+        sat_ctx = satellite_context(entries, h)
+        todo = [k for k, e in enumerate(entries) if e["quality"]]
+        # Built a moment ago (HD off and on, back to the same group)?
+        key = (
+            scene.active_model.name,
+            scene.current_snap,
+            tuple((entries[k]["idx"], entries[k]["quality"]) for k in todo),
+        )
+        cached = _hd_cache().get(key)
+        if cached is not None:
+            for k, prep in zip(todo, cached, strict=True):
+                entries[k]["prep"] = prep
+            _hd_show_group(entries, h, focus)
+            return
+
+        def args(k):
+            e = entries[k]
+            ctx = {
+                "spin": e["spin"],
+                "hubble_h": h,
+                "magnify": e["magnify"],
+                "partners": partners.get(k, []),
+                **sat_ctx.get(k, {}),
+            }
+            return (prepare_member, e["gal"], e["quality"], ctx)
+
+        loop = _running_loop()
+        if loop is None:
+            for k in todo:
+                fn, *a = args(k)
+                entries[k]["prep"] = fn(*a)
+            # Jellyfish tails the shared exposure dims: rebuilt brighter.
+            for k, gain in tail_gains(entries, sat_ctx).items():
+                sat_ctx[k]["tail_gain"] = gain
+                fn, *a = args(k)
+                entries[k]["prep"] = fn(*a)
+            _hd_cache().put(key, [entries[k]["prep"] for k in todo])
+            _hd_show_group(entries, h, focus)
+            return
+
+        state.hd_building = True
+        _hd["build_snap"] = scene.current_snap
+        n = len(todo)
+        word = (
+            "galaxy" if len(idx) == 1 else "pair" if len(idx) == 2 else "group"
+        )
+        state.hd_progress = f"Building HD {word}… 0/{n}"
+        state.hd_percent = 0
+        state.flush()
+
+        token = _hd["build"] = object()
+
+        async def _build():
+            try:
+                await asyncio.sleep(0.05)  # let the message reach the browser
+                if _hd["build"] is not token:
+                    return
+                try:
+                    ex = pool()
+                except Exception:
+                    ex = None
+
+                async def _prep(k):
+                    try:
+                        return await loop.run_in_executor(ex, *args(k))
+                    except Exception:
+                        # A broken worker pool: build it here instead.
+                        return await loop.run_in_executor(None, *args(k))
+
+                futs = {asyncio.ensure_future(_prep(k)): k for k in todo}
+                _hd["futs"] = list(futs)
+                done = 0
+                for fut in asyncio.as_completed(list(futs)):
+                    try:
+                        await fut
+                    except asyncio.CancelledError:
+                        return
+                    if _hd["build"] is not token:
+                        return  # cancelled
+                    done += 1
+                    state.hd_progress = f"Building HD {word}… {done}/{n}"
+                    state.hd_percent = int(100 * done / max(n, 1))
+                    state.flush()
+                for fut, k in futs.items():
+                    entries[k]["prep"] = fut.result()
+                # Jellyfish tails the shared exposure dims: rebuilt
+                # brighter (one more build each, in parallel).
+                gains = tail_gains(entries, sat_ctx)
+                for k, gain in gains.items():
+                    sat_ctx[k]["tail_gain"] = gain
+                redo = {k: asyncio.ensure_future(_prep(k)) for k in gains}
+                _hd["futs"] = list(redo.values())
+                for k, fut in redo.items():
+                    entries[k]["prep"] = await fut
+                    if _hd["build"] is not token:
+                        return
+                _hd_cache().put(key, [entries[k]["prep"] for k in todo])
+                _hd_show_group(entries, h, focus)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if _hd["build"] is token:
+                    import traceback
+
+                    traceback.print_exc()
+                    if _hd["group"] is not None:
+                        _hd["group"].clear()
+                    _hd["mode"] = None
+                    state.hd_active = False
+                    state.notice_text = f"HD build failed: {exc}"
+                    state.notice_color = "error"
+                    state.notice_show = True
+            finally:
+                if _hd["build"] is token:
+                    _hd["build"] = None
+                    _hd["futs"] = []
+                    state.hd_building = False
+                    state.flush()
+
+        loop.create_task(_build())
+
+    @ctrl.set("hd_cancel")
+    def _hd_cancel():
+        """Cancel button on the build card: stop waiting for the build
+        (members not yet started are dropped; ones mid-build finish in
+        their worker and are thrown away)."""
+        if not bool(state.hd_building):
+            return
+        _hd["build"] = None
+        for fut in _hd["futs"]:
+            fut.cancel()
+        _hd["futs"] = []
+        state.hd_building = False
+        state.flush()
+
+    @ctrl.set("hd_escape")
+    def _hd_escape():
+        """Esc: cancel a build, or leave HD."""
+        if bool(state.hd_building):
+            _hd_cancel()
+        elif bool(state.hd_active):
+            _hd_off()
+
+    def _hd_go_to_member() -> bool:
+        """If HD is on and the Galaxy index is one of the galaxies drawn in
+        HD (a member or a neighbour), fly to it (keeping the view
+        direction) and return True."""
+        import numpy as np
+
+        grp = _hd["group"]
+        if _hd["mode"] != "halo" or grp is None or not grp.active:
+            return False
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            return False
+        _, galaxies = scene.active_model.loader.get(scene.current_snap)
+        if not 0 <= gidx < galaxies.count:
+            return False
+        center = _member_position(galaxies, gidx, int(_hd["lead"]))
+        m = grp.member_at(center)
+        if m is None:
+            return False
+        cam = scene.plotter.camera
+        view = np.subtract(cam.position, cam.focal_point)
+        view = view / max(np.linalg.norm(view), 1e-12)
+        dist = m.radius_world / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
+        cam.focal_point = tuple(float(v) for v in center)
+        cam.position = tuple(float(v) for v in center + view * dist)
+        scene.plotter.renderer.ResetCameraClippingRange()
+        _push()
+        return True
+
+    def _hd_show_group(entries, h, focus: int | None = None) -> None:
+        """Draw the built HD scene and frame it on what's selected: in
+        the selection's halo context the whole group around its central;
+        otherwise the selected galaxy itself (the rest of its group and
+        its surroundings drawn around it)."""
+        scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
+        grp = _hd_group()
+        grp.show(entries, h, gas=bool(state.hd_gas))
+        _hd["mode"] = "halo"
+        _hd["built_snap"] = _hd.get("build_snap", scene.current_snap)
+        _hd["build_snap"] = None
+        halo_ctx = state.has("sel_kind") and str(state.sel_kind) == "halo"
+        target = None
+        if not halo_ctx and focus is not None:
+            target = next(
+                (
+                    e
+                    for e in entries
+                    if e.get("idx") == focus and e.get("layer")
+                ),
+                None,
+            )
+        if target is not None:
+            lay = target["layer"]
+            _hd_frame(
+                lay._center,
+                lay._R,
+                lay.radius_world,
+                keep_view=len(grp.members) > 1,
+            )
+            return
+        # The group (zoom out for the halo gas).
+        _hd_frame(
+            grp.center,
+            grp.basis,
+            grp.radius_world,
+            keep_view=len(grp.members) > 1,
+        )
+
+    def _hd_drop(*_) -> None:
+        """HD shows one snapshot of one model: changing either drops it
+        (as it drops Isolate), so nothing is left at stale positions."""
+        if not bool(state.hd_active) and not bool(state.hd_building):
+            return
+        _hd_cancel()
+        _clear_draw_widgets()
+        state.isolate_active = False
+        state.focus_active = False
+        scene.clear_focus()
+        _stop_hd()
+        _push()
+
+    @state.change("snap_num")
+    def on_snap_change_hd(snap_num=None, **_):
+        shown = _hd["built_snap"] if not state.hd_building else None
+        building = _hd.get("build_snap") if state.hd_building else None
+        ref = shown if shown is not None else building
+        if ref is not None and snap_num != ref:
+            _hd_drop()
+
+    scene.register_model_change_callback(_hd_drop)
+    ctrl.hd_drop = _hd_drop
+
+    @ctrl.set("hd_pick_candidates")
+    def _hd_pick_candidates():
+        """(catalogue indices, world positions) of everything HD draws."""
+        grp = _hd["group"]
+        if _hd["mode"] != "halo" or grp is None or not grp.active:
+            return None
+        return grp.picks
+
+    @state.change("hd_gas")
+    def on_hd_gas_change(hd_gas=False, **_):
+        lay = _hd_current()
+        if lay is not None and lay.active:
+            lay.set_gas(bool(hd_gas))
+            _push()
+
+    # ------------------------------------------------------------------
     # UI helper
     # ------------------------------------------------------------------
 
@@ -4262,20 +4696,25 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     id=f"cam-release-{_dir}",
                     click=(server.controller.cam_release, f"['{_dir}']"),
                 )
+            v3.VBtn("", id="hd-escape", click=ctrl.hd_escape)
 
         # ── Reset + Focus + Centre ─────────────────────────────────
         with v3.VSheet(
             color="transparent", style="padding:8px;flex-shrink:0;"
         ):
-            with v3.VRow(no_gutters=True, style="gap:6px;"):
-                with v3.VCol(style="padding:0;"):
+            # One line: Reset Camera takes the room the icon buttons leave.
+            with v3.VRow(no_gutters=True, style="gap:6px;flex-wrap:nowrap;"):
+                with v3.VCol(style="padding:0;min-width:0;"):
                     v3.VBtn(
                         "Reset Camera",
                         block=True,
                         variant="outlined",
                         color="cyan",
                         density="compact",
-                        style="min-width:0;",
+                        style=(
+                            "min-width:0;padding:0 6px;"
+                            "letter-spacing:0.02em;font-size:0.78rem;"
+                        ),
                         click=ctrl.reset_camera,
                     )
                 with v3.VCol(cols="auto", style="padding:0;"):
@@ -4286,6 +4725,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         click=ctrl.toggle_focus,
                         color=("focus_active ? 'cyan' : 'white'",),
                         title="Focus",
+                    )
+                with v3.VCol(cols="auto", style="padding:0;"):
+                    # The selection card, from anywhere.
+                    v3.VBtn(
+                        icon="mdi-information-variant",
+                        variant="text",
+                        density="compact",
+                        click=ctrl.sel_toggle_card,
+                        color=("sel_show ? 'cyan' : 'white'",),
+                        title="Info: the selected galaxy's card",
                     )
                 with v3.VCol(cols="auto", style="padding:0;"):
                     v3.VBtn(
@@ -4305,7 +4754,27 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color=("isolate_active ? 'cyan' : 'white'",),
                         title="Isolate selected halo/galaxy",
                     )
-
+                with v3.VCol(cols="auto", style="padding:0;"):
+                    v3.VBtn(
+                        "HD",
+                        variant=("hd_active ? 'flat' : 'outlined'",),
+                        density="compact",
+                        click=ctrl.toggle_hd,
+                        color=("hd_active ? 'cyan' : '#FFD700'",),
+                        loading=("hd_building",),
+                        disabled=(
+                            "hd_building || !hd_available "
+                            "|| nav_gal_idx === null || nav_gal_idx < 0",
+                        ),
+                        style="min-width:0;padding:0 8px;",
+                        title=(
+                            "hd_available ? 'HD: the selected galaxy (its "
+                            "whole pair, group or cluster, with its "
+                            "surroundings) as detailed 3D models built from "
+                            "its SAGE properties' : hd_unavailable",
+                        ),
+                        id="btn-hd-galaxy",
+                    )
         v3.VDivider(style="flex-shrink:0;")
 
         # ── Tab rows: 3-up grid wrapping to multiple rows ───────────
@@ -4318,7 +4787,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             style=(
                 "width:100%;flex-shrink:0;background:#111827;"
                 "border-radius:0;display:flex;flex-wrap:wrap;"
-                "height:auto;min-height:118px;padding-bottom:6px;"
+                "justify-content:center;"
+                "height:auto;min-height:0;padding-bottom:4px;"
             ),
         ):
             # A lightcone has no periodic box to zoom to, but it does have
@@ -4331,11 +4801,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
             for label, value in [
                 ("Structure", "layers"),
                 ("Filters", "filters"),
-                ("Record", "record"),
-                ("Target", "target"),
-                ("Environment", "environment"),
-                ("Coords", "coords"),
                 _box_or_phot,
+                ("Coords", "coords"),
+                ("Record", "record"),
                 ("Console", "console"),
                 ("Library", "library"),
             ]:
@@ -4343,8 +4811,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label,
                     value=value,
                     style=(
-                        "flex:0 0 33.333%;font-size:0.72rem;letter-spacing:0;"
-                        "min-width:0;height:34px;text-transform:none;"
+                        "flex:0 0 25%;font-size:0.66rem;letter-spacing:0;"
+                        "min-width:0;height:30px;text-transform:none;"
                         "font-weight:700;"
                     ),
                     color=(
@@ -4492,169 +4960,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="font-size:0.6rem;color:#a3adbb;white-space:nowrap;flex-shrink:0;",
                         )
 
-            # Target (halo + galaxy combined)
-            with v3.VSheet(
-                color="transparent",
-                v_show=("nav_active_tab === 'target'",),
-            ):
-                v3.VLabel(
-                    "HALO",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#c084fc;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_halo_idx",
-                        "Halo index",
-                        on_enter=ctrl.go_to_halo,
-                        target_id="btn-target-halo-go",
-                    )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_distance",
-                        "Standoff (Mpc/h)",
-                        on_enter=ctrl.go_to_halo,
-                        target_id="btn-target-halo-go",
-                    )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "Go",
-                        block=True,
-                        color="#c084fc",
-                        density="compact",
-                        click=ctrl.go_to_halo,
-                        id="btn-target-halo-go",
-                    )
-
-                v3.VDivider(style="margin:12px 0;")
-
-                v3.VLabel(
-                    "GALAXY",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#FFD700;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_gal_idx",
-                        "Galaxy index",
-                        on_enter=ctrl.go_to_galaxy_enter,
-                        target_id="btn-target-galaxy-go",
-                    )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "Go",
-                        block=True,
-                        color="#FFD700",
-                        density="compact",
-                        click=ctrl.go_to_galaxy_enter,
-                        id="btn-target-galaxy-go",
-                    )
-                v3.VLabel(
-                    "Zoom radius (Mpc/h)",
-                    style=(
-                        "font-size:0.6rem;color:#9ca3af;"
-                        "display:block;padding:10px 0 4px;"
-                    ),
-                )
-                with v3.VBtnGroup(
-                    variant="outlined",
-                    density="compact",
-                    style="width:100%;",
-                ):
-                    v3.VBtn(
-                        "3",
-                        style="flex:1;",
-                        color="#FFD700",
-                        click=ctrl.go_to_galaxy_1,
-                    )
-                    v3.VBtn(
-                        "5",
-                        style="flex:1;",
-                        color="#FFD700",
-                        click=ctrl.go_to_galaxy_3,
-                    )
-                    v3.VBtn(
-                        "10",
-                        style="flex:1;",
-                        color="#FFD700",
-                        click=ctrl.go_to_galaxy_5,
-                    )
-
-                v3.VDivider(style="margin:14px 0 10px;")
-
-                v3.VBtn(
-                    "Galaxy Info",
-                    block=True,
-                    color="#FFD700",
-                    density="compact",
-                    prepend_icon="mdi-information-outline",
-                    click=ctrl.show_galaxy_info,
-                    style="margin-bottom:6px;",
-                )
-
-                v3.VBtn(
-                    "Highlight Galaxy",
-                    block=True,
-                    color="#FFD700",
-                    variant="outlined",
-                    density="compact",
-                    prepend_icon="mdi-bullseye-arrow",
-                    click=ctrl.highlight_galaxy,
-                    style="margin-bottom:6px;",
-                )
-
-                v3.VBtn(
-                    "Clear Indicator",
-                    block=True,
-                    variant="outlined",
-                    color="red",
-                    density="compact",
-                    prepend_icon="mdi-close-circle-outline",
-                    click=ctrl.clear_indicator,
-                )
-
-            # Environment tab — group/cluster-level selection & inspection
-            with v3.VSheet(
-                color="transparent",
-                v_show=("nav_active_tab === 'environment'",),
-            ):
-                v3.VLabel(
-                    "HALO  (pick a FOF group)",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#c084fc;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_halo_idx",
-                        "Halo index",
-                        on_enter=ctrl.go_to_env_halo,
-                        target_id="btn-env-go",
-                    )
-                with v3.VSheet(color="transparent", style=_FIELD):
-                    _tf(
-                        "nav_distance",
-                        "Standoff (Mpc/h)",
-                        on_enter=ctrl.go_to_env_halo,
-                        target_id="btn-env-go",
-                    )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "Go",
-                        block=True,
-                        color="#c084fc",
-                        density="compact",
-                        click=ctrl.go_to_env_halo,
-                        id="btn-env-go",
-                    )
-
-                v3.VDivider(style="margin:12px 0;")
-
+                # Which environments' galaxies to show.
+                v3.VDivider(style="margin:14px 0;")
                 v3.VLabel(
                     "ENVIRONMENT FILTER",
                     style=(
@@ -4715,36 +5022,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
-
-                v3.VDivider(style="margin:14px 0 10px;")
-
+                # The selection card (what's selected, its group, Go /
+                # Isolate / HD / Gas).
                 v3.VBtn(
-                    "Group Info",
+                    "{{ sel_show ? 'Hide info' : 'Show info' }}",
                     block=True,
-                    color="#c084fc",
+                    variant=("sel_show ? 'flat' : 'outlined'",),
+                    color="cyan",
                     density="compact",
-                    prepend_icon="mdi-account-group-outline",
-                    click=ctrl.show_group_info,
-                    style="margin-bottom:6px;",
-                )
-                v3.VBtn(
-                    "Highlight Members",
-                    block=True,
-                    color="#c084fc",
-                    variant="outlined",
-                    density="compact",
-                    prepend_icon="mdi-bullseye-arrow",
-                    click=ctrl.highlight_group_members,
-                    style="margin-bottom:6px;",
-                )
-                v3.VBtn(
-                    "Clear Indicator",
-                    block=True,
-                    variant="outlined",
-                    color="red",
-                    density="compact",
-                    prepend_icon="mdi-close-circle-outline",
-                    click=ctrl.clear_indicator,
+                    prepend_icon="mdi-information-outline",
+                    disabled=("!sel_active",),
+                    click=ctrl.sel_toggle_card,
+                    style="margin-top:14px;",
+                    title="Show the selected galaxy's card",
                 )
 
             # Coords
@@ -6242,6 +6532,51 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     prepend_icon="mdi-restore",
                     click=ctrl.reset_filters,
                 )
+
+                # Find: galaxies worth a look, by preset; a click selects.
+                v3.VDivider(style="margin:10px 0 4px;")
+                v3.VLabel(
+                    "FIND",
+                    style=(
+                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                        "color:#06b6d4;display:block;padding:4px 0 6px;"
+                    ),
+                )
+                from visage.utils.find import PRESETS
+
+                v3.VSelect(
+                    v_model=("find_preset",),
+                    items=(
+                        [{"title": t, "value": k} for k, t in PRESETS.items()],
+                    ),
+                    label="Find…",
+                    clearable=True,
+                    hide_details=True,
+                    variant="outlined",
+                    color="cyan",
+                    density="compact",
+                )
+                html.Div(
+                    "{{ find_note }}",
+                    v_show=("find_note",),
+                    style="font-size:0.72rem;color:#9ca3af;padding:6px 2px;",
+                )
+                with html.Div(
+                    style="padding-top:4px;max-height:220px;overflow-y:auto;"
+                ):
+                    with html.Div(
+                        v_for="r in find_results",
+                        key="r.idx",
+                        click=(ctrl.find_select, "[r.idx]"),
+                        style=(
+                            "'font-size:0.74rem;padding:3px 6px;"
+                            "cursor:pointer;border-radius:4px;' + "
+                            "(r.idx === nav_gal_idx ? "
+                            "'background:rgba(34,211,238,0.18);"
+                            "color:#22d3ee;' : 'color:#e2e8f0;')",
+                        ),
+                    ):
+                        html.Span("{{ r.text }}")
 
             # ── RECORD tab ─────────────────────────────────────
             with v3.VSheet(

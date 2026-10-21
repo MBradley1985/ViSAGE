@@ -1,0 +1,442 @@
+"""Draw an HD galaxy into the scene with the GPU ray-marcher.
+
+The model is built in the galaxy's own frame (spin axis = +z, model length
+units) and placed in the world by a 4x4 transform: rotation aligning +z
+with the galaxy's SAGE spin vector, scale to Mpc/h, and its box position.
+`gpu.GPUGalaxy` ray-marches it per pixel with the same physics and tone map
+as the offline renders, every frame; this layer keeps its camera uniforms
+in step with the scene camera and toggles the gas overlay.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from visage.hd.gpu import GPUGalaxy
+from visage.hd.model import (
+    SageGalaxy,
+    build_disk_maps,
+    build_points,
+    recipe_from_sage,
+)
+
+
+def galaxy_basis(spin: np.ndarray | None, seed: int) -> np.ndarray:
+    """Columns e1, e2, e3: galaxy frame -> world directions (e3 = spin)."""
+    rng = np.random.default_rng(seed)
+    if (
+        spin is None
+        or not np.all(np.isfinite(spin))
+        or np.linalg.norm(spin) == 0
+    ):
+        spin = rng.normal(size=3)
+    e3 = np.asarray(spin, float) / np.linalg.norm(spin)
+    trial = (
+        np.array([1.0, 0.0, 0.0])
+        if abs(e3[0]) < 0.9
+        else np.array([0.0, 1.0, 0.0])
+    )
+    e1 = np.cross(e3, trial)
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(e3, e1)
+    # Random position angle about the spin axis, so bars/arms don't all line up.
+    t = rng.uniform(0, 2 * np.pi)
+    e1, e2 = np.cos(t) * e1 + np.sin(t) * e2, -np.sin(t) * e1 + np.cos(t) * e2
+    return np.column_stack([e1, e2, e3])
+
+
+def normal_mode_radius_kpc(gal: SageGalaxy, hubble_h: float) -> float:
+    """The radius of a galaxy's stellar (disk) layer in the normal view
+    (visage.scene.galaxy_layer: 0.22 Rvir, by disk mass), in kpc."""
+    r_outer = max(gal.rvir_kpc * hubble_h / 1000.0, 0.02)  # Mpc/h
+    disk = max(gal.stellar_mass - gal.bulge_mass, 1.0)
+    f = float(np.clip((np.log10(disk) - 7.0) / 5.0, 0.0, 1.0))
+    return r_outer * 0.22 * (0.35 + 0.65 * f) * 1000.0 / hubble_h
+
+
+# Most a member is enlarged to match its normal-mode size.
+MAX_MAGNIFY = 5.0
+
+
+def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
+    """How much to enlarge a member's stars so they fill its normal-mode
+    stellar layer (true size when that is already smaller)."""
+    visible = rc.extent * rc.unit_kpc * 0.8  # kpc
+    r = normal_mode_radius_kpc(gal, hubble_h) / max(visible, 1e-6)
+    return float(np.clip(r, 1.0, MAX_MAGNIFY))
+
+
+# Texture resolutions per build quality.
+# A jellyfish's own CGM streams fade with its ram pressure: by up to
+# CGM_STRIP of their strength at full ram pressure (the user found 1.0 too
+# much: some CGM stays).
+STRIP_CGM = True
+CGM_STRIP = 0.5
+
+QUALITY = {
+    "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 112},
+    "group": {"map_n": 768, "npts": 1024, "exp_npix": 160, "atlas_n": 80},
+    "lite": {"map_n": 384, "npts": 512, "exp_npix": 96, "atlas_n": 48},
+}
+
+
+class Exposure:
+    """White level of the tone map.
+
+    The base level is fixed per galaxy as in the offline renders: the
+    99.97th percentile of a face-on view (AGN excluded).  Zoomed into a
+    region brighter than the galaxy as a whole, the level rises with that
+    region's mean surface brightness, as a camera's auto-exposure would, so
+    the inner disk and bulge don't wash out; it never drops below the base,
+    so the whole-galaxy view is unchanged.
+    """
+
+    _PA = 25.0
+
+    def __init__(self, rc, maps, pts, npix: int = 256, threads: int = 8):
+        from visage.hd.raymarch import render, rot
+
+        face = render(
+            rc, maps, pts, inc=0, pa=self._PA, npix=npix, threads=threads
+        )
+        lum = (face.total - face.points.get("agn", 0)).mean(axis=2)
+        self.base = float(np.percentile(lum, 99.97)) or 1.0
+        self._R = rot(0, self._PA)
+        self._E = float(face.half_width)
+        self._n = lum.shape[0]
+        self._pix = 2 * self._E / (self._n - 1)
+        # Summed-area table: O(1) box means.
+        self._sat = np.pad(lum.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+        self._k = self.base / max(self._box_mean(0.0, 0.0, self._E), 1e-30)
+
+    def _box_mean(self, x: float, y: float, half: float) -> float:
+        """Mean face-on surface brightness over a square of half-width
+        `half` centred on galaxy-frame (x, y); outside the image counts as
+        dark."""
+        ox, oy, _ = self._R @ np.array([x, y, 0.0])
+        n = self._n
+        c0 = int(np.clip(np.floor((ox - half + self._E) / self._pix), 0, n))
+        c1 = int(np.clip(np.ceil((ox + half + self._E) / self._pix), 0, n))
+        r0 = int(np.clip(np.floor((self._E - oy - half) / self._pix), 0, n))
+        r1 = int(np.clip(np.ceil((self._E - oy + half) / self._pix), 0, n))
+        side = max(2 * half / self._pix, 1.0)
+        S = self._sat
+        tot = S[r1, c1] - S[r0, c1] - S[r1, c0] + S[r0, c0]
+        return float(tot) / (side * side)
+
+    def white(self, x: float, y: float, half: float) -> float:
+        """White level for a view of half-width `half` (model units)
+        centred on galaxy-frame (x, y)."""
+        return max(self.base, self._k * self._box_mean(x, y, half))
+
+
+class HDGalaxyLayer:
+    """One HD galaxy in a pyvista plotter."""
+
+    def __init__(self, plotter):
+        self._pl = plotter
+        self._gpu = GPUGalaxy(plotter)
+        self._observer = None
+        self._fxaa = None
+        self._near_tol = None
+        self._white0 = 1.0
+        self._gas_on = False
+        self.gal: SageGalaxy | None = None
+        self.recipe = None
+
+    @property
+    def active(self) -> bool:
+        return self._gpu.actor is not None
+
+    @staticmethod
+    def prepare(
+        gal: SageGalaxy, quality: str = "full", context: dict | None = None
+    ) -> dict:
+        """Everything CPU-heavy in a build (numpy only, so it can run on a
+        worker thread while the UI says what is happening).  `quality`
+        (QUALITY key) sets texture resolutions: lower for the many members
+        of a group, each of which is small on screen.
+
+        `context` (a galaxy among others): "spin", "hubble_h", "magnify"
+        (bool); "partners", a list of (unit vector to the neighbour in
+        world coordinates, distance in Mpc/h, strength, orbit sense) for
+        the tidal features close neighbours raise; "ram" and "strip",
+        (world direction, strength) for a satellite's ram-pressure tail and
+        tidal streams."""
+        from visage.hd.gpu import prepare
+        from visage.hd.model import tidal_points
+
+        q = QUALITY[quality]
+        rc = recipe_from_sage(gal)
+        maps = build_disk_maps(rc, n=q["map_n"]) if rc.kind == "disk" else None
+        pts = build_points(rc, maps)
+        ctx = context or {}
+        if ctx.get("ram") or ctx.get("strip"):
+            from visage.hd.model import jelly_points, strip_points
+
+            R = galaxy_basis(ctx.get("spin"), rc.seed)
+            if ctx.get("ram"):
+                d, st = ctx["ram"]
+                pts += jelly_points(
+                    rc,
+                    R.T @ np.asarray(d),
+                    st,
+                    rc.seed + 211,
+                    gain=ctx.get("tail_gain", 1.0),
+                )
+            if ctx.get("strip"):
+                d, st = ctx["strip"]
+                pts.append(
+                    strip_points(rc, R.T @ np.asarray(d), st, rc.seed + 223)
+                )
+        if ctx.get("partners"):
+            h = ctx["hubble_h"]
+            R = galaxy_basis(ctx.get("spin"), rc.seed)
+            mag = magnification(gal, rc, h) if ctx.get("magnify") else 1.0
+            mpch_per_unit = rc.unit_kpc * mag * h / 1000.0
+            for k, (u, sep, strength, sense) in enumerate(ctx["partners"]):
+                pts.append(
+                    tidal_points(
+                        rc,
+                        R.T @ np.asarray(u, float),
+                        sep / mpch_per_unit,
+                        strength,
+                        rc.seed + 101 + k,
+                        sense,
+                    )
+                )
+        return {
+            "gal": gal,
+            "rc": rc,
+            "maps": maps,
+            "pts": pts,
+            # Group members build in parallel processes: one thread each.
+            "exposure": Exposure(
+                rc,
+                maps,
+                pts,
+                npix=q["exp_npix"],
+                threads=8 if quality == "full" else 1,
+            ),
+            "gpu": prepare(
+                rc, maps, pts, npts=q["npts"], atlas_n=q["atlas_n"]
+            ),
+            # Ram-pressure strength (0 if none): it strips the CGM too.
+            "ram": float(ctx["ram"][1]) if ctx.get("ram") else 0.0,
+        }
+
+    def show(
+        self,
+        gal: SageGalaxy,
+        center,
+        spin,
+        hubble_h: float,
+        gas: bool = False,
+        prep: dict | None = None,
+        white: float | None = None,
+        halo: bool = True,
+        manage_fxaa: bool = True,
+        magnify: float = 1.0,
+        icl: bool = True,
+    ):
+        """Build and draw the HD model of `gal` at world position `center`.
+
+        `prep`: `prepare(gal)`, if already made.  `magnify` draws the stars
+        that many times their true size (a group member, to match its
+        normal-mode splat) while the halo (gas, ICL) keeps its true size.
+        For a member of a group:
+        `white` is its share of the group's common exposure (default: its
+        own), `halo=False` leaves out the halo (gas, ICL, Rvir box) for a
+        satellite, `icl=False` its intracluster light (the central's), and
+        `manage_fxaa=False` leaves FXAA to the group."""
+        self.clear()
+        # (By value: a prep built in a worker process holds a copy of gal.)
+        if prep is None or prep["gal"] != gal:
+            prep = self.prepare(gal)
+        self.gal = gal
+        rc, maps, pts = prep["rc"], prep["maps"], prep["pts"]
+        if magnify != 1.0:
+            import dataclasses
+
+            # One model unit is now `magnify` times more kpc on screen; the
+            # halo is laid out in kpc, so it keeps its true size.
+            rc = dataclasses.replace(
+                rc,
+                unit_kpc=rc.unit_kpc * magnify,
+                icl_a=rc.icl_a / magnify,
+            )
+        self.recipe = rc
+
+        self._R = galaxy_basis(spin, rc.seed)
+        self._scale = rc.unit_kpc * hubble_h / 1000.0  # model units -> Mpc/h
+        self._center = np.asarray(center, float)
+        self._hubble_h = hubble_h
+        m = np.eye(4)
+        m[:3, :3] = self._R * self._scale
+        m[:3, 3] = self._center
+        self._exposure = prep["exposure"]
+        self._white0 = float(white) if white else self._exposure.base
+        self._gpu.build(
+            rc,
+            maps,
+            pts,
+            self._white0,
+            m,
+            gal=gal if halo else None,
+            gas=gas,
+            prep=prep["gpu"],
+            icl=icl,
+            magnify=magnify,
+        )
+        gs = self._gpu.gas
+        if (
+            STRIP_CGM
+            and gs is not None
+            and prep.get("ram", 0.0) > 0
+            and gs.stream_amp > 0
+        ):
+            # Ram pressure strips a satellite's diffuse CGM before its disk
+            # gas: a jellyfish keeps little of it, so its tail isn't lost
+            # in its own CGM streams.
+            gs.stream_amp *= max(0.0, 1.0 - CGM_STRIP * prep["ram"])
+            gs.set_uniforms(self._gpu._uni, on=bool(gas))
+        self._gas_on = bool(gas)
+        self._gpu.set_gas(self._gas_on)
+        ren = self._pl.renderer
+        if manage_fxaa:
+            # The shader resolves single stars; FXAA would smear them.
+            self._fxaa = bool(ren.GetUseFXAA())
+            ren.SetUseFXAA(False)
+            # Let the camera close in on a few-kpc galaxy without the near
+            # clipping plane (set by the Rvir-sized gas box) cutting it.
+            self._near_tol = ren.GetNearClippingPlaneTolerance()
+            ren.SetNearClippingPlaneTolerance(1e-5)
+        # Camera uniforms are refreshed as each frame starts, so they follow
+        # camera moves and window resizes alike.
+        self._observer = (ren, ren.AddObserver("StartEvent", self._on_camera))
+        self._on_camera()
+
+    def clear(self):
+        if self._observer is not None:
+            ren, tag = self._observer
+            try:
+                ren.RemoveObserver(tag)
+            except Exception:
+                pass
+            self._observer = None
+        if self._fxaa is not None:
+            self._pl.renderer.SetUseFXAA(self._fxaa)
+            self._fxaa = None
+        if self._near_tol is not None:
+            self._pl.renderer.SetNearClippingPlaneTolerance(self._near_tol)
+            self._near_tol = None
+        self._gpu.clear()
+        self.gal = None
+        self.recipe = None
+
+    def set_gas(self, on: bool):
+        """Show or hide the halo-gas overlay (no rebuild: a shader switch)."""
+        self._gas_on = bool(on)
+        self._gpu.set_gas(self._gas_on)
+
+    # -- geometry ------------------------------------------------------
+
+    @property
+    def radius_world(self) -> float:
+        """Half-width that frames the optical galaxy, Mpc/h."""
+        if self.recipe is None:
+            return 0.0
+        k = 1.3 if self.recipe.kind == "disk" else 1.0
+        return float(self.recipe.extent * k * self._scale)
+
+    @property
+    def rvir_world(self) -> float:
+        return (
+            float(self.gal.rvir_kpc * self._hubble_h / 1000.0)
+            if self.gal
+            else 0.0
+        )
+
+    def to_model(self, world: np.ndarray) -> np.ndarray:
+        return self._R.T @ (
+            (np.asarray(world, float) - self._center) / self._scale
+        )
+
+    def _on_camera(self, *_):
+        """Keep the shader's camera (galaxy frame), pixel size and view size
+        current."""
+        if not self.active:
+            return
+        ren = self._pl.renderer
+        cam = ren.GetActiveCamera()
+        pos = np.array(cam.GetPosition(), float)
+        tan_half = np.tan(np.deg2rad(cam.GetViewAngle()) / 2.0)
+        height = max(int(ren.GetSize()[1]), 1)
+        cam_model = self.to_model(pos)
+        pix_ang = 2.0 * tan_half / height
+        self._gpu.set_camera(cam_model, pix_ang)
+        self._gpu.set_pixel(float(np.linalg.norm(cam_model)) * pix_ang)
+        dist = np.linalg.norm(pos - self._center)
+        half_world = dist * tan_half
+        focal = np.array(cam.GetFocalPoint(), float)
+        fx, fy, _ = self.to_model(focal)
+        half_focal = np.linalg.norm(pos - focal) * tan_half / self._scale
+        # Auto-exposure relative to this galaxy's own base level.
+        auto = self._exposure.white(fx, fy, half_focal) / self._exposure.base
+        self._gpu.set_white(self._white0 * auto)
+        self._gpu.set_view_half(
+            half_world / self._scale * self.recipe.unit_kpc
+        )
+
+
+def _warm_galaxy(**kw) -> SageGalaxy:
+    """A small star-forming disk, for compiling the shaders."""
+    base = dict(
+        galaxy_index=1,
+        stellar_mass=1e10,
+        bulge_mass=1e9,
+        merger_bulge_mass=0.0,
+        instability_bulge_mass=1e9,
+        cold_gas=5e9,
+        h2_gas=1e9,
+        h1_gas=4e9,
+        metals_cold_gas=5e7,
+        bh_mass=1e6,
+        sfr_disk=1.0,
+        sfr_bulge=0.0,
+        disk_radius_kpc=3.0,
+        bulge_radius_kpc=0.5,
+        regime=0,
+        cgm_gas=1e10,
+        rvir_kpc=150.0,
+    )
+    base.update(kw)
+    return SageGalaxy(**base)
+
+
+def warm_up_prepare() -> dict:
+    """CPU side of the shader warm-up (run off the main thread)."""
+    return HDGalaxyLayer.prepare(_warm_galaxy(), "lite")
+
+
+def warm_up_shaders(plotter, prep: dict) -> None:
+    """Compile HD's two shader programs (with and without the halo gas) in
+    the app's OpenGL context now, so the first HD view doesn't wait ~1 s
+    for them.  The model is drawn once at a millionth of its size at the
+    focal point (nothing visible) and removed; VTK keeps the compiled
+    programs and reuses them for every galaxy, whose shader source is the
+    same."""
+    cam = plotter.renderer.GetActiveCamera()
+    focal = np.array(cam.GetFocalPoint(), float)
+    gal = prep["gal"]
+    for halo in (True, False):
+        lay = HDGalaxyLayer(plotter)
+        lay.show(gal, focal, None, 0.7, prep=prep, halo=halo)
+        m = lay._gpu.actor.GetUserMatrix()
+        for i in range(3):
+            for j in range(3):
+                m.SetElement(i, j, m.GetElement(i, j) * 1e-6)
+        try:
+            plotter.ren_win.Render()
+        finally:
+            lay.clear()

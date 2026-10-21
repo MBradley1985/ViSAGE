@@ -9,7 +9,6 @@ import pytest
 from visage import system
 from visage.parallel import loader
 
-
 # ── Windows <-> WSL paths ─────────────────────────────────────────────────
 
 

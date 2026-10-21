@@ -278,17 +278,13 @@ def _h_screenshot(m, ctx) -> str:
 
 
 def _h_galaxy_info(_m, ctx) -> str:
-    ctx.state.nav_active_tab = "target"
-    ctx.state.flush()
     ctx.ctrl.show_galaxy_info()
-    return "Galaxy info panel opened (Target tab)."
+    return "Selection card opened with all properties."
 
 
 def _h_group_info(_m, ctx) -> str:
-    ctx.state.nav_active_tab = "environment"
-    ctx.state.flush()
     ctx.ctrl.show_group_info()
-    return "Group info panel opened (Environment tab)."
+    return "Selection card opened (its group is listed there)."
 
 
 def _h_highlight_galaxy(_m, ctx) -> str:

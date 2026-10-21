@@ -219,8 +219,6 @@ IGNORED_HDF5_FIELDS: frozenset[str] = frozenset(
         "DT",
         "MergeIntoID",
         "MergeIntoSnapNum",
-        "MergeType",
-        "QuasarModeBHaccretionMass",
         "SAGEHaloIndex",
         "SAGETreeIndex",
         "SimulationHaloIndex",

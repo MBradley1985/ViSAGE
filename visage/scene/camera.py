@@ -22,6 +22,10 @@ class CameraController:
         self._halo_index: NearestHaloIndex = NearestHaloIndex()
         self._galaxy_positions: np.ndarray | None = None
         self._indicator_actor = None
+        # The selection ring (target + label + group members).
+        from visage.scene.selection_marker import SelectionMarker
+
+        self.marker = SelectionMarker(plotter)
         self._member_actors: list = (
             []
         )  # splats for FOF group members (one per regime colour)
@@ -265,7 +269,9 @@ class CameraController:
     # Zoom indicators
     # ------------------------------------------------------------------
 
-    def _clear_indicator(self) -> None:
+    def _clear_indicator(self, keep_marker: bool = False) -> None:
+        if not keep_marker:
+            self.marker.clear()
         if self._indicator_actor is None:
             return
         actors = (
@@ -766,17 +772,8 @@ class CameraController:
         center: tuple[float, float, float],
         radius: float,
     ) -> None:
-        """Soft red sphere centred on the target — always camera-facing."""
-        self._clear_indicator()
-        cloud = pv.PolyData(np.array([center], dtype=np.float64))
-        self._indicator_actor = self._pl.add_mesh(
-            cloud,
-            color="firebrick",
-            point_size=60.0,
-            render_points_as_spheres=True,
-            opacity=0.15,
-            show_scalar_bar=False,
-        )
+        """The selection ring on the target (fixed size on screen)."""
+        self.marker.set_target(center)
 
     def zoom_to_radius(
         self,

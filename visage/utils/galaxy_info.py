@@ -213,6 +213,11 @@ def build_galaxy_info(
     age = (
         float(galaxies.mean_age[idx]) if galaxies.mean_age.size > idx else 0.0
     )
-    info["Approx Age"] = f"{age:.2f} Gyr" if age > 0 else "—"
+    if not fields_available.get("mean_age", False):
+        # The catalogue has no star-formation histories (SAGE's
+        # SaveFullSFH off), which the age is computed from.
+        info["Approx Age"] = "Needs full SFH"
+    else:
+        info["Approx Age"] = f"{age:.2f} Gyr" if age > 0 else "—"
 
     return info

@@ -130,6 +130,7 @@ html, body, .v-application { background: #000000 !important; }
 )
 # fmt: on
 from visage.ui.info_panel import build_info_panel
+from visage.ui.selection import build_selection, selection_card
 from visage.ui.navigation_panel import build_navigation_panel
 from visage.ui.toolbar import build_toolbar
 from visage.ui.story_mode import (
@@ -175,8 +176,39 @@ def create_app(
     # Say which GPU actually renders, and warn when OpenGL has fallen back
     # to the CPU (Remote Desktop, a VM, missing drivers) — that, not
     # ViSAGE, is what makes the view sluggish.
+    def _schedule_hd_warm_up() -> None:
+        """A few seconds after start: spawn HD's build workers and compile
+        its shaders, so the first HD view doesn't wait for either."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        async def _warm() -> None:
+            from visage.hd.group import warm_pool
+            from visage.hd.layer import warm_up_prepare, warm_up_shaders
+
+            try:
+                warm_pool()
+                prep = await loop.run_in_executor(None, warm_up_prepare)
+                st = server.state
+                if not (st.hd_active or st.hd_building):
+                    warm_up_shaders(scene.plotter, prep)
+            except Exception as exc:  # only a head start; HD works without
+                print(f"HD warm-up skipped: {exc}", flush=True)
+
+        loop.call_later(3.0, lambda: loop.create_task(_warm()))
+
     def _on_renderer(info: system.GPUInfo) -> None:
         print(f"GPU      : {info.describe()}", flush=True)
+        hd_reason = system.hd_unavailable_reason(info)
+        if hd_reason:
+            # No GPU: HD mode is off (its button greyed out, saying why).
+            server.state.hd_available = False
+            server.state.hd_unavailable = hd_reason
+            print(f"HD mode  : off -- {hd_reason}", flush=True)
+        else:
+            _schedule_hd_warm_up()
         if not info.software:
             return
         msg = (
@@ -304,8 +336,6 @@ def create_app(
         ("Structure", "layers"),
         ("Filters", "filters"),
         ("Record", "record"),
-        ("Target", "target"),
-        ("Environment", "environment"),
         ("Coords", "coords"),
         ("Box", "box"),
         ("Console", "console"),
@@ -699,6 +729,12 @@ def create_app(
         if old_name == name:
             return
         _profiles[old_name] = save_profile(server.state)
+        # HD and the selection are of the old box's catalogue.
+        for hook in ("hd_drop", "sel_reset"):
+            try:
+                getattr(server.controller, hook)()
+            except Exception:
+                pass
         scene.set_active_box(name)
         server.state.active_box_name = name
         incoming = _profiles.get(name)
@@ -1371,6 +1407,62 @@ def create_app(
                     # Story Mode text / equation overlays (over the render).
                     build_story_overlays(server)
 
+                    # The selection card (selected galaxy, group, actions).
+                    selection_card(server)
+
+                    # HD build message: what is being built and how far.
+                    with html.Div(
+                        v_show=("hd_building",),
+                        style=(
+                            "position:absolute;inset:0;z-index:7;"
+                            "display:flex;align-items:center;"
+                            "justify-content:center;pointer-events:none;"
+                        ),
+                    ):
+                        with v3.VCard(
+                            style=(
+                                "padding:22px 30px;min-width:420px;"
+                                "background:rgba(10,10,26,0.88);"
+                                "border:1px solid #06b6d4;"
+                                "pointer-events:auto;"
+                            ),
+                        ):
+                            html.Div(
+                                "{{ hd_progress }}",
+                                style=(
+                                    "font-size:1.5rem;font-weight:600;"
+                                    "color:#e2e8f0;margin-bottom:12px;"
+                                ),
+                            )
+                            v3.VProgressLinear(
+                                model_value=("hd_percent",),
+                                indeterminate=("hd_percent < 0",),
+                                color="cyan",
+                                height=10,
+                                rounded=True,
+                            )
+                            with html.Div(
+                                style=(
+                                    "display:flex;align-items:center;"
+                                    "margin-top:8px;"
+                                ),
+                            ):
+                                v3.VBtn(
+                                    "Cancel",
+                                    size="small",
+                                    variant="outlined",
+                                    color="#9ca3af",
+                                    click=server.controller.hd_cancel,
+                                    title="Stop building (Esc)",
+                                )
+                                html.Div(
+                                    "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
+                                    style=(
+                                        "flex:1;font-size:1.1rem;"
+                                        "color:#67e8f9;text-align:right;"
+                                    ),
+                                )
+
                     # Pre-rendered playback overlay — shown only during
                     # playback, where it flips through the cached frames. While
                     # frames are being rendered the live view stays put (the
@@ -1521,150 +1613,6 @@ def create_app(
                         contained=True,
                         style="margin-top:16px;",
                     )
-
-                    # Galaxy info panel — draggable card; drag handle is
-                    # the title bar (sage-popout-handle picked up by JS).
-                    with v3.VCard(
-                        v_show=(
-                            "galinfo_show && nav_active_tab === 'target'",
-                        ),
-                        classes="sage-popout",
-                        style=(
-                            "position:absolute;top:32px;right:24px;"
-                            "min-width:260px;max-width:320px;"
-                            # Grow with the rows but never past the bottom
-                            # of the render area (which clips overflow);
-                            # longer lists scroll inside the card body.
-                            "max-height:calc(100% - 56px);"
-                            "display:flex;flex-direction:column;"
-                            "background:rgba(17,24,39,0.85);"
-                            "backdrop-filter:blur(6px);"
-                            "border:1px solid #374151;"
-                            "color:#e2e8f0;"
-                            "z-index:5;"
-                        ),
-                        elevation=8,
-                    ):
-                        with html.Div(
-                            classes="sage-popout-handle",
-                            style=(
-                                "display:flex;align-items:center;"
-                                "font-size:0.85rem;letter-spacing:0.06em;"
-                                "padding:10px 12px 6px;"
-                                "cursor:move;user-select:none;flex-shrink:0;"
-                                "border-bottom:1px solid #1f2937;"
-                            ),
-                        ):
-                            v3.VIcon(
-                                "mdi-information-outline",
-                                size="small",
-                                color="cyan",
-                                style="margin-right:6px;",
-                            )
-                            html.Span(
-                                "Galaxy Information", style="color:#06b6d4;"
-                            )
-                            v3.VSpacer()
-                            v3.VBtn(
-                                icon="mdi-close",
-                                size="x-small",
-                                variant="text",
-                                click=server.controller.hide_galaxy_info,
-                            )
-                        with v3.VCardText(
-                            style=(
-                                "padding:8px 12px;font-size:0.72rem;"
-                                "flex:1 1 auto;min-height:0;overflow-y:auto;"
-                            ),
-                        ):
-                            with html.Div(
-                                v_for=("row in galinfo_items",),
-                                key=("row.label",),
-                                style=(
-                                    "display:flex;justify-content:space-between;"
-                                    "padding:3px 0;border-bottom:1px solid #1f2937;"
-                                ),
-                            ):
-                                html.Span(
-                                    "{{ row.label }}",
-                                    style="color:#9ca3af;",
-                                )
-                                html.Span(
-                                    "{{ row.value }}",
-                                    style="font-family:monospace;text-align:right;color:#e2e8f0;",
-                                )
-
-                    # Group / cluster info panel — draggable, same initial
-                    # position as the Galaxy info card (mutually exclusive).
-                    with v3.VCard(
-                        v_show=(
-                            "groupinfo_show && nav_active_tab === 'environment'",
-                        ),
-                        classes="sage-popout",
-                        style=(
-                            "position:absolute;top:32px;right:24px;"
-                            "min-width:260px;max-width:320px;"
-                            # Grow with the rows but never past the bottom
-                            # of the render area (which clips overflow);
-                            # longer lists scroll inside the card body.
-                            "max-height:calc(100% - 56px);"
-                            "display:flex;flex-direction:column;"
-                            "background:rgba(17,24,39,0.85);"
-                            "backdrop-filter:blur(6px);"
-                            "border:1px solid #374151;"
-                            "color:#e2e8f0;"
-                            "z-index:5;"
-                        ),
-                        elevation=8,
-                    ):
-                        with html.Div(
-                            classes="sage-popout-handle",
-                            style=(
-                                "display:flex;align-items:center;"
-                                "font-size:0.85rem;letter-spacing:0.06em;"
-                                "padding:10px 12px 6px;"
-                                "cursor:move;user-select:none;flex-shrink:0;"
-                                "border-bottom:1px solid #1f2937;"
-                            ),
-                        ):
-                            v3.VIcon(
-                                "mdi-account-group-outline",
-                                size="small",
-                                color="cyan",
-                                style="margin-right:6px;",
-                            )
-                            html.Span(
-                                "Group Information", style="color:#06b6d4;"
-                            )
-                            v3.VSpacer()
-                            v3.VBtn(
-                                icon="mdi-close",
-                                size="x-small",
-                                variant="text",
-                                click=server.controller.hide_group_info,
-                            )
-                        with v3.VCardText(
-                            style=(
-                                "padding:8px 12px;font-size:0.72rem;"
-                                "flex:1 1 auto;min-height:0;overflow-y:auto;"
-                            ),
-                        ):
-                            with html.Div(
-                                v_for=("row in groupinfo_items",),
-                                key=("row.label",),
-                                style=(
-                                    "display:flex;justify-content:space-between;"
-                                    "padding:3px 0;border-bottom:1px solid #1f2937;"
-                                ),
-                            ):
-                                html.Span(
-                                    "{{ row.label }}",
-                                    style="color:#9ca3af;",
-                                )
-                                html.Span(
-                                    "{{ row.value }}",
-                                    style="font-family:monospace;text-align:right;color:#e2e8f0;",
-                                )
 
                     # Library media pop-outs — one draggable card per open item,
                     # floating over the viewport just like the other sage-popout cards.
@@ -1863,6 +1811,7 @@ def create_app(
                     elevation=0,
                 ):
                     build_navigation_panel(server, scene)
+                    build_selection(server, scene)
 
         with layout.footer as footer:
             footer.height = 0

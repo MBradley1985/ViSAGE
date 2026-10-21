@@ -83,6 +83,7 @@ nav:
   - User Guide:
       - Interface: user_guide/interface.md
       - Navigation: user_guide/navigation.md
+      - HD Mode: user_guide/hd_mode.md
       - Multi-Box Comparison: user_guide/multi_box.md
       - Launch Mode: user_guide/launch_mode.md
       - Lightcone Mode: user_guide/lightcone.md
@@ -95,6 +96,7 @@ nav:
   - Physics Reference:
       - Dark Matter Haloes: physics/haloes.md
       - Galaxies: physics/galaxies.md
+      - HD Galaxy Components: physics/hd_components.md
   - API Reference: api/index.md
   - Project:
       - Changelog: project/changelog.md

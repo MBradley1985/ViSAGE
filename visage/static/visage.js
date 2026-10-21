@@ -244,6 +244,32 @@
   }, true);
   window.addEventListener('blur', releaseAll);   // stop if focus leaves
 
+  // ─── Selection browsing keys ───────────────────────────────────────
+  // [ ] previous / next member of the group, C its central, N the nearest
+  // galaxy, B back, Shift+B forward (the selection card's buttons).
+  var SEL_KEYS = {'[': 'prev', ']': 'next', 'c': 'central', 'n': 'nearest',
+                  'b': 'back', 'B': 'fwd'};
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return;
+    var name = SEL_KEYS[e.key] || SEL_KEYS[(e.key || '').toLowerCase()];
+    if (e.key === 'B') name = 'fwd';
+    if (!name) return;
+    var st = window.trame && window.trame.state;
+    if (!st || !st.get('sel_active')) return;
+    e.preventDefault();
+    e.stopPropagation();   // not for the VTK interactor
+    clickBtn('sel-key-' + name);
+  }, true);
+
+  // ─── HD: Esc cancels a build or leaves HD ──────────────────────────
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || inEditable(e.target)) return;
+    var st = window.trame && window.trame.state;
+    if (!st || !(st.get('hd_active') || st.get('hd_building'))) return;
+    e.preventDefault();
+    clickBtn('hd-escape');
+  }, true);
+
   // ─── Wizard terminal auto-scroll ─────────────────────────────────────
   // The wizard terminal always follows new output — no manual-scroll
   // preservation (unlike the general sage-console-scroll logic).
