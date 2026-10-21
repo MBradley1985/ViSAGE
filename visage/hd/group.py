@@ -32,7 +32,7 @@ from visage.hd.model import (
     display_sizes,
 )
 
-# Light scale for a shared exposure (as scripts/hd_galaxy/grid.py).
+# Light scale for a shared exposure.
 M_REF = 3e10
 LUM_POWER = 0.35
 # Members by stellar-mass rank: the first N_TOP in full quality (all of a
