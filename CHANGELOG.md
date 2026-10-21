@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-10-21
+
 ### Added
 
 - **HD mode.** The **HD** button (next to Isolate, and on the selection
