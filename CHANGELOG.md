@@ -81,9 +81,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Notes
 
-- HD needs a hardware GPU. On software OpenGL (llvmpipe, Remote Desktop, a
-  VM without drivers) or a virtual machine's paravirtual GPU the HD
-  buttons are greyed out and say why;
+- HD needs a GPU. On software OpenGL (llvmpipe, Apple Software Renderer,
+  Remote Desktop, a VM without drivers) the HD buttons are greyed out and
+  say why;
   `VISAGE_HD=1` turns HD on anyway.
 
 ## [2.7.4] — 2026-10-19

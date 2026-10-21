@@ -269,11 +269,6 @@ class GPUInfo:
         r = self.renderer.lower()
         return any(s in r for s in _SOFTWARE_RENDERERS)
 
-    @property
-    def virtual(self) -> bool:
-        """A virtual machine's (paravirtual) GPU."""
-        return "paravirtual" in self.renderer.lower()
-
     def describe(self) -> str:
         gl = self.version.split()[0] if self.version else "?"
         kind = "software, CPU" if self.software else f"OpenGL {gl}"
@@ -309,13 +304,6 @@ def hd_unavailable_reason(info: GPUInfo | None) -> str:
     if info is not None and info.software:
         return (
             f"HD needs a GPU; OpenGL is running on the CPU "
-            f"({info.renderer})."
-        )
-    if info is not None and info.virtual:
-        # A virtual machine's GPU (e.g. macOS VMs' paravirtual device)
-        # runs the gas but draws HD's stars black.
-        return (
-            f"HD needs a hardware GPU; this is a virtual machine's "
             f"({info.renderer})."
         )
     return ""

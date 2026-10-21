@@ -106,9 +106,11 @@ def test_gpu_galaxy_draws_the_galaxy(plotter):
     from visage import system
 
     info = system.parse_capabilities(plotter.ren_win.ReportCapabilities())
-    if info is not None and info.virtual:
-        pytest.skip(f"virtual GPU, HD off there: {info.renderer}")
     centre = img[40:56, 40:56].mean()
+    if centre < 1 and system.hd_unavailable_reason(info):
+        # e.g. macOS CI's "Apple Software Renderer", which can't run the
+        # shader; HD is switched off on it in the app.
+        pytest.skip(f"HD is off on this renderer: {info.renderer}")
     corner = img[:10, :10].mean()
     assert (
         centre > 40 and centre > 4 * corner + 1
@@ -608,9 +610,9 @@ def test_jellyfish_tail_gets_back_what_the_shared_exposure_takes():
     assert tail_gains([central, twin], {1: {"ram": ((1, 0, 0), 0.8)}}) == {}
 
 
-def test_hd_is_off_on_a_virtual_gpu(monkeypatch):
+def test_hd_is_off_on_apples_software_renderer(monkeypatch):
     from visage import system
 
     monkeypatch.delenv("VISAGE_HD", raising=False)
-    vm = system.GPUInfo("Apple", "Apple Paravirtual device", "4.1 Metal")
-    assert vm.virtual and system.hd_unavailable_reason(vm)
+    sw = system.GPUInfo("Apple", "Apple Software Renderer", "4.1 Metal")
+    assert sw.software and system.hd_unavailable_reason(sw)
