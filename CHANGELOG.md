@@ -54,7 +54,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   massive galaxies, richest clusters, Milky Way analogues, close pairs,
   mergers, starbursts, quenched centrals, biggest black holes and
   feedback-free starbursts.
-- Documentation: an HD Mode guide (User Guide → HD Mode).
+- Documentation: an HD Mode guide (User Guide → HD Mode), and a table of
+  every HD component with the SAGE26 fields that build it (Physics
+  Reference → HD Galaxy Components).
 
 ### Changed
 

@@ -134,10 +134,8 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
 
 
 # Ram pressure: log10(rho_ICM v^2 / (Sigma_* Sigma_gas)) in the units of
-# `ram_pressure` -- calibrated on Millennium SAGE26 satellites in hot haloes
-# (the strongest ~30 per cent get visible tails).
-# log10(ram pressure / restoring force) mapped to a 0-1 tail strength:
-# among SAGE26 satellites in hot haloes ~27% get a tail and ~1% a full one.
+# `ram_pressure`, mapped to a 0-1 tail strength -- calibrated on Millennium
+# SAGE26 satellites in hot haloes: ~27% get a tail and ~1% a full one.
 RAM_LO = -7.8
 RAM_SPAN = 2.0
 

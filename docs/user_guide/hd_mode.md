@@ -22,6 +22,8 @@ Each galaxy's model follows from its own catalogue row:
 
 Sizes shrink with redshift as in the size–mass relation, and disks at high redshift are thicker and clumpier.
 
+The full list of components, the SAGE26 fields each one uses and how, is in [HD Galaxy Components](../physics/hd_components.md).
+
 ## Groups, clusters and surroundings
 
 If the selected galaxy is in a FOF group, HD draws every member at its own position and spin:
