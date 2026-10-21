@@ -1,8 +1,8 @@
 """HD mode for a whole halo: a pair, group or cluster.
 
-Every member of the FOF group is drawn at its own position and spin, with
-the most massive neighbours outside the group in HD too.  Close pairs raise
-tidal bridges and tails.  The
+Every member of the FOF group is drawn at its own position and spin (only
+the group: no neighbours or background).  Close pairs raise tidal bridges
+and tails.  The
 most massive ones get the full HD model (at a texture resolution that
 falls with rank, as each is small on screen); any long tail of a big
 cluster is drawn as soft glows.  All members share one exposure, so their
@@ -42,12 +42,6 @@ N_FULL = 5
 N_TOP = 4
 N_GROUP = 16
 N_HD = 40
-# Surroundings: HD for the N_NEIGH most massive neighbours (M* > M_NEIGH)
-# within R_NEIGH (Mpc/h).  (No background glows for the wider cosmic web:
-# the user found them distracting.)
-R_NEIGH = 1.5
-N_NEIGH = 16
-M_NEIGH = 1e9
 # Tidal features: neighbours closer than R_TIDAL (kpc) and at least
 # TIDAL_RATIO of the galaxy's mass.
 R_TIDAL = 100.0

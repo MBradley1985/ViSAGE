@@ -4209,8 +4209,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         clusters, HII regions, view-dependent dust, merger debris, ICL and
         (with the Gas box) its halo gas.  If the galaxy is in a pair, group
         or cluster, the whole halo is drawn: every member at its own place
-        and spin.  The most massive nearby galaxies come too, in HD, and
-        close pairs raise tidal features.  Turning it off backs the camera out to the standard
+        and spin, and close pairs raise tidal features.  Turning it off backs the camera out to the standard
         10 Mpc/h galaxy view; anything else that drops Isolate also removes
         it.
 
@@ -4309,11 +4308,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
         return p + scene.active_model.offset
 
     def _hd_build_group(galaxies, idx, focus: int | None = None) -> None:
-        """HD for the selected galaxy's halo and its surroundings.
+        """HD for the selected galaxy's halo.
 
         Every member of the group (just the galaxy, if it is alone) at its
-        own position and spin; the most massive neighbours within R_NEIGH in
-        HD too; tidal bridges and tails between close pairs.
+        own position and spin, and tidal bridges and tails between close
+        pairs.
         The halo's gas is on the Gas box."""
         import asyncio
 
@@ -4321,9 +4320,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
         from visage.hd.group import (
-            M_NEIGH,
-            N_NEIGH,
-            R_NEIGH,
             plan,
             pool,
             prepare_member,
@@ -4337,26 +4333,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
         lead = int(idx[0])
         _hd["lead"] = lead
 
-        # Neighbours: the most massive within R_NEIGH (periodic, as drawn).
+        # Positions at the periodic images nearest the central (a group
+        # straddling the box edge stays together).
         off = scene.active_model.offset
         d = galaxies.positions - galaxies.positions[lead]
         if not scene.is_lightcone:
             box = float(scene.active_model.box_size)
             d = d - box * np.round(d / box)
         allpos = galaxies.positions[lead] + d + off
-        p_lead = allpos[lead]
-        dist = np.linalg.norm(allpos - p_lead, axis=1)
-        is_member = np.zeros(galaxies.count, bool)
-        is_member[idx] = True
-        near = np.flatnonzero(
-            ~is_member & (dist < R_NEIGH) & (galaxies.stellar_mass > 0)
-        )
-        near = near[np.argsort(-galaxies.stellar_mass[near])]
-        hd_near = [
-            k
-            for k in near
-            if dist[k] < R_NEIGH and galaxies.stellar_mass[k] > M_NEIGH
-        ][:N_NEIGH]
 
         def entry(k, role, quality, magnify):
             return {
@@ -4380,7 +4364,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         entries = [
             entry(k, "member", q, many)
             for k, q in zip(idx, group_q, strict=True)
-        ] + [entry(k, "neighbour", "lite", True) for k in hd_near]
+        ]
         partners = tidal_partners(entries, h)
         sat_ctx = satellite_context(entries, h)
         todo = [k for k, e in enumerate(entries) if e["quality"]]
