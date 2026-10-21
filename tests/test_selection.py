@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+
 import numpy as np
 import pytest
 
@@ -24,7 +26,9 @@ def panel(mini_par_path, tmp_path):
             build_navigation_panel(server, scene)
             build_selection(server, scene)
     server.state.ready()
-    return server, scene
+    yield server, scene
+    scene.plotter.close()
+    gc.collect()
 
 
 def _group(scene, members, central):

@@ -64,4 +64,4 @@ Changing snapshot or model leaves HD, because the model shows one snapshot.
 
 ## GPU requirement
 
-HD needs a GPU. If OpenGL is running on the CPU (llvmpipe, a Remote Desktop session, a VM without graphics drivers), the HD buttons are greyed out, and hovering over them says why. Set `VISAGE_HD=1` to turn HD on anyway; expect seconds per frame.
+HD needs a GPU. If OpenGL is running on the CPU (llvmpipe, a Remote Desktop session, a VM without graphics drivers), or on a virtual machine's paravirtual GPU, the HD buttons are greyed out, and hovering over them says why. Set `VISAGE_HD=1` to turn HD on anyway; expect seconds per frame.

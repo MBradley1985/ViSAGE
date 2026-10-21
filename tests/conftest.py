@@ -185,3 +185,16 @@ def mini_par_path(
         f"PartMass            0.086\n"
     )
     return out
+
+
+@pytest.fixture(autouse=True)
+def _free_vtk_on_main_thread():
+    """Free each test's leftover VTK / OpenGL objects on the main thread.
+
+    Left to Python's cyclic collector they can be freed on whatever thread
+    happens to trigger it -- a worker thread in the next test -- and macOS
+    OpenGL crashes when its objects are released off the main thread."""
+    yield
+    import gc
+
+    gc.collect()

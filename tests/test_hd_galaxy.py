@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+
 import numpy as np
 import pytest
 
@@ -78,6 +80,7 @@ def plotter():
     pl = pv.Plotter(off_screen=True, window_size=[64, 48])
     yield pl
     pl.close()
+    gc.collect()
 
 
 def _look(pl, gpu_or_layer, pos, focal=(0.0, 0.0, 0.0), up=(0.0, 0.0, 1.0)):
@@ -100,9 +103,16 @@ def test_gpu_galaxy_draws_the_galaxy(plotter):
     cam = np.array([0.0, -12.0, 12.0])
     g.set_camera(cam)
     img = _look(plotter, g, cam)[..., :3].astype(float)
+    from visage import system
+
+    info = system.parse_capabilities(plotter.ren_win.ReportCapabilities())
+    if info is not None and info.virtual:
+        pytest.skip(f"virtual GPU, HD off there: {info.renderer}")
     centre = img[40:56, 40:56].mean()
     corner = img[:10, :10].mean()
-    assert centre > 40 and centre > 4 * corner + 1
+    assert (
+        centre > 40 and centre > 4 * corner + 1
+    ), f"renderer: {info.describe() if info else '?'}"
     g.clear()
     assert g.actor is None
 
@@ -191,7 +201,9 @@ def hd_panel(mini_par_path, tmp_path):
         with layout.content:
             build_navigation_panel(server, scene)
     server.state.ready()
-    return server, scene
+    yield server, scene
+    scene.plotter.close()
+    gc.collect()
 
 
 def test_hd_button_isolates_and_toggles_off(hd_panel):
@@ -594,3 +606,11 @@ def test_jellyfish_tail_gets_back_what_the_shared_exposure_takes():
     # Not dimmed (a satellite about as bright as its central): left alone.
     twin = entry(_disk(stellar_mass=3e11, galaxy_index=3), 1.0)
     assert tail_gains([central, twin], {1: {"ram": ((1, 0, 0), 0.8)}}) == {}
+
+
+def test_hd_is_off_on_a_virtual_gpu(monkeypatch):
+    from visage import system
+
+    monkeypatch.delenv("VISAGE_HD", raising=False)
+    vm = system.GPUInfo("Apple", "Apple Paravirtual device", "4.1 Metal")
+    assert vm.virtual and system.hd_unavailable_reason(vm)
