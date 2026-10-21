@@ -46,7 +46,7 @@ Seven tabs in two rows:
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 
-Above the tabs sit **Reset Camera**, **Focus**, **Info (i)**, **Centre**, **Isolate** and **HD**, which work regardless of which tab is active (see [Navigation](navigation.md)).
+Above the tabs sit **Reset Camera**, **Info (i)**, **Focus**, **Centre**, **Isolate** and **HD**, which work regardless of which tab is active (see [Navigation](navigation.md)).
 
 ## Multi-box strip
 

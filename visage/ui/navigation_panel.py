@@ -4718,15 +4718,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         click=ctrl.reset_camera,
                     )
                 with v3.VCol(cols="auto", style="padding:0;"):
-                    v3.VBtn(
-                        icon="mdi-target",
-                        variant="outlined",
-                        density="compact",
-                        click=ctrl.toggle_focus,
-                        color=("focus_active ? 'cyan' : 'white'",),
-                        title="Focus",
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
                     # The selection card, from anywhere.
                     v3.VBtn(
                         icon="mdi-information-variant",
@@ -4735,6 +4726,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         click=ctrl.sel_toggle_card,
                         color=("sel_show ? 'cyan' : 'white'",),
                         title="Info: the selected galaxy's card",
+                    )
+                with v3.VCol(cols="auto", style="padding:0;"):
+                    v3.VBtn(
+                        icon="mdi-target",
+                        variant="outlined",
+                        density="compact",
+                        click=ctrl.toggle_focus,
+                        color=("focus_active ? 'cyan' : 'white'",),
+                        title="Focus",
                     )
                 with v3.VCol(cols="auto", style="padding:0;"):
                     v3.VBtn(

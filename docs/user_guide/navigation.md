@@ -19,8 +19,8 @@ Six buttons sit above the tab panel and work no matter which tab is active:
 | Button | Action |
 |---|---|
 | Reset Camera | Returns to a full-box view from outside the box |
-| Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
 | Info (i) | Opens or closes the selection card |
+| Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
 | Centre (✛ crosshair icon) | Places the camera AT the box centre, looking out |
 | Isolate (🔍 magnifier icon) | Shows only the selection: the galaxy, or (in halo context) its halo and whole group |
 | HD | Detailed 3D model of the selection and its group — see [HD Mode](hd_mode.md) |
