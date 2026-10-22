@@ -21,7 +21,7 @@ from visage.hd.model import (
     WIND_RGB,
     GalaxyRecipe,
 )
-from visage.hd.raymarch import hot_opacity
+from visage.hd.raymarch import HOT_MAX_OPACITY
 
 # ----------------------------------------------------------------------
 # numpy mirror of the shader's noise (for normalisation constants)
@@ -86,6 +86,49 @@ def noise_std(kind="fbm"):
 # Cool-core brightening of the hot atmosphere from SAGE's Cooling (0: off).
 COOL_CORE = 0.0
 
+# Extended HI disk (Gas on), from H1gas: its colour, brightness, size
+# (times the HI size-mass relation), thickness (fraction of its scale
+# length), warp, and clumpiness.
+HI = dict(
+    on=True,
+    rgb=(0.70, 0.85, 1.00),
+    gain=0.35,
+    size=1.0,
+    h=0.06,
+    warp=0.15,
+    clump=0.5,
+)
+# Cold streams: at "random" angles, or aimed at the massive haloes around
+# the galaxy: "neighbours" (the three strongest), "weighted" (brighter
+# toward the strongest), "filament" (both ways along the strongest
+# direction, and toward the next).
+WEB_STREAMS = "filament"
+# Hot-halo colour by virial temperature: None, or stops of (log10 Mvir,
+# rgb), interpolated, then tinted by metallicity.  T_vir ~ Mvir^(2/3)
+# (1+z): a halo of given mass is hotter at high z, so it is looked up at
+# log Mvir + 1.5 log(1+z).
+HOT_TEMP = [
+    (12.0, (0.90, 0.40, 0.95)),
+    (13.3, (0.60, 0.45, 1.00)),
+    (14.8, (0.70, 0.92, 1.00)),
+]
+
+
+def hot_opacity(gal) -> float:
+    """Opacity of the hot atmosphere: rising with log HotGas, with the hot
+    gas's share of the halo's baryons, and with redshift (denser haloes),
+    capped so it never hides the galaxy."""
+    if gal.hot_gas <= 0:
+        return 0.0
+    f_m = np.clip((np.log10(gal.hot_gas) - 9.0) / 3.5, 0.0, 1.0)
+    frac = 1.0
+    if gal.mvir > 0:
+        frac = np.clip(gal.hot_gas / (0.17 * gal.mvir), 0.0, 1.0)
+    zb = min(1.0 + gal.redshift, 3.0) ** 0.5
+    op = (0.3 + 0.7 * f_m) * (0.55 + 0.45 * frac**0.5) * zb
+    return float(HOT_MAX_OPACITY * min(op, 1.3))
+
+
 _STDS = {"fbm": 0.212785, "fbm2": 0.206308, "fbm6": 0.220944}
 
 
@@ -123,7 +166,7 @@ GLSL_IMPL = """
     float perp = length(cpk - along * axd);
 
     if (uHotOpacity > 0.0) {
-      float sb = pow(1.0 + pow(R / (0.15 * rvir), 2.0), -0.5) * exp(-pow(R / rvir, 8.0));
+      float sb = pow(1.0 + pow(R / (uHotCore * rvir), 2.0), -0.5) * exp(-pow(R / rvir, 8.0));
       if (uHotLog > 0.5) sb = log(1.0 + sb / 0.02) / log(1.0 + 1.0 / 0.02);
       float wob = exp(0.3 * fbm(cpk / (0.25 * rvir) + vec3(11.0)) / uFbmStd);
       sb *= 1.0 - 0.85 * exp(-pow(R / (1.6 * uRinKpc * wob), 2.0));
@@ -152,15 +195,25 @@ GLSL_IMPL = """
     if (uStreamAmp > 0.0) {
       float env = pow(1.0 + pow(R / (0.12 * rvir), 2.0), -0.5) * exp(-pow(R / rvir, 8.0));
       float lnr = log(max(R / rvir, 0.04));
-      float w = 0.12 + 0.3 * clamp(R / rvir, 0.0, 1.0);
+      float w = uStreamW * (0.12 + 0.3 * clamp(R / rvir, 0.0, 1.0));
       float st = 0.0;
       for (int k = 0; k < 3; k++) {
         float t0 = k == 0 ? uStreamT0.x : (k == 1 ? uStreamT0.y : uStreamT0.z);
+        // Aimed at a neighbouring halo, where there is one: its direction
+        // on screen; fading as it points toward or away from the camera.
+        vec3 D = k == 0 ? uWeb0 : (k == 1 ? uWeb1 : uWeb2);
+        float wk = 1.0;
+        if (dot(D, D) > 0.0) {
+          vec2 q = vec2(dot(D, ex), dot(D, ey));
+          t0 = atan(q.y, q.x);
+          wk = (k == 0 ? uWebW.x : (k == 1 ? uWebW.y : uWebW.z))
+             * smoothstep(0.05, 0.4, length(q));
+        }
         float d = th - t0 - 0.25 * lnr;
         d = atan(sin(d), cos(d));
-        st += exp(-pow(d / w, 2.0));
+        st += wk * exp(-pow(d / w, 2.0));
       }
-      st *= 1.0 - exp(-pow(R / (0.04 * rvir), 2.0));
+      st *= 1.0 - exp(-pow(R / (0.04 * uStreamW * rvir), 2.0));
       float fil = exp(-pow(fbm2(cpk / (0.5 * rvir) + vec3(37.0)) / uFbm2Std / 0.35, 2.0));
       // Lognormal clumping, with the bright tail soft-capped so one rare
       // clump on a stream near the core can't outshine the whole halo.
@@ -174,7 +227,7 @@ GLSL_IMPL = """
 
     if (uJetAmp > 0.0) {
       float pj = max(proj, 0.25);
-      float len = (15.0 + 25.0 * uJetAmp) * pj;
+      float len = uJetLen * pj;
       float jet = exp(-pow(perp / (0.4 + 0.04 * abs(along)), 2.0)) * exp(-pow(along / len, 6.0));
       float lobes = exp(-(pow(along - len, 2.0) + perp * perp) / pow(0.25 * len, 2.0))
                   + exp(-(pow(along + len, 2.0) + perp * perp) / pow(0.25 * len, 2.0));
@@ -218,6 +271,34 @@ GLSL_IMPL = """
         gas += 0.22 * uWindAmp * acc / (1.77 * (w0 + 0.5 * L * tw)) * uWindRGB;
       }
     }
+    if (uHiAmp > 0.0) {
+      // Extended HI disk: an exponential gas disk past the stars, with a
+      // shallow centre (the gas there is molecular), its thickness
+      // integrated exactly along the ray; warped beyond 1.5 scale lengths.
+      float reach = 4.0 * uHiRs;
+      float b = length(cpk);
+      if (b < reach) {
+        float hs = sqrt(reach * reach - b * b);
+        const int NH = 16;
+        float ds = 2.0 * hs / float(NH);
+        float acc = 0.0;
+        for (int k = 0; k < NH; k++) {
+          vec3 p0 = cpk + (-hs + float(k) * ds) * rd;
+          vec3 p1 = p0 + ds * rd;
+          vec3 pm = 0.5 * (p0 + p1);
+          float R = length(pm.xy);
+          float zw = uHiWarp * uHiRs * pow(max(R / uHiRs - 1.5, 0.0), 2.0)
+                   * pm.y / max(R, 1e-3);
+          float sig = exp(-R / uHiRs)
+                    * (1.0 - 0.9 * exp(-pow(R / uHiRs, 2.0)))
+                    * exp(-pow(R / reach, 6.0));
+          if (uHiClump > 0.0)
+            sig *= exp(uHiClump * fbm2(pm / (0.4 * uHiRs) + vec3(91.0)) / uFbm2Std);
+          acc += sig * pint(p0.z - zw, p1.z - zw, uHiH, ds);
+        }
+        gas += uHiAmp * (1.0 - exp(-0.5 * acc)) * uHiRGB;
+      }
+    }
     outc = screenB(outc, clamp(gas, 0.0, 1.0));
   }
 """
@@ -237,17 +318,30 @@ class GasSpec:
         self.rvir = max(gal.rvir_kpc, 20.0)
         self.half = 1.05 * self.rvir / rc.unit_kpc  # model units
         self.r_in = 1.2 * rc.extent * true_unit
-        self.hot = hot_opacity(gal.hot_gas) if gal.hot_gas > 0 else 0.0
+        self.hot = hot_opacity(gal)
+        # Hot gas follows the dark matter: its core is ~1.5 NFW scale radii
+        # (Rvir / c), so concentrated haloes are peakier.
+        conc = gal.concentration if gal.concentration > 0 else 8.0
+        self.hot_core = float(np.clip(1.5 / conc, 0.08, 0.3))
 
         self.stream_amp = 0.0
         if gal.cgm_gas > 0:
             self.stream_amp = 0.8 * float(
                 np.clip((np.log10(gal.cgm_gas) - 8.5) / 3.0, 0.05, 1.0)
             )
-        elif gal.hot_gas > 0 and gal.mdot_stream > 0:
-            self.stream_amp = 0.8 * float(
-                np.clip((np.log10(gal.mdot_stream) + 6.0) / 1.5, 0.3, 1.0)
+        if gal.mdot_stream > 0 and (gal.cgm_gas > 0 or gal.hot_gas > 0):
+            self.stream_amp = max(
+                self.stream_amp,
+                0.8
+                * float(
+                    np.clip((np.log10(gal.mdot_stream) + 6.0) / 1.5, 0.3, 1.0)
+                ),
             )
+        # Cold streams are narrower and reach deeper at high z (Dekel &
+        # Birnboim): thinner and brighter, and right in to the galaxy.
+        z = max(gal.redshift, 0.0)
+        self.stream_w = float(np.clip(1.0 / (1.0 + 0.35 * z), 0.5, 1.0))
+        self.stream_amp *= float(1.0 + 0.15 * min(z, 3.0))
         rng = np.random.default_rng(rc.seed + 7)
         self.t0 = (
             rng.uniform(0, 2 * np.pi)
@@ -260,14 +354,40 @@ class GasSpec:
             if gal.heating_log > 40.0
             else 0.0
         )
+        # Bigger black holes drive brighter jets; jets reach about the
+        # radius the AGN heats (r_heat), in proportion to the halo.
+        if self.jet > 0 and gal.bh_mass > 0:
+            self.jet *= float(
+                np.clip(0.7 + 0.15 * (np.log10(gal.bh_mass) - 8.0), 0.5, 1.3)
+            )
+        reach = max(gal.r_heat_kpc, 0.08 * self.rvir)
+        self.jet_len = float(
+            np.clip(0.6 * reach, 12.0, 150.0)
+            * (0.6 + 0.4 * min(self.jet, 1.0))
+        )
         self.disk_r = rc.extent * true_unit * 0.5
         self.wind = 0.0
         if gal.outflow_rate > 0.05:
             self.wind = float(
                 np.clip((np.log10(gal.outflow_rate) + 1.0) / 2.5, 0.1, 1.0)
             )
+            # Winds need concentrated star formation: brighter with the
+            # SFR surface density (high-z disks are compact, so stronger).
+            rd = max(gal.disk_radius_kpc, 0.3)
+            sig = (gal.sfr_disk + gal.sfr_bulge) / (np.pi * rd**2)
+            self.wind *= float(
+                np.clip(1.0 + 0.4 * np.log10(max(sig, 1e-6) / 0.1), 0.4, 1.5)
+            )
+            self.wind = min(self.wind, 1.2)
+        # Faster in deeper potentials (v ~ 2 Vmax), so further out.
         self.wind_len = (
-            float(np.clip(8 * gal.outflow_rate**0.35, 4, 40))
+            float(
+                np.clip(
+                    4 * gal.outflow_rate**0.35 + 0.08 * max(gal.vmax, 0.0),
+                    4,
+                    60,
+                )
+            )
             + self.disk_r * 0.5
         )
         # Winds reach further the more gas has been blown right out of the
@@ -298,6 +418,13 @@ class GasSpec:
 
         # Gas colours tinted by their metallicity.
         self.hot_rgb = np.asarray(HOT_GAS_RGB, float)
+        if HOT_TEMP and gal.mvir > 0:
+            lm = np.log10(gal.mvir) + 1.5 * np.log10(1 + max(gal.redshift, 0))
+            xs = [x for x, _ in HOT_TEMP]
+            cs = np.array([c for _, c in HOT_TEMP], float)
+            self.hot_rgb = np.array(
+                [np.interp(lm, xs, cs[:, j]) for j in range(3)]
+            )
         if gal.hot_gas > 0 and gal.metals_hot > 0:
             zh = np.clip(
                 np.log10(gal.metals_hot / gal.hot_gas / 0.02), -1.0, 0.3
@@ -313,9 +440,45 @@ class GasSpec:
             self.cgm_rgb = self.cgm_rgb * np.array(
                 [1.0, 1 + 0.1 * zc, 1 - 0.1 * zc]
             )
+        # Heavier mass loading opens the cone wider (log, so the high
+        # loadings of dwarfs don't all hit the same angle).
         self.wind_open = float(
-            np.deg2rad(np.clip(25 + 5 * gal.mass_loading, 20, 45))
+            np.deg2rad(
+                np.clip(
+                    25 + 12 * np.log10(1 + max(gal.mass_loading, 0.0)), 20, 60
+                )
+            )
         )
+
+        # Extended HI disk: the HI size-mass relation (Wang et al. 2016)
+        # gives the diameter where it falls to 1 Msun/pc^2, about three
+        # exponential scale lengths out.
+        self.hi_amp, self.hi_rs, self.hi_warp, self.hi_clump = (
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+        )
+        if HI["on"] and gal.h1_gas > 1e7:
+            d_hi = 10 ** (0.506 * np.log10(gal.h1_gas) - 3.293)
+            self.hi_rs = float(HI["size"] * 0.5 * d_hi / 3.0)
+            self.hi_amp = float(
+                HI["gain"]
+                * np.clip((np.log10(gal.h1_gas) - 8.5) / 2.0, 0.1, 1)
+            )
+            # Satellites warp more the longer they have felt the host's
+            # tides; centrals a little.
+            tide = 0.3
+            if gal.gtype > 0 and gal.t_since_infall_gyr >= 0:
+                tide = 0.3 + 0.7 * min(gal.t_since_infall_gyr / 3.0, 1.0)
+            self.hi_warp = float(HI["warp"] * tide)
+            # Clumpier where more of the cold gas is molecular.
+            mol = gal.h2_gas / max(gal.h1_gas + gal.h2_gas, 1.0)
+            self.hi_clump = float(HI["clump"] * (0.5 + 1.5 * mol))
+
+        # Directions the cold streams come from (set by set_web).
+        self.web = np.zeros((3, 3))
+        self.web_w = np.ones(3)
 
         self.norm_lin, self.norm_log = self._hot_norms()
         self._stream_norms: dict = {}
@@ -324,7 +487,7 @@ class GasSpec:
         """Peak of the (cavity-thinned) hot profile, linear and log-stretched,
         so its brightest point sits at the chosen opacity (as in 2D)."""
         R = np.linspace(0.0, 1.05 * self.rvir, 4000) + 1e-3
-        sb = (1 + (R / (0.15 * self.rvir)) ** 2) ** -0.5 * np.exp(
+        sb = (1 + (R / (self.hot_core * self.rvir)) ** 2) ** -0.5 * np.exp(
             -((R / self.rvir) ** 8)
         )
         cav = 1 - 0.85 * np.exp(-((R / (1.6 * self.r_in)) ** 2))
@@ -357,12 +520,12 @@ class GasSpec:
         th = np.arctan2(Y, X)
         env = (1 + (R / (0.12 * rv)) ** 2) ** -0.5 * np.exp(-((R / rv) ** 8))
         lnr = np.log(np.clip(R / rv, 0.04, None))
-        w = 0.12 + 0.3 * np.clip(R / rv, 0, 1)
+        w = self.stream_w * (0.12 + 0.3 * np.clip(R / rv, 0, 1))
         st = sum(
             np.exp(-((np.angle(np.exp(1j * (th - t0 - 0.25 * lnr))) / w) ** 2))
             for t0 in self.t0
         )
-        st *= 1 - np.exp(-((R / (0.04 * rv)) ** 2))
+        st *= 1 - np.exp(-((R / (0.04 * self.stream_w * rv)) ** 2))
         fil = np.exp(
             -((fbm2(P / (0.5 * rv) + 37.0) / _std("fbm2") / 0.35) ** 2)
         )
@@ -394,6 +557,9 @@ class GasSpec:
         f("uStreamNorm", float(self.stream_norm(1.05 * self.rvir)))
         u.SetUniform3f("uStreamT0", [float(v) for v in self.t0])
         f("uJetAmp", float(self.jet))
+        f("uJetLen", float(self.jet_len))
+        f("uHotCore", float(self.hot_core))
+        f("uStreamW", float(self.stream_w))
         f("uWindAmp", float(self.wind))
         f("uWindLen", float(self.wind_len))
         f("uWindOpen", float(self.wind_open))
@@ -405,3 +571,34 @@ class GasSpec:
         f("uCavAmp", float(self.cav))
         u.SetUniform3f("uJetRGB", [float(v) for v in JET_RGB])
         u.SetUniform3f("uWindRGB", [float(v) for v in WIND_RGB])
+        f("uHiAmp", float(self.hi_amp))
+        f("uHiRs", float(self.hi_rs))
+        f("uHiH", float(HI["h"] * self.hi_rs))
+        f("uHiWarp", float(self.hi_warp))
+        f("uHiClump", float(self.hi_clump))
+        u.SetUniform3f("uHiRGB", [float(v) for v in HI["rgb"]])
+        self._web_uniforms(u)
+
+    def set_web(self, basis, u) -> None:
+        """Aim the cold streams at the haloes around the galaxy (its
+        `web`, in the simulation frame; `basis` columns: galaxy frame ->
+        simulation frame)."""
+        web = getattr(self.gal, "web", ())
+        self.web = np.zeros((3, 3))
+        self.web_w = np.ones(3)
+        if WEB_STREAMS != "random" and web:
+            dirs = [np.asarray(basis).T @ np.array(o[:3]) for o in web]
+            ws = [o[3] for o in web]
+            if WEB_STREAMS == "filament":
+                dirs = [dirs[0], -dirs[0]] + dirs[1:2]
+                ws = [ws[0], ws[0]] + ws[1:2]
+            for k, (d, w) in enumerate(zip(dirs[:3], ws[:3], strict=False)):
+                self.web[k] = d
+                if WEB_STREAMS != "neighbours":
+                    self.web_w[k] = max(0.35, float(w) ** 0.5)
+        self._web_uniforms(u)
+
+    def _web_uniforms(self, u) -> None:
+        for k in range(3):
+            u.SetUniform3f(f"uWeb{k}", [float(v) for v in self.web[k]])
+        u.SetUniform3f("uWebW", [float(v) for v in self.web_w])

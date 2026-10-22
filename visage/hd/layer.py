@@ -300,6 +300,8 @@ class HDGalaxyLayer:
             # in its own CGM streams.
             gs.stream_amp *= max(0.0, 1.0 - CGM_STRIP * prep["ram"])
             gs.set_uniforms(self._gpu._uni, on=bool(gas))
+        if gs is not None:
+            gs.set_web(self._R, self._gpu._uni)
         self._gas_on = bool(gas)
         self._gpu.set_gas(self._gas_on)
         ren = self._pl.renderer

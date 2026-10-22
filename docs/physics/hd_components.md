@@ -16,8 +16,8 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Disk thickness | `StellarMass`, `VelDisp`, `Vmax`, redshift | Low-mass disks are thicker, by M*^−0.15. Thickness grows by (1 + 0.5z) and with (σ/Vmax)⁶. |
 | Elliptical shape | `StellarMass`, `Vmax`, `VelDisp` | More massive ellipticals are rounder and have more extended (cD-like) envelopes. Fast rotators (high Vmax/σ) are flatter. |
 | Classical bulge | `MergerBulgeMass`, `MergerBulgeRadius` | Round, at the merger bulge's radius. Its light scales with the merger-bulge mass relative to the disk. |
-| Pseudo-bulge | `InstabilityBulgeMass`, `InstabilityBulgeRadius` | Compact and flattened, at the instability bulge's radius. It holds whatever instability mass doesn't go into the bar. |
-| Bar and peanut | `InstabilityBulgeMass` | Barred if the instability bulge is more than 6% of M\*. At most 8% of M\* goes into the bar, whose half-length grows with that fraction (0.9–1.8 disk scale lengths). A boxy/peanut thickening comes with it. |
+| Pseudo-bulge | `InstabilityBulgeMass`, `InstabilityBulgeRadius`, `VelDisp`, `Vmax` | Compact, at the instability bulge's radius, flatter in rotation-dominated (low σ/Vmax) disks. It holds whatever instability mass doesn't go into the bar. |
+| Bar and peanut | `InstabilityBulgeMass`, `ColdGas` | Barred if the instability bulge is more than 6% of M\*. At most 8% of M\* goes into the bar, whose half-length grows with that fraction (0.9–1.8 disk scale lengths) and which is thinner the stronger it is. Gas-poor disks buckle it into a stronger boxy/peanut bulge. |
 | Old stellar colour | `MetalsStellarMass`, `MetalsBulgeMass` | The disk and bulge are each tinted by their own stars' metallicity: metal-rich is redder. |
 | Stellar populations by age | `SFHMassDisk`, `SFHMassBulge` (with SAGE's `SaveFullSFH 1`) | The disk's and the bulge's histories are summed as populations of known age: each population's colour and light per unit mass follow its age (younger: bluer, brighter), with metallicity still tinting them. A recently quenched (post-starburst) galaxy turns white-blue with no HII regions, a rejuvenated bulge turns blue, and 0.1–1 Gyr-old star clusters spread through the disk. Without a saved history, colours come from metallicity alone. |
 | Brightness | `StellarMass`, `BulgeMass` | Brightness ∝ M\*^0.35, using disk mass for disks. Every member of a group shares one exposure, so relative brightness follows mass. |
@@ -29,7 +29,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Arm class: grand-design, multi-arm, partial or flocculent | `InstabilityBulgeMass`, `StellarMass`, `ColdGas` | Drawn from probabilities set by the galaxy. Barred and massive disks are mostly grand-design or multi-arm. Gas-rich or low-mass disks lean flocculent. |
 | Pitch angle | B/T, `Vmax` | Bigger bulges and faster rotation (more shear) wind the arms tighter. |
 | Flocculence | `ColdGas` / (`ColdGas` + `StellarMass`), `StellarMass` | Gas-rich, low-mass disks are patchier within their arm class. |
-| Clumpy disk | redshift, `ColdGas`, `FFBRegime` | Gas-rich disks at z ≳ 1 become clumpy and turbulent instead of spiral, with probability rising with z and gas fraction. FFB galaxies always do. Clumps (4–12) are drawn diffuse and blend into the disk. |
+| Clumpy disk | redshift, `ColdGas`, `VelDisp`, `Vmax`, `FFBRegime` | Gas-rich, turbulent disks at z ≳ 1 are clumpy instead of spiral: a Toomre-like score from redshift, gas fraction and σ/Vmax decides it, not chance. FFB galaxies always are. Clumps (4–12) are drawn diffuse and blend into the disk. |
 
 ## Star formation
 
@@ -59,22 +59,22 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Shells (ellipticals) or tidal tails (disks) | `TimeOfLastMajorMerger` | A major merger in the last 4 Gyr leaves debris that fades with time. |
-| Stellar stream | `TimeOfLastMinorMerger` | A minor merger in the last 2.5 Gyr leaves a stream. |
-| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint, extended envelope (scale ~0.12 Rvir), brighter with ICS / M\*. Its colour follows the ICS metallicity. |
+| Shells (ellipticals) or tidal tails (disks) | `TimeOfLastMajorMerger`, redshift | A major merger leaves debris that fades over 4 Gyr at z = 0, and faster at high z (4 Gyr / (1+z), as dynamical times shorten). |
+| Stellar stream | `TimeOfLastMinorMerger`, redshift | A minor merger leaves a stream, fading over 2.5 Gyr / (1+z). |
+| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint, extended envelope (scale 0.12 Rvir, up to 250 kpc), brighter with log(ICS / M\*), so richer clusters keep getting brighter. Its colour follows the ICS metallicity. |
 | Streams feeding the ICL | `ICS_disrupt` | Visible when satellites torn apart into the ICL exceed ~10^10.5 M☉. |
 
 ## Halo gas (the Gas button)
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| CGM and cold streams | `CGMgas`, `MetalsCGMgas` | Cold-regime haloes. Three curling streams plus filaments out to Rvir, brighter with log CGMgas, tinted by its metallicity. |
-| Cold streams into a hot halo | `mdot_stream`, `HotGas` | Hot haloes still fed by cold streams draw them by mdot_stream. |
-| Hot halo / intracluster medium | `HotGas`, `MetalsHotGas`, `Rvir` | A textured atmosphere to Rvir. Its opacity rises with log HotGas, and its colour is tinted by metallicity. |
+| CGM and cold streams | `CGMgas`, `MetalsCGMgas`, `mdot_stream`, redshift, neighbouring haloes | Cold-regime haloes. Three curling streams plus filaments out to Rvir, brighter with log CGMgas (or the stream rate), tinted by metallicity. The streams follow the cosmic web: two come in from opposite sides along the direction of the biggest halo within 4 Mpc/h (the filament the galaxy sits in), the third from the next biggest, each brighter the bigger its halo. At high z they are narrower, brighter and reach in to the galaxy (×(1 + 0.15z), width / (1 + 0.35z)). |
+| Cold streams into a hot halo | `mdot_stream`, `HotGas` | Hot haloes still fed by cold streams draw them by mdot_stream, aimed and scaled with redshift as above. |
+| Hot halo / intracluster medium | `HotGas`, `Mvir`, `Concentration`, `MetalsHotGas`, `Rvir`, redshift | A textured atmosphere to Rvir. Its opacity rises with log HotGas, with the hot gas's share of the halo's baryons, and with redshift (denser haloes). Its core is 1.5 Rvir / c, so concentrated haloes are peakier. Its colour follows the virial temperature (Mvir, hotter at high z): magenta in small haloes, violet in groups, ice-blue in rich clusters, tinted by metallicity. |
 | X-ray cavities | `Heating`, `r_heat`, `Regime`, `HotGas` | Bubbles at the radio-heating radius r_heat, along the jet axis, in hot haloes with radio heating. |
-| Radio jets | `Heating` | Jets and lobes along the spin axis, longer and brighter with radio-mode heating. |
-| Galactic winds | `OutflowRate`, `MassLoading`, `EjectedMass` | A hollow bipolar cone along the spin axis, in Hα red (as M82's wind), with a few thin streamers running outward through it. It is brighter with the outflow rate. MassLoading sets its opening angle (20–45°). It reaches further the more of the halo gas has been ejected, and fades out by three times that reach. It is drawn in 3D, so it looks right from any angle. |
-| Hα cooling filaments | `mdot_cool`, `RcoolToRvir`, `r_heat`, `tcool`, `tff`, `Mvir` | In hot haloes above 10¹² M☉ that are still cooling, gas rains out into filaments. Still cooling means a cooling radius at least 30% beyond r_heat, or t_cool/t_ff ≲ 6. These are brighter with mdot_cool and reach at most 0.8 r_heat. |
+| Radio jets | `Heating`, `BlackHoleMass`, `r_heat`, `Rvir` | Jets and lobes along the spin axis, brighter with radio-mode heating and black-hole mass, reaching about the radius the AGN heats (r_heat, or 8% of Rvir). |
+| Galactic winds | `OutflowRate`, `SfrDisk`, `SfrBulge`, `DiskRadius`, `MassLoading`, `Vmax`, `EjectedMass` | A hollow bipolar cone along the spin axis, in Hα red (as M82's wind), with a few thin streamers running outward through it. It is brighter with the outflow rate and with the SFR surface density (so compact high-z disks drive stronger winds). It reaches further in deeper potentials (Vmax) and the more of the halo gas has been ejected, and fades out by three times that reach. MassLoading opens it wider (20–60°, on a log scale). It is drawn in 3D, so it looks right from any angle. |
+| Extended HI disk | `H1gas`, `H2gas`, `Type`, `TimeOfInfall` | A faint, clumpy, pale-blue gas disk well past the stars, sized by the HI size–mass relation (Wang et al. 2016). It is clumpier where more of the cold gas is molecular, and warped in satellites, more so the longer since infall. |
 
 ## Environment (groups, pairs, satellites)
 

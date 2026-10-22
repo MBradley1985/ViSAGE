@@ -44,11 +44,11 @@ The card's **Gas** button adds the halo gas: every member of the group gets its 
 
 | Gas | From |
 |---|---|
-| CGM with cold streams | CGMgas (cold regime), mdot_stream |
-| Hot halo / intracluster medium, with X-ray cavities | HotGas, metals, radio heating radius |
+| CGM with cold streams along the cosmic web | CGMgas (cold regime), mdot_stream |
+| Hot halo / intracluster medium, coloured by temperature, with X-ray cavities | HotGas, Mvir, concentration, metals, radio heating radius |
 | Galactic winds | OutflowRate, ejected gas |
+| Extended HI disk | H1gas |
 | Radio jets | Heating |
-| Hα cooling filaments | Cooling rate in cluster-mass haloes |
 
 Gas is a shader switch: turning it on or off doesn't rebuild anything.
 
