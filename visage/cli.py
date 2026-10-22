@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.diagnose:
         from visage.diagnose import run
 
-        run(par=args.par, browser=not args.no_browser)
+        run(par=args.par, browser=not args.no_browser, port=args.port)
         return
     if args.lightcone is not None:
         _lightcone_mode(args)

@@ -496,15 +496,50 @@ def _live(log, par: str) -> None:
         log("   Nothing held the event loop over 0.1 s.")
 
 
-def _free_port() -> int:
+def _pick_port(port: int) -> int:
+    """`port` (ViSAGE's usual 8080) if it is free, else any free one."""
     import socket
 
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+    for want in (port, 0):
+        with socket.socket() as sock:
+            try:
+                sock.bind(("", want))
+            except OSError:
+                continue
+            return sock.getsockname()[1]
+    return port
 
 
-def _browser(log, par: str, drag: bool = True) -> None:
+_LOG_MARK = "@@ "
+
+
+def _browser_in_child(log, par: str, port: int) -> None:
+    """Run `_browser` in a fresh Python: the earlier live-app check has
+    already started this process's (single) web server."""
+    import subprocess
+
+    cmd = [sys.executable, "-u", "-m", "visage.diagnose", par, str(port)]
+    with subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ) as proc:
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if line.startswith(_LOG_MARK):
+                log(line[len(_LOG_MARK) :])
+            else:
+                print(line, flush=True)
+    if proc.returncode:
+        raise RuntimeError(
+            f"the browser test exited with code {proc.returncode}"
+        )
+
+
+def _browser(log, par: str, drag: bool = True, port: int = 8080) -> None:
     """The real app in your browser: does the browser keep up?
 
     Opens ViSAGE in the default browser and measures, from the server:
@@ -521,7 +556,7 @@ def _browser(log, par: str, drag: bool = True) -> None:
     from visage.app import create_app
     from visage.utils import frame_delivery as fd
 
-    port = _free_port()
+    port = _pick_port(port)
     server, scene = create_app(par_path=par)
     state = server.state
     lag: list[float] = []
@@ -611,6 +646,9 @@ def _browser(log, par: str, drag: bool = True) -> None:
         await asyncio.sleep(1.5)
         url = f"http://localhost:{port}/"
         log(f"   Opening {url} (keep that tab in front until this finishes)")
+        print(
+            f"\n>>> If no browser tab opens, open {url} yourself.", flush=True
+        )
         webbrowser.open(url)
         t0 = time.monotonic()
         while fd.stats["sent"] == 0 and time.monotonic() - t0 < 120:
@@ -662,7 +700,10 @@ Browser checks (please do these too and note the answers):
 
 
 def run(
-    par: str | None = None, out_dir: str | Path = ".", browser: bool = True
+    par: str | None = None,
+    out_dir: str | Path = ".",
+    browser: bool = True,
+    port: int = 8080,
 ) -> Path:
     """Run every check; return the log file's path."""
     path = Path(out_dir).resolve() / LOG_NAME
@@ -692,9 +733,17 @@ def run(
             _step(
                 log,
                 "In your browser: is it keeping up?",
-                lambda: _browser(log, par),
+                lambda: _browser_in_child(log, par, port),
             )
     for line in _BROWSER_CHECKS.strip("\n").splitlines():
         log(line)
     log(f"\nDone. Log: {path}")
     return path
+
+
+if __name__ == "__main__":  # the browser test, run by _browser_in_child
+    _browser(
+        lambda text="": print(_LOG_MARK + text, flush=True),
+        sys.argv[1],
+        port=int(sys.argv[2]),
+    )
