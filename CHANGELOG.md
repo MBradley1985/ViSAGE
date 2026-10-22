@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`visage --diagnose`** runs a performance check (machine and versions,
+  the GPU OpenGL actually uses, frame render / readback / encode times at
+  typical and large window sizes, an HD galaxy, and with `--par` your
+  model) and writes it to `visage_diagnostics.txt`. `--perf` also reports
+  how late the server handles events.
+
 ### Changed
 
 - **Go and Isolate** put the camera 3 Mpc/h from the selection (the galaxy,

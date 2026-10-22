@@ -122,6 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--diagnose",
+        action="store_true",
+        help=(
+            "Run a performance check (GPU in use, frame render / readback / "
+            "encode times, HD, and with --par your model) and write it to "
+            "visage_diagnostics.txt in the current folder, then exit."
+        ),
+    )
+    p.add_argument(
         "--version",
         action="version",
         version=f"visage {__version__}",
@@ -170,6 +179,11 @@ def main(argv: list[str] | None = None) -> None:
     if tuned:
         print(f"Tuning   : {', '.join(tuned)}")
 
+    if args.diagnose:
+        from visage.diagnose import run
+
+        run(par=args.par)
+        return
     if args.lightcone is not None:
         _lightcone_mode(args)
     elif args.par is None:

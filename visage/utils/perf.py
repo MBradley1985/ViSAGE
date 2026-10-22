@@ -12,6 +12,9 @@ prints, every few seconds while frames are flowing, a line such as::
 * between — the rest of each frame's share of a second: handling input,
   sending the image, and waiting for the next one to be asked for
 * KB     — encoded frame size; MB/s is what the websocket carries
+* lag    — how late the server's event loop runs a 0.1 s timer (mean /
+  worst): the delay before any click, key or message is handled.  Tens
+  of ms is fine; seconds means the server is too busy to keep up
 
 A frame time much larger than render points at readback/encoding (CPU
 speed, frame size); a large "between" points at the rest of the server
@@ -36,6 +39,9 @@ class _Stats:
         self.renders = 0
         self.render_s = 0.0
         self.size = (0, 0)
+        self.lag_n = 0
+        self.lag_s = 0.0
+        self.lag_max = 0.0
 
 
 def describe(stats: _Stats, elapsed: float) -> str | None:
@@ -57,6 +63,11 @@ def describe(stats: _Stats, elapsed: float) -> str | None:
     parts.append(f"frame {frame_ms:.1f} ms")
     parts.append(f"between {max(0.0, 1000 / fps - frame_ms):.0f} ms")
     parts.append(f"{kb:.0f} KB ({stats.bytes / elapsed / 1024**2:.1f} MB/s)")
+    if stats.lag_n:
+        parts.append(
+            f"lag {1000 * stats.lag_s / stats.lag_n:.0f}/"
+            f"{1000 * stats.lag_max:.0f} ms"
+        )
     return "perf: " + " · ".join(parts)
 
 
@@ -105,9 +116,28 @@ def install(ren_win, interval: float = 5.0, out=print) -> None:
             return
         timer.append(loop.call_later(interval, _report))
 
+    lag_task: list = []
+
+    async def _watch_lag(step: float = 0.1) -> None:
+        """How late the event loop wakes from a `step` sleep."""
+        while True:
+            t = time.perf_counter()
+            await asyncio.sleep(step)
+            late = max(0.0, time.perf_counter() - t - step)
+            stats.lag_n += 1
+            stats.lag_s += late
+            stats.lag_max = max(stats.lag_max, late)
+
     def still_render(self, options):
         t0 = time.perf_counter()
         reply = original(self, options)
+        if not lag_task:
+            try:
+                lag_task.append(
+                    asyncio.get_running_loop().create_task(_watch_lag())
+                )
+            except RuntimeError:
+                pass
         if not timer:
             stats.reset()
             _schedule()
