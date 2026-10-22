@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import os
 import io
 import itertools
 import time
@@ -47,6 +48,54 @@ on_frame: list = []
 # backlog of old frames.
 backlog = [lambda: 0]
 MAX_IN_FLIGHT = 2
+
+# End-to-end flow control.  Frames leave the server at once on a local
+# link, so a slow *browser* (decoding large JPEGs) falls behind without the
+# server seeing a backlog: frames pile up in the browser, and clicks wait
+# behind them.  So after a frame the server sends a tiny ping that the page
+# answers once it has worked through everything before it (visage.js);
+# while a ping is unanswered for longer than BROWSER_SLACK, drag frames are
+# skipped, keeping the browser within a frame or two of now.  An answer
+# that never comes (a closed or old page) stops holding after PING_GIVEUP.
+BROWSER_SLACK = 0.06  # s
+PING_GIVEUP = 2.0  # s
+_ping = {"id": 0, "sent": None}
+# Sends ping `id` to the page (set by the app).
+ping_sender: list = [None]
+last_frame = [0.0]  # monotonic time of the last frame sent
+
+
+def pong(ping_id) -> None:
+    """The page has caught up to ping `ping_id`."""
+    try:
+        if int(ping_id) == _ping["id"]:
+            _ping["sent"] = None
+    except (TypeError, ValueError):
+        pass
+
+
+def browser_behind() -> bool:
+    if os.environ.get("VISAGE_BROWSER_FLOW", "1") == "0":
+        return False
+    sent = _ping["sent"]
+    if sent is None:
+        return False
+    late = time.monotonic() - sent
+    if late > PING_GIVEUP:
+        _ping["sent"] = None  # no answer coming: stop holding back
+        return False
+    return late > BROWSER_SLACK
+
+
+def _send_ping() -> None:
+    if ping_sender[0] is None or _ping["sent"] is not None:
+        return
+    _ping["id"] += 1
+    _ping["sent"] = time.monotonic()
+    try:
+        ping_sender[0](_ping["id"])
+    except Exception:
+        _ping["sent"] = None
 
 
 def _mark_dirty(*_args) -> None:
@@ -187,7 +236,7 @@ def install() -> None:
             return {"image": None, "stale": False, "memsize": 0}
         if _in_timer[0]:
             try:
-                behind = backlog[0]() > MAX_IN_FLIGHT
+                behind = backlog[0]() > MAX_IN_FLIGHT or browser_behind()
             except Exception:
                 behind = False
             if behind:
@@ -199,6 +248,8 @@ def install() -> None:
             view.SetSize(size)
         quality = options.get("quality", 100)
         image, real_size = render_jpeg(view, quality, grabbers)
+        last_frame[0] = time.monotonic()
+        _send_ping()
         for fn in on_frame:
             fn()
         return {

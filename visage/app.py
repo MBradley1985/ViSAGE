@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 from trame.app import get_server
@@ -141,6 +142,21 @@ from visage.ui.story_mode import (
 )
 
 
+def _jpeg_quality() -> int:
+    """Frame JPEG quality: 100, or VISAGE_JPEG_QUALITY (50-100)."""
+    import os
+
+    try:
+        return int(
+            min(max(int(os.environ.get("VISAGE_JPEG_QUALITY", 100)), 50), 100)
+        )
+    except ValueError:
+        return 100
+
+
+_JPEG_QUALITY = _jpeg_quality()
+
+
 def create_app(
     par_path: str | Path,
     par_dir: str | Path | None = None,
@@ -191,6 +207,11 @@ def create_app(
             try:
                 warm_pool()
                 prep = await loop.run_in_executor(None, warm_up_prepare)
+                # Compiling holds the main thread (0.4 s here, over a
+                # second on some PCs): wait until no frames have been sent
+                # for a couple of seconds, so it doesn't stall a drag.
+                while time.monotonic() - frame_delivery.last_frame[0] < 2.0:
+                    await asyncio.sleep(0.5)
                 st = server.state
                 if not (st.hd_active or st.hd_building):
                     warm_up_shaders(scene.plotter, prep)
@@ -244,6 +265,27 @@ def create_app(
     camera_motion.set_frame_gate(_frame_sent)
     # Mouse drags too: frames beyond two in flight are skipped, not queued.
     frame_delivery.backlog[0] = lambda: server.context.network_monitor.pending
+
+    # ... and the browser's own backlog: a ping after each frame that the
+    # page answers once it has caught up (visage.js).
+    server.state.visage_ping = 0
+
+    def _send_ping(ping_id: int) -> None:
+        def _go() -> None:
+            server.state.visage_ping = ping_id
+            server.state.flush()
+
+        try:
+            asyncio.get_running_loop().call_soon(_go)
+        except RuntimeError:
+            frame_delivery._ping["sent"] = None
+
+    frame_delivery.ping_sender[0] = _send_ping
+
+    @server.controller.trigger("visage_pong")
+    def _on_pong(ping_id):
+        frame_delivery.pong(ping_id)
+
     # While frames flow, snapshot preloading waits rather than competing
     # with the renderer for the CPU.
     frame_delivery.on_frame.append(lambda: hold_background(0.3))
@@ -1401,8 +1443,10 @@ def create_app(
                         # dropping quality or subsampling. Any thinning of the
                         # cloud must stay a deliberate, user-driven choice.
                         interactive_ratio=1.0,
-                        interactive_quality=100,
-                        still_quality=100,
+                        # (VISAGE_JPEG_QUALITY lowers it, for testing a
+                        # slow machine or link; the default stays 100.)
+                        interactive_quality=_JPEG_QUALITY,
+                        still_quality=_JPEG_QUALITY,
                     )
                     server.controller.view_update = view.update
 
