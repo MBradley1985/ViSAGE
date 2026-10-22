@@ -38,8 +38,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   selected galaxy (at its true size; its group still sets its tidal
   features and jellyfish tail), in **Halo + group** context the whole
   group.
-- **Go and Isolate frame the selection the same way:** a galaxy ±10 kpc,
-  a halo with its whole group. Leaving HD lands on the same view.
+- **Go and Isolate frame the selection the same way,** at the distance Go
+  uses inside HD (the galaxy at its normal-view size); a halo with its
+  whole group in view. Leaving HD lands on the same view.
+- **Rings follow the context:** the galaxy alone in Galaxy context, every
+  member alike in Halo + group context.
+- **Clear indicator is now an on/off switch** (Clear / Show indicator)
+  that holds through HD, Gas and new selections.
+- HD finishes uploading to the GPU behind the build card, so the first
+  frames after it closes are smooth (the first frame took ~0.4 s).
 - HD builds use about 40% less memory (light maps in half precision), so
   the cache of recent builds holds more; star-formation histories are
   read only for the galaxies HD and the card need, not binned on every

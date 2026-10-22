@@ -44,6 +44,7 @@ def _init_state(state) -> None:
         "sel_info_open": False,
         "sel_info_items": [],
         "sel_hd_items": [],
+        "sel_rings": True,  # the indicator on (the card's Clear / Show)
         "sel_halo": "",
         "sel_group": "",
         "sel_q_gal": "",
@@ -259,12 +260,15 @@ def selection_card(server) -> None:
                 )
             html.Div(style="flex:1;")
             v3.VBtn(
-                "Clear indicator",
+                "{{ sel_rings ? 'Clear indicator' : 'Show indicator' }}",
                 size="x-small",
                 variant="text",
                 color="#9ca3af",
                 click=ctrl.sel_clear_marker,
-                title="Remove the rings (the galaxy stays selected)",
+                title=(
+                    "Rings off or on (the galaxy stays selected; stays as "
+                    "set through HD, Gas and new selections)"
+                ),
             )
         with html.Div(
             v_show=("sel_halo",),
@@ -523,18 +527,20 @@ def build_selection(server, scene) -> None:
         state.sel_active = True  # (the card opens on Show info)
         if state.sel_info_open:
             _fill_info(i, snap)
-        others = [_drawn(galaxies, int(k), lead) for k in mem if k != i]
         marker = scene.camera.marker
+        marker.enabled = bool(state.sel_rings)
         if halo_ctx:
-            # The halo: ring on its central, the whole group ringed.
+            # The halo and its group: every member ringed alike.
             marker.set_target(_drawn(galaxies, lead, lead))
             marker.set_details(
                 "",
                 [_drawn(galaxies, int(k), lead) for k in mem if k != lead],
+                style="full",
             )
         else:
+            # The galaxy alone.
             marker.set_target(_drawn(galaxies, i, lead))
-            marker.set_details("", others)
+            marker.set_details("", [])
         _push()
 
     # Back / forward through what was selected: (GalaxyIndex, row).
@@ -926,8 +932,10 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_clear_marker")
     def _sel_clear_marker():
-        """The rings off; the selection and its card stay."""
-        scene.camera.marker.clear()
+        """Rings off (or back on); the selection and its card stay, and
+        the choice holds through HD, Gas and new selections."""
+        state.sel_rings = not bool(state.sel_rings)
+        scene.camera.marker.set_enabled(state.sel_rings)
         _push()
 
     @ctrl.set("sel_toggle_info")

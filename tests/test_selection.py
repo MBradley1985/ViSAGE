@@ -60,8 +60,12 @@ def test_selecting_a_galaxy_fills_the_card_and_marks_it(panel):
     assert [m["idx"] for m in state.sel_members if m["current"]] == [6]
     # Host halo: the one the central sits on, not the nearest visible one.
     assert state.nav_halo_idx == 0
+    # Galaxy context: just the galaxy ringed; Halo + group: every member.
     marker = scene.camera.marker
-    assert marker.active and len(marker.members) == 2
+    assert marker.active and len(marker.members) == 0
+    state.sel_kind = "halo"
+    state.flush()
+    assert len(marker.members) == 2 and marker.member_style == "full"
 
 
 def test_typing_a_halo_selects_its_central(panel):
@@ -136,7 +140,13 @@ def test_selecting_by_typed_index_and_info(panel):
     ctrl.sel_query("galaxy")
     assert state.nav_gal_idx == 7 and state.sel_active
     ctrl.sel_clear_marker()  # rings off, selection kept
-    assert state.sel_active and not server_scene_marker(panel).active
+    marker = server_scene_marker(panel)
+    assert state.sel_active and not marker.enabled
+    state.nav_gal_idx = 3  # stays off through a new selection
+    state.flush()
+    assert not marker.enabled
+    ctrl.sel_clear_marker()  # and back on
+    assert marker.enabled
     ctrl.sel_close()
     assert not state.sel_show
     ctrl.show_galaxy_info()  # Console "galaxy info": the card, all open
@@ -333,12 +343,16 @@ def test_rings_sit_where_galaxies_are_drawn_across_the_box_edge(panel):
     box = scene.active_model.box_size
     galaxies.positions[4] = [box - 0.05, 30, 30]
     galaxies.positions[2] = [0.05, 30, 30]
+    halos, _ = scene.active_model.loader.get(scene.current_snap)
+    halos.positions[0] = galaxies.positions[4]  # the group's host halo
     state.nav_gal_idx = 2
     state.flush()
+    state.sel_kind = "halo"  # the whole group ringed
+    state.flush()
     off = scene.active_model.offset
-    assert np.allclose(scene.camera.marker.target, galaxies.positions[2] + off)
+    assert np.allclose(scene.camera.marker.target, galaxies.positions[4] + off)
     assert np.allclose(
-        scene.camera.marker.members[0], galaxies.positions[4] + off
+        scene.camera.marker.members[0], galaxies.positions[2] + off
     )
 
 

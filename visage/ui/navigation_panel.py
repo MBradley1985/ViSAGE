@@ -4036,10 +4036,34 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _stop_sparkles()
             _stop_hd()
 
-    # Go and Isolate frame the selection the same way: a galaxy +-GO_HALF_KPC
-    # (physical) around it; a halo (the card's "Halo + group") its whole
-    # group.
-    GO_HALF_KPC = 10.0
+    # Go and Isolate frame the selection the same way, at the distance Go
+    # uses inside HD for a group member: the galaxy at its normal-view
+    # size (as HD magnifies it), with a small margin.  In the card's
+    # "Halo + group" context, centred on the group and far enough out to
+    # show all of it (never closer than its central's distance).
+
+    def _go_distance(galaxies, i: int) -> float:
+        """Camera distance (Mpc/h) framing galaxy `i` as Go does inside
+        HD: its normal-view size (visage.hd.layer.magnification) x 1.15."""
+        import numpy as np
+
+        from visage.hd.adapter import sage_galaxy_from_snapshot
+        from visage.hd.layer import magnification
+        from visage.hd.model import recipe_from_sage
+
+        h = float(scene._cfg.hubble_h)
+        fov = np.deg2rad(scene.plotter.camera.view_angle)
+        try:
+            gal = sage_galaxy_from_snapshot(
+                galaxies, int(i), h, scene._snap_table, float(scene._cfg.omega)
+            )
+            rc = recipe_from_sage(gal)
+            mag = magnification(gal, rc, h)
+            k = 1.3 if rc.kind == "disk" else 1.0
+            radius = rc.extent * k * rc.unit_kpc * mag * h / 1000.0
+        except Exception:
+            radius = 0.05
+        return float(radius / np.tan(fov / 2.0) * 1.15)
 
     def _selection_targets(halos, galaxies):
         """(halo indices, galaxy indices) of what's selected: the galaxy,
@@ -4071,9 +4095,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         return [], np.array([], dtype=np.int64)
 
     def _frame_targets(halos, galaxies, halo_indices, gal_indices):
-        """Point the camera at the selection: a lone galaxy +-GO_HALF_KPC
-        across, a halo and its group all in view.  Returns (centre,
-        radius) in world units, or None."""
+        """Point the camera at the selection, looking down -z, at Go's
+        distance: centred on the galaxy, or on the halo and its group.
+        Returns (centre, view half-width) in world units, or None."""
         import numpy as np
 
         off = scene.active_model.offset
@@ -4087,22 +4111,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
             center = pts.mean(axis=0) if halo_indices else pts[0]
             cam = scene.plotter.camera
             fov = np.deg2rad(cam.view_angle)
+            ref = int(gal_indices[0]) if len(gal_indices) else None
+            dist = _go_distance(galaxies, ref) if ref is not None else 0.0
             if halo_indices:
                 extent = (
                     float(np.linalg.norm(pts - center, axis=1).max())
                     if len(pts) > 1
                     else 0.0
                 )
-                rvir = (
-                    float(halos.rvir[halo_indices[0]])
-                    if len(halos.rvir)
-                    else 0.0
-                )
-                radius = max(extent, rvir, 0.05)
-                dist = radius / np.tan(fov / 2.0) * 1.15
-            else:
-                radius = GO_HALF_KPC * float(scene._cfg.hubble_h) / 1000.0
-                dist = radius / np.tan(fov / 2.0)
+                dist = max(dist, extent / np.tan(fov / 2.0) * 1.15)
+            dist = max(dist, 1e-4)
+            radius = dist * np.tan(fov / 2.0)
             cx, cy, cz = (float(c) for c in center)
             cam.focal_point = (cx, cy, cz)
             cam.position = (cx, cy, cz + dist)
@@ -4118,8 +4137,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @ctrl.set("go_frame")
     def on_go_frame():
         """The card's Go: fly to the selection, framed as Isolate frames it
-        (a galaxy +-10 kpc, a halo with its whole group), everything else
-        still shown within the usual 10 Mpc/h focus sphere."""
+        (at Go's distance in HD), everything else within the usual 10 Mpc/h
+        focus sphere still shown."""
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
         halo_indices, gal_indices = _selection_targets(halos, galaxies)
         framed = _frame_targets(halos, galaxies, halo_indices, gal_indices)
@@ -4127,7 +4146,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _push()
             return
         center, _ = framed
-        scene.camera.marker.set_target(center)
         scene.set_focus_sphere(center, _GALAXY_GO_RADIUS)
         state.focus_active = True
         state.isolate_active = False
@@ -4659,6 +4677,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 keep_view=len(grp.members) > 1,
             )
             centre = grp.center
+        # Upload the textures (and build their mipmaps) now, behind the
+        # build card, rather than on the first frame after it closes --
+        # that first frame took ~0.4 s, a stutter just as HD appeared.
+        try:
+            scene.plotter.ren_win.Render()
+        except Exception:
+            pass
         if keep is not None:
             import numpy as np
 

@@ -224,30 +224,32 @@ def test_hd_button_isolates_and_toggles_off(hd_panel):
     state.flush()
     assert not state.hd_active
     assert not state.isolate_active
-    # Off again backs out to the Go view of the galaxy: +-10 kpc.
-    assert _view_half_kpc(scene) == pytest.approx(10.0)
+    # Off again backs out to the Go view of the galaxy.
+    d_off = _cam_dist(scene)
+    ctrl.go_to_galaxy_enter()
+    assert d_off == pytest.approx(_cam_dist(scene))
 
 
-def _view_half_kpc(scene):
-    """Half-width of the view at the focal point, physical kpc."""
+def _cam_dist(scene):
     cam = scene.plotter.camera
-    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
-    h = float(scene._cfg.hubble_h)
-    return dist * np.tan(np.deg2rad(cam.view_angle) / 2) * 1000 / h
+    return float(np.linalg.norm(np.subtract(cam.position, cam.focal_point)))
 
 
-def test_go_and_isolate_frame_a_galaxy_at_10_kpc(hd_panel):
-    """Go and Isolate frame the selected galaxy the same way: +-10 kpc.
-    The 3 / 5 / 10 Mpc/h buttons remain one-off wider zooms."""
+def test_go_and_isolate_frame_a_galaxy_alike(hd_panel):
+    """Go and Isolate frame the selected galaxy at the same distance --
+    Go's inside HD: its normal-view size with a margin.  The 3 / 5 / 10
+    Mpc/h buttons remain one-off wider zooms."""
     server, scene = hd_panel
     state, ctrl = server.state, server.controller
     state.nav_gal_idx = 0
     ctrl.go_to_galaxy_1()  # 3 Mpc/h
+    assert _cam_dist(scene) == pytest.approx(3.0)
     ctrl.go_to_galaxy_enter()
-    assert _view_half_kpc(scene) == pytest.approx(10.0)
+    d_go = _cam_dist(scene)
+    assert 1e-3 < d_go < 1.0
     ctrl.toggle_isolate()
     assert state.isolate_active
-    assert _view_half_kpc(scene) == pytest.approx(10.0)
+    assert _cam_dist(scene) == pytest.approx(d_go)
     ctrl.toggle_isolate()
     state.nav_distance = 0.5  # e.g. a drawn Coords sphere
     assert state.nav_halo_distance == 10.0
@@ -376,7 +378,7 @@ def test_hd_draws_the_whole_group(hd_panel):
     state.flush()
     assert not state.hd_active and not grp.active
     # (Leaving HD: the Go view of the selection, not 10 Mpc/h away.)
-    assert _view_half_kpc(scene) == pytest.approx(10.0)
+    assert _cam_dist(scene) < 1.0
 
 
 def test_group_plan_tiers():
