@@ -8,6 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **HD star-forming regions are Hα pink**, pink in metal-poor gas to
+  orange in metal-rich, gathered into complexes along the arms: richer
+  where star formation is denser, bigger in gas-rich disks.
+- **HD spiral arms have dust lanes:** thin, streaky dark lanes along the
+  arms' inner edges, darker the larger the galaxy's dust column (H₂, HI
+  and gas metallicity), so gas-poor disks have almost none.
+
 ## [2.8.6] — 2026-10-22
 
 ### Changed

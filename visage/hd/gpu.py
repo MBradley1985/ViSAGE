@@ -737,6 +737,23 @@ _IMPL = """//VTK::Light::Impl
     }
   }
 
+  // Dark arm lanes: a thin screen in the disk plane, dimming and
+  // reddening what lies behind it (stars included).
+  if (uIsDisk > 0.5 && rz > 1e-4) {
+    float tp = -ro.z / rd.z;
+    if (tp > 0.0) {
+      vec2 pp = (ro + tp * rd).xy;
+      if (abs(pp.x) < uMapHalf && abs(pp.y) < uMapHalf) {
+        float lt = texture(mapTex, mapUV(pp, uMapHalf, uMapN)).a;
+        if (lt > 0.0) {
+          vec3 scr = exp(-lt * min(1.0 / rz, 4.0) * uDustK);
+          col *= scr;
+          starD *= scr;
+        }
+      }
+    }
+  }
+
   // Nucleus and AGN glow (analytic PSFs, dimmed by the dust at the centre).
   vec3 tC = exp(-0.5 * tauC * uDustK);
   // Point-like cores are a pixel across at any zoom, not a fixed size.
@@ -838,11 +855,13 @@ def prepare(
         dA = (2 * maps.half / (maps.old.shape[0] - 1)) ** 2
         n_old = 1.0 / (maps.old.sum() * dA)
         n_young = 1.0 / (maps.young.sum() * dA)
+        lanes = maps.lanes if maps.lanes is not None else 0 * maps.dust
         m = np.dstack(
             [
                 rc.l_disk * n_old * maps.old,
                 rc.l_young * 1.2 * n_young * maps.young,
                 maps.dust,
+                lanes,
             ]
         ).astype(np.float32)
         tex["mapTex"] = (m, "mip")
