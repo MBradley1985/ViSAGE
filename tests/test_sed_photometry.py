@@ -27,6 +27,7 @@ from visage.sed.ssp_grid import (  # noqa: E402
     SSPGrid,
     assign_metallicity_bins,
     metallicity_bin_edges,
+    metallicity_weights,
 )
 
 
@@ -172,8 +173,11 @@ def test_compute_photometry_end_to_end(tmp_path):
         sim.attrs["FileWithSnapList"] = str(alist_path)
 
     results = compute_photometry(
-        path, bands=("sdss_g", "sdss_r"), frame="both", n_zbins=1
+        path, bands=("sdss_g", "sdss_r"), frame="both", use_metallicity=False
     )
+    settings = results.pop("_settings")
+    assert settings["IMF"] == "Chabrier 2003"
+    assert settings["RecycleFraction"] == 0.43
     assert set(results) == {
         "mag_rest_sdss_g",
         "mag_obs_sdss_g",
@@ -193,3 +197,56 @@ def test_compute_photometry_end_to_end(tmp_path):
     lo = order[: len(order) // 3]
     hi = order[-len(order) // 3 :]
     assert gr_rest[hi].mean() > gr_rest[lo].mean()  # more massive -> redder
+
+
+def test_mean_spectrum_spans_the_bin():
+    """A history bin's stars, spread over its time span, are brighter and
+    bluer than all of them placed at the bin's oldest edge."""
+    grid = SSPGrid(logzsol=0.0)
+    blue = grid.wave < 4000
+    spread = grid.mean_spectrum(0.0, 0.5)
+    oldest = grid.spectrum_at_age(0.5)
+    assert spread[blue].sum() > 2 * oldest[blue].sum()
+    # A very narrow span is the single-age spectrum.
+    narrow = grid.mean_spectrum(1.0, 1.0 + 1e-7)
+    np.testing.assert_allclose(narrow, grid.spectrum_at_age(1.0), rtol=1e-6)
+
+
+def test_metallicity_weights_interpolate_between_nodes():
+    nodes = np.array([-1.0, 0.0, 0.5])
+    lo, hi, w = metallicity_weights(np.array([-1.0, -0.5, 0.25, 9.0]), nodes)
+    assert list(lo) == [0, 0, 1, 1] and list(hi) == [1, 1, 2, 2]
+    np.testing.assert_allclose(w, [0.0, 0.5, 0.5, 1.0])
+
+
+def test_dust_equilibrium_and_attenuation():
+    from visage.sed import dust
+
+    # ~0.01 core-collapse SNe per Msun formed (Chabrier IMF, 8-40 Msun).
+    assert 0.008 < dust.sn_per_mass_formed() < 0.014
+    # Solar-metallicity, H2-rich, star-forming gas: about Milky Way dust
+    # (dust/gas ~ 1/100); never more dust than metals.
+    cold = np.array([1e10, 1e10, 1e10])
+    z = np.array([0.0142, 0.0142, 0.0014])
+    delta = dust.cold_dust_ratio(
+        cold, z * cold, 0.3 * cold, np.array([1.0, 1.0, 1.0])
+    )
+    assert 0.003 < delta[0] < 0.0072
+    assert delta[2] < delta[0]  # metal-poor: less dust
+    assert (delta <= z + 1e-9).all()
+    # No gas: no dust.
+    assert (
+        dust.cold_dust_ratio(
+            np.array([0.0]), np.array([0.0]), np.array([0.0]), np.array([1.0])
+        )[0]
+        == 0
+    )
+    # Slab transmission: 1 at zero depth, falls with depth and inclination,
+    # and is lower in the blue than the red.
+    wave = np.array([3500.0, 5500.0, 8000.0])
+    t = dust.ism_transmission(
+        wave, np.array([0.0, 1.0, 1.0]), np.array([1.0, 1.0, 0.2])
+    )
+    np.testing.assert_allclose(t[0], 1.0, atol=1e-6)
+    assert (t[1] < 1).all() and (t[2] < t[1]).all()
+    assert t[1, 0] < t[1, 2]
