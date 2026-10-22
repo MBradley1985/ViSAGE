@@ -16,6 +16,58 @@ def _extra(snap, name, i, default=0.0):
 
 # SFH bins read on demand, kept per (file, snapshot) for the session's
 # recent snapshots: {(path, snap): {raw row: bins}}.
+# Centrals of the recent snapshots, for finding a galaxy's neighbours:
+# {id(snapshot): (rows, KD-tree)}.
+_WEB_CACHE: dict = {}
+# How far to look for the haloes a galaxy's cold streams come from, Mpc/h.
+WEB_RADIUS = 4.0
+
+
+def web_neighbours(snap, i, k=3) -> tuple:
+    """Up to `k` directions to the massive haloes around galaxy `i`, at
+    least 45 degrees apart, strongest (Mvir / d^2) first:
+    ((dx, dy, dz, weight), ...), weight relative to the strongest."""
+    pos = getattr(snap, "positions", None)
+    gt = getattr(snap, "gal_type", None)
+    mv = getattr(snap, "mvir", None)
+    if pos is None or gt is None or mv is None or i >= len(pos):
+        return ()
+    key = id(snap)
+    if key not in _WEB_CACHE:
+        from scipy.spatial import cKDTree
+
+        rows = np.flatnonzero((gt == 0) & (mv > 0))
+        if len(rows) == 0:
+            return ()
+        while len(_WEB_CACHE) >= 2:
+            _WEB_CACHE.pop(next(iter(_WEB_CACHE)))
+        _WEB_CACHE[key] = (rows, cKDTree(pos[rows]))
+    rows, tree = _WEB_CACHE[key]
+    near = rows[tree.query_ball_point(pos[i], WEB_RADIUS)]
+    own = getattr(snap, "central_id", None)
+    gid = getattr(snap, "galaxy_id", None)
+    if own is not None and gid is not None:
+        near = near[gid[near] != own[i]]
+    near = near[near != i]
+    if len(near) == 0:
+        return ()
+    d = (pos[near] - pos[i]).astype(float)
+    r = np.linalg.norm(d, axis=1)
+    keep = r > 0.05
+    d, r, near = d[keep], r[keep], near[keep]
+    if len(r) == 0:
+        return ()
+    w = mv[near].astype(float) / r**2
+    out = []
+    for j in np.argsort(w)[::-1]:
+        u = d[j] / r[j]
+        if all(np.dot(u, o[:3]) < np.cos(np.deg2rad(45)) for o in out):
+            out.append((*u, w[j] / w.max()))
+        if len(out) == k:
+            break
+    return tuple(tuple(float(x) for x in o) for o in out)
+
+
 _SFH_CACHE: dict = {}
 _SFH_CACHE_SNAPS = 4
 
@@ -180,6 +232,7 @@ def sage_galaxy_from_snapshot(
         tcool_gyr=_extra(snap, "tcool", i),
         tff_gyr=_extra(snap, "tff", i),
         mdot_cool=_extra(snap, "mdot_cool", i),
+        web=web_neighbours(snap, i),
         sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
         sfh_bulge=(
             () if sfh is None else tuple(float(v) * mass for v in sfh[1])

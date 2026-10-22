@@ -8,6 +8,43 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.5] — 2026-10-22
+
+### Added
+
+- **HD extended HI disks** (Gas on): a faint, clumpy gas disk well past
+  the stars, sized by the galaxy's HI mass, warped in satellites.
+- **Cold streams follow the cosmic web:** two come in along the
+  filament toward the biggest halo within 4 Mpc/h, the third from the
+  next biggest, so HD lines up with the large-scale view.
+- **Hot-halo colour by temperature:** magenta in small haloes, violet
+  in groups, ice-blue in rich clusters, hotter at high z.
+
+### Changed
+
+- **HD follows the catalogue and redshift more closely.** Hot-halo
+  brightness follows its gas mass, baryon share and redshift, and its
+  shape the halo's concentration. Cold streams are narrower, brighter
+  and reach deeper at high z. Winds follow the SFR surface density and
+  Vmax, with opening angles that no longer all saturate. Jets scale with
+  black-hole mass and the AGN-heated radius. The ICL keeps brightening
+  with ICS / M\* and grows with Rvir. Merger debris fades faster at
+  high z. Clumpy disks are decided by redshift, gas fraction and
+  turbulence rather than chance. Bars, peanuts and pseudo-bulges take
+  their shape from the bar fraction, gas fraction and σ/Vmax.
+- **HD galactic winds** are a hollow cone with a few thin streamers, in
+  Hα red, drawn in 3D: no more faint sphere when the galaxy is seen
+  face-on, and no hard edge where the wind met the edge of the gas.
+- **HD radio jets** are a third fainter.
+- **HD nuclear rings** have only a hint of dust: the dark circle around
+  the ring and the bar's dust lanes feeding it are faint and soft, and
+  the lanes fade out at their ends.
+
+### Removed
+
+- **HD Hα cooling filaments.** In SAGE26 they only ever arose around a
+  few disk galaxies, where they read as streaks across the disk.
+
 ## [2.8.4] — 2026-10-22
 
 ### Added
