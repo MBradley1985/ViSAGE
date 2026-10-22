@@ -8,6 +8,53 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.3] — 2026-10-22
+
+### Added
+
+- **HD colours from the star-formation history.** For runs with SAGE's
+  `SaveFullSFH 1`, each galaxy's disk and bulge histories are summed as
+  stellar populations of known age: colour and light per unit mass
+  follow age as well as metallicity. Young disks are bluer, recently
+  quenched (post-starburst) galaxies turn white-blue, a rejuvenated bulge
+  stands out from its disk, and intermediate-age (0.1–1 Gyr) clusters
+  spread through the disk. Runs without a saved history are unchanged.
+
+- **HD follows the galaxy through time.** Changing snapshot rebuilds HD for
+  the same galaxy (by GalaxyIndex), keeping the view, instead of leaving
+  HD.
+- **"In HD" on the selection card:** what HD draws for the selected
+  galaxy (arm class, bar, bulges, rings, star formation, merger debris,
+  ICL, gas).
+- **Reverse colormaps.** A Reverse box beside each colormap dropdown in the
+  Structure tab flips the colormap (matplotlib's `_r`); it is saved with
+  each box's settings.
+
+### Changed
+
+- HD nuclear rings are a faint, diffuse band instead of a thin, bright
+  ring.
+- HD follows the card's switch: in **Galaxy** context it draws just the
+  selected galaxy (at its true size; its group still sets its tidal
+  features and jellyfish tail), in **Halo + group** context the whole
+  group.
+- **Go and Isolate frame the selection the same way,** at the distance Go
+  uses inside HD (the galaxy at its normal-view size); a halo with its
+  whole group in view. Leaving HD lands on the same view.
+- Stepping through a group's members, going up to its central and clicking
+  a member in the card's group list fly the view to that galaxy (in HD of
+  one galaxy, HD rebuilds for it).
+- **Rings follow the context:** the galaxy alone in Galaxy context, every
+  member alike in Halo + group context.
+- **Clear indicator is now an on/off switch** (Clear / Show indicator)
+  that holds through HD, Gas and new selections.
+- HD finishes uploading to the GPU behind the build card, so the first
+  frames after it closes are smooth (the first frame took ~0.4 s).
+- HD builds use about 40% less memory (light maps in half precision), so
+  the cache of recent builds holds more; star-formation histories are
+  read only for the galaxies HD and the card need, not binned on every
+  snapshot load.
+
 ## [2.8.2] — 2026-10-21
 
 ### Changed

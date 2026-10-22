@@ -1,8 +1,8 @@
 # HD Mode
 
-HD replaces the selected galaxy's splat with a detailed 3D model built from its SAGE properties, ray-marched on the GPU every frame. If the galaxy has company, HD draws its whole pair, group or cluster. Only the group is drawn: no other galaxies or background.
+HD replaces the selected galaxy's splat with a detailed 3D model built from its SAGE properties, ray-marched on the GPU every frame. In the selection card's **Galaxy** context HD draws just that galaxy; in **Halo + group** context it draws its whole pair, group or cluster. Nothing else is drawn: no other galaxies or background.
 
-Select a galaxy (double-click it), then press **HD**. The button sits next to Isolate (🔍) at the top of the right panel, and also on the selection card. Press **HD** again, or **Esc**, to go back to the normal view at a 10 Mpc/h standoff.
+Select a galaxy (double-click it), then press **HD**. The button sits next to Isolate (🔍) at the top of the right panel, and also on the selection card. Press **HD** again, or **Esc**, to go back to the normal view, framed as **Go** frames it.
 
 ## What is drawn
 
@@ -22,17 +22,19 @@ Each galaxy's model follows from its own catalogue row:
 
 Sizes shrink with redshift as in the size–mass relation, and disks at high redshift are thicker and clumpier.
 
+If the run saved its star-formation histories (SAGE's `SaveFullSFH 1`), colours also follow the stars' ages: young disks are bluer, recently quenched galaxies white-blue, and a rejuvenated bulge stands out from an older disk. Without them, colours follow metallicity only.
+
 The full list of components, the SAGE26 fields each one uses and how, is in [HD Galaxy Components](../physics/hd_components.md).
 
 ## Groups and clusters
 
-If the selected galaxy is in a FOF group, HD draws every member at its own position and spin:
+In **Halo + group** context, HD draws every member of the FOF group at its own position and spin:
 
 - **Members** are drawn at the size they have in the normal view, so the group keeps its layout. The halo gas keeps its true size.
 - **Tidal features:** close pairs (within 100 kpc, mass ratio above 1:10) and galaxies that SAGE merges before the next snapshot raise tidal bridges and tails. These are stronger for prograde encounters.
 - **Satellites** in hot haloes can show ram-pressure ("jellyfish") tails and tidal stripping.
 
-In the card's **Galaxy** context, HD frames the selected galaxy. In **Halo + group** context, it frames the whole group around its central.
+In **Galaxy** context HD draws the selected galaxy alone, at its true size and its own exposure. Its group still shapes it: a satellite keeps its jellyfish tail, and a close companion still raises tidal features, though the companion isn't drawn.
 
 Inside HD, double-click picks among the galaxies HD draws; under the cursor, the most massive one wins. **Go** on the card flies to that galaxy without leaving HD.
 
@@ -59,7 +61,7 @@ To keep it quick:
 - the worker processes are started, and the shaders compiled, a few seconds after ViSAGE opens;
 - recent builds are kept in memory (a tenth of the machine's RAM, between 0.5 and 3 GB), so turning HD off and on again, or going back to a group you just viewed, is immediate.
 
-Changing snapshot or model leaves HD, because the model shows one snapshot.
+Changing snapshot rebuilds HD for the same galaxy (found again by its GalaxyIndex), keeping your view of it, once the slider settles: you can step a galaxy through time in HD. If it isn't in the new snapshot (not formed yet, or merged), HD switches off and says so. Playback, and changing model or box, leave HD.
 
 ## GPU requirement
 

@@ -60,8 +60,12 @@ def test_selecting_a_galaxy_fills_the_card_and_marks_it(panel):
     assert [m["idx"] for m in state.sel_members if m["current"]] == [6]
     # Host halo: the one the central sits on, not the nearest visible one.
     assert state.nav_halo_idx == 0
+    # Galaxy context: just the galaxy ringed; Halo + group: every member.
     marker = scene.camera.marker
-    assert marker.active and len(marker.members) == 2
+    assert marker.active and len(marker.members) == 0
+    state.sel_kind = "halo"
+    state.flush()
+    assert len(marker.members) == 2 and marker.member_style == "full"
 
 
 def test_typing_a_halo_selects_its_central(panel):
@@ -109,6 +113,8 @@ def test_hd_offers_its_galaxies_for_picking(panel):
     _group(scene, [0, 3, 5], central=0)
     state.nav_gal_idx = 0
     state.flush()
+    state.sel_kind = "halo"  # the whole group in HD
+    state.flush()
     ctrl.toggle_hd()
     state.flush()
     idx, pos = ctrl.hd_pick_candidates()
@@ -134,7 +140,13 @@ def test_selecting_by_typed_index_and_info(panel):
     ctrl.sel_query("galaxy")
     assert state.nav_gal_idx == 7 and state.sel_active
     ctrl.sel_clear_marker()  # rings off, selection kept
-    assert state.sel_active and not server_scene_marker(panel).active
+    marker = server_scene_marker(panel)
+    assert state.sel_active and not marker.enabled
+    state.nav_gal_idx = 3  # stays off through a new selection
+    state.flush()
+    assert not marker.enabled
+    ctrl.sel_clear_marker()  # and back on
+    assert marker.enabled
     ctrl.sel_close()
     assert not state.sel_show
     ctrl.show_galaxy_info()  # Console "galaxy info": the card, all open
@@ -331,12 +343,16 @@ def test_rings_sit_where_galaxies_are_drawn_across_the_box_edge(panel):
     box = scene.active_model.box_size
     galaxies.positions[4] = [box - 0.05, 30, 30]
     galaxies.positions[2] = [0.05, 30, 30]
+    halos, _ = scene.active_model.loader.get(scene.current_snap)
+    halos.positions[0] = galaxies.positions[4]  # the group's host halo
     state.nav_gal_idx = 2
     state.flush()
+    state.sel_kind = "halo"  # the whole group ringed
+    state.flush()
     off = scene.active_model.offset
-    assert np.allclose(scene.camera.marker.target, galaxies.positions[2] + off)
+    assert np.allclose(scene.camera.marker.target, galaxies.positions[4] + off)
     assert np.allclose(
-        scene.camera.marker.members[0], galaxies.positions[4] + off
+        scene.camera.marker.members[0], galaxies.positions[2] + off
     )
 
 
@@ -378,7 +394,9 @@ def test_a_long_fly_with_focus_on_still_draws(panel):
     state.flush()
     ctrl.sel_go()
     near, far = scene.plotter.camera.clipping_range
-    assert near > 1e-9 and far > 1.0
+    cam = scene.plotter.camera
+    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
+    assert near > 1e-9 and far > dist
 
 
 def test_changing_model_or_box_clears_the_selection(panel):
@@ -399,3 +417,48 @@ def test_info_button_needs_a_selection(panel):
     state.flush()
     ctrl.sel_toggle_card()
     assert state.sel_show
+
+
+def test_reverse_boxes_reverse_the_colormaps(panel):
+    server, scene = panel
+    state = server.state
+    state.galaxy_color_mode = "ssfr"  # (snaps to its default colormap)
+    state.flush()
+    state.halo_colormap = "viridis"
+    state.galaxy_colormap = "plasma"
+    state.flush()
+    state.halo_cmap_reverse = True
+    state.galaxy_cmap_reverse = True
+    state.flush()
+    assert scene.halo_layer.colormap == "viridis_r"
+    assert scene.galaxy_layer.colormap == "plasma_r"
+    state.galaxy_colormap = "magma"  # a new colormap stays reversed
+    state.flush()
+    assert scene.galaxy_layer.colormap == "magma_r"
+    state.galaxy_cmap_reverse = False
+    state.flush()
+    assert scene.galaxy_layer.colormap == "magma"
+
+
+def test_moving_through_the_group_flies_to_each_member(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = _group(scene, [2, 4, 6], central=4)
+    off = scene.active_model.offset
+    state.nav_gal_idx = 4
+    state.flush()
+
+    def at(k):
+        return np.allclose(
+            scene.plotter.camera.focal_point,
+            galaxies.positions[k] + off,
+            atol=1e-4,
+        )
+
+    ctrl.sel_step(1)
+    k = int(state.nav_gal_idx)
+    assert k != 4 and at(k)
+    ctrl.sel_select(6)  # clicked in the group list
+    assert state.nav_gal_idx == 6 and at(6)
+    ctrl.sel_central()
+    assert state.nav_gal_idx == 4 and at(4)

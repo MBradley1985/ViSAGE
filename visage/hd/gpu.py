@@ -143,6 +143,7 @@ def _splat_volume(pts, half, n, px_proto):
 # any zoom.  Intrinsic sizes (fraction of the offline PSF, `Points.sigma`).
 _POINT_SIZE = {
     "clusters": 0.2,
+    "midclusters": 0.2,
     "ring": 0.2,
     "field": 0.0,  # stars are points: always one pixel across
     "hii": 0.35,
@@ -485,7 +486,9 @@ _IMPL = """//VTK::Light::Impl
         float fpS = (t + 0.5 * dt) * uPixAng;
         float lodM = max(log2(fpS * uMapN / (2.0 * uMapHalf)), 0.0);
         vec3 m = textureLod(mapTex, mapUV(pm, uMapHalf, uMapN), lodM).rgb;
-        e += m.r * pint(z0, z1, uHz, dt) * uOldRGB + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
+        // Inside-out growth: older (redder) inside, younger outside.
+        vec3 oldC = mix(uOldRGB, uOldOutRGB, smoothstep(0.0, uGradR, length(pm)));
+        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
         kap = m.b * pint(z0, z1, 0.045, dt);
         {
           // Splatted stars: those the current level(s) don't draw exactly.
@@ -794,6 +797,14 @@ def prepare(
         tex["gIdxTex"] = (dummy3, "nearest")
         tex["gPosTex"] = (np.zeros((2, 2, 4), np.float32), "nearest")
         tex["gColTex"] = (np.zeros((2, 2, 4), np.float32), "nearest")
+    # The light maps are smooth values of order 1: half precision holds
+    # them to ~0.1% and halves a build's memory (the cache of recent
+    # builds, and the copy back from a worker).  Uploads are float32 as
+    # before.  The exact-star tables (indices up to ~1e6, positions) stay
+    # single precision.
+    for k, (arr, mode) in list(tex.items()):
+        if mode != "nearest":
+            tex[k] = (np.asarray(arr, np.float16), mode)
     return {
         "tex": tex,
         "sprinkle": sprinkle,
@@ -938,7 +949,13 @@ class GPUGalaxy:
         f("uPseudoQ", float(rc.pseudo_q))
         f("uPeanut", float(rc.peanut if disk else 0.0))
         u.SetUniform3f("uIclRGB", [float(v) for v in rc.icl_rgb])
-        u.SetUniform3f("uOldRGB", [float(v) for v in rc.old_rgb])
+        u.SetUniform3f(
+            "uOldRGB", [float(v) for v in rc.old_in_rgb or rc.old_rgb]
+        )
+        u.SetUniform3f(
+            "uOldOutRGB", [float(v) for v in rc.old_out_rgb or rc.old_rgb]
+        )
+        f("uGradR", float(rc.grad_r))
         u.SetUniform3f("uBulgeRGB", [float(v) for v in rc.bulge_rgb])
         u.SetUniform3f("uYoungRGB", [float(v) for v in YOUNG_RGB])
         u.SetUniform3f("uEllAxes", [float(v) for v in rc.axes])

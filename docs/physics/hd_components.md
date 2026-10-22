@@ -19,6 +19,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Pseudo-bulge | `InstabilityBulgeMass`, `InstabilityBulgeRadius` | Compact and flattened, at the instability bulge's radius. It holds whatever instability mass doesn't go into the bar. |
 | Bar and peanut | `InstabilityBulgeMass` | Barred if the instability bulge is more than 6% of M\*. At most 8% of M\* goes into the bar, whose half-length grows with that fraction (0.9–1.8 disk scale lengths). A boxy/peanut thickening comes with it. |
 | Old stellar colour | `MetalsStellarMass`, `MetalsBulgeMass` | The disk and bulge are each tinted by their own stars' metallicity: metal-rich is redder. |
+| Stellar populations by age | `SFHMassDisk`, `SFHMassBulge` (with SAGE's `SaveFullSFH 1`) | The disk's and the bulge's histories are summed as populations of known age: each population's colour and light per unit mass follow its age (younger: bluer, brighter), with metallicity still tinting them. A recently quenched (post-starburst) galaxy turns white-blue with no HII regions, a rejuvenated bulge turns blue, and 0.1–1 Gyr-old star clusters spread through the disk. Without a saved history, colours come from metallicity alone. |
 | Brightness | `StellarMass`, `BulgeMass` | Brightness ∝ M\*^0.35, using disk mass for disks. Every member of a group shares one exposure, so relative brightness follows mass. |
 
 ## Spiral structure
@@ -37,7 +38,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Young (blue) light | `SfrDisk`, disk mass | Scales with the disk's specific SFR as (sSFR / 10⁻¹⁰)^0.7. FFB galaxies are bluer still. |
 | Young star clusters | `SfrDisk` | Their number scales as SFR^0.5 (400–20,000). They follow the young-light map. |
 | HII regions | `H2gas`, `SfrDiskZ` | Their number scales with the H₂ reservoir. Their colour runs from metal-poor to metal-rich with the star-forming gas's metallicity. |
-| Nuclear ring | `SfrBulge`, `SfrDisk` | A ring of clusters and dust appears when the bulge forms more than 8% of all stars (with SfrBulge > 0.05 M☉/yr). It sits just inside the bar ends. |
+| Nuclear ring | `SfrBulge`, `SfrDisk` | A faint, diffuse ring of clusters and dust appears when the bulge forms more than 8% of all stars (with SfrBulge > 0.05 M☉/yr). It sits just inside the bar ends. |
 | Gas-disk truncation (satellites) | `Type`, `TimeOfInfall`, `Mvir`, `infallMvir` | Satellites lose their outer gas disk the longer since infall and the more of their subhalo they have lost. Star formation stops beyond the cut. |
 
 ## Dust

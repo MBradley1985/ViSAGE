@@ -83,6 +83,9 @@ def noise_std(kind="fbm"):
     return float(np.std({"fbm": fbm, "fbm2": fbm2, "fbm6": fbm6}[kind](pts)))
 
 
+# Cool-core brightening of the hot atmosphere from SAGE's Cooling (0: off).
+COOL_CORE = 0.0
+
 _STDS = {"fbm": 0.212785, "fbm2": 0.206308, "fbm6": 0.220944}
 
 
@@ -125,6 +128,12 @@ GLSL_IMPL = """
       float wob = exp(0.3 * fbm(cpk / (0.25 * rvir) + vec3(11.0)) / uFbmStd);
       sb *= 1.0 - 0.85 * exp(-pow(R / (1.6 * uRinKpc * wob), 2.0));
       sb /= (uHotLog > 0.5 ? uHotNormLog : uHotNormLin);
+      if (uCoolCore > 0.0) {
+        // Cool core: the radiative cooling (SAGE's Cooling) brightens the
+        // centre of the hot atmosphere, as in cool-core clusters' X-rays.
+        sb += uCoolCore * exp(-pow(R / (0.07 * rvir), 2.0))
+            * (1.0 - 0.85 * exp(-pow(R / (1.6 * uRinKpc * wob), 2.0)));
+      }
       if (uCavAmp > 0.0) {
         // X-ray cavities: bubbles the radio jets inflate at the AGN heating
         // radius, along the jet axis, with slightly brighter rims.
@@ -241,6 +250,14 @@ class GasSpec:
         halo_gas = gal.hot_gas + gal.cgm_gas + gal.ejected
         if gal.ejected > 0 and halo_gas > 0:
             self.wind_len *= 1.0 + 1.5 * float(gal.ejected / halo_gas)
+
+        # Cool core: brighter with SAGE's cooling luminosity (log erg/s,
+        # ~10^39.5-10^41 among hot centrals), scaled by COOL_CORE.
+        self.cool_core = 0.0
+        if COOL_CORE > 0 and gal.regime == 1 and gal.hot_gas > 0:
+            self.cool_core = COOL_CORE * float(
+                np.clip((gal.cooling_log - 39.5) / 1.5, 0.0, 1.0)
+            )
 
         # Cavities where radio-mode heating reaches (hot haloes).
         self.cav_r = 0.0
@@ -359,6 +376,7 @@ class GasSpec:
         u.SetUniform3f("uHotRGB", [float(v) for v in self.hot_rgb])
         u.SetUniform3f("uCgmRGB", [float(v) for v in self.cgm_rgb])
         f("uCavR", float(self.cav_r))
+        f("uCoolCore", float(self.cool_core))
         f("uCavAmp", float(self.cav))
         u.SetUniform3f("uJetRGB", [float(v) for v in JET_RGB])
         u.SetUniform3f("uWindRGB", [float(v) for v in WIND_RGB])

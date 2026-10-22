@@ -149,6 +149,10 @@ def ram_pressure(
     return float(np.clip((lam - RAM_LO) / RAM_SPAN, 0.0, 1.0))
 
 
+# Tidal stripping of satellites, by "dm" (subhalo mass lost since
+# infall), "stars" (stellar mass lost) or "both" (the stronger).
+STRIP_MODE = "dm"
+
 # Cap on a jellyfish tail's exposure compensation.
 TAIL_GAIN_MAX = 10.0
 
@@ -205,13 +209,18 @@ def satellite_context(entries, hubble_h: float) -> dict:
             st = ram_pressure(g, hg, r_kpc, speed)
             if st > 0.05:
                 ctx["ram"] = (-vdir, st)  # the tail trails the motion
-        if g.infall_mvir > 0 and g.mvir > 0:
+        strip = 0.0
+        if STRIP_MODE in ("dm", "both") and g.infall_mvir > 0 and g.mvir > 0:
             f_dm = g.mvir / g.infall_mvir
             if f_dm < 0.35:
-                ctx["strip"] = (
-                    vdir,
-                    float(np.clip((0.35 - f_dm) / 0.3, 0.2, 1.0)),
-                )
+                strip = float(np.clip((0.35 - f_dm) / 0.3, 0.2, 1.0))
+        if STRIP_MODE in ("stars", "both") and g.infall_stellar_mass > 0:
+            # Stars lost since infall: the clearest sign of tidal stripping.
+            lost = 1.0 - g.stellar_mass / g.infall_stellar_mass
+            if lost > 0.1:
+                strip = max(strip, float(np.clip(lost / 0.5, 0.2, 1.0)))
+        if strip > 0:
+            ctx["strip"] = (vdir, strip)
         if ctx:
             out[k] = ctx
     return out

@@ -97,6 +97,13 @@ class SelectionMarker:
         self.target: np.ndarray | None = None
         self.members = np.zeros((0, 3))
         self.near = np.zeros((0, 3))  # the next hops, nearest first
+        # "small": the group's other members as small rings (the galaxy
+        # selected); "full": as full rings like the target (the halo and
+        # its whole group selected).
+        self.member_style = "small"
+        # Off (the card's Clear indicator): nothing drawn, the selection's
+        # positions kept, so turning it back on shows them again.
+        self.enabled = True
         self.label = ""
         self._actors: dict = {}
         self._observer = None
@@ -115,8 +122,9 @@ class SelectionMarker:
         self._ensure()
         self.update()
 
-    def set_details(self, label: str, members=None) -> None:
+    def set_details(self, label: str, members=None, style="small") -> None:
         self.label = label or ""
+        self.member_style = style
         self.members = (
             np.zeros((0, 3))
             if members is None or len(members) == 0
@@ -208,8 +216,20 @@ class SelectionMarker:
         ]
         return xy, ok
 
+    def set_enabled(self, on: bool) -> None:
+        self.enabled = bool(on)
+        if self.target is not None:
+            self._ensure()
+        self.update()
+
     def update(self, *_) -> None:
         if self.target is None or not self._actors:
+            return
+        if not self.enabled:
+            empty = _rings(np.zeros((0, 2)), 1.0)
+            for name in ("target", "members", "near"):
+                self._actors[name].GetMapper().SetInputData(empty)
+            self._actors["label"].SetInput("")
             return
         h = max(int(self._pl.renderer.GetSize()[1]), 1)
         r_target = max(12.0, h / 45.0)
@@ -225,12 +245,18 @@ class SelectionMarker:
             mxy, mok = self._project(self.members)
             # Rings that would pile up on screen (a group seen from afar)
             # merge; none inside the selected galaxy's own ring.
+            full = self.member_style == "full"
+            r_m = r_target if full else 0.45 * r_target
             centres, radii = merge_rings(
                 mxy[mok],
-                0.45 * r_target,
+                r_m,
                 avoid=xy[0] if ok[0] else None,
                 avoid_r=0.8 * r_target,
             )
+            prop = self._actors["members"].GetProperty()
+            prop.SetColor(*(_TARGET_RGB if full else _MEMBER_RGB))
+            prop.SetLineWidth(2.5 if full else 1.5)
+            prop.SetOpacity(1.0 if full else 0.7)
             self._actors["members"].GetMapper().SetInputData(
                 _rings(centres, radii)
             )

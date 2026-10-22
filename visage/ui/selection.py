@@ -43,6 +43,8 @@ def _init_state(state) -> None:
         "sel_note": "",
         "sel_info_open": False,
         "sel_info_items": [],
+        "sel_hd_items": [],
+        "sel_rings": True,  # the indicator on (the card's Clear / Show)
         "sel_halo": "",
         "sel_group": "",
         "sel_q_gal": "",
@@ -258,12 +260,15 @@ def selection_card(server) -> None:
                 )
             html.Div(style="flex:1;")
             v3.VBtn(
-                "Clear indicator",
+                "{{ sel_rings ? 'Clear indicator' : 'Show indicator' }}",
                 size="x-small",
                 variant="text",
                 color="#9ca3af",
                 click=ctrl.sel_clear_marker,
-                title="Remove the rings (the galaxy stays selected)",
+                title=(
+                    "Rings off or on (the galaxy stays selected; stays as "
+                    "set through HD, Gas and new selections)"
+                ),
             )
         with html.Div(
             v_show=("sel_halo",),
@@ -294,6 +299,19 @@ def selection_card(server) -> None:
             ):
                 html.Span("{{ p.label }}", style="color:#9ca3af;")
                 html.Span("{{ p.value }}", style="font-family:monospace;")
+            # What HD draws for it.
+            with html.Div(v_show=("sel_hd_items.length",)):
+                html.Div(
+                    "IN HD",
+                    style=(
+                        "font-size:0.7rem;letter-spacing:0.08em;color:#FFD700;"
+                        "margin:10px 0 3px;font-weight:700;"
+                    ),
+                )
+                html.Div(
+                    "{{ sel_hd_items.join(' · ') }}",
+                    style="font-size:0.74rem;color:#e2e8f0;line-height:1.45;",
+                )
             # Every property, on demand.
             v3.VBtn(
                 "{{ sel_info_open ? 'Fewer properties' : 'All properties' }}",
@@ -490,6 +508,7 @@ def build_selection(server, scene) -> None:
         if sel["gid"] is not None:
             props.append(("GalaxyIndex", str(sel["gid"])))
         state.sel_props = [{"label": a, "value": b} for a, b in props]
+        state.sel_hd_items = _hd_items(galaxies, i, snap)
         listed = mem[:MAX_LISTED]
         state.sel_members = [
             {
@@ -508,18 +527,20 @@ def build_selection(server, scene) -> None:
         state.sel_active = True  # (the card opens on Show info)
         if state.sel_info_open:
             _fill_info(i, snap)
-        others = [_drawn(galaxies, int(k), lead) for k in mem if k != i]
         marker = scene.camera.marker
+        marker.enabled = bool(state.sel_rings)
         if halo_ctx:
-            # The halo: ring on its central, the whole group ringed.
+            # The halo and its group: every member ringed alike.
             marker.set_target(_drawn(galaxies, lead, lead))
             marker.set_details(
                 "",
                 [_drawn(galaxies, int(k), lead) for k in mem if k != lead],
+                style="full",
             )
         else:
+            # The galaxy alone.
             marker.set_target(_drawn(galaxies, i, lead))
-            marker.set_details("", others)
+            marker.set_details("", [])
         _push()
 
     # Back / forward through what was selected: (GalaxyIndex, row).
@@ -547,12 +568,15 @@ def build_selection(server, scene) -> None:
         state.sel_can_back = hist["pos"] > 0
         state.sel_can_fwd = hist["pos"] < len(hist["items"]) - 1
 
-    def _go_row(i: int) -> None:
-        """Select row `i` as a galaxy."""
+    def _go_row(i: int, keep_kind: bool = False) -> None:
+        """Select row `i`: as a galaxy, or (`keep_kind`: moving within the
+        group) in the card's current Galaxy / Halo + group context."""
+        kind = str(state.sel_kind) if keep_kind else "galaxy"
         if _int(state.nav_gal_idx) == i:
-            state.sel_kind = "galaxy"
+            state.sel_kind = kind
             _select(i)
         else:
+            sel["kind_next"] = kind
             state.nav_gal_idx = int(i)
         state.flush()
 
@@ -580,14 +604,16 @@ def build_selection(server, scene) -> None:
         if mem is None or len(mem) < 2 or not state.sel_active:
             return
         k = int(np.flatnonzero(mem == i)[0]) if i in mem else 0
-        _go_row(int(mem[(k + int(step)) % len(mem)]))
+        _go_row(int(mem[(k + int(step)) % len(mem)]), keep_kind=True)
+        ctrl.sel_go()  # and fly there
 
     @ctrl.set("sel_central")
     def _sel_central():
         mem = sel.get("mem")
         if mem is None or not state.sel_active or mem[0] == sel.get("idx"):
             return
-        _go_row(int(mem[0]))
+        _go_row(int(mem[0]), keep_kind=True)
+        ctrl.sel_go()
 
     near_trees: dict = {}
 
@@ -698,6 +724,25 @@ def build_selection(server, scene) -> None:
             return int(v)
         except (TypeError, ValueError):
             return None
+
+    def _hd_items(galaxies, i: int, snap) -> list:
+        """What HD draws for galaxy row `i` (the card's "In HD" line)."""
+        try:
+            from visage.hd.adapter import sage_galaxy_from_snapshot
+            from visage.hd.model import describe
+
+            if galaxies.stellar_mass[i] <= 0:
+                return []
+            gal = sage_galaxy_from_snapshot(
+                galaxies,
+                i,
+                float(scene._cfg.hubble_h),
+                scene._snap_table,
+                float(scene._cfg.omega),
+            )
+            return describe(gal)
+        except Exception:
+            return []
 
     def _fill_info(i: int, snap=None) -> None:
         from visage.utils.galaxy_info import build_galaxy_info
@@ -849,16 +894,16 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_select")
     def _sel_select(idx):
-        state.nav_gal_idx = int(idx)
-        state.flush()
+        """A member clicked in the card's group list: select it and fly
+        there."""
+        _go_row(int(idx), keep_kind=True)
+        ctrl.sel_go()
 
     @ctrl.set("sel_go")
     def _sel_go():
-        """Fly to what's selected: the galaxy, or its halo."""
-        if state.sel_kind == "halo" and hasattr(ctrl, "go_to_halo"):
-            ctrl.go_to_halo()
-        elif hasattr(ctrl, "go_to_galaxy_enter"):
-            ctrl.go_to_galaxy_enter()
+        """Fly to what's selected: the galaxy (+-10 kpc), or its halo with
+        the whole group -- framed as Isolate frames it."""
+        ctrl.go_to_galaxy_enter()
 
     @ctrl.set("sel_go_halo")
     def _sel_go_halo():
@@ -866,8 +911,7 @@ def build_selection(server, scene) -> None:
         state.sel_kind = "halo"
         state.flush()
         _sel_refresh()
-        if hasattr(ctrl, "go_to_halo"):
-            ctrl.go_to_halo()
+        ctrl.go_to_galaxy_enter()
 
     @state.change("sel_kind")
     def _on_kind(**_):
@@ -895,8 +939,10 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_clear_marker")
     def _sel_clear_marker():
-        """The rings off; the selection and its card stay."""
-        scene.camera.marker.clear()
+        """Rings off (or back on); the selection and its card stay, and
+        the choice holds through HD, Gas and new selections."""
+        state.sel_rings = not bool(state.sel_rings)
+        scene.camera.marker.set_enabled(state.sel_rings)
         _push()
 
     @ctrl.set("sel_toggle_info")

@@ -43,7 +43,7 @@ All layers stay within the standard galaxy splat-radius scaling so the overall o
 
 ## Colormaps
 
-27 colormaps available in both the halo and galaxy colormap dropdowns:
+27 colormaps available in both the halo and galaxy colormap dropdowns. The **Reverse** box beside each dropdown flips the colormap (e.g. Viridis runs yellow to purple):
 
 **Sequential**
 : Viridis, Plasma, Inferno, Magma, Cividis, Turbo, Blues, Purples, Greens, Oranges, Reds, Greys, YlOrRd, YlGnBu, BuPu, Hot, Cool, Bone, Copper

@@ -22,12 +22,12 @@ Six buttons sit above the tab panel and work no matter which tab is active:
 | Info (i) | Opens or closes the selection card |
 | Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
 | Centre (✛ crosshair icon) | Places the camera AT the box centre, looking out |
-| Isolate (🔍 magnifier icon) | Shows only the selection: the galaxy, or (in halo context) its halo and whole group |
+| Isolate (🔍 magnifier icon) | Shows only the selection, framed as Go frames it: the galaxy, or in halo context its halo and whole group |
 | HD | Detailed 3D model of the selection and its group — see [HD Mode](hd_mode.md) |
 
 ## Selecting a galaxy
 
-Double-click a galaxy to select it. A cyan ring marks it, and smaller rings mark the other members of its FOF group; rings that would pile up on screen merge into one. The selection is the galaxy itself, not its row: changing snapshot finds it again by its GalaxyIndex, or says it isn't there (not formed yet, or merged).
+Double-click a galaxy to select it. A cyan ring marks it. In the card's **Halo + group** context every member of its FOF group is ringed alike; rings that would pile up on screen merge into one. The selection is the galaxy itself, not its row: changing snapshot finds it again by its GalaxyIndex, or says it isn't there (not formed yet, or merged).
 
 The Console also selects (`go to halo 42` selects that halo's central), and so do the card's group list and the Find list.
 
@@ -38,18 +38,19 @@ The **i** button in the header (or **Show info** at the end of the Structure tab
 | Part | What it does |
 |---|---|
 | Galaxy / Halo + group | What the actions apply to: the galaxy, or its host halo with the whole group |
-| Go | Fly to it (10 Mpc/h standoff; inside HD, to it in close-up) |
-| Isolate, HD | As the header buttons |
+| Go | Fly to it, at the distance Go uses inside HD: the galaxy filling the view at its normal-view size; in halo context the halo with its whole group in view. Everything else stays shown, within a 10 Mpc/h focus sphere |
+| Isolate, HD | As the header buttons. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
+| In HD | What HD draws for this galaxy: arm class, bar, bulges, rings, star formation, merger debris, ICL, gas… |
 | Gas | HD's halo gas on or off |
 | ← → | Back and forward through what you've selected |
-| ‹ › | Previous / next member of the group |
+| ‹ › | Previous / next member of the group, flying to it (the card keeps its Galaxy / Halo + group context) |
 | ☆ | Up to the group's central |
 | Nearest | Hop to the nearest galaxy and fly there; amber rings mark the next nearest (the next hop larger). Hopping again carries on to the nearest not yet visited, so it never bounces back |
 | Zoom 3 / 5 / 10 | Fly in at that radius (Mpc/h), with focus |
-| Clear indicator | Remove the rings (the galaxy stays selected) |
+| Clear / Show indicator | Rings off or on. The galaxy stays selected, and the choice holds through HD, Gas and new selections |
 | Host halo · Go to halo | The halo the central sits on, and a flight to it |
 | Properties | Key properties; **All properties** lists every field (Approx Age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
-| Group | Every member (central first); click one to select it |
+| Group | Every member (central first); click one to select it and fly there |
 
 ### Keys
 
