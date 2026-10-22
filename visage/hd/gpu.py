@@ -781,7 +781,7 @@ _IMPL = """//VTK::Light::Impl
                     (-sin(uIclAng) * cp.x + cos(uIclAng) * cp.y) / 0.8);
     float R = length(vec3(rot, cp.z / 0.8)) + 1e-3;
     float prof = pow(1.0 + pow(R / (0.5 * uIclRin), 2.0), -1.2)
-               * (1.0 - exp(-pow(R / (0.35 * uIclRin), 2.0)))
+               * (1.0 - exp(-pow(R / uIclHole, 2.0)))
                * exp(-pow(R / (2.2 * uIclRin), 2.0))
                * exp(0.2 * fbm(cp * 3.0 / uIclRin));
     vec3 icl = clamp(uIclOpacity * 0.8 * prof * uIclRGB, 0.0, 1.0);
@@ -793,21 +793,34 @@ _IMPL = """//VTK::Light::Impl
 """
 
 
+def icl_extent(rc) -> float:
+    """Scale of the ICL glow and stripped stars, model units: the galaxy's
+    size, or (ICL_LOOK size > 0) that many envelope scales."""
+    from visage.hd.model import ICL_LOOK
+
+    r_in = 1.2 * rc.extent
+    if ICL_LOOK["size"] > 0:
+        r_in = max(r_in, ICL_LOOK["size"] * rc.icl_a)
+    return float(r_in)
+
+
 def icl_stars(gal, rc, px_proto):
     """The ICL's stripped stars (as raymarch.icl_zone's sprinkle), in 3D:
     drawn from the same envelope profile, display brightness as there."""
+    from visage.hd.model import ICL_LOOK
+
     rng = np.random.default_rng(rc.seed + 13)
-    r_in = 1.2 * rc.extent
+    r_in = icl_extent(rc)
 
     def prof(r):
         p = (1 + (r / (0.5 * r_in)) ** 2) ** -1.2
-        p *= 1 - np.exp(-((r / (0.35 * r_in)) ** 2))
+        p *= 1 - np.exp(-((r / (0.35 * 1.2 * rc.extent)) ** 2))
         return p * np.exp(-((r / (2.2 * r_in)) ** 2))
 
     rr = np.linspace(0, 4 * r_in, 2000)
     cdf = np.cumsum(rr**2 * prof(rr))
     cdf /= cdf[-1]
-    n = int(np.clip(gal.ics / 1e8, 200, 6000))
+    n = int(np.clip(ICL_LOOK["stars"] * gal.ics / 1e8, 200, 20000))
     r = np.interp(rng.uniform(0, 1, n), cdf, rr)
     v = rng.normal(size=(n, 3))
     v /= np.linalg.norm(v, axis=1, keepdims=True)
@@ -1220,10 +1233,20 @@ class GPUGalaxy:
             opacity = 0.025 + 0.1 * f
         else:
             opacity = 0.0
-        r_in = 1.2 * rc.extent  # model units (as unit_kpc cancels)
+        from visage.hd.model import ICL_LOOK
+
+        opacity *= ICL_LOOK["glow"]
+        if ICL_LOOK["mass"] > 0 and ics > 0:
+            opacity *= float(
+                np.clip((ics / 1e11) ** ICL_LOOK["mass"], 0.3, 3.0)
+            )
+        r_in = icl_extent(rc)  # model units (as unit_kpc cancels)
         rng = np.random.default_rng(rc.seed + 11)
         u.SetUniformf("uIclOpacity", float(opacity))
         u.SetUniformf("uIclRin", float(r_in))
+        # The glow's central hole stays the galaxy's size (the galaxy fills
+        # it), however far into the halo the glow reaches.
+        u.SetUniformf("uIclHole", float(0.35 * 1.2 * rc.extent))
         u.SetUniformf("uIclAng", float(rng.uniform(0, np.pi)))
 
     def set_gas(self, on: bool) -> None:

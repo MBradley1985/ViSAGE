@@ -16,7 +16,7 @@ Each galaxy's model follows from its own catalogue row:
 | Young star clusters and HII regions | Disk SFR, cold and H₂ gas, gas metallicity |
 | Dust | Cold-gas metals, seen edge-on as lanes |
 | Shells, tails and streams | Merger history (merger bulge, mergeType) |
-| Intracluster light and its streams | ICS mass, ICS disruption |
+| Intracluster light | ICS mass |
 | AGN nucleus | Black hole mass and radio heating |
 | Disk thickness and clumpiness | Velocity dispersion over rotation, redshift, FFB regime |
 

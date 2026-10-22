@@ -61,8 +61,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 |---|---|---|
 | Shells (ellipticals) or tidal tails (disks) | `TimeOfLastMajorMerger`, redshift | A major merger leaves debris that fades over 4 Gyr at z = 0, and faster at high z (4 Gyr / (1+z), as dynamical times shorten). |
 | Stellar stream | `TimeOfLastMinorMerger`, redshift | A minor merger leaves a stream, fading over 2.5 Gyr / (1+z). |
-| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint, extended envelope (scale 0.12 Rvir, up to 250 kpc), brighter with log(ICS / M\*), so richer clusters keep getting brighter. Its colour follows the ICS metallicity. |
-| Streams feeding the ICL | `ICS_disrupt` | Visible when satellites torn apart into the ICL exceed ~10^10.5 M☉. |
+| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint envelope and glow reaching into the halo (scale 0.12 Rvir), with scattered stripped stars. Its brightness follows the ICS mass, so ICL-rich clusters and groups show it and others barely do. Its colour follows the ICS metallicity. |
 
 ## Halo gas (the Gas button)
 

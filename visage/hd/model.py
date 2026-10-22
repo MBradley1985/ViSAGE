@@ -107,6 +107,16 @@ DWARF = dict(on=False, max_lm=9.3, lopsided=0.4, clumps=3)
 # ~10^10.5 Msun) or "share" (scaled by the in-place share of all the ICS,
 # accreted ICS making a smoother envelope).
 ICL_MODE = "threshold"
+# Streams of satellite debris feeding the ICL (off: removed by choice).
+ICL_STREAMS = False
+# The ICL's look: envelope brightness (x), glow brightness (x), the glow's
+# and stripped stars' extent (0: the galaxy's size; >0: that many times the
+# envelope scale 0.12 Rvir), stripped-star count (x), colour (None: from
+# its metallicity).
+# mass: >0 scales the glow and envelope with the ICS mass itself (power).
+# Chosen from options on SAGE26 centrals ("D"): halo-wide, its glow and
+# envelope scaled by the ICS mass.
+ICL_LOOK = dict(env=0.45, glow=0.55, size=1.0, stars=1.0, rgb=None, mass=0.35)
 
 # Inside-out gradient strength (0: none): the inner disk's colour weights
 # the older part of the history up by (age / mean age)^GRADIENT, the outer
@@ -312,6 +322,7 @@ class GalaxyRecipe:
     hii_rgb: tuple = tuple(HII_RGB)
     icl_rgb: tuple = tuple(ICL_RGB)
     icl_streams: float = 0.0  # streams feeding the ICL (0-1)
+    icl_n_streams: int = 3  # how many disrupted satellites they come from
     halpha: float = 0.0  # cluster-core cooling filaments (0-1)
     halpha_len: float = 0.0  # their reach, model units
     unit_kpc: float = 1.0  # physical size of one model length unit
@@ -461,6 +472,8 @@ def _extras(
         out["icl_rgb"] = tuple(
             ICL_RGB * np.array([1.0, 1.0 - 0.05 * zi, 1.0 - 0.18 * zi])
         )
+    if ICL_LOOK["rgb"] is not None:
+        out["icl_rgb"] = tuple(ICL_LOOK["rgb"])
     if ICL_MODE == "share" and g.ics > 0:
         # Streams where the ICS was torn from satellites in place; ICS that
         # arrived already diffuse (accreted) makes a smooth envelope.
@@ -472,6 +485,11 @@ def _extras(
     elif g.ics_disrupt > 0:
         out["icl_streams"] = float(
             np.clip((np.log10(g.ics_disrupt) - 10.5) / 1.5, 0.0, 1.0)
+        )
+    if g.ics_disrupt > 0:
+        # More streams the more satellite mass was torn apart (log, 1-6).
+        out["icl_n_streams"] = int(
+            np.clip(round(1 + 2.5 * np.log10(g.ics_disrupt / 1e11)), 1, 6)
         )
     # Cluster cores: where the hot atmosphere still cools -- faster than
     # ~10 free-fall times where SAGE has tcool/tff, or (hot regime) with a
@@ -512,8 +530,13 @@ def _extras(
         ratio = g.ics / max(g.stellar_mass, 1.0)
         out["l_icl"] = float(
             0.12
+            * ICL_LOOK["env"]
             * main_light
-            * np.clip(1 + 0.5 * np.log10(ratio / 3), 0.05, 1.3)
+            * (
+                np.clip(1 + 0.5 * np.log10(ratio / 3), 0.05, 1.3)
+                if ICL_LOOK["mass"] <= 0
+                else np.clip((ratio / 3) ** ICL_LOOK["mass"], 0.05, 6.0)
+            )
         )
         out["icl_a"] = float(np.clip(0.12 * g.rvir_kpc, 20, 250) / unit_kpc)
         notes.append(
@@ -1449,8 +1472,8 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         )
         main_light = 1.0
 
-    if rc.icl_streams > 0:
-        out.append(_icl_streams(rc, rng, 0.5 * rc.icl_streams * main_light))
+    if ICL_STREAMS and rc.icl_streams > 0:
+        out.append(_icl_streams(rc, rng, 0.3 * rc.icl_streams * main_light))
     if rc.halpha > 0:
         out.append(_halpha_filaments(rc, rng, 0.3 * rc.halpha * main_light))
     # Merger debris (both kinds), all in old-star colours.
@@ -1470,24 +1493,53 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
 
 
 def _icl_streams(rc, rng, lum_tot, n=16000):
-    """Arcs of stripped stars feeding the intracluster light: the remains
-    of satellites recently torn apart in this halo."""
-    r_in = 1.2 * rc.extent
-    k = int(rng.integers(2, 6))
+    """Tidal debris feeding the intracluster light: each stream the remains
+    of one satellite torn apart in this halo (rc.icl_n_streams of them),
+    a leading and a trailing tail along its eccentric, slowly precessing
+    orbit, fanning out and clumpy away from the remnant of its core."""
+    r_in = max(1.2 * rc.extent, 0.6 * rc.icl_a)
+    k = max(int(rc.icl_n_streams), 1)
     pos, lum = [], []
     for _ in range(k):
-        u, v, _ = _random_frame(rng)
-        rs = r_in * rng.uniform(0.5, 1.6)
-        th0 = rng.uniform(0, 2 * np.pi)
-        span = rng.uniform(0.6, 1.6) * np.pi
+        u, v, w = _random_frame(rng)
+        a = r_in * rng.uniform(0.6, 1.8)  # orbit size
+        e = rng.uniform(0.3, 0.7)  # eccentricity
+        php = rng.uniform(0, 2 * np.pi)  # pericentre
+        ph0 = rng.uniform(0, 2 * np.pi)  # where the satellite was
+        lead, trail = rng.uniform(0.3, 1.0, 2) * np.pi
         m = n // k
-        th = th0 + span * rng.random(m)
-        r = rs * (1 + 0.15 * np.sin(2 * (th - th0)))
-        jit = rng.normal(0, 0.04 * rs, (m, 3))
-        pos.append(
-            (r * np.cos(th))[:, None] * u + (r * np.sin(th))[:, None] * v + jit
+        # Debris thins away from the remnant along both tails.
+        side = np.where(rng.random(m) < 0.5, 1.0, -1.0)
+        reach = np.where(side > 0, lead, trail)
+        d = np.abs(rng.normal(0, 0.45, m)) * reach
+        ph = ph0 + side * d
+        r = a * (1 - e * e) / (1 + e * np.cos(ph - php))
+        # Fans out with distance from the remnant; precesses out of plane.
+        width = 0.025 * r * (1 + 2.5 * d / np.pi)
+        off = rng.normal(0, 1, (m, 3)) * width[:, None]
+        tilt = 0.12 * r * np.sin(0.5 * (ph - ph0))
+        p = (
+            (r * np.cos(ph))[:, None] * u
+            + (r * np.sin(ph))[:, None] * v
+            + tilt[:, None] * w
+            + off
         )
-        lum.append(np.full(m, 1.0) * (0.5 + (th - th0) / span))
+        # Clumpy along the stream (lognormal in orbital phase).
+        knots = rng.normal(0, 1, 64)
+        grid = np.linspace(-np.pi, np.pi, 64)
+        clump = np.exp(
+            0.4 * np.interp(np.clip(ph - ph0, -np.pi, np.pi), grid, knots)
+        )
+        lw = clump * np.exp(-d / (0.8 * np.pi))
+        # What's left of the satellite's core, in some streams.
+        if rng.random() < 0.4:
+            mc = m // 16
+            rc0 = a * (1 - e * e) / (1 + e * np.cos(ph0 - php))
+            core = rc0 * (np.cos(ph0) * u + np.sin(ph0) * v)
+            p = np.vstack([p, core + rng.normal(0, 0.02 * rc0, (mc, 3))])
+            lw = np.concatenate([lw, np.full(mc, lw.mean())])
+        pos.append(p)
+        lum.append(lw)
     pos, lum = np.vstack(pos), np.concatenate(lum)
     lum *= lum_tot / lum.sum()
     rgb = np.tile(np.asarray(rc.icl_rgb), (len(lum), 1))
