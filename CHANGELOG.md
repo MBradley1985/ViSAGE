@@ -15,6 +15,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   0.1 s instead of a few seconds. With HD on, the same galaxy is built at
   the neighbouring snapshots too, so stepping through time in HD is
   instant once the slider settles.
+- **HD gas is cheaper to draw.** Its noise (clumps, filaments,
+  streamers) is baked once into a texture instead of worked out every
+  frame: the gas costs about half as much per frame (a windy disk ~16 ms
+  instead of ~20-26 ms at 1600×900 on an M4), with the same look.
 
 ## [2.8.5] — 2026-10-22
 

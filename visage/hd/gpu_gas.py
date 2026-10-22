@@ -35,6 +35,16 @@ def _hash3(p):
 
 
 def _vnoise(x):
+    """numpy mirror of the shader's vnoise: the baked texture, or (with
+    gpu.BAKED_NOISE off) the hashed lattice."""
+    from visage.hd import gpu
+
+    if gpu.BAKED_NOISE:
+        return gpu.vnoise_baked(x)
+    return _vnoise_hashed(x)
+
+
+def _vnoise_hashed(x):
     i = np.floor(x)
     f = x - i
     f = f * f * (3.0 - 2.0 * f)
@@ -129,7 +139,7 @@ def hot_opacity(gal) -> float:
     return float(HOT_MAX_OPACITY * min(op, 1.3))
 
 
-_STDS = {"fbm": 0.212785, "fbm2": 0.206308, "fbm6": 0.220944}
+_STDS = {"fbm": 0.183221, "fbm2": 0.177726, "fbm6": 0.190337}
 
 
 def _std(kind="fbm"):
