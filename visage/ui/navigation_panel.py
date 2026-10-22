@@ -4565,6 +4565,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         return
                 _hd_cache().put(key, [entries[k]["prep"] for k in todo])
                 _hd_show_group(entries, h, focus)
+                # Upload the textures (and build their mipmaps) now, behind
+                # the build card, rather than on the first frame after it
+                # closes -- that first frame took ~0.4 s, a stutter just as
+                # HD appeared.  (The app's background build only: in place,
+                # e.g. tests on software OpenGL, a full render is slow.)
+                try:
+                    scene.plotter.ren_win.Render()
+                except Exception:
+                    pass
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -4704,13 +4713,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 keep_view=len(grp.members) > 1,
             )
             centre = grp.center
-        # Upload the textures (and build their mipmaps) now, behind the
-        # build card, rather than on the first frame after it closes --
-        # that first frame took ~0.4 s, a stutter just as HD appeared.
-        try:
-            scene.plotter.ren_win.Render()
-        except Exception:
-            pass
         if keep is not None:
             import numpy as np
 
