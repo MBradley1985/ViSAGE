@@ -4181,6 +4181,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         "build": None,  # token of the build in progress (None: cancelled)
         "futs": [],  # its pending futures
         "cache": None,  # recent builds (BuildCache)
+        "pre": None,  # background build: {"key", "task"}
+        "pre_tok": None,  # the selection a background build waits on
+        "nb_tok": None,  # the neighbouring-snapshot builds in progress
     }
 
     def _hd_cache():
@@ -4351,15 +4354,155 @@ def build_navigation_panel(server, scene: Scene) -> None:
         """The selection card's switch on "Halo + group"."""
         return state.has("sel_kind") and str(state.sel_kind) == "halo"
 
+    # Background builds: the selected galaxy's HD before HD is pressed,
+    # and (HD on) the same galaxy at the neighbouring snapshots.
+    _HD_PREBUILD_DELAY = 0.7  # s after a selection settles
+
+    def _hd_prebuild_start(key, todo, args, entries, sat_ctx) -> None:
+        import asyncio
+
+        loop = _running_loop()
+        if loop is None:
+            return
+        pre = _hd.get("pre")
+        if pre and not pre["task"].done():
+            if pre["key"] == key:
+                return
+            pre["task"].cancel()
+        from visage.hd.group import pool, tail_gains
+
+        async def run():
+            try:
+                try:
+                    ex = pool()
+                except Exception:
+                    ex = None
+
+                async def _prep(k):
+                    return await loop.run_in_executor(ex, *args(k))
+
+                res = await asyncio.gather(*[_prep(k) for k in todo])
+                for k, r in zip(todo, res, strict=True):
+                    entries[k]["prep"] = r
+                for k, gain in tail_gains(entries, sat_ctx).items():
+                    sat_ctx[k]["tail_gain"] = gain
+                    entries[k]["prep"] = await _prep(k)
+                _hd_cache().put(key, [entries[k]["prep"] for k in todo])
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass  # a background build failing just means no head start
+
+        _hd["pre"] = {"key": key, "task": loop.create_task(run())}
+
+    def _hd_prebuild_selected() -> None:
+        """Build the selected galaxy's HD in the background (not shown)."""
+        if (
+            not bool(state.hd_available)
+            or bool(state.hd_active)
+            or bool(state.hd_building)
+            or bool(getattr(state, "is_playing", False))
+        ):
+            return
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            return
+        try:
+            _, galaxies = scene.active_model.loader.get(scene.current_snap)
+        except Exception:
+            return
+        if not 0 <= gidx < galaxies.count or galaxies.stellar_mass[gidx] <= 0:
+            return
+        _hd_build_group(
+            galaxies,
+            _group_members(galaxies, gidx),
+            gidx,
+            only_focus=not _halo_context(),
+            prebuild=True,
+        )
+
+    @state.change("nav_gal_idx", "sel_kind")
+    def _on_selection_prebuild(**_):
+        loop = _running_loop()
+        if loop is None or not bool(state.hd_available):
+            return
+        tok = _hd["pre_tok"] = object()
+
+        def fire():
+            if _hd.get("pre_tok") is tok:
+                _hd_prebuild_selected()
+
+        loop.call_later(_HD_PREBUILD_DELAY, fire)
+
+    def _hd_prebuild_neighbours() -> None:
+        """HD on: build the same galaxy at the previous and next snapshots
+        in the background, so stepping through time in HD is instant."""
+        import asyncio
+
+        import numpy as np
+
+        loop = _running_loop()
+        gid = _hd.get("focus_gid")
+        if loop is None or gid is None or scene.is_lightcone:
+            return
+        base = scene.current_snap
+        model = scene.active_model
+        tok = _hd["nb_tok"] = object()
+
+        async def run():
+            for sn in (base + 1, base - 1):
+                if _hd.get("nb_tok") is not tok or not bool(state.hd_active):
+                    return
+                if not 0 <= sn < scene._snap_table.count:
+                    continue
+                try:
+                    _, gals = await loop.run_in_executor(
+                        None, model.loader.get, sn
+                    )
+                except Exception:
+                    continue
+                if _hd.get("nb_tok") is not tok or not bool(state.hd_active):
+                    return
+                hit = np.flatnonzero(gals.galaxy_id == gid)
+                if not len(hit) or gals.stellar_mass[hit[0]] <= 0:
+                    continue
+                gidx = int(hit[0])
+                _hd_build_group(
+                    gals,
+                    _group_members(gals, gidx),
+                    gidx,
+                    only_focus=not _halo_context(),
+                    prebuild=True,
+                    snap=sn,
+                )
+                pre = _hd.get("pre")
+                if pre is not None:
+                    try:
+                        await asyncio.shield(pre["task"])
+                    except Exception:
+                        pass
+
+        loop.create_task(run())
+
     def _hd_build_group(
-        galaxies, idx, focus: int | None = None, only_focus: bool = False
+        galaxies,
+        idx,
+        focus: int | None = None,
+        only_focus: bool = False,
+        prebuild: bool = False,
+        snap: int | None = None,
     ) -> None:
         """HD for the selected galaxy's halo.
 
         Every member of the group (just the galaxy, if it is alone) at its
         own position and spin, and tidal bridges and tails between close
         pairs.
-        The halo's gas is on the Gas box."""
+        The halo's gas is on the Gas box.
+
+        `prebuild`: only build it, quietly in the background, into the
+        build cache (for snapshot `snap`, default the current one), so
+        pressing HD (or stepping to that snapshot in HD) is instant."""
         import asyncio
 
         import numpy as np
@@ -4381,12 +4524,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         prefetch_sfh(galaxies, idx, scene._snap_table, h, cosmo[1])
         lead = int(idx[0])
-        _hd["lead"] = lead
-        # The galaxy HD is built for, by GalaxyIndex: changing snapshot
-        # finds it again and rebuilds HD there.
-        f = lead if focus is None else int(focus)
-        gid = int(galaxies.galaxy_id[f]) if galaxies.count > f else 0
-        _hd["focus_gid"] = gid if gid else None
+        if not prebuild:
+            _hd["lead"] = lead
+            # The galaxy HD is built for, by GalaxyIndex: changing snapshot
+            # finds it again and rebuilds HD there.
+            f = lead if focus is None else int(focus)
+            gid = int(galaxies.galaxy_id[f]) if galaxies.count > f else 0
+            _hd["focus_gid"] = gid if gid else None
 
         # Positions at the periodic images nearest the central (a group
         # straddling the box edge stays together).
@@ -4438,14 +4582,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # Built a moment ago (HD off and on, back to the same group)?
         key = (
             scene.active_model.name,
-            scene.current_snap,
+            scene.current_snap if snap is None else int(snap),
             tuple((entries[k]["idx"], entries[k]["quality"]) for k in todo),
         )
         cached = _hd_cache().get(key)
-        if cached is not None:
+        if not prebuild:
+            # A background build of something else would only slow this one.
+            pre = _hd.get("pre")
+            if pre and pre["key"] != key and not pre["task"].done():
+                pre["task"].cancel()
+        if cached is not None and not prebuild:
             for k, prep in zip(todo, cached, strict=True):
                 entries[k]["prep"] = prep
             _hd_show_group(entries, h, focus)
+            _hd_prebuild_neighbours()
             return
 
         def args(k):
@@ -4458,6 +4608,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 **sat_ctx.get(k, {}),
             }
             return (prepare_member, e["gal"], e["quality"], ctx)
+
+        if prebuild:
+            if cached is None:
+                _hd_prebuild_start(key, todo, args, entries, sat_ctx)
+            return
 
         loop = _running_loop()
         if loop is None:
@@ -4502,6 +4657,27 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         # A broken worker pool: build it here instead.
                         return await loop.run_in_executor(None, *args(k))
 
+                # Already being built in the background (selected a moment
+                # ago)?  Wait for that instead of starting again.
+                pre = _hd.get("pre")
+                if pre and pre["key"] == key and not pre["task"].done():
+                    try:
+                        await asyncio.shield(pre["task"])
+                    except Exception:
+                        pass
+                    if _hd["build"] is not token:
+                        return
+                    hit = _hd_cache().get(key)
+                    if hit is not None:
+                        for k, prep in zip(todo, hit, strict=True):
+                            entries[k]["prep"] = prep
+                        _hd_show_group(entries, h, focus)
+                        try:
+                            scene.plotter.ren_win.Render()
+                        except Exception:
+                            pass
+                        _hd_prebuild_neighbours()
+                        return
                 futs = {asyncio.ensure_future(_prep(k)): k for k in todo}
                 _hd["futs"] = list(futs)
                 done = 0
@@ -4540,6 +4716,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     scene.plotter.ren_win.Render()
                 except Exception:
                     pass
+                _hd_prebuild_neighbours()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

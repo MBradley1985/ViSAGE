@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **HD is ready before you press it.** A moment after you select a
+  galaxy, its HD is built in the background, so pressing HD takes about
+  0.1 s instead of a few seconds. With HD on, the same galaxy is built at
+  the neighbouring snapshots too, so stepping through time in HD is
+  instant once the slider settles.
+
 ## [2.8.5] — 2026-10-22
 
 ### Added
