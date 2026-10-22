@@ -1460,6 +1460,16 @@ def create_app(
                     # The selection card (selected galaxy, group, actions).
                     selection_card(server)
 
+                    # Components: labels on the HD galaxy's parts, drawn by
+                    # visage.js from hd_labels (an SVG over the view).
+                    html.Div(
+                        id="hd-labels",
+                        style=(
+                            "position:absolute;inset:0;z-index:5;"
+                            "pointer-events:none;"
+                        ),
+                    )
+
                     # HD build message: what is being built and how far.
                     with html.Div(
                         v_show=("hd_building",),

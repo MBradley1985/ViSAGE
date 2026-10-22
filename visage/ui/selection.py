@@ -181,6 +181,15 @@ def selection_card(server) -> None:
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
             )
+            v3.VBtn(
+                "Components",
+                v_show=("hd_active && sel_kind !== 'halo'",),
+                size="small",
+                variant=("hd_labels_on ? 'flat' : 'outlined'",),
+                color="#f472b6",
+                click="hd_labels_on = !hd_labels_on",
+                title="Label the parts of this galaxy",
+            )
         # Moving on: history, the group's members, its central, the nearest
         # galaxy.
         with html.Div(

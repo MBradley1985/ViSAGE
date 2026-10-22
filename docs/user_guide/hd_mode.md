@@ -38,6 +38,10 @@ In **Galaxy** context HD draws the selected galaxy alone, at its true size and i
 
 Inside HD, double-click picks among the galaxies HD draws; under the cursor, the most massive one wins. **Go** on the card flies to that galaxy without leaving HD.
 
+## Components
+
+In **Galaxy** context, the card's **Components** button labels the parts of the HD galaxy, with leader lines to each: the central black hole, bulge or pseudo-bulge, bar, nuclear ring, spiral arms, star-forming regions, dust lanes, merger shells, tails and streams, the intracluster light and, with **Gas** on, the wind, radio jet, HI disk, cold stream and hot halo. Only what the galaxy has, from its SAGE26 properties, is labelled, and the labels follow the galaxy as you turn it. Press it again to hide them. (It isn't offered in **Halo + group** context.)
+
 ## Gas
 
 The card's **Gas** button adds the halo gas: every member of the group gets its own, out to its own Rvir. It is off by default; with it off, nothing but the galaxies (and their starlight) is drawn.

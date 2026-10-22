@@ -274,6 +274,53 @@
     });
   })();
 
+  // ─── HD Components: labels and leader lines over the view ─────────
+  // hd_labels (from the server): [{t, x, y, lx, ly, side}], positions as
+  // fractions of the view, y down.  Drawn as an SVG in #hd-labels.
+  var hdLabels = [];
+  function drawHdLabels() {
+    var host = document.getElementById('hd-labels');
+    if (!host) return;
+    var W = host.clientWidth, H = host.clientHeight;
+    if (!hdLabels.length || !W || !H) { host.innerHTML = ''; return; }
+    var esc = function (s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    };
+    var svg = '<svg width="' + W + '" height="' + H +
+      '" style="position:absolute;left:0;top:0;overflow:visible">';
+    hdLabels.forEach(function (l) {
+      var ax = l.x * W, ay = l.y * H, lx = l.lx * W, ly = l.ly * H;
+      var left = l.side === 'left';
+      var tw = 8.6 * l.t.length;  // label width, approx. (bold caps 15px)
+      var ex = left ? lx + tw + 8 : lx - tw - 8;  // where the line starts
+      var kx = left ? Math.max(ex + 14, Math.min(ax - 20, ex + 60))
+                    : Math.min(ex - 14, Math.max(ax + 20, ex - 60));
+      svg += '<polyline points="' + ex + ',' + ly + ' ' + kx + ',' + ly + ' ' +
+        ax + ',' + ay + '" fill="none" stroke="rgba(255,255,255,0.75)" ' +
+        'stroke-width="1.2"/>';
+      svg += '<circle cx="' + ax + '" cy="' + ay + '" r="3" fill="none" ' +
+        'stroke="#fff" stroke-width="1.4"/>';
+      svg += '<text x="' + lx + '" y="' + (ly + 5) + '" text-anchor="' +
+        (left ? 'start' : 'end') + '" fill="#f472b6" font-size="15" ' +
+        'font-weight="700" letter-spacing="0.6" ' +
+        'font-family="Oswald, \'Arial Narrow\', Arial, sans-serif" ' +
+        'style="paint-order:stroke;stroke:rgba(0,0,0,0.7);stroke-width:3px">' +
+        esc(l.t) + '</text>';
+    });
+    host.innerHTML = svg + '</svg>';
+  }
+  (function watchHdLabels() {
+    var t = window.trame;
+    if (!t || !t.state || !t.state.watch) { setTimeout(watchHdLabels, 300); return; }
+    t.state.watch(['hd_labels'], function (labels) {
+      hdLabels = labels || [];
+      drawHdLabels();
+    });
+  })();
+  window.addEventListener('resize', drawHdLabels);
+
   // ─── HD: Esc cancels a build or leaves HD ──────────────────────────
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || inEditable(e.target)) return;

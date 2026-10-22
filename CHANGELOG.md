@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Components button** (HD, Galaxy context): labels the parts of the
+  galaxy with leader lines, like an annotated galaxy portrait: black
+  hole, bulge, bar, ring, arms, star-forming regions, dust lanes, merger
+  debris, ICL and (Gas on) wind, jet, HI disk, cold stream and hot halo.
+  Only what the galaxy has is labelled, and the labels follow the view.
+
 ### Changed
 
 - **HD star-forming regions are Hα pink**, pink in metal-poor gas to

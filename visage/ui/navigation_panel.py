@@ -4219,6 +4219,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _hd["mode"] = None
         _hd["built_snap"] = None
         state.hd_active = False
+        state.hd_labels = []
 
     def _hd_off() -> None:
         """HD button pressed while on: back out to the normal view of the
@@ -4229,6 +4230,71 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.clear_focus()
         _stop_hd()
         on_go_frame()
+
+    # ------------------------------------------------------------------
+    # Components: labels on the parts of the HD galaxy (Galaxy context)
+    # ------------------------------------------------------------------
+    state.hd_labels_on = False
+    state.hd_labels = []
+    _lab = {"t": 0.0, "last": None}
+
+    def _hd_focus_layer():
+        grp = _hd["group"]
+        if grp is None or not grp.active:
+            return None
+        gid = _hd.get("focus_gid")
+        for m in grp.members:
+            if m.gal is not None and m.gal.galaxy_index == gid:
+                return m
+        return grp.members[0] if grp.members else None
+
+    def _hd_labels_update(force: bool = False) -> None:
+        """Project the focus galaxy's labelled parts to the screen."""
+        import time
+
+        from visage.hd import labels
+
+        show = (
+            bool(state.hd_labels_on)
+            and bool(state.hd_active)
+            and not _halo_context()
+        )
+        lay = _hd_focus_layer() if show else None
+        if lay is None:
+            if state.hd_labels:
+                state.hd_labels = []
+                state.flush()
+            _lab["last"] = None
+            return
+        now = time.monotonic()
+        if not force and now - _lab["t"] < 0.08:
+            return
+        _lab["t"] = now
+        ren = scene.plotter.renderer
+        w, h = scene.plotter.ren_win.GetSize()
+        pts = []
+        for text, p in labels.anchors(lay, bool(state.hd_gas)):
+            wp = labels.to_world(lay, p)
+            ren.SetWorldPoint(*wp, 1.0)
+            ren.WorldToDisplay()
+            x, y, z = ren.GetDisplayPoint()
+            if 0.0 <= z <= 1.0 and 0 < x < w and 0 < y < h:
+                pts.append((text, x / w, 1.0 - y / h))
+        out = labels.layout(pts)
+        if out != _lab["last"]:
+            _lab["last"] = out
+            state.hd_labels = out
+            state.flush()
+
+    from visage.utils import frame_delivery as _fd
+
+    _fd.on_frame.append(lambda: _hd_labels_update())
+
+    @state.change("hd_labels_on", "hd_active", "hd_gas", "sel_kind")
+    def _on_labels_change(**_):
+        if _halo_context() and bool(state.hd_labels_on):
+            state.hd_labels_on = False
+        _hd_labels_update(force=True)
 
     def _running_loop():
         import asyncio
