@@ -590,10 +590,11 @@ def _browser(log, par: str, drag: bool = True, port: int = 8080) -> None:
             f"     server lag: mean {lg.mean():.0f} ms, worst {lg.max():.0f} ms"
         )
         log(f"     frames still arriving {frames_after:.2f} s after stopping")
+        if st["sent"] == 0:
+            log("     => NO FRAMES: the view didn't move (no drag seen?)")
+            return
         if not st["catch_up"]:
-            log(
-                "     => NO ANSWER from the browser (tab hidden, or no frames?)"
-            )
+            log("     => NO ANSWER from the browser (was the tab hidden?)")
             results.append((name, False))
             return
         ok = p95 < 250 and lg.max() < 500 and frames_after < 1.0
