@@ -131,6 +131,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="With --diagnose: skip the test in your browser.",
+    )
+    p.add_argument(
         "--version",
         action="version",
         version=f"visage {__version__}",
@@ -182,7 +187,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.diagnose:
         from visage.diagnose import run
 
-        run(par=args.par)
+        run(par=args.par, browser=not args.no_browser)
         return
     if args.lightcone is not None:
         _lightcone_mode(args)

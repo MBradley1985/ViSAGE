@@ -22,3 +22,10 @@ def test_cli_has_the_diagnose_flag():
     from visage.cli import build_parser
 
     assert build_parser().parse_args(["--diagnose"]).diagnose
+
+
+def test_cli_can_skip_the_browser_test():
+    from visage.cli import build_parser
+
+    args = build_parser().parse_args(["--diagnose", "--no-browser"])
+    assert args.diagnose and args.no_browser

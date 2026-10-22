@@ -259,7 +259,7 @@ def create_app(
         # Two frames may still be on their way while the next is drawn; wait
         # only when more are queued, so the backlog stays at two frames.
         monitor = server.context.network_monitor
-        while monitor.pending > 2:
+        while monitor.pending > 2 or frame_delivery.browser_behind():
             await asyncio.sleep(0.002)
 
     camera_motion.set_frame_gate(_frame_sent)

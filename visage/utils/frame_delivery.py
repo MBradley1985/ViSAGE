@@ -63,12 +63,20 @@ _ping = {"id": 0, "sent": None}
 # Sends ping `id` to the page (set by the app).
 ping_sender: list = [None]
 last_frame = [0.0]  # monotonic time of the last frame sent
+# Counters for `visage --diagnose`: frames sent, drag frames skipped (the
+# browser or the link behind), and how long the page took to catch up to
+# each ping (s).  Reset by whoever reads them.
+stats = {"sent": 0, "skipped": 0, "catch_up": []}
+# For `visage --diagnose`: send frames at this JPEG quality instead of the
+# view's (None: the view's own).
+quality_override: list = [None]
 
 
 def pong(ping_id) -> None:
     """The page has caught up to ping `ping_id`."""
     try:
-        if int(ping_id) == _ping["id"]:
+        if int(ping_id) == _ping["id"] and _ping["sent"] is not None:
+            stats["catch_up"].append(time.monotonic() - _ping["sent"])
             _ping["sent"] = None
     except (TypeError, ValueError):
         pass
@@ -241,14 +249,16 @@ def install() -> None:
                 behind = False
             if behind:
                 # Still dirty: the next tick draws the latest view.
+                stats["skipped"] += 1
                 return {"image": None, "stale": False, "memsize": 0}
         _dirty[0] = False
         size = list(options.get("size") or view.GetSize()[0:2])
         if size != list(view.GetSize()[0:2]) and size[0] > 10 and size[1] > 10:
             view.SetSize(size)
-        quality = options.get("quality", 100)
+        quality = quality_override[0] or options.get("quality", 100)
         image, real_size = render_jpeg(view, quality, grabbers)
         last_frame[0] = time.monotonic()
+        stats["sent"] += 1
         _send_ping()
         for fn in on_frame:
             fn()

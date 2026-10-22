@@ -496,6 +496,160 @@ def _live(log, par: str) -> None:
         log("   Nothing held the event loop over 0.1 s.")
 
 
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _browser(log, par: str, drag: bool = True) -> None:
+    """The real app in your browser: does the browser keep up?
+
+    Opens ViSAGE in the default browser and measures, from the server:
+    frames sent, drag frames skipped because the browser was behind, how
+    long the browser takes to show each frame (its backlog), and how long
+    frames keep arriving after the view stops moving -- the lag you see.
+    First with auto-rotate (no input needed), at JPEG quality 100 and 95;
+    then (`drag`) while you drag the view yourself."""
+    import asyncio
+    import webbrowser
+
+    import numpy as np
+
+    from visage.app import create_app
+    from visage.utils import frame_delivery as fd
+
+    port = _free_port()
+    server, scene = create_app(par_path=par)
+    state = server.state
+    lag: list[float] = []
+    results: list[tuple[str, bool]] = []
+
+    async def _watch():
+        while True:
+            t0 = time.perf_counter()
+            await asyncio.sleep(0.05)
+            lag.append(max(0.0, time.perf_counter() - t0 - 0.05))
+
+    def _reset():
+        fd.stats.update(sent=0, skipped=0, catch_up=[])
+        lag.clear()
+
+    def _report(name, seconds, frames_after):
+        st = fd.stats
+        cu = np.array(st["catch_up"] or [0.0]) * 1000
+        lg = np.array(lag or [0.0]) * 1000
+        p95 = np.percentile(cu, 95)
+        log(f"   {name}:")
+        log(
+            f"     {st['sent'] / seconds:5.1f} frames/s sent, "
+            f"{st['skipped']} drag frames skipped (browser behind)"
+        )
+        log(
+            f"     browser shows each frame after: median "
+            f"{np.median(cu):.0f} ms, 95% {p95:.0f} ms, worst {cu.max():.0f} ms"
+        )
+        log(
+            f"     server lag: mean {lg.mean():.0f} ms, worst {lg.max():.0f} ms"
+        )
+        log(f"     frames still arriving {frames_after:.2f} s after stopping")
+        if not st["catch_up"]:
+            log(
+                "     => NO ANSWER from the browser (tab hidden, or no frames?)"
+            )
+            results.append((name, False))
+            return
+        ok = p95 < 250 and lg.max() < 500 and frames_after < 1.0
+        log(f"     => {'OK: keeping up' if ok else 'NOT OK: falling behind'}")
+        results.append((name, ok))
+
+    async def _after_stop():
+        """Seconds from now until frames stop arriving."""
+        t0 = time.monotonic()
+        await asyncio.sleep(3.0)
+        return max(0.0, fd.last_frame[0] - t0)
+
+    async def _rotate(label, quality):
+        fd.quality_override[0] = quality
+        await asyncio.sleep(1.0)
+        _reset()
+        state.rotate_mode = "cw_30"
+        state.flush()
+        await asyncio.sleep(8.0)
+        state.rotate_mode = "off"
+        state.flush()
+        _report(f"Auto-rotate, quality {label}", 8.0, await _after_stop())
+
+    async def _user_drag(label, quality):
+        fd.quality_override[0] = quality
+        print(
+            f"\n>>> In the browser: press and hold on the view and keep "
+            f"dragging it around for 10 seconds (quality {label}).",
+            flush=True,
+        )
+        for n in (3, 2, 1):
+            print(f">>> {n}...", flush=True)
+            await asyncio.sleep(1.0)
+        print(">>> DRAG NOW", flush=True)
+        _reset()
+        await asyncio.sleep(10.0)
+        print(">>> STOP: let go of the mouse now", flush=True)
+        _report(f"Your drag, quality {label}", 10.0, await _after_stop())
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        server.start(
+            port=port,
+            open_browser=False,
+            exec_mode="task",
+            timeout=0,
+            show_connection_info=False,
+            disable_logging=True,
+        )
+        await asyncio.sleep(1.5)
+        url = f"http://localhost:{port}/"
+        log(f"   Opening {url} (keep that tab in front until this finishes)")
+        webbrowser.open(url)
+        t0 = time.monotonic()
+        while fd.stats["sent"] == 0 and time.monotonic() - t0 < 120:
+            await asyncio.sleep(0.5)
+        if fd.stats["sent"] == 0:
+            log("   No browser connected within 2 minutes: skipped.")
+            return
+        log("   Browser connected; letting it settle for 10 s...")
+        await asyncio.sleep(10.0)
+        watcher = loop.create_task(_watch())
+        try:
+            await _rotate("100", None)
+            await _rotate("95", 95)
+            if drag:
+                await _user_drag("100", None)
+                await _user_drag("95", 95)
+        finally:
+            fd.quality_override[0] = None
+            watcher.cancel()
+        print("\n>>> Done in the browser: you can close that tab.", flush=True)
+
+    asyncio.run(main())
+    if not results:
+        return
+    bad = [n for n, ok in results if not ok]
+    if not bad:
+        log("   VERDICT: the browser keeps up in every test: fixed.")
+        return
+    log("   VERDICT: still falling behind in: " + "; ".join(bad))
+    by = dict(results)
+    if any(
+        by.get(n.replace(" 100", " 95")) for n in bad if n.endswith(" 100")
+    ):
+        log(
+            "   Quality 95 keeps up where 100 doesn't, so frame size is the "
+            "limit: try `set VISAGE_JPEG_QUALITY=95` before `visage`."
+        )
+
+
 _BROWSER_CHECKS = """
 Browser checks (please do these too and note the answers):
   1. Open chrome://gpu (Chrome) or edge://gpu (Edge). Under "Graphics
@@ -507,7 +661,9 @@ Browser checks (please do these too and note the answers):
 """
 
 
-def run(par: str | None = None, out_dir: str | Path = ".") -> Path:
+def run(
+    par: str | None = None, out_dir: str | Path = ".", browser: bool = True
+) -> Path:
     """Run every check; return the log file's path."""
     path = Path(out_dir).resolve() / LOG_NAME
     log = _Log(path)
@@ -532,6 +688,12 @@ def run(par: str | None = None, out_dir: str | Path = ".") -> Path:
         _step(
             log, "Live app (the server as you run it)", lambda: _live(log, par)
         )
+        if browser:
+            _step(
+                log,
+                "In your browser: is it keeping up?",
+                lambda: _browser(log, par),
+            )
     for line in _BROWSER_CHECKS.strip("\n").splitlines():
         log(line)
     log(f"\nDone. Log: {path}")
