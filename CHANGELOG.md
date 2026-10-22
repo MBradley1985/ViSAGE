@@ -8,6 +8,34 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.7] — 2026-10-22
+
+### Added
+
+- **Components (?) button** on the selection card (HD, Galaxy context):
+  labels the parts of the galaxy in gold, with leader lines around all
+  four edges of the view (black where they cross bright areas), like an
+  annotated galaxy portrait: black hole, bulge, bar, ring, arms,
+  star-forming regions, dust lanes, merger debris, ICL and (Gas on)
+  wind, jet, HI disk, cold stream and hot halo. Only what the galaxy has
+  is labelled, the labels follow the view and keep clear of the card.
+
+### Changed
+
+- **HD star-forming regions are Hα pink**, pink in metal-poor gas to
+  orange in metal-rich, gathered into complexes along the arms: richer
+  where star formation is denser, bigger in gas-rich disks.
+- **HD intracluster light reaches into the halo** with scattered
+  stripped stars, its brightness following the ICS mass, so ICL-rich
+  clusters and groups show it and others barely do.
+- **HD spiral arms have dust lanes:** thin, streaky dark lanes along the
+  arms' inner edges, darker the larger the galaxy's dust column (H₂, HI
+  and gas metallicity), so gas-poor disks have almost none.
+
+### Removed
+
+- **HD streams feeding the intracluster light.**
+
 ## [2.8.6] — 2026-10-22
 
 ### Changed

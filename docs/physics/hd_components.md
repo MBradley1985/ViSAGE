@@ -37,7 +37,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 |---|---|---|
 | Young (blue) light | `SfrDisk`, disk mass | Scales with the disk's specific SFR as (sSFR / 10⁻¹⁰)^0.7. FFB galaxies are bluer still. |
 | Young star clusters | `SfrDisk` | Their number scales as SFR^0.5 (400–20,000). They follow the young-light map. |
-| HII regions | `H2gas`, `SfrDiskZ` | Their number scales with the H₂ reservoir. Their colour runs from metal-poor to metal-rich with the star-forming gas's metallicity. |
+| HII regions | `H2gas`, `SfrDisk`, `DiskRadius`, `ColdGas`, `SfrDiskZ` | Hα-pink star-forming complexes along the arms, in number following the H₂ reservoir. Each complex is richer the denser the star formation (SFR surface density) and bigger the more gas-rich the disk. Their colour runs from pink in metal-poor gas to orange in metal-rich gas, with the star-forming gas's metallicity. |
 | Nuclear ring | `SfrBulge`, `SfrDisk` | A faint, diffuse ring of clusters and dust appears when the bulge forms more than 8% of all stars (with SfrBulge > 0.05 M☉/yr). It sits just inside the bar ends. |
 | Gas-disk truncation (satellites) | `Type`, `TimeOfInfall`, `Mvir`, `infallMvir` | Satellites lose their outer gas disk the longer since infall and the more of their subhalo they have lost. Star formation stops beyond the cut. |
 
@@ -45,7 +45,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Disk dust | `H2gas`, `H1gas`, `MetalsColdGas`, `ColdGas` | Face-on optical depth ∝ (Σ_H₂ + 0.4 Σ_HI) × gas metallicity. It follows the arms and the H₂, and reddens what it dims. |
+| Disk dust | `H2gas`, `H1gas`, `MetalsColdGas`, `ColdGas` | Face-on optical depth ∝ (Σ_H₂ + 0.4 Σ_HI) × gas metallicity. It follows the arms and the H₂, and reddens what it dims. Thin, streaky dark lanes run along the arms' inner edges, darker the larger that dust column (on a log scale), so gas-poor disks have almost none. |
 | Elliptical dust lane | `H2gas` | A nuclear lane in ellipticals that hold molecular gas. |
 
 ## Nucleus
@@ -61,8 +61,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 |---|---|---|
 | Shells (ellipticals) or tidal tails (disks) | `TimeOfLastMajorMerger`, redshift | A major merger leaves debris that fades over 4 Gyr at z = 0, and faster at high z (4 Gyr / (1+z), as dynamical times shorten). |
 | Stellar stream | `TimeOfLastMinorMerger`, redshift | A minor merger leaves a stream, fading over 2.5 Gyr / (1+z). |
-| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint, extended envelope (scale 0.12 Rvir, up to 250 kpc), brighter with log(ICS / M\*), so richer clusters keep getting brighter. Its colour follows the ICS metallicity. |
-| Streams feeding the ICL | `ICS_disrupt` | Visible when satellites torn apart into the ICL exceed ~10^10.5 M☉. |
+| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint envelope and glow reaching into the halo (scale 0.12 Rvir), with scattered stripped stars. Its brightness follows the ICS mass, so ICL-rich clusters and groups show it and others barely do. Its colour follows the ICS metallicity. |
 
 ## Halo gas (the Gas button)
 

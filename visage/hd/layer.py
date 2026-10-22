@@ -255,6 +255,8 @@ class HDGalaxyLayer:
             prep = self.prepare(gal)
         self.gal = gal
         rc, maps, pts = prep["rc"], prep["maps"], prep["pts"]
+        # (Kept for the Components labels: where the parts are.)
+        self._pts, self._maps = pts, maps
         if magnify != 1.0:
             import dataclasses
 

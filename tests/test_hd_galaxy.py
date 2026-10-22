@@ -403,7 +403,7 @@ def test_group_members_build_in_the_process_pool():
             group._POOL["pool"].shutdown()
             group._POOL["pool"] = None
     assert prep["rc"].kind == "disk"
-    assert prep["gpu"]["tex"]["mapTex"][0].shape == (384, 384, 3)
+    assert prep["gpu"]["tex"]["mapTex"][0].shape == (384, 384, 4)
 
 
 def test_hd_is_dropped_when_the_snapshot_changes(hd_panel):

@@ -274,6 +274,108 @@
     });
   })();
 
+  // ─── HD Components: labels and leader lines over the view ─────────
+  // hd_labels (from the server): [{t, x, y, lx, ly, side}], positions as
+  // fractions of the view, y down.  Drawn as an SVG in #hd-labels.
+  var hdLabels = [];
+  function drawHdLabels() {
+    var host = document.getElementById('hd-labels');
+    if (!host) return;
+    // The leader lines live in a sibling layer blended by "difference":
+    // white over the dark sky, black over the bright galaxy.  (A blend
+    // only reaches the view behind from its own top-level layer.)
+    var lines = document.getElementById('hd-label-lines');
+    if (!lines) {
+      lines = document.createElement('div');
+      lines.id = 'hd-label-lines';
+      lines.style.cssText = 'position:absolute;inset:0;z-index:5;' +
+        'pointer-events:none;mix-blend-mode:difference;';
+      host.parentNode.insertBefore(lines, host);
+    }
+    var W = host.clientWidth, H = host.clientHeight;
+    if (!hdLabels.length || !W || !H) {
+      host.innerHTML = ''; lines.innerHTML = ''; return;
+    }
+    var esc = function (s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    };
+    // Keep labels off the selection card: those that would sit on it
+    // move below it (left edge) or past it (top edge).
+    var labels = hdLabels.map(function (l) { return Object.assign({}, l); });
+    var card = document.getElementById('sel-card');
+    if (card && card.offsetParent) {
+      var hr = host.getBoundingClientRect(), cr = card.getBoundingClientRect();
+      var cR = cr.right - hr.left + 12, cB = cr.bottom - hr.top + 14;
+      var below = cB + 10;
+      labels.filter(function (l) { return l.side === 'left'; })
+        .sort(function (a, b) { return a.ly - b.ly; })
+        .forEach(function (l) {
+          if (l.ly * H < cB && l.lx * W < cR) {
+            l.ly = below / H; below += 0.06 * H;
+          } else if (l.ly * H < below) {
+            l.ly = below / H; below += 0.06 * H;
+          }
+        });
+      labels.filter(function (l) { return l.side === 'top'; })
+        .forEach(function (l) {
+          var half = 4.3 * l.t.length;
+          if (l.lx * W - half < cR) l.lx = (cR + half + 8) / W;
+        });
+    }
+    var color = window.visageLabelColor || '#FFD700';
+    var head = '<svg width="' + W + '" height="' + H +
+      '" style="position:absolute;left:0;top:0;overflow:visible">';
+    var svg = head, lsvg = head;
+    labels.forEach(function (l) {
+      var ax = l.x * W, ay = l.y * H, lx = l.lx * W, ly = l.ly * H;
+      var tw = 8.6 * l.t.length;  // label width, approx. (bold caps 15px)
+      var pts, tx, ty, anchor;
+      if (l.side === 'left' || l.side === 'right') {
+        var left = l.side === 'left';
+        var ex = left ? lx + tw + 8 : lx - tw - 8;  // where the line starts
+        var kx = left ? Math.max(ex + 14, Math.min(ax - 20, ex + 60))
+                      : Math.min(ex - 14, Math.max(ax + 20, ex - 60));
+        pts = ex + ',' + ly + ' ' + kx + ',' + ly + ' ' + ax + ',' + ay;
+        tx = lx; ty = ly + 5; anchor = left ? 'start' : 'end';
+      } else {
+        // Top / bottom: the label centred, the line dropping (rising) to
+        // an elbow, then to the part.
+        var top = l.side === 'top';
+        var ey = top ? ly + 8 : ly - 18;
+        var ky = top ? Math.max(ey + 12, Math.min(ay - 20, ey + 50))
+                     : Math.min(ey - 12, Math.max(ay + 20, ey - 50));
+        pts = lx + ',' + ey + ' ' + lx + ',' + ky + ' ' + ax + ',' + ay;
+        tx = lx; ty = ly + 5; anchor = 'middle';
+      }
+      lsvg += '<polyline points="' + pts + '" fill="none" ' +
+        'stroke="#fff" stroke-width="1.3"/>';
+      lsvg += '<circle cx="' + ax + '" cy="' + ay + '" r="3" fill="none" ' +
+        'stroke="#fff" stroke-width="1.5"/>';
+      svg += '<text x="' + tx + '" y="' + ty + '" text-anchor="' + anchor +
+        '" fill="' + color + '" font-size="15" font-weight="700" ' +
+        'letter-spacing="0.6" ' +
+        'font-family="Oswald, \'Arial Narrow\', Arial, sans-serif" ' +
+        'style="paint-order:stroke;stroke:rgba(0,0,0,0.7);stroke-width:3px">' +
+        esc(l.t) + '</text>';
+    });
+    host.innerHTML = svg + '</svg>';
+    lines.innerHTML = lsvg + '</svg>';
+  }
+  (function watchHdLabels() {
+    var t = window.trame;
+    if (!t || !t.state || !t.state.watch) { setTimeout(watchHdLabels, 300); return; }
+    t.state.watch(['hd_labels'], function (labels) {
+      hdLabels = labels || [];
+      drawHdLabels();
+    });
+    // The card opening or closing moves labels on or off it.
+    t.state.watch(['sel_show'], function () { setTimeout(drawHdLabels, 80); });
+  })();
+  window.addEventListener('resize', drawHdLabels);
+  window.drawHdLabels = drawHdLabels;
+
   // ─── HD: Esc cancels a build or leaves HD ──────────────────────────
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || inEditable(e.target)) return;

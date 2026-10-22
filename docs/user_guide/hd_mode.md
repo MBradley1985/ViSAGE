@@ -16,7 +16,7 @@ Each galaxy's model follows from its own catalogue row:
 | Young star clusters and HII regions | Disk SFR, cold and H₂ gas, gas metallicity |
 | Dust | Cold-gas metals, seen edge-on as lanes |
 | Shells, tails and streams | Merger history (merger bulge, mergeType) |
-| Intracluster light and its streams | ICS mass, ICS disruption |
+| Intracluster light | ICS mass |
 | AGN nucleus | Black hole mass and radio heating |
 | Disk thickness and clumpiness | Velocity dispersion over rotation, redshift, FFB regime |
 
@@ -37,6 +37,10 @@ In **Halo + group** context, HD draws every member of the FOF group at its own p
 In **Galaxy** context HD draws the selected galaxy alone, at its true size and its own exposure. Its group still shapes it: a satellite keeps its jellyfish tail, and a close companion still raises tidal features, though the companion isn't drawn.
 
 Inside HD, double-click picks among the galaxies HD draws; under the cursor, the most massive one wins. **Go** on the card flies to that galaxy without leaving HD.
+
+## Components
+
+In **Galaxy** context, the card's **?** (Components) button, next to the nearest-galaxy button, labels the parts of the HD galaxy, with leader lines to each: the central black hole, bulge or pseudo-bulge, bar, nuclear ring, spiral arms, star-forming regions, dust lanes, merger shells, tails and streams, the intracluster light and, with **Gas** on, the wind, radio jet, HI disk, cold stream and hot halo. Only what the galaxy has, from its SAGE26 properties, is labelled, and the labels follow the galaxy as you turn it. Press it again to hide them. (It isn't offered in **Halo + group** context.)
 
 ## Gas
 

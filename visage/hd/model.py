@@ -38,6 +38,27 @@ HII_RGB = np.array([0.40, 1.00, 0.78])
 # (cyan); metal-rich, greener.  HII_RGB sits at about half solar.
 HII_POOR_RGB = np.array([0.30, 0.92, 1.00])
 HII_RICH_RGB = np.array([0.45, 1.00, 0.62])
+# HII regions' look: colours for metal-poor / metal-rich star-forming gas
+# (None: the teal palette above), and their size.
+# Chosen from options on SAGE26 disks ("B"): Halpha pink in metal-poor gas
+# to orange in metal-rich, gathered into complexes along the arms.  How
+# rich and how spread out each complex is comes from the galaxy (recipe
+# hii_group, hii_spread).
+HII_LOOK = dict(
+    poor=(1.00, 0.40, 0.80),
+    rich=(1.00, 0.55, 0.32),
+    size=1.3,
+    gain=0.8,
+    conc=0.7,
+)
+# Dust lanes along the arms: width of the lane profile (arm-phase units),
+# extra sharpness, contrast power, and streaks (0-1: lanes broken into
+# thin filaments running along the arms).
+# Chosen from options ("B"): faint, streaky lanes, darker in dustier
+# disks (recipe lane).
+DUST_LANES = dict(
+    width=0.22, sharp=3.0, power=1.8, streaks=0.6, boost=0.8, reach=4.0
+)
 # Cooling-flow filaments (H-alpha) in cluster cores; ram-pressure tails.
 HALPHA_RGB = np.array([1.00, 0.36, 0.46])
 ICL_RGB = np.array([1.00, 0.82, 0.60])
@@ -86,6 +107,16 @@ DWARF = dict(on=False, max_lm=9.3, lopsided=0.4, clumps=3)
 # ~10^10.5 Msun) or "share" (scaled by the in-place share of all the ICS,
 # accreted ICS making a smoother envelope).
 ICL_MODE = "threshold"
+# Streams of satellite debris feeding the ICL (off: removed by choice).
+ICL_STREAMS = False
+# The ICL's look: envelope brightness (x), glow brightness (x), the glow's
+# and stripped stars' extent (0: the galaxy's size; >0: that many times the
+# envelope scale 0.12 Rvir), stripped-star count (x), colour (None: from
+# its metallicity).
+# mass: >0 scales the glow and envelope with the ICS mass itself (power).
+# Chosen from options on SAGE26 centrals ("D"): halo-wide, its glow and
+# envelope scaled by the ICS mass.
+ICL_LOOK = dict(env=0.45, glow=0.55, size=1.0, stars=1.0, rgb=None, mass=0.35)
 
 # Inside-out gradient strength (0: none): the inner disk's colour weights
 # the older part of the history up by (age / mean age)^GRADIENT, the outer
@@ -253,6 +284,9 @@ class GalaxyRecipe:
     l_nucleus: float = 0.0
     nucleus_sigma: float = 0.02
     tau0: float = 1.0  # face-on V-band optical depth scale of the dust
+    lane: float = 1.0  # darkness of the arm dust lanes (dust column, log)
+    hii_group: int = 4  # HII regions per star-forming complex (up to)
+    hii_spread: float = 0.06  # a complex's size, Rd
     n_clusters: int = 1500
     n_hii: int = 300
     n_field: int = 25000
@@ -288,6 +322,7 @@ class GalaxyRecipe:
     hii_rgb: tuple = tuple(HII_RGB)
     icl_rgb: tuple = tuple(ICL_RGB)
     icl_streams: float = 0.0  # streams feeding the ICL (0-1)
+    icl_n_streams: int = 3  # how many disrupted satellites they come from
     halpha: float = 0.0  # cluster-core cooling filaments (0-1)
     halpha_len: float = 0.0  # their reach, model units
     unit_kpc: float = 1.0  # physical size of one model length unit
@@ -421,7 +456,15 @@ def _extras(
     # HII colour from the star-forming gas's metallicity.
     if g.sfr_disk_z > 0:
         f = float(np.clip((np.log10(g.sfr_disk_z / 0.02) + 1.0) / 1.5, 0, 1))
-        out["hii_rgb"] = tuple(HII_POOR_RGB * (1 - f) + HII_RICH_RGB * f)
+        poor = HII_LOOK["poor"] or HII_POOR_RGB
+        rich = HII_LOOK["rich"] or HII_RICH_RGB
+        out["hii_rgb"] = tuple(
+            np.asarray(poor) * (1 - f) + np.asarray(rich) * f
+        )
+    elif HII_LOOK["poor"] is not None:
+        out["hii_rgb"] = tuple(
+            0.5 * (np.asarray(HII_LOOK["poor"]) + np.asarray(HII_LOOK["rich"]))
+        )
     # ICL colour from its metallicity, and streams where satellites were
     # recently torn apart into it (in-situ ICS).
     if g.ics > 0 and g.metals_ics > 0:
@@ -429,6 +472,8 @@ def _extras(
         out["icl_rgb"] = tuple(
             ICL_RGB * np.array([1.0, 1.0 - 0.05 * zi, 1.0 - 0.18 * zi])
         )
+    if ICL_LOOK["rgb"] is not None:
+        out["icl_rgb"] = tuple(ICL_LOOK["rgb"])
     if ICL_MODE == "share" and g.ics > 0:
         # Streams where the ICS was torn from satellites in place; ICS that
         # arrived already diffuse (accreted) makes a smooth envelope.
@@ -440,6 +485,11 @@ def _extras(
     elif g.ics_disrupt > 0:
         out["icl_streams"] = float(
             np.clip((np.log10(g.ics_disrupt) - 10.5) / 1.5, 0.0, 1.0)
+        )
+    if g.ics_disrupt > 0:
+        # More streams the more satellite mass was torn apart (log, 1-6).
+        out["icl_n_streams"] = int(
+            np.clip(round(1 + 2.5 * np.log10(g.ics_disrupt / 1e11)), 1, 6)
         )
     # Cluster cores: where the hot atmosphere still cools -- faster than
     # ~10 free-fall times where SAGE has tcool/tff, or (hot regime) with a
@@ -480,8 +530,13 @@ def _extras(
         ratio = g.ics / max(g.stellar_mass, 1.0)
         out["l_icl"] = float(
             0.12
+            * ICL_LOOK["env"]
             * main_light
-            * np.clip(1 + 0.5 * np.log10(ratio / 3), 0.05, 1.3)
+            * (
+                np.clip(1 + 0.5 * np.log10(ratio / 3), 0.05, 1.3)
+                if ICL_LOOK["mass"] <= 0
+                else np.clip((ratio / 3) ** ICL_LOOK["mass"], 0.05, 6.0)
+            )
         )
         out["icl_a"] = float(np.clip(0.12 * g.rvir_kpc, 20, 250) / unit_kpc)
         notes.append(
@@ -740,6 +795,20 @@ def recipe_from_sage(
     notes.append(
         f"Sigma_H2~{sigma_h2:.1f} Msun/pc^2, Z~{zfac:.2f} Zsun -> tau0={tau0:.2f}"
     )
+    # Arm dust lanes from the same dust column, unclipped and on a log
+    # scale, so they keep varying where tau0 saturates.
+    column = 0.015 * (sigma_h2 + 0.4 * sigma_hi) * zfac
+    lane = float(
+        np.clip(1.0 + 1.5 * np.log10(max(column, 1e-4) / 2.0), 0.15, 2.5)
+    )
+    # Star-forming complexes: richer where star formation is denser
+    # (SFR surface density), bigger in gas-richer disks (larger Jeans
+    # mass: cold-gas fraction).
+    sig_sfr = g.sfr_disk / (np.pi * max(rd, 0.3) ** 2)  # Msun/yr/kpc^2
+    hii_group = int(
+        np.clip(8 + 10 * np.log10(max(sig_sfr, 1e-6) / 0.1), 2, 24)
+    )
+    hii_spread = float(0.06 * np.clip(0.4 + 1.5 * gas_frac, 0.4, 1.8))
 
     # Black hole sets how concentrated / bright the nucleus is.
     l_nuc = float(0.012 * np.clip(g.bh_mass / 1e7, 0.01, 300) ** 0.5)
@@ -867,6 +936,9 @@ def recipe_from_sage(
         l_nucleus=l_nuc,
         nucleus_sigma=nuc_sig,
         tau0=tau0,
+        lane=lane,
+        hii_group=hii_group,
+        hii_spread=hii_spread,
         n_clusters=n_clusters,
         n_hii=n_hii,
         n_field=60000,
@@ -908,6 +980,9 @@ class PlaneMaps:
     hi: np.ndarray
     h2: np.ndarray
     arm: np.ndarray
+    # Dark lanes on the arms' inner edges, as a thin screen in front of the
+    # disk's light (optical depth), or None.
+    lanes: np.ndarray | None = None
 
     def sample(self, name, xg, yg):
         arr = getattr(self, name)
@@ -1124,14 +1199,42 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         )
 
     # Dust lanes sit on the inner (concave) edge of the arm.
+    dl = DUST_LANES
     arm_d = _arm_field(
-        rc, rr0, th, np.log(r0), tanp, wobble, 0.275, rc.arm_sharpness + 1.5
+        rc,
+        rr0,
+        th,
+        np.log(r0),
+        tanp,
+        wobble,
+        dl["width"],
+        rc.arm_sharpness + dl["sharp"],
     )
     fil_d = 1 / (1 + np.exp(-3.5 * (fil + 0.3)))
     arm_dust = (
         (1 - rc.flocculence) * arm_d + rc.flocculence * fil_d * (0.4 + arm_d)
     ) * inner
-    h2 = np.exp(-r / 0.9) * (0.08 + 2.5 * arm_dust**1.3) * np.exp(0.5 * clumps)
+    if dl["streaks"] > 0:
+        # Lanes broken into thin filaments along the arms: noise that
+        # changes fast across the arms (in arm phase) and slowly along
+        # them, thresholded into ridges.
+        from visage.hd.gpu import vnoise_baked
+
+        u = th - np.log(rr0) / max(tanp, 1e-3)
+        q = np.stack(
+            [24 * np.cos(u), 24 * np.sin(u), 3.0 * np.log(rr0) + rc.seed % 97],
+            axis=-1,
+        )
+        ridge = np.exp(-((vnoise_baked(q) / 0.22) ** 2))
+        arm_dust = arm_dust * (
+            1 - dl["streaks"] + dl["streaks"] * (0.25 + 1.8 * ridge)
+        )
+    h2 = (
+        np.exp(-r / 0.9)
+        * (0.08 + 2.5 * arm_dust ** dl["power"])
+        * np.exp(0.5 * clumps)
+    )
+    lanes = arm_dust ** dl["power"]
     hi = (
         np.exp(-r / rc.hi_scale)
         * (1 - 0.7 * np.exp(-((r / 1.2) ** 2)))
@@ -1146,6 +1249,20 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     # inflate the normalisation.
     dA = (ax[1] - ax[0]) ** 2
     dust *= 2 * np.pi * rc.tau0 / max(dust.sum() * dA, 1e-9)
+    lane_screen = None
+    if dl["boost"] > 0:
+        # Dark lanes on the arms' inner edges: a thin screen in front of the
+        # disk's light (mixed in with the stars, as the dust above is, they
+        # could never go dark).  Darker in dustier, metal-richer disks.
+        lane_screen = (
+            dl["boost"]
+            * rc.lane
+            * lanes
+            / max(float(lanes.max()), 1e-9)
+            * np.exp(-r / dl["reach"])
+            * outer_cut
+            * inner
+        ).astype(np.float32)
     if rc.ring > 0 and rc.ring_style in ("clusters_dust", "starburst_dust"):
         # Gas piles up at the ring: a dusty annulus just outside it, fed
         # (in barred galaxies) by two dust lanes along the bar's leading
@@ -1190,6 +1307,7 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         hi=hi.astype(np.float32),
         h2=h2.astype(np.float32),
         arm=arm_eff.astype(np.float32),
+        lanes=lane_screen,
     )
 
 
@@ -1255,24 +1373,27 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
 
         # HII regions: follow H2 where young stars are, soft and fuzzy.
         hx, hy = _sample_map(
-            (maps.h2 * maps.young) ** (CLUMPY["hii"] if rc.clumps else 1.2),
+            (maps.h2 * maps.young)
+            ** (CLUMPY["hii"] if rc.clumps else HII_LOOK["conc"]),
             maps.half,
             rc.n_hii,
             rng,
         )
-        k = rng.integers(1, 5, rc.n_hii)
-        hx = np.repeat(hx, k) + rng.normal(0, 0.025, k.sum())
-        hy = np.repeat(hy, k) + rng.normal(0, 0.025, k.sum())
+        hi = max(int(rc.hii_group), 1)
+        k = rng.integers(max(hi // 3, 1), hi + 1, len(hx))
+        sp = rc.hii_spread
+        hx = np.repeat(hx, k) + rng.normal(0, sp, k.sum())
+        hy = np.repeat(hy, k) + rng.normal(0, sp, k.sum())
         m = len(hx)
         lum = rng.pareto(1.5, m) + 1
         lum = np.minimum(lum, 12)
-        lum *= rc.l_young * 0.45 / lum.sum()
+        lum *= rc.l_young * HII_LOOK["gain"] / lum.sum()
         out.append(
             Points(
                 np.c_[hx, hy, rng.normal(0, 0.03, m)],
                 lum,
                 np.tile(np.asarray(rc.hii_rgb), (m, 1)),
-                rng.uniform(1.0, 2.0, m),
+                HII_LOOK["size"] * rng.uniform(1.0, 2.0, m),
                 "hii",
             )
         )
@@ -1351,8 +1472,8 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         )
         main_light = 1.0
 
-    if rc.icl_streams > 0:
-        out.append(_icl_streams(rc, rng, 0.5 * rc.icl_streams * main_light))
+    if ICL_STREAMS and rc.icl_streams > 0:
+        out.append(_icl_streams(rc, rng, 0.3 * rc.icl_streams * main_light))
     if rc.halpha > 0:
         out.append(_halpha_filaments(rc, rng, 0.3 * rc.halpha * main_light))
     # Merger debris (both kinds), all in old-star colours.
@@ -1372,24 +1493,53 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
 
 
 def _icl_streams(rc, rng, lum_tot, n=16000):
-    """Arcs of stripped stars feeding the intracluster light: the remains
-    of satellites recently torn apart in this halo."""
-    r_in = 1.2 * rc.extent
-    k = int(rng.integers(2, 6))
+    """Tidal debris feeding the intracluster light: each stream the remains
+    of one satellite torn apart in this halo (rc.icl_n_streams of them),
+    a leading and a trailing tail along its eccentric, slowly precessing
+    orbit, fanning out and clumpy away from the remnant of its core."""
+    r_in = max(1.2 * rc.extent, 0.6 * rc.icl_a)
+    k = max(int(rc.icl_n_streams), 1)
     pos, lum = [], []
     for _ in range(k):
-        u, v, _ = _random_frame(rng)
-        rs = r_in * rng.uniform(0.5, 1.6)
-        th0 = rng.uniform(0, 2 * np.pi)
-        span = rng.uniform(0.6, 1.6) * np.pi
+        u, v, w = _random_frame(rng)
+        a = r_in * rng.uniform(0.6, 1.8)  # orbit size
+        e = rng.uniform(0.3, 0.7)  # eccentricity
+        php = rng.uniform(0, 2 * np.pi)  # pericentre
+        ph0 = rng.uniform(0, 2 * np.pi)  # where the satellite was
+        lead, trail = rng.uniform(0.3, 1.0, 2) * np.pi
         m = n // k
-        th = th0 + span * rng.random(m)
-        r = rs * (1 + 0.15 * np.sin(2 * (th - th0)))
-        jit = rng.normal(0, 0.04 * rs, (m, 3))
-        pos.append(
-            (r * np.cos(th))[:, None] * u + (r * np.sin(th))[:, None] * v + jit
+        # Debris thins away from the remnant along both tails.
+        side = np.where(rng.random(m) < 0.5, 1.0, -1.0)
+        reach = np.where(side > 0, lead, trail)
+        d = np.abs(rng.normal(0, 0.45, m)) * reach
+        ph = ph0 + side * d
+        r = a * (1 - e * e) / (1 + e * np.cos(ph - php))
+        # Fans out with distance from the remnant; precesses out of plane.
+        width = 0.025 * r * (1 + 2.5 * d / np.pi)
+        off = rng.normal(0, 1, (m, 3)) * width[:, None]
+        tilt = 0.12 * r * np.sin(0.5 * (ph - ph0))
+        p = (
+            (r * np.cos(ph))[:, None] * u
+            + (r * np.sin(ph))[:, None] * v
+            + tilt[:, None] * w
+            + off
         )
-        lum.append(np.full(m, 1.0) * (0.5 + (th - th0) / span))
+        # Clumpy along the stream (lognormal in orbital phase).
+        knots = rng.normal(0, 1, 64)
+        grid = np.linspace(-np.pi, np.pi, 64)
+        clump = np.exp(
+            0.4 * np.interp(np.clip(ph - ph0, -np.pi, np.pi), grid, knots)
+        )
+        lw = clump * np.exp(-d / (0.8 * np.pi))
+        # What's left of the satellite's core, in some streams.
+        if rng.random() < 0.4:
+            mc = m // 16
+            rc0 = a * (1 - e * e) / (1 + e * np.cos(ph0 - php))
+            core = rc0 * (np.cos(ph0) * u + np.sin(ph0) * v)
+            p = np.vstack([p, core + rng.normal(0, 0.02 * rc0, (mc, 3))])
+            lw = np.concatenate([lw, np.full(mc, lw.mean())])
+        pos.append(p)
+        lum.append(lw)
     pos, lum = np.vstack(pos), np.concatenate(lum)
     lum *= lum_tot / lum.sum()
     rgb = np.tile(np.asarray(rc.icl_rgb), (len(lum), 1))
@@ -1677,7 +1827,7 @@ def _nuclear_ring(rc, rng, n=None):
         Points(
             pos[:k] * 1.01,
             np.full(k, RING["hii"] * rc.l_young * 0.2 * rc.ring / k),
-            np.tile(HII_RGB, (k, 1)),
+            np.tile(np.asarray(rc.hii_rgb), (k, 1)),
             np.full(k, 1.4),
             "ring_hii",
         ),
@@ -1705,7 +1855,7 @@ def _nuclear_ring(rc, rng, n=None):
             Points(
                 p3,
                 np.full(kk, rc.l_young * 0.5 * rc.ring / kk),
-                np.tile(HII_RGB, (kk, 1)),
+                np.tile(np.asarray(rc.hii_rgb), (kk, 1)),
                 rng.uniform(1.5, 3.0, kk),
                 "ring_hii2",
             )
