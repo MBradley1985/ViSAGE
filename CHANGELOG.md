@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.6] — 2026-10-22
+
 ### Changed
 
 - **HD is ready before you press it.** A moment after you select a
