@@ -43,14 +43,14 @@ The **i** button in the header (or **Show info** at the end of the Structure tab
 | In HD | What HD draws for this galaxy: arm class, bar, bulges, rings, star formation, merger debris, ICL, gas… |
 | Gas | HD's halo gas on or off |
 | ← → | Back and forward through what you've selected |
-| ‹ › | Previous / next member of the group |
+| ‹ › | Previous / next member of the group, flying to it (the card keeps its Galaxy / Halo + group context) |
 | ☆ | Up to the group's central |
 | Nearest | Hop to the nearest galaxy and fly there; amber rings mark the next nearest (the next hop larger). Hopping again carries on to the nearest not yet visited, so it never bounces back |
 | Zoom 3 / 5 / 10 | Fly in at that radius (Mpc/h), with focus |
 | Clear / Show indicator | Rings off or on. The galaxy stays selected, and the choice holds through HD, Gas and new selections |
 | Host halo · Go to halo | The halo the central sits on, and a flight to it |
 | Properties | Key properties; **All properties** lists every field (Approx Age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
-| Group | Every member (central first); click one to select it |
+| Group | Every member (central first); click one to select it and fly there |
 
 ### Keys
 

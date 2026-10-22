@@ -41,6 +41,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Go and Isolate frame the selection the same way,** at the distance Go
   uses inside HD (the galaxy at its normal-view size); a halo with its
   whole group in view. Leaving HD lands on the same view.
+- Stepping through a group's members, going up to its central and clicking
+  a member in the card's group list fly the view to that galaxy (in HD of
+  one galaxy, HD rebuilds for it).
 - **Rings follow the context:** the galaxy alone in Galaxy context, every
   member alike in Halo + group context.
 - **Clear indicator is now an on/off switch** (Clear / Show indicator)

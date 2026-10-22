@@ -438,3 +438,27 @@ def test_reverse_boxes_reverse_the_colormaps(panel):
     state.galaxy_cmap_reverse = False
     state.flush()
     assert scene.galaxy_layer.colormap == "magma"
+
+
+def test_moving_through_the_group_flies_to_each_member(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = _group(scene, [2, 4, 6], central=4)
+    off = scene.active_model.offset
+    state.nav_gal_idx = 4
+    state.flush()
+
+    def at(k):
+        return np.allclose(
+            scene.plotter.camera.focal_point,
+            galaxies.positions[k] + off,
+            atol=1e-4,
+        )
+
+    ctrl.sel_step(1)
+    k = int(state.nav_gal_idx)
+    assert k != 4 and at(k)
+    ctrl.sel_select(6)  # clicked in the group list
+    assert state.nav_gal_idx == 6 and at(6)
+    ctrl.sel_central()
+    assert state.nav_gal_idx == 4 and at(4)

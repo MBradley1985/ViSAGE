@@ -1507,6 +1507,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # In HD of a group, Go flies to that member and keeps HD on.
         if _hd_go_to_member():
             return
+        # In HD of one galaxy (Galaxy context), another galaxy selected:
+        # HD rebuilds for it, rather than flying to empty space.
+        if bool(state.hd_active) and _hd_retarget():
+            return
         on_go_frame()
 
     @ctrl.set("clear_indicator")
@@ -4605,6 +4609,29 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _hd_cancel()
         elif bool(state.hd_active):
             _hd_off()
+
+    def _hd_retarget() -> bool:
+        """HD is on and a galaxy it doesn't draw is selected: build HD for
+        that one instead (as the HD button would).  True if it did."""
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            return False
+        _, galaxies = scene.active_model.loader.get(scene.current_snap)
+        if not 0 <= gidx < galaxies.count or galaxies.stellar_mass[gidx] <= 0:
+            return False
+        if bool(state.hd_building):
+            _hd_cancel()
+        for lay in (_hd["layer"], _hd["group"]):
+            if lay is not None and lay.active:
+                lay.clear()
+        _hd_build_group(
+            galaxies,
+            _group_members(galaxies, gidx),
+            gidx,
+            only_focus=not _halo_context(),
+        )
+        return True
 
     def _hd_go_to_member() -> bool:
         """If HD is on and the Galaxy index is one of the galaxies drawn in

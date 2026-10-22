@@ -568,12 +568,15 @@ def build_selection(server, scene) -> None:
         state.sel_can_back = hist["pos"] > 0
         state.sel_can_fwd = hist["pos"] < len(hist["items"]) - 1
 
-    def _go_row(i: int) -> None:
-        """Select row `i` as a galaxy."""
+    def _go_row(i: int, keep_kind: bool = False) -> None:
+        """Select row `i`: as a galaxy, or (`keep_kind`: moving within the
+        group) in the card's current Galaxy / Halo + group context."""
+        kind = str(state.sel_kind) if keep_kind else "galaxy"
         if _int(state.nav_gal_idx) == i:
-            state.sel_kind = "galaxy"
+            state.sel_kind = kind
             _select(i)
         else:
+            sel["kind_next"] = kind
             state.nav_gal_idx = int(i)
         state.flush()
 
@@ -601,14 +604,16 @@ def build_selection(server, scene) -> None:
         if mem is None or len(mem) < 2 or not state.sel_active:
             return
         k = int(np.flatnonzero(mem == i)[0]) if i in mem else 0
-        _go_row(int(mem[(k + int(step)) % len(mem)]))
+        _go_row(int(mem[(k + int(step)) % len(mem)]), keep_kind=True)
+        ctrl.sel_go()  # and fly there
 
     @ctrl.set("sel_central")
     def _sel_central():
         mem = sel.get("mem")
         if mem is None or not state.sel_active or mem[0] == sel.get("idx"):
             return
-        _go_row(int(mem[0]))
+        _go_row(int(mem[0]), keep_kind=True)
+        ctrl.sel_go()
 
     near_trees: dict = {}
 
@@ -889,8 +894,10 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_select")
     def _sel_select(idx):
-        state.nav_gal_idx = int(idx)
-        state.flush()
+        """A member clicked in the card's group list: select it and fly
+        there."""
+        _go_row(int(idx), keep_kind=True)
+        ctrl.sel_go()
 
     @ctrl.set("sel_go")
     def _sel_go():
