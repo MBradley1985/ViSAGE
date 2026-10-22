@@ -287,6 +287,226 @@ def _model(log, par: str) -> None:
         )
 
 
+def _platform_checks(log) -> None:
+    """Things that differ between machines and can slow everything down:
+    timer resolution, power plan, the NVIDIA driver and load, the JPEG
+    encoder, the VTK window class."""
+    import asyncio
+    import subprocess
+
+    ts = []
+    for _ in range(20):
+        t = time.perf_counter()
+        time.sleep(0.001)
+        ts.append(time.perf_counter() - t)
+    log(f"   time.sleep(1 ms) actually takes {1000 * sorted(ts)[10]:.1f} ms")
+
+    async def _a():
+        out = []
+        for _ in range(20):
+            t = time.perf_counter()
+            await asyncio.sleep(0.001)
+            out.append(time.perf_counter() - t)
+        return out
+
+    ts = asyncio.run(_a())
+    log(
+        f"   asyncio.sleep(1 ms) actually takes {1000 * sorted(ts)[10]:.1f} ms"
+    )
+    log(f"   event loop: {type(asyncio.new_event_loop()).__name__}")
+    try:
+        from PIL import features
+
+        log(
+            f"   Pillow libjpeg-turbo: {features.check_feature('libjpeg_turbo')}"
+        )
+    except Exception as exc:
+        log(f"   Pillow libjpeg-turbo: ? ({exc})")
+    try:
+        import pyvista as pv
+
+        pl = pv.Plotter(off_screen=True, window_size=[64, 64])
+        log(f"   VTK render window: {pl.ren_win.GetClassName()}")
+        pl.close()
+    except Exception as exc:
+        log(f"   VTK render window: ? ({exc})")
+    for cmd in (
+        ["powercfg", "/getactivescheme"],
+        [
+            "nvidia-smi",
+            "--query-gpu=name,driver_version,pstate,utilization.gpu,"
+            "memory.used,memory.total",
+            "--format=csv",
+        ],
+    ):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            text = (r.stdout or r.stderr).strip()
+            log(f"   {cmd[0]}:")
+            for line in text.splitlines()[:6]:
+                log(f"     {line}")
+        except FileNotFoundError:
+            log(f"   {cmd[0]}: not on this machine")
+        except Exception as exc:
+            log(f"   {cmd[0]}: {exc}")
+
+
+def _live(log, par: str) -> None:
+    """The real app, served as when you run it, exercised as you use it.
+
+    While each action runs, how late the server's event loop handles
+    things ("lag") is measured, and asyncio's debug mode names every
+    callback that held the loop for more than 0.1 s -- the work that makes
+    clicks and the view wait."""
+    import asyncio
+    import logging
+
+    import numpy as np
+
+    from visage.app import create_app
+    from visage.utils import frame_delivery
+
+    t = time.perf_counter()
+    server, scene = create_app(par_path=par)
+    log(f"   build the app: {time.perf_counter() - t:.1f} s")
+    state, ctrl = server.state, server.controller
+
+    slow: list[tuple[float, str, str]] = []
+    phase = ["startup"]
+
+    class _Slow(logging.Handler):
+        def emit(self, record):
+            msg = record.getMessage()
+            if "took" in msg:
+                try:
+                    secs = float(msg.rsplit("took", 1)[1].split()[0])
+                except ValueError:
+                    secs = 0.0
+                slow.append((secs, phase[0], msg[:300]))
+
+    alog = logging.getLogger("asyncio")
+    alog.addHandler(_Slow())
+    alog.setLevel(logging.WARNING)
+
+    lag: list[float] = []
+
+    async def _watch():
+        while True:
+            t0 = time.perf_counter()
+            await asyncio.sleep(0.05)
+            lag.append(max(0.0, time.perf_counter() - t0 - 0.05))
+
+    async def _measure(name, seconds, action=None):
+        phase[0] = name
+        lag.clear()
+        took = 0.0
+        if action is not None:
+            t0 = time.perf_counter()
+            res = action()
+            if asyncio.iscoroutine(res):
+                await res
+            state.flush()
+            took = time.perf_counter() - t0
+        await asyncio.sleep(seconds)
+        worst = max(lag) if lag else 0.0
+        mean = float(np.mean(lag)) if lag else 0.0
+        log(
+            f"   {name:34s} action {1000 * took:7.0f} ms · lag mean "
+            f"{1000 * mean:5.0f} ms, worst {1000 * worst:6.0f} ms"
+        )
+
+    grabbers: dict = {}
+
+    async def _drag(seconds=4.0):
+        """As a mouse drag: the camera turns and a frame is rendered and
+        JPEG-encoded at up to 60 fps."""
+        win = scene.plotter.ren_win
+        win.SetSize(1600, 900)
+        n, t0 = 0, time.perf_counter()
+        while time.perf_counter() - t0 < seconds:
+            scene.plotter.camera.azimuth = 1.0
+            frame_delivery.render_jpeg(win, 100, grabbers)
+            n += 1
+            await asyncio.sleep(1 / 60)
+        log(f"   ({n / seconds:.0f} frames/s rendered + encoded)")
+
+    async def _hd():
+        ctrl.toggle_hd()
+        t0 = time.perf_counter()
+        while state.hd_building and time.perf_counter() - t0 < 120:
+            await asyncio.sleep(0.1)
+        log(
+            f"   (HD build finished in {time.perf_counter() - t0:.1f} s, "
+            f"active: {bool(state.hd_active)})"
+        )
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.1
+        server.start(
+            port=0,
+            open_browser=False,
+            exec_mode="task",
+            timeout=0,
+            show_connection_info=False,
+            disable_logging=True,
+        )
+        watcher = loop.create_task(_watch())
+        await asyncio.sleep(1.0)
+        m = scene.active_model
+        _, gal = m.loader.get(m.current_snap)
+        top = int(np.argmax(gal.stellar_mass))
+        snaps = [s for s in (m.current_snap - 1, m.current_snap - 2) if s >= 0]
+
+        def _set(**kw):
+            def f():
+                for k, v in kw.items():
+                    state[k] = v
+
+            return f
+
+        await _measure("idle (startup work, preloading)", 8.0)
+        await _measure("drag the view", 0.5, _drag)
+        await _measure("select a galaxy", 1.0, _set(nav_gal_idx=top))
+        await _measure("colour by sSFR", 1.0, _set(galaxy_color_mode="ssfr"))
+        for sn in snaps:
+            await _measure(f"change snapshot -> {sn}", 2.0, _set(snap_num=sn))
+        await _measure(
+            "back to the first snapshot", 2.0, _set(snap_num=m.snap_count - 1)
+        )
+        await _measure("select it again", 1.0, _set(nav_gal_idx=top))
+        await _measure("Go", 1.0, ctrl.go_to_galaxy_enter)
+        await _measure("Isolate on", 1.0, ctrl.toggle_isolate)
+        await _measure("Isolate off", 1.0, ctrl.toggle_isolate)
+        if state.has("hd_available") and not state.hd_available:
+            log("   (HD unavailable on this renderer: skipped)")
+        else:
+            await _measure("HD build", 1.0, _hd)
+            await _measure("drag the view in HD", 0.5, _drag)
+            await _measure("HD off", 1.0, ctrl.toggle_hd)
+        watcher.cancel()
+
+    asyncio.run(main())
+    if slow:
+        log("   Work that held the event loop over 0.1 s (longest first):")
+        for secs, ph, msg in sorted(slow, reverse=True)[:15]:
+            log(f"     {secs:6.2f} s during '{ph}': {msg}")
+    else:
+        log("   Nothing held the event loop over 0.1 s.")
+
+
+_BROWSER_CHECKS = """
+Browser checks (please do these too and note the answers):
+  1. Open chrome://gpu (Chrome) or edge://gpu (Edge). Under "Graphics
+     Feature Status", is "Hardware accelerated" shown for Canvas, Compositing
+     and Rasterization, or "Software only"?
+  2. Windows Settings > System > Display: what is the resolution and the
+     Scale (100% / 125% / 150%...) of the screen the browser is on?
+  3. Is the browser on the same PC as ViSAGE (http://localhost:...)?
+"""
+
+
 def run(par: str | None = None, out_dir: str | Path = ".") -> Path:
     """Run every check; return the log file's path."""
     path = Path(out_dir).resolve() / LOG_NAME
@@ -304,9 +524,15 @@ def run(par: str | None = None, out_dir: str | Path = ".") -> Path:
                 f"{size[0]}x{size[1]}",
                 lambda off=off, size=size: _bench_view(log, off, size),
             )
+    _step(log, "Platform", lambda: _platform_checks(log))
     _step(log, "Worker process start", lambda: _pool(log))
     _step(log, "HD galaxy", lambda: _hd(log))
     if par:
         _step(log, f"Your model ({par})", lambda: _model(log, par))
+        _step(
+            log, "Live app (the server as you run it)", lambda: _live(log, par)
+        )
+    for line in _BROWSER_CHECKS.strip("\n").splitlines():
+        log(line)
     log(f"\nDone. Log: {path}")
     return path
