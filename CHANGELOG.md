@@ -8,6 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **HD galactic winds** are a hollow cone with a few thin streamers, in
+  Hα red, drawn in 3D: no more faint sphere when the galaxy is seen
+  face-on, and no hard edge where the wind met the edge of the gas.
+- **HD Hα cooling filaments** are fewer (3–7 instead of 6–14) and a
+  little fainter, and **radio jets** are a third fainter.
+- **HD nuclear rings** have only a hint of dust: the dark circle around
+  the ring and the bar's dust lanes feeding it are faint and soft, and
+  the lanes fade out at their ends.
+
 ## [2.8.4] — 2026-10-22
 
 ### Added

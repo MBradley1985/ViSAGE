@@ -73,7 +73,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Hot halo / intracluster medium | `HotGas`, `MetalsHotGas`, `Rvir` | A textured atmosphere to Rvir. Its opacity rises with log HotGas, and its colour is tinted by metallicity. |
 | X-ray cavities | `Heating`, `r_heat`, `Regime`, `HotGas` | Bubbles at the radio-heating radius r_heat, along the jet axis, in hot haloes with radio heating. |
 | Radio jets | `Heating` | Jets and lobes along the spin axis, longer and brighter with radio-mode heating. |
-| Galactic winds | `OutflowRate`, `MassLoading`, `EjectedMass` | A bipolar cone that is brighter with the outflow rate. MassLoading sets its opening angle (20–45°). It reaches further the more of the halo gas has been ejected. |
+| Galactic winds | `OutflowRate`, `MassLoading`, `EjectedMass` | A hollow bipolar cone along the spin axis, in Hα red (as M82's wind), with a few thin streamers running outward through it. It is brighter with the outflow rate. MassLoading sets its opening angle (20–45°). It reaches further the more of the halo gas has been ejected, and fades out by three times that reach. It is drawn in 3D, so it looks right from any angle. |
 | Hα cooling filaments | `mdot_cool`, `RcoolToRvir`, `r_heat`, `tcool`, `tff`, `Mvir` | In hot haloes above 10¹² M☉ that are still cooling, gas rains out into filaments. Still cooling means a cooling radius at least 30% beyond r_heat, or t_cool/t_ff ≲ 6. These are brighter with mdot_cool and reach at most 0.8 r_heat. |
 
 ## Environment (groups, pairs, satellites)

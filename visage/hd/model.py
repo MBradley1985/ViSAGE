@@ -45,8 +45,8 @@ GC_RGB = np.array([1.00, 0.85, 0.65])
 # Gas-halo overlay (X-ray / CGM composite style, not optical light).
 HOT_GAS_RGB = np.array([0.62, 0.45, 1.00])
 CGM_RGB = np.array([0.35, 0.62, 1.00])
-# Galactic-wind filaments (H-alpha-like, warm).
-WIND_RGB = np.array([1.00, 0.55, 0.38])
+# Galactic wind: H-alpha red, as M82's.
+WIND_RGB = np.array([1.00, 0.38, 0.40])
 # Radio jets / lobes (radio-composite orange-gold).
 JET_RGB = np.array([1.00, 0.72, 0.30])
 # Light per unit mass of old stars relative to the young-star scaling; below
@@ -1122,19 +1122,26 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
             0.4
             * gaussian_field((n, n), 2.8, np.random.default_rng(rc.seed + 5))
         )
+        rd = RING_DUST
         dust += (
-            1.6
+            rd["ring"]
             * rc.ring
-            * np.exp(-(((r - 1.25 * rr) / (0.13 * rr)) ** 2))
+            * np.exp(-(((r - 1.25 * rr) / (rd["width"] * rr)) ** 2))
             * clump
         )
-        if rc.bar_len > 0:
+        if rc.bar_len > 0 and rd["lanes"] > 0:
+            soft = rd["taper"] * rc.bar_len + 1e-6
             for sgn in (1, -1):
-                # Offset to the leading side, curving into the ring.
+                # Offset to the leading side, curving into the ring; faded
+                # in and out at its ends rather than cut.
                 yl = sgn * (0.10 * rc.bar_len + 0.18 * np.abs(x))
-                lane = np.exp(-(((y - yl) / (0.035 * rc.bar_len)) ** 2))
-                lane *= (sgn * x > 0.9 * rr) & (sgn * x < 1.05 * rc.bar_len)
-                dust += 1.2 * rc.ring * lane * clump
+                w = rd["lane_w"] * rc.bar_len
+                lane = np.exp(-(((y - yl) / w) ** 2))
+                xs = sgn * x
+                a = np.clip((xs - 0.9 * rr) / soft, -50, 50)
+                b = np.clip((xs - 1.05 * rc.bar_len) / soft, -50, 50)
+                lane *= 1 / (1 + np.exp(-a)) / (1 + np.exp(b))
+                dust += rd["lanes"] * rc.ring * lane * clump
 
     if rc.trunc_r > 0:
         # Stripped satellite: no gas (so no young stars or dust) beyond
@@ -1313,7 +1320,7 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
     if rc.icl_streams > 0:
         out.append(_icl_streams(rc, rng, 0.5 * rc.icl_streams * main_light))
     if rc.halpha > 0:
-        out.append(_halpha_filaments(rc, rng, 0.6 * rc.halpha * main_light))
+        out.append(_halpha_filaments(rc, rng, 0.45 * rc.halpha * main_light))
     # Merger debris (both kinds), all in old-star colours.
     if rc.shells > 0:
         out.append(
@@ -1358,7 +1365,7 @@ def _icl_streams(rc, rng, lum_tot, n=16000):
 def _halpha_filaments(rc, rng, lum_tot, n=12000):
     """Cold gas raining out of a cluster core's hot atmosphere: thin,
     wandering H-alpha filaments radiating from the central galaxy."""
-    k = int(6 + 8 * rc.halpha)
+    k = int(3 + 4 * rc.halpha)
     pos, lum = [], []
     for _ in range(k):
         m = n // k
@@ -1583,6 +1590,11 @@ def strip_points(
     rgb = np.tile(np.asarray(rc.old_rgb), (n, 1))
     return Points(pos, lum, rgb, np.full(n, 1.1), "strip")
 
+
+# Dust at the nuclear ring: the annulus's optical depth and width (fraction
+# of the ring radius), and the bar's dust lanes feeding it (optical depth,
+# width and end taper as fractions of the bar half-length).
+RING_DUST = dict(ring=0.25, width=0.35, lanes=0.15, lane_w=0.08, taper=0.25)
 
 # Nuclear ring look: width (fraction of its radius), brightness of its
 # clusters and HII regions, how many clusters, and how far they scatter

@@ -178,20 +178,45 @@ GLSL_IMPL = """
       float jet = exp(-pow(perp / (0.4 + 0.04 * abs(along)), 2.0)) * exp(-pow(along / len, 6.0));
       float lobes = exp(-(pow(along - len, 2.0) + perp * perp) / pow(0.25 * len, 2.0))
                   + exp(-(pow(along + len, 2.0) + perp * perp) / pow(0.25 * len, 2.0));
-      gas += 0.6 * uJetAmp * (0.6 * jet + 0.5 * lobes) * uJetRGB;
+      gas += 0.4 * uJetAmp * (0.6 * jet + 0.5 * lobes) * uJetRGB;
     }
 
     if (uWindAmp > 0.0) {
-      float wnd;
-      if (proj < 0.15) {
-        wnd = 0.12 * uWindAmp * exp(-pow(R / (0.6 * uWindLen), 2.0));
-      } else {
-        float width = 0.25 * uDiskRKpc + abs(along) * tan(uWindOpen);
-        float cone = exp(-pow(perp / width, 2.0)) * exp(-abs(along) / (uWindLen * proj));
-        float fil = exp(-pow(fbm(cpk / 3.0 + vec3(61.0)) / uFbmStd / 0.35, 2.0));
-        wnd = 0.35 * uWindAmp * cone * (0.3 + 0.9 * fil);
+      // Galactic wind: a hollow bipolar cone along the spin axis,
+      // integrated through 3D along the ray (so it looks right from every
+      // angle), faded to nothing by 3 wind lengths.  A few thin streamers
+      // run outward through it (noise stretched radially), with clumps.
+      float L = uWindLen;
+      float reach = min(3.0 * L, 0.9 * rvir);
+      float b = length(cpk);
+      if (b < reach) {
+        float hs = sqrt(reach * reach - b * b);
+        const int NW = 18;
+        float ds = 2.0 * hs / float(NW);
+        float tw = tan(uWindOpen);
+        float w0 = 0.25 * uDiskRKpc;
+        float acc = 0.0;
+        // Per-pixel offset of the samples: grain, not banding.
+        float jit = hash3(floor(gl_FragCoord.xyy) + vec3(0.0, 0.0, 17.0));
+        for (int k = 0; k < NW; k++) {
+          vec3 p = cpk + (-hs + (float(k) + jit) * ds) * rd;
+          float z = abs(p.z);
+          float r = length(p) + 1e-3;
+          float q = length(p.xy) / (w0 + z * tw);
+          float dens = exp(-z / L)
+                     * (1.0 - exp(-pow(z / (0.3 * w0 + 0.3), 2.0)))
+                     * exp(-pow(r / reach, 6.0))
+                     * (exp(-pow((q - 0.7) / 0.35, 2.0)) + 0.25 * exp(-q * q));
+          if (dens > 1e-4) {
+            float s = fbm2((p / r) * 3.0 + vec3(0.0, 0.0, 0.12 * r / L)
+                           + vec3(73.0)) / uFbm2Std;
+            float zc = fbm2(p / (0.45 * L) + vec3(51.0)) / uFbm2Std;
+            dens *= (0.5 + 0.7 * exp(-pow(s / 0.3, 2.0))) * exp(0.35 * zc);
+          }
+          acc += dens * ds;
+        }
+        gas += 0.22 * uWindAmp * acc / (1.77 * (w0 + 0.5 * L * tw)) * uWindRGB;
       }
-      gas += wnd * uWindRGB;
     }
     outc = screenB(outc, clamp(gas, 0.0, 1.0));
   }
