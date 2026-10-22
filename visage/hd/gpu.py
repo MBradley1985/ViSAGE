@@ -486,7 +486,9 @@ _IMPL = """//VTK::Light::Impl
         float fpS = (t + 0.5 * dt) * uPixAng;
         float lodM = max(log2(fpS * uMapN / (2.0 * uMapHalf)), 0.0);
         vec3 m = textureLod(mapTex, mapUV(pm, uMapHalf, uMapN), lodM).rgb;
-        e += m.r * pint(z0, z1, uHz, dt) * uOldRGB + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
+        // Inside-out growth: older (redder) inside, younger outside.
+        vec3 oldC = mix(uOldRGB, uOldOutRGB, smoothstep(0.0, uGradR, length(pm)));
+        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
         kap = m.b * pint(z0, z1, 0.045, dt);
         {
           // Splatted stars: those the current level(s) don't draw exactly.
@@ -947,7 +949,13 @@ class GPUGalaxy:
         f("uPseudoQ", float(rc.pseudo_q))
         f("uPeanut", float(rc.peanut if disk else 0.0))
         u.SetUniform3f("uIclRGB", [float(v) for v in rc.icl_rgb])
-        u.SetUniform3f("uOldRGB", [float(v) for v in rc.old_rgb])
+        u.SetUniform3f(
+            "uOldRGB", [float(v) for v in rc.old_in_rgb or rc.old_rgb]
+        )
+        u.SetUniform3f(
+            "uOldOutRGB", [float(v) for v in rc.old_out_rgb or rc.old_rgb]
+        )
+        f("uGradR", float(rc.grad_r))
         u.SetUniform3f("uBulgeRGB", [float(v) for v in rc.bulge_rgb])
         u.SetUniform3f("uYoungRGB", [float(v) for v in YOUNG_RGB])
         u.SetUniform3f("uEllAxes", [float(v) for v in rc.axes])

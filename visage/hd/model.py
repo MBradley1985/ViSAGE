@@ -76,6 +76,31 @@ SFH_LM = np.array([(t / 10.0) ** -0.8 for t in SFH_AGES])
 # Switch for comparisons (False: colours from metallicity alone, as
 # without an SFH).
 USE_SFH = True
+# Dwarf irregulars: gas-rich disks below max_lm are drawn without spiral
+# arms, with a few soft star-forming clumps and an m=1 lopsided disk.
+DWARF = dict(on=False, max_lm=9.3, lopsided=0.4, clumps=3)
+# ICL streams: "threshold" (any ICS torn from satellites in place above
+# ~10^10.5 Msun) or "share" (scaled by the in-place share of all the ICS,
+# accreted ICS making a smoother envelope).
+ICL_MODE = "threshold"
+
+# Inside-out gradient strength (0: none): the inner disk's colour weights
+# the older part of the history up by (age / mean age)^GRADIENT, the outer
+# disk's the younger part.
+GRADIENT = 0.0  # (off: the user kept the current look)
+
+
+def _weighted(bins, power: float):
+    """The SFH bins re-weighted towards older (power > 0) or younger
+    (power < 0) stars, mass preserved."""
+    m = np.maximum(np.asarray(bins, float), 0.0)
+    ages = np.asarray(SFH_AGES)
+    tot = m[1:].sum()
+    if tot <= 0:
+        return m
+    mean = (m[1:] * ages[1:]).sum() / tot
+    w = m * (ages / max(mean, 1e-3)) ** power
+    return w * tot / max(w[1:].sum(), 1e-30)
 
 
 def population(bins) -> tuple[np.ndarray, float, float] | None:
@@ -266,6 +291,13 @@ class GalaxyRecipe:
     lm_bulge: float = 1.0
     inter_frac: float = 0.0
     inter_rgb: tuple = (0.95, 0.94, 0.97)
+    # Inside-out colour gradient of a disk's old light (from its SFH):
+    # colour at the centre and from grad_r (model units) out; () = none.
+    lopsided: float = 0.0  # m=1 asymmetry of a dwarf irregular (0-1)
+    lop_phase: float = 0.0
+    old_in_rgb: tuple = ()
+    old_out_rgb: tuple = ()
+    grad_r: float = 3.0
     notes: list = field(default_factory=list)
 
 
@@ -356,6 +388,13 @@ def _extras(
         out["old_rgb"] = tuple(rgb * tint(z_disk) / solar)
         out["lm_disk"] = lm
         out["inter_frac"] = inter
+        # Inside-out: the centre older, the outskirts younger.
+        if not elliptical and GRADIENT > 0:
+            pin = population(_weighted(g.sfh_disk, GRADIENT))
+            pout = population(_weighted(g.sfh_disk, -GRADIENT))
+            if pin is not None and pout is not None:
+                out["old_in_rgb"] = tuple(pin[0] * tint(z_disk) / solar)
+                out["old_out_rgb"] = tuple(pout[0] * tint(z_disk) / solar)
         mi = np.maximum(np.asarray(g.sfh_disk, float)[1:3], 0.0) * SFH_LM[1:3]
         if mi.sum() > 0:
             out["inter_rgb"] = tuple(
@@ -383,7 +422,15 @@ def _extras(
         out["icl_rgb"] = tuple(
             ICL_RGB * np.array([1.0, 1.0 - 0.05 * zi, 1.0 - 0.18 * zi])
         )
-    if g.ics_disrupt > 0:
+    if ICL_MODE == "share" and g.ics > 0:
+        # Streams where the ICS was torn from satellites in place; ICS that
+        # arrived already diffuse (accreted) makes a smooth envelope.
+        made = g.ics_disrupt + g.ics_accrete
+        share = g.ics_disrupt / made if made > 0 else 0.0
+        amount = np.clip((np.log10(g.ics) - 10.0) / 1.5, 0.0, 1.0)
+        if share * amount > 0.05:
+            out["icl_streams"] = float(amount * share**0.5)
+    elif g.ics_disrupt > 0:
         out["icl_streams"] = float(
             np.clip((np.log10(g.ics_disrupt) - 10.5) / 1.5, 0.0, 1.0)
         )
@@ -553,6 +600,8 @@ def recipe_from_sage(
     )
     if g.ffb or rng.random() < p_clumpy:
         drawn = "clumpy"
+    if DWARF["on"] and lm < DWARF["max_lm"] and gas_frac > 0.15:
+        drawn = "irregular"
     arm_class = arm_class or drawn
     # Gas richness places the flocculence within the class's range.
     gasness = float(
@@ -568,6 +617,7 @@ def recipe_from_sage(
         "partial": (0.3, 0.55),
         "flocculent": (0.6, 0.85),
         "clumpy": (0.7, 0.9),
+        "irregular": (0.8, 0.95),
     }[arm_class]
     flocc = lo + (hi - lo) * gasness
     pitch = float(
@@ -579,6 +629,7 @@ def recipe_from_sage(
                 "partial": 3.0,
                 "flocculent": 6.0,
                 "clumpy": 8.0,
+                "irregular": 8.0,
             }[arm_class],
             9.0,
             35.0,
@@ -716,6 +767,14 @@ def recipe_from_sage(
         )
         l_young *= CLUMPY["young"]
         n_clusters = max(int(n_clusters * CLUMPY["clusters"]), 50)
+    lopsided = lop_phase = 0.0
+    if arm_class == "irregular":
+        clumps = int(DWARF["clumps"])
+        lopsided = float(DWARF["lopsided"])
+        lop_phase = float(rng.uniform(0, 2 * np.pi))
+        notes.append(
+            f"dwarf irregular: {clumps} clumps, lopsided {lopsided:.2f}"
+        )
     # Satellites: ram pressure and tides strip the gas disk from the
     # outside in, the longer since infall and the more of the subhalo
     # lost; star formation (young light, dust) stops beyond the cut.
@@ -763,6 +822,8 @@ def recipe_from_sage(
         peanut=float(1.0 if bar_len > 0 else 0.0),
         clumps=clumps,
         trunc_r=trunc_r,
+        lopsided=lopsided,
+        lop_phase=lop_phase,
         hole=float(max(bar_len * 0.9, 2.5 * bulge_a, 0.25)),
         hi_scale=hi_scale,
         arm_old_amp=float(0.45 * min(1.0, gas_frac / 0.08)),
@@ -858,7 +919,7 @@ def arm_layout(cls: str, extent: float, r_base: float, rng):
         r1.append(float(rb))
         off.append(float(o))
 
-    if cls == "clumpy":
+    if cls in ("clumpy", "irregular"):
         return (), (), (), ()
     if cls == "grand":
         for k in range(2):
@@ -999,6 +1060,14 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * np.exp(0.6 * clumps - 0.18)
         * outer_cut
     )
+    if rc.lopsided > 0:
+        # A dwarf irregular: brighter on one side, its light and star
+        # formation pushed off-centre (m = 1).
+        lop = 1 + rc.lopsided * np.clip(r / rc.extent, 0, 1.5) * np.cos(
+            th - rc.lop_phase
+        )
+        old = old * np.maximum(lop, 0.1)
+        young = young * np.maximum(lop, 0.1) ** 1.5
     giant = np.zeros_like(r)
     if rc.clumps:
         # Giant star-forming clumps (high-z / feedback-free disks): a few
