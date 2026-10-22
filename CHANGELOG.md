@@ -8,14 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.7] — 2026-10-22
+
 ### Added
 
 - **Components (?) button** on the selection card (HD, Galaxy context):
-  labels the parts of the
-  galaxy with leader lines, like an annotated galaxy portrait: black
-  hole, bulge, bar, ring, arms, star-forming regions, dust lanes, merger
-  debris, ICL and (Gas on) wind, jet, HI disk, cold stream and hot halo.
-  Only what the galaxy has is labelled, and the labels follow the view.
+  labels the parts of the galaxy in gold, with leader lines around all
+  four edges of the view (black where they cross bright areas), like an
+  annotated galaxy portrait: black hole, bulge, bar, ring, arms,
+  star-forming regions, dust lanes, merger debris, ICL and (Gas on)
+  wind, jet, HI disk, cold stream and hot halo. Only what the galaxy has
+  is labelled, the labels follow the view and keep clear of the card.
 
 ### Changed
 

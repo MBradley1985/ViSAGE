@@ -301,10 +301,34 @@
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
       });
     };
+    // Keep labels off the selection card: those that would sit on it
+    // move below it (left edge) or past it (top edge).
+    var labels = hdLabels.map(function (l) { return Object.assign({}, l); });
+    var card = document.getElementById('sel-card');
+    if (card && card.offsetParent) {
+      var hr = host.getBoundingClientRect(), cr = card.getBoundingClientRect();
+      var cR = cr.right - hr.left + 12, cB = cr.bottom - hr.top + 14;
+      var below = cB + 10;
+      labels.filter(function (l) { return l.side === 'left'; })
+        .sort(function (a, b) { return a.ly - b.ly; })
+        .forEach(function (l) {
+          if (l.ly * H < cB && l.lx * W < cR) {
+            l.ly = below / H; below += 0.06 * H;
+          } else if (l.ly * H < below) {
+            l.ly = below / H; below += 0.06 * H;
+          }
+        });
+      labels.filter(function (l) { return l.side === 'top'; })
+        .forEach(function (l) {
+          var half = 4.3 * l.t.length;
+          if (l.lx * W - half < cR) l.lx = (cR + half + 8) / W;
+        });
+    }
+    var color = window.visageLabelColor || '#FFD700';
     var head = '<svg width="' + W + '" height="' + H +
       '" style="position:absolute;left:0;top:0;overflow:visible">';
     var svg = head, lsvg = head;
-    hdLabels.forEach(function (l) {
+    labels.forEach(function (l) {
       var ax = l.x * W, ay = l.y * H, lx = l.lx * W, ly = l.ly * H;
       var tw = 8.6 * l.t.length;  // label width, approx. (bold caps 15px)
       var pts, tx, ty, anchor;
@@ -330,7 +354,7 @@
       lsvg += '<circle cx="' + ax + '" cy="' + ay + '" r="3" fill="none" ' +
         'stroke="#fff" stroke-width="1.5"/>';
       svg += '<text x="' + tx + '" y="' + ty + '" text-anchor="' + anchor +
-        '" fill="#f472b6" font-size="15" font-weight="700" ' +
+        '" fill="' + color + '" font-size="15" font-weight="700" ' +
         'letter-spacing="0.6" ' +
         'font-family="Oswald, \'Arial Narrow\', Arial, sans-serif" ' +
         'style="paint-order:stroke;stroke:rgba(0,0,0,0.7);stroke-width:3px">' +
@@ -346,8 +370,11 @@
       hdLabels = labels || [];
       drawHdLabels();
     });
+    // The card opening or closing moves labels on or off it.
+    t.state.watch(['sel_show'], function () { setTimeout(drawHdLabels, 80); });
   })();
   window.addEventListener('resize', drawHdLabels);
+  window.drawHdLabels = drawHdLabels;
 
   // ─── HD: Esc cancels a build or leaves HD ──────────────────────────
   document.addEventListener('keydown', function (e) {

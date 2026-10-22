@@ -81,6 +81,7 @@ def selection_card(server) -> None:
             v3.VBtn("", id=f"sel-key-{name}", click=fn)
     with v3.VCard(
         v_show=("sel_show",),
+        id="sel-card",
         classes="sage-popout",
         style=(
             "position:absolute;top:32px;left:24px;"
