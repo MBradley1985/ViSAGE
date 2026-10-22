@@ -20,7 +20,20 @@ def test_labels_sit_in_the_margins_without_overlapping():
         assert all(
             b - a >= MIN_GAP - 1e-9 for a, b in zip(ys, ys[1:], strict=False)
         )
-    left = [o for o in out if o["side"] == "left"]
-    assert {o["t"] for o in left} == {"BAR", "BULGE", "ARMS"}
-    assert all(o["lx"] < 0.1 for o in left)
+    assert all(o["lx"] < 0.1 for o in out if o["side"] == "left")
     assert all(o["lx"] > 0.9 for o in out if o["side"] == "right")
+    # The wind, well above the centre, goes to the top edge.
+    assert next(o for o in out if o["t"] == "WIND")["side"] == "top"
+
+
+def test_each_part_points_somewhere_different_when_it_can():
+    from visage.hd.labels import choose
+
+    parts = [
+        ("Black hole", [(0.5, 0.5)]),
+        ("Bulge", [(0.51, 0.5), (0.5, 0.42)]),  # 1st candidate on the hole
+        ("Bar", [(0.5, 0.5), (0.62, 0.5)]),
+    ]
+    got = {t: (x, y) for t, x, y in choose(parts)}
+    assert got["Bulge"] == (0.5, 0.42)
+    assert got["Bar"] == (0.62, 0.5)

@@ -4272,15 +4272,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _lab["t"] = now
         ren = scene.plotter.renderer
         w, h = scene.plotter.ren_win.GetSize()
-        pts = []
-        for text, p in labels.anchors(lay, bool(state.hd_gas)):
-            wp = labels.to_world(lay, p)
-            ren.SetWorldPoint(*wp, 1.0)
-            ren.WorldToDisplay()
-            x, y, z = ren.GetDisplayPoint()
-            if 0.0 <= z <= 1.0 and 0 < x < w and 0 < y < h:
-                pts.append((text, x / w, 1.0 - y / h))
-        out = labels.layout(pts)
+        parts = []
+        for text, cands in labels.anchors(lay, bool(state.hd_gas)):
+            vis = []
+            for p in cands:
+                wp = labels.to_world(lay, p)
+                ren.SetWorldPoint(*wp, 1.0)
+                ren.WorldToDisplay()
+                x, y, z = ren.GetDisplayPoint()
+                if (
+                    0.0 <= z <= 1.0
+                    and 0.02 * w < x < 0.98 * w
+                    and 0.04 * h < y < 0.96 * h
+                ):
+                    vis.append((x / w, 1.0 - y / h))
+            parts.append((text, vis))
+        out = labels.layout(labels.choose(parts), w, h)
         if out != _lab["last"]:
             _lab["last"] = out
             state.hd_labels = out

@@ -181,15 +181,7 @@ def selection_card(server) -> None:
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
             )
-            v3.VBtn(
-                "Components",
-                v_show=("hd_active && sel_kind !== 'halo'",),
-                size="small",
-                variant=("hd_labels_on ? 'flat' : 'outlined'",),
-                color="#f472b6",
-                click="hd_labels_on = !hd_labels_on",
-                title="Label the parts of this galaxy",
-            )
+
         # Moving on: history, the group's members, its central, the nearest
         # galaxy.
         with html.Div(
@@ -245,6 +237,16 @@ def selection_card(server) -> None:
                     title=tip,
                     disabled=(dis,),
                 )
+            # Components: label the HD galaxy's parts (Galaxy context).
+            v3.VBtn(
+                icon="mdi-help-circle-outline",
+                v_show=("hd_active && sel_kind !== 'halo'",),
+                size="x-small",
+                variant=("hd_labels_on ? 'flat' : 'text'",),
+                color="#f472b6",
+                click="hd_labels_on = !hd_labels_on",
+                title="Components: label the parts of this galaxy",
+            )
         # Closer zooms (Mpc/h), and the host halo.
         with html.Div(
             style=(

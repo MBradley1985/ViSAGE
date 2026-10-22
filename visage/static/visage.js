@@ -281,35 +281,63 @@
   function drawHdLabels() {
     var host = document.getElementById('hd-labels');
     if (!host) return;
+    // The leader lines live in a sibling layer blended by "difference":
+    // white over the dark sky, black over the bright galaxy.  (A blend
+    // only reaches the view behind from its own top-level layer.)
+    var lines = document.getElementById('hd-label-lines');
+    if (!lines) {
+      lines = document.createElement('div');
+      lines.id = 'hd-label-lines';
+      lines.style.cssText = 'position:absolute;inset:0;z-index:5;' +
+        'pointer-events:none;mix-blend-mode:difference;';
+      host.parentNode.insertBefore(lines, host);
+    }
     var W = host.clientWidth, H = host.clientHeight;
-    if (!hdLabels.length || !W || !H) { host.innerHTML = ''; return; }
+    if (!hdLabels.length || !W || !H) {
+      host.innerHTML = ''; lines.innerHTML = ''; return;
+    }
     var esc = function (s) {
       return String(s).replace(/[&<>"]/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
       });
     };
-    var svg = '<svg width="' + W + '" height="' + H +
+    var head = '<svg width="' + W + '" height="' + H +
       '" style="position:absolute;left:0;top:0;overflow:visible">';
+    var svg = head, lsvg = head;
     hdLabels.forEach(function (l) {
       var ax = l.x * W, ay = l.y * H, lx = l.lx * W, ly = l.ly * H;
-      var left = l.side === 'left';
       var tw = 8.6 * l.t.length;  // label width, approx. (bold caps 15px)
-      var ex = left ? lx + tw + 8 : lx - tw - 8;  // where the line starts
-      var kx = left ? Math.max(ex + 14, Math.min(ax - 20, ex + 60))
-                    : Math.min(ex - 14, Math.max(ax + 20, ex - 60));
-      svg += '<polyline points="' + ex + ',' + ly + ' ' + kx + ',' + ly + ' ' +
-        ax + ',' + ay + '" fill="none" stroke="rgba(255,255,255,0.75)" ' +
-        'stroke-width="1.2"/>';
-      svg += '<circle cx="' + ax + '" cy="' + ay + '" r="3" fill="none" ' +
-        'stroke="#fff" stroke-width="1.4"/>';
-      svg += '<text x="' + lx + '" y="' + (ly + 5) + '" text-anchor="' +
-        (left ? 'start' : 'end') + '" fill="#f472b6" font-size="15" ' +
-        'font-weight="700" letter-spacing="0.6" ' +
+      var pts, tx, ty, anchor;
+      if (l.side === 'left' || l.side === 'right') {
+        var left = l.side === 'left';
+        var ex = left ? lx + tw + 8 : lx - tw - 8;  // where the line starts
+        var kx = left ? Math.max(ex + 14, Math.min(ax - 20, ex + 60))
+                      : Math.min(ex - 14, Math.max(ax + 20, ex - 60));
+        pts = ex + ',' + ly + ' ' + kx + ',' + ly + ' ' + ax + ',' + ay;
+        tx = lx; ty = ly + 5; anchor = left ? 'start' : 'end';
+      } else {
+        // Top / bottom: the label centred, the line dropping (rising) to
+        // an elbow, then to the part.
+        var top = l.side === 'top';
+        var ey = top ? ly + 8 : ly - 18;
+        var ky = top ? Math.max(ey + 12, Math.min(ay - 20, ey + 50))
+                     : Math.min(ey - 12, Math.max(ay + 20, ey - 50));
+        pts = lx + ',' + ey + ' ' + lx + ',' + ky + ' ' + ax + ',' + ay;
+        tx = lx; ty = ly + 5; anchor = 'middle';
+      }
+      lsvg += '<polyline points="' + pts + '" fill="none" ' +
+        'stroke="#fff" stroke-width="1.3"/>';
+      lsvg += '<circle cx="' + ax + '" cy="' + ay + '" r="3" fill="none" ' +
+        'stroke="#fff" stroke-width="1.5"/>';
+      svg += '<text x="' + tx + '" y="' + ty + '" text-anchor="' + anchor +
+        '" fill="#f472b6" font-size="15" font-weight="700" ' +
+        'letter-spacing="0.6" ' +
         'font-family="Oswald, \'Arial Narrow\', Arial, sans-serif" ' +
         'style="paint-order:stroke;stroke:rgba(0,0,0,0.7);stroke-width:3px">' +
         esc(l.t) + '</text>';
     });
     host.innerHTML = svg + '</svg>';
+    lines.innerHTML = lsvg + '</svg>';
   }
   (function watchHdLabels() {
     var t = window.trame;
