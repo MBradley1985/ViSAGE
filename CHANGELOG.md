@@ -8,6 +8,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.3] — 2026-10-22
+
+### Added
+
+- **HD colours from the star-formation history.** For runs with SAGE's
+  `SaveFullSFH 1`, each galaxy's disk and bulge histories are summed as
+  stellar populations of known age: colour and light per unit mass
+  follow age as well as metallicity. Young disks are bluer, recently
+  quenched (post-starburst) galaxies turn white-blue, a rejuvenated bulge
+  stands out from its disk, and intermediate-age (0.1–1 Gyr) clusters
+  spread through the disk. Runs without a saved history are unchanged.
+
+- **Reverse colormaps.** A Reverse box beside each colormap dropdown in the
+  Structure tab flips the colormap (matplotlib's `_r`); it is saved with
+  each box's settings.
+
+### Changed
+
+- HD nuclear rings are a faint, diffuse band instead of a thin, bright
+  ring.
+
 ## [2.8.2] — 2026-10-21
 
 ### Changed

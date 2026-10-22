@@ -616,3 +616,46 @@ def test_hd_is_off_on_apples_software_renderer(monkeypatch):
     monkeypatch.delenv("VISAGE_HD", raising=False)
     sw = system.GPUInfo("Apple", "Apple Software Renderer", "4.1 Metal")
     assert sw.software and system.hd_unavailable_reason(sw)
+
+
+def test_without_a_star_formation_history_nothing_changes():
+    """A run without SaveFullSFH draws exactly as before."""
+    import visage.hd.model as model
+
+    gal = _disk()
+    assert gal.sfh_disk == () and model.population(gal.sfh_disk) is None
+    a = recipe_from_sage(gal)
+    model.USE_SFH = False
+    try:
+        b = recipe_from_sage(gal)
+    finally:
+        model.USE_SFH = True
+    assert a.old_rgb == b.old_rgb and a.bulge_rgb == b.bulge_rgb
+    assert a.lm_disk == 1.0 and a.inter_frac == 0.0
+
+
+def test_younger_populations_are_bluer_and_brighter_per_mass():
+    old = (0, 0, 0, 0, 0, 1e9, 4e10)
+    young = (0, 2e9, 3e9, 5e9, 1e9, 1e9, 1e9)  # mostly < 1 Gyr: post-starburst
+    rgb_o, lm_o, f_o = _pop(old)
+    rgb_y, lm_y, f_y = _pop(young)
+    assert rgb_y[2] / rgb_y[0] > rgb_o[2] / rgb_o[0]  # bluer
+    assert lm_y > lm_o and f_y > 0.5 > f_o
+
+
+def _pop(bins):
+    from visage.hd.model import population
+
+    return population(bins)
+
+
+def test_sfh_bins_date_each_step_and_the_last_is_current():
+    from visage.io.galaxy_reader import SFH_AGE_EDGES, _sfh_age_bins
+
+    a = np.linspace(0.1, 1.0, 64)
+    sfh = np.zeros((1, 64))
+    sfh[0, 62] = 1.0  # formed in the last step (SAGE stores it at N-1)
+    sfh[0, 10] = 2.0  # long ago
+    out = _sfh_age_bins(sfh, sfh, np.array([0]), 63, a, 0.73, 0.25, 0.75)
+    assert out.shape == (1, 2, len(SFH_AGE_EDGES) - 1)
+    assert out[0, 0, 0] == 1.0 and out[0, 0, -1] == 2.0

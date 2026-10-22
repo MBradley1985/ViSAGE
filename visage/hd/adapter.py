@@ -14,6 +14,15 @@ def _extra(snap, name, i, default=0.0):
     return float(arr[i])
 
 
+def _sfh(snap, i, part, mass) -> tuple:
+    """Mass formed (Msun) per lookback bin, disk (0) or bulge (1); () if
+    the run saved no star-formation history."""
+    bins = getattr(snap, "sfh_bins", None)
+    if bins is None or i >= len(bins):
+        return ()
+    return tuple(float(v) * mass for v in bins[i, part])
+
+
 def _field(snap, name, i, default=0.0):
     arr = getattr(snap, name, None)
     if arr is None or i >= len(arr):
@@ -121,6 +130,8 @@ def sage_galaxy_from_snapshot(
         tcool_gyr=_extra(snap, "tcool", i),
         tff_gyr=_extra(snap, "tff", i),
         mdot_cool=_extra(snap, "mdot_cool", i),
+        sfh_disk=_sfh(snap, i, 0, mass),
+        sfh_bulge=_sfh(snap, i, 1, mass),
     )
 
 

@@ -143,6 +143,7 @@ def _splat_volume(pts, half, n, px_proto):
 # any zoom.  Intrinsic sizes (fraction of the offline PSF, `Points.sigma`).
 _POINT_SIZE = {
     "clusters": 0.2,
+    "midclusters": 0.2,
     "ring": 0.2,
     "field": 0.0,  # stars are points: always one pixel across
     "hii": 0.35,

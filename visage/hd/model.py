@@ -52,6 +52,48 @@ JET_RGB = np.array([1.00, 0.72, 0.30])
 # Light per unit mass of old stars relative to the young-star scaling; below
 # 1 so the old disk, bulge and bar don't wash an orange haze over the arms.
 OLD_LIGHT = 0.4
+
+# Stellar populations by age, for galaxies with a star-formation history
+# (lookback bins as visage.io.galaxy_reader.SFH_AGE_EDGES: <0.1, 0.1-0.5,
+# 0.5-1, 1-3, 3-6, 6-10, >10 Gyr).  A representative age per bin, its
+# colour at solar metallicity (the 10+ Gyr one is the old-star colour used
+# without an SFH) and light per unit mass relative to a 10 Gyr population
+# (~ age^-0.8, optical).  The <0.1 Gyr bin is the current star formation,
+# drawn as young light, clusters and HII regions; it isn't counted here.
+SFH_AGES = (0.05, 0.25, 0.7, 1.8, 4.3, 7.8, 12.0)  # Gyr
+SFH_RGB = np.array(
+    [
+        (0.70, 0.82, 1.00),
+        (0.82, 0.88, 1.00),
+        (0.95, 0.94, 0.97),
+        (1.00, 0.90, 0.80),
+        (1.00, 0.84, 0.64),
+        (1.00, 0.80, 0.56),
+        (1.00, 0.78, 0.52),
+    ]
+)
+SFH_LM = np.array([(t / 10.0) ** -0.8 for t in SFH_AGES])
+# Switch for comparisons (False: colours from metallicity alone, as
+# without an SFH).
+USE_SFH = True
+
+
+def population(bins) -> tuple[np.ndarray, float, float] | None:
+    """Light-weighted colour, light per unit mass (relative to 10 Gyr) and
+    the share of light from 0.1-1 Gyr stars, of the population formed in
+    SFH_AGES bins (current star formation, < 0.1 Gyr, left out); None
+    without one."""
+    m = np.asarray(bins, float)
+    if not USE_SFH or m.size != len(SFH_AGES) or m[1:].sum() <= 0:
+        return None
+    m = np.maximum(m[1:], 0.0)
+    w = m * SFH_LM[1:]
+    rgb = (w[:, None] * SFH_RGB[1:]).sum(axis=0) / w.sum()
+    lm = float(np.clip(w.sum() / m.sum(), 0.8, 6.0))
+    inter = float(w[:2].sum() / w.sum())
+    return rgb, lm, inter
+
+
 # Extinction relative to the "V" (green) channel: dust reddens what it dims.
 DUST_K = np.array([0.72, 1.00, 1.35])
 
@@ -120,6 +162,10 @@ class SageGalaxy:
     tcool_gyr: float = 0.0
     tff_gyr: float = 0.0
     mdot_cool: float = 0.0  # hot-halo cooling rate (relative units)
+    # Stellar mass formed (Msun) in each SFH_AGES lookback bin, disk and
+    # bulge; empty without SAGE's full SFH (SaveFullSFH).
+    sfh_disk: tuple = ()
+    sfh_bulge: tuple = ()
 
     @property
     def bt(self) -> float:
@@ -213,6 +259,13 @@ class GalaxyRecipe:
     halpha: float = 0.0  # cluster-core cooling filaments (0-1)
     halpha_len: float = 0.0  # their reach, model units
     unit_kpc: float = 1.0  # physical size of one model length unit
+    # From the star-formation history (1 without it): light per unit mass
+    # of the disk / bulge populations relative to a 10 Gyr one, and the
+    # share of the disk's light from 0.1-1 Gyr-old stars.
+    lm_disk: float = 1.0
+    lm_bulge: float = 1.0
+    inter_frac: float = 0.0
+    inter_rgb: tuple = (0.95, 0.94, 0.97)
     notes: list = field(default_factory=list)
 
 
@@ -285,6 +338,40 @@ def _extras(
     notes.append(
         f"Z(disk)={z_disk:.2f}, Z(bulge)={z_bulge:.2f} Zsun -> old-star tints"
     )
+    # With a star-formation history: each population's colour and light
+    # follow its age too (younger: bluer, brighter per unit mass), the
+    # disk's and the bulge's from their own histories (an elliptical's
+    # from both); metallicity still tints them as above.
+    elliptical = rc_kw.get("kind") == "elliptical"
+    both = (
+        tuple(np.add(g.sfh_disk, g.sfh_bulge))
+        if g.sfh_disk and g.sfh_bulge
+        else ()
+    )
+    pd = population(both if elliptical else g.sfh_disk)
+    pb = population(both if elliptical else g.sfh_bulge)
+    solar = tint(1.0)
+    if pd is not None:
+        rgb, lm, inter = pd
+        out["old_rgb"] = tuple(rgb * tint(z_disk) / solar)
+        out["lm_disk"] = lm
+        out["inter_frac"] = inter
+        mi = np.maximum(np.asarray(g.sfh_disk, float)[1:3], 0.0) * SFH_LM[1:3]
+        if mi.sum() > 0:
+            out["inter_rgb"] = tuple(
+                (mi[:, None] * SFH_RGB[1:3]).sum(axis=0) / mi.sum()
+            )
+        notes.append(
+            f"disk SFH -> light/mass x{lm:.2f}, {inter:.0%} of its light "
+            "from 0.1-1 Gyr stars"
+        )
+    if pb is not None:
+        rgb, lm, _ = pb
+        out["bulge_rgb"] = tuple(
+            rgb * tint(z_bulge) / solar * np.array([1.0, 0.9, 0.82])
+        )
+        out["lm_bulge"] = lm
+        notes.append(f"bulge SFH -> light/mass x{lm:.2f}")
     # HII colour from the star-forming gas's metallicity.
     if g.sfr_disk_z > 0:
         f = float(np.clip((np.log10(g.sfr_disk_z / 0.02) + 1.0) / 1.5, 0, 1))
@@ -538,6 +625,9 @@ def recipe_from_sage(
             f"instability bulge {ib_frac:.2f} of M* -> bar {bar_frac:.2f} of M*, "
             f"half-length {bar_len:.1f} Rd; rest pseudobulge"
         )
+    pops = {"disk": population(g.sfh_disk), "bulge": population(g.sfh_bulge)}
+    lm_d = pops["disk"][1] if pops["disk"] else 1.0
+    lm_b = pops["bulge"][1] if pops["bulge"] else 1.0
     if split:
         l_bulge = OLD_LIGHT * g.merger_bulge_mass / max(disk_mass, 1.0)
         l_pseudo = (
@@ -548,6 +638,9 @@ def recipe_from_sage(
     else:
         l_bulge = OLD_LIGHT * (g.bulge_mass - bar_mass) / max(disk_mass, 1.0)
         l_pseudo = 0.0
+    # (Younger populations are brighter per unit mass: the disk's light
+    # against the bulge's follows their histories.)
+    l_bulge *= lm_b / lm_d
 
     # Young light relative to the old disk scales with specific SFR.
     ssfr_disk = g.sfr_disk / max(disk_mass, 1.0)
@@ -555,6 +648,9 @@ def recipe_from_sage(
     if g.ffb:
         l_young = min(1.5 * l_young + 0.2, 2.0)  # very blue
     n_clusters = int(np.clip(6000 * max(g.sfr_disk, 1e-3) ** 0.5, 400, 20000))
+    # (Against a younger, brighter-per-mass disk the current young light
+    # stands out less.)
+    l_young /= lm_d
     # HII regions: number follows the molecular gas reservoir.
     n_hii = int(np.clip(350 * (g.h2_gas / 1e9) ** 0.8, 10, 3000))
     notes.append(f"H2={g.h2_gas:.2e} -> {n_hii} HII complexes")
@@ -1071,6 +1167,31 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
             )
         )
 
+        # Intermediate-age (0.1-1 Gyr) clusters, from the star-formation
+        # history: white to yellow-white, spread through the disk (they
+        # have drifted from where they formed) -- a recently quenched or
+        # fading disk keeps these after its HII regions are gone.
+        if rc.inter_frac > 0.05:
+            m = int(np.clip(4000 * rc.inter_frac, 200, 3000))
+            ix, iy = _sample_map(
+                maps.old**0.7 * (0.3 + maps.young) ** 0.3, maps.half, m, rng
+            )
+            lum = rng.pareto(1.8, m) + 1
+            lum = np.minimum(lum, 15)
+            lum *= rc.l_disk * rc.inter_frac * 0.25 / lum.sum()
+            rgb = np.asarray(rc.inter_rgb)[None, :] * rng.uniform(
+                0.9, 1.1, (m, 1)
+            )
+            out.append(
+                Points(
+                    np.c_[ix, iy, rng.normal(0, 0.08, m)],
+                    lum,
+                    rgb,
+                    rng.uniform(0.4, 0.8, m),
+                    "midclusters",
+                )
+            )
+
         # Resolved old field stars: sparkle over the smooth disk light.
         fx, fy = _sample_map(maps.old, maps.half, rc.n_field, rng)
         m = rc.n_field
@@ -1394,8 +1515,17 @@ def strip_points(
     return Points(pos, lum, rgb, np.full(n, 1.1), "strip")
 
 
-def _nuclear_ring(rc, rng, n=3000):
+# Nuclear ring look: width (fraction of its radius), brightness of its
+# clusters and HII regions, how many clusters, and how far they scatter
+# out of the plane (fraction of its radius).  Chosen by the user from
+# options on SAGE26 galaxies ("D"): a faint, diffuse hint of a ring (the
+# original thin, bright one was too harsh).
+RING = dict(width=0.25, gain=0.2, hii=0.3, n=4000, thick=0.1)
+
+
+def _nuclear_ring(rc, rng, n=None):
     """Star-forming ring around the bulge (driven by SfrBulge)."""
+    n = int(RING["n"]) if n is None else n
     th = rng.uniform(0, 2 * np.pi, n)
     # Clumpy along the ring: a few hot spots.
     th = np.concatenate(
@@ -1407,9 +1537,13 @@ def _nuclear_ring(rc, rng, n=3000):
             ),
         ]
     )
-    r = rc.ring_r * (1 + rng.normal(0, 0.06, n))
-    pos = np.c_[r * np.cos(th), r * np.sin(th), rng.normal(0, 0.02, n)]
-    lum_c = np.full(n, rc.l_young * 0.35 * rc.ring / n)
+    r = rc.ring_r * (1 + rng.normal(0, RING["width"], n))
+    pos = np.c_[
+        r * np.cos(th),
+        r * np.sin(th),
+        rng.normal(0, RING["thick"] * rc.ring_r, n),
+    ]
+    lum_c = np.full(n, RING["gain"] * rc.l_young * 0.35 * rc.ring / n)
     k = n // 3
     out = [
         Points(
@@ -1417,7 +1551,7 @@ def _nuclear_ring(rc, rng, n=3000):
         ),
         Points(
             pos[:k] * 1.01,
-            np.full(k, rc.l_young * 0.2 * rc.ring / k),
+            np.full(k, RING["hii"] * rc.l_young * 0.2 * rc.ring / k),
             np.tile(HII_RGB, (k, 1)),
             np.full(k, 1.4),
             "ring_hii",

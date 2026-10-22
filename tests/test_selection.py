@@ -399,3 +399,24 @@ def test_info_button_needs_a_selection(panel):
     state.flush()
     ctrl.sel_toggle_card()
     assert state.sel_show
+
+
+def test_reverse_boxes_reverse_the_colormaps(panel):
+    server, scene = panel
+    state = server.state
+    state.galaxy_color_mode = "ssfr"  # (snaps to its default colormap)
+    state.flush()
+    state.halo_colormap = "viridis"
+    state.galaxy_colormap = "plasma"
+    state.flush()
+    state.halo_cmap_reverse = True
+    state.galaxy_cmap_reverse = True
+    state.flush()
+    assert scene.halo_layer.colormap == "viridis_r"
+    assert scene.galaxy_layer.colormap == "plasma_r"
+    state.galaxy_colormap = "magma"  # a new colormap stays reversed
+    state.flush()
+    assert scene.galaxy_layer.colormap == "magma_r"
+    state.galaxy_cmap_reverse = False
+    state.flush()
+    assert scene.galaxy_layer.colormap == "magma"

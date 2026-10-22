@@ -22,6 +22,8 @@ Each galaxy's model follows from its own catalogue row:
 
 Sizes shrink with redshift as in the size–mass relation, and disks at high redshift are thicker and clumpier.
 
+If the run saved its star-formation histories (SAGE's `SaveFullSFH 1`), colours also follow the stars' ages: young disks are bluer, recently quenched galaxies white-blue, and a rejuvenated bulge stands out from an older disk. Without them, colours follow metallicity only.
+
 The full list of components, the SAGE26 fields each one uses and how, is in [HD Galaxy Components](../physics/hd_components.md).
 
 ## Groups and clusters

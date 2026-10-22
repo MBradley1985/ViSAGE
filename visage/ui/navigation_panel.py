@@ -505,6 +505,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.galaxy_color_mode = scene.galaxy_layer.color_mode
     state.halo_colormap = scene.halo_layer.colormap
     state.galaxy_colormap = scene.galaxy_layer.colormap
+    # Reverse boxes beside the colormap menus (matplotlib's "<name>_r").
+    state.halo_cmap_reverse = False
+    state.galaxy_cmap_reverse = False
 
     # ── Synthetic Photometry — its OWN independent layer (scene.sed_layer),
     #    shown in a dedicated Photometry tab (Lightcone Mode only). Completely
@@ -1284,20 +1287,30 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.gal_cbar_max = hi
         _push()
 
-    @state.change("halo_colormap")
-    def on_halo_cmap(halo_colormap, **_):
-        scene.halo_layer.colormap = halo_colormap
+    def _cmap_name(name, reverse) -> str:
+        """The colormap as drawn: reversed ("_r") when its box is ticked
+        (a name that is already reversed flips back)."""
+        name = str(name or "viridis")
+        if not reverse:
+            return name
+        return name[:-2] if name.endswith("_r") else f"{name}_r"
+
+    @state.change("halo_colormap", "halo_cmap_reverse")
+    def on_halo_cmap(halo_colormap, halo_cmap_reverse=False, **_):
+        name = _cmap_name(halo_colormap, halo_cmap_reverse)
+        scene.halo_layer.colormap = name
         from visage.utils.colormap import cmap_css_gradient
 
-        state.halo_cbar_style = _cbar_style(cmap_css_gradient(halo_colormap))
+        state.halo_cbar_style = _cbar_style(cmap_css_gradient(name))
         _push()
 
-    @state.change("galaxy_colormap")
-    def on_galaxy_cmap(galaxy_colormap, **_):
-        scene.galaxy_layer.colormap = galaxy_colormap
+    @state.change("galaxy_colormap", "galaxy_cmap_reverse")
+    def on_galaxy_cmap(galaxy_colormap, galaxy_cmap_reverse=False, **_):
+        name = _cmap_name(galaxy_colormap, galaxy_cmap_reverse)
+        scene.galaxy_layer.colormap = name
         from visage.utils.colormap import cmap_css_gradient
 
-        state.gal_cbar_style = _cbar_style(cmap_css_gradient(galaxy_colormap))
+        state.gal_cbar_style = _cbar_style(cmap_css_gradient(name))
         _push()
 
     # ------------------------------------------------------------------
@@ -4841,7 +4854,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="#c084fc",
                         density="compact",
                     )
-                with v3.VSheet(color="transparent", style=_FIELD):
+                with v3.VSheet(
+                    color="transparent",
+                    style=_FIELD + "display:flex;align-items:center;gap:6px;",
+                ):
                     v3.VSelect(
                         v_model=("halo_colormap",),
                         items=(_CMAPS,),
@@ -4851,6 +4867,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="#c084fc",
                         density="compact",
                         disabled=("halo_color_mode === 'mvir'",),
+                        style="flex:1;min-width:0;",
+                    )
+                    v3.VCheckbox(
+                        v_model=("halo_cmap_reverse",),
+                        label="Reverse",
+                        hide_details=True,
+                        density="compact",
+                        color="#c084fc",
+                        disabled=("halo_color_mode === 'mvir'",),
+                        style="flex:0 0 auto;font-size:0.75rem;",
                     )
                 with v3.VSheet(
                     color="transparent", style="padding:4px 0 8px;"
@@ -4898,7 +4924,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="#FFD700",
                         density="compact",
                     )
-                with v3.VSheet(color="transparent", style=_FIELD):
+                with v3.VSheet(
+                    color="transparent",
+                    style=_FIELD + "display:flex;align-items:center;gap:6px;",
+                ):
                     v3.VSelect(
                         v_model=("galaxy_colormap",),
                         items=(_CMAPS,),
@@ -4916,6 +4945,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "galaxy_color_mode === 'structure' || "
                             "galaxy_color_mode === 'type'",
                         ),
+                        style="flex:1;min-width:0;",
+                    )
+                    v3.VCheckbox(
+                        v_model=("galaxy_cmap_reverse",),
+                        label="Reverse",
+                        hide_details=True,
+                        density="compact",
+                        color="#FFD700",
+                        disabled=(
+                            "galaxy_color_mode === 'structure' || "
+                            "galaxy_color_mode === 'type'",
+                        ),
+                        style="flex:0 0 auto;font-size:0.75rem;",
                     )
                 with v3.VSheet(
                     color="transparent", style="padding:4px 0 8px;"
