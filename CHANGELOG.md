@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.5] — 2026-10-22
+
 ### Added
 
 - **HD extended HI disks** (Gas on): a faint, clumpy gas disk well past
