@@ -43,7 +43,6 @@ def _init_state(state) -> None:
         "sel_note": "",
         "sel_info_open": False,
         "sel_info_items": [],
-        "sel_hd_items": [],
         "sel_rings": True,  # the indicator on (the card's Clear / Show)
         "sel_halo": "",
         "sel_group": "",
@@ -299,19 +298,6 @@ def selection_card(server) -> None:
             ):
                 html.Span("{{ p.label }}", style="color:#9ca3af;")
                 html.Span("{{ p.value }}", style="font-family:monospace;")
-            # What HD draws for it.
-            with html.Div(v_show=("sel_hd_items.length",)):
-                html.Div(
-                    "IN HD",
-                    style=(
-                        "font-size:0.7rem;letter-spacing:0.08em;color:#FFD700;"
-                        "margin:10px 0 3px;font-weight:700;"
-                    ),
-                )
-                html.Div(
-                    "{{ sel_hd_items.join(' · ') }}",
-                    style="font-size:0.74rem;color:#e2e8f0;line-height:1.45;",
-                )
             # Every property, on demand.
             v3.VBtn(
                 "{{ sel_info_open ? 'Fewer properties' : 'All properties' }}",
@@ -508,7 +494,6 @@ def build_selection(server, scene) -> None:
         if sel["gid"] is not None:
             props.append(("GalaxyIndex", str(sel["gid"])))
         state.sel_props = [{"label": a, "value": b} for a, b in props]
-        state.sel_hd_items = _hd_items(galaxies, i, snap)
         listed = mem[:MAX_LISTED]
         state.sel_members = [
             {
@@ -724,25 +709,6 @@ def build_selection(server, scene) -> None:
             return int(v)
         except (TypeError, ValueError):
             return None
-
-    def _hd_items(galaxies, i: int, snap) -> list:
-        """What HD draws for galaxy row `i` (the card's "In HD" line)."""
-        try:
-            from visage.hd.adapter import sage_galaxy_from_snapshot
-            from visage.hd.model import describe
-
-            if galaxies.stellar_mass[i] <= 0:
-                return []
-            gal = sage_galaxy_from_snapshot(
-                galaxies,
-                i,
-                float(scene._cfg.hubble_h),
-                scene._snap_table,
-                float(scene._cfg.omega),
-            )
-            return describe(gal)
-        except Exception:
-            return []
 
     def _fill_info(i: int, snap=None) -> None:
         from visage.utils.galaxy_info import build_galaxy_info

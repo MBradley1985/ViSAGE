@@ -8,6 +8,30 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.6] — 2026-10-22
+
+### Changed
+
+- **HD is ready before you press it.** A moment after you select a
+  galaxy, its HD is built in the background, so pressing HD takes about
+  0.1 s instead of a few seconds. With HD on, the same galaxy is built at
+  the neighbouring snapshots too, so stepping through time in HD is
+  instant once the slider settles.
+- **Snapshots load behind a card.** Every snapshot is loaded into memory
+  up front, with a progress bar over the view (microUchuu: about a
+  minute), so moving through time is instant afterwards. **Continue
+  now** lets the rest load in the background. Playback and story
+  pre-rendering show their progress on the same card, instead of a chip
+  in the toolbar.
+- **HD gas is cheaper to draw.** Its noise (clumps, filaments,
+  streamers) is baked once into a texture instead of worked out every
+  frame: the gas costs about half as much per frame (a windy disk ~16 ms
+  instead of ~20-26 ms at 1600×900 on an M4), with the same look.
+
+### Removed
+
+- **The "In HD" line** on the selection card.
+
 ## [2.8.5] — 2026-10-22
 
 ### Added

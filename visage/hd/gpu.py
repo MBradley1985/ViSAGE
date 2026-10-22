@@ -314,8 +314,139 @@ def point_grid(
 
 
 # ----------------------------------------------------------------------
+# Noise, baked once into a texture
+# ----------------------------------------------------------------------
+
+# The gas and ICL noise read a periodic value-noise volume baked into a
+# texture (made once, behind the build card) instead of hashing it out
+# every frame: one texture read per octave.  NOISE_P lattice cells per
+# period, NOISE_TPU texels per cell, slices tiled NOISE_COLS across.
+BAKED_NOISE = True
+NOISE_P = 32
+NOISE_TPU = 2
+NOISE_COLS = 8
+_NOISE: dict = {}
+
+
+def noise_volume() -> np.ndarray:
+    """(M, M, M) periodic value noise in [0, 1] (smoothstep between random
+    lattice values, period NOISE_P), indexed [z, y, x], M = P * TPU."""
+    if "vol" not in _NOISE:
+        P, T = NOISE_P, NOISE_TPU
+        lat = np.random.default_rng(20261022).random((P, P, P))
+        c = np.arange(P * T) / T
+        i0 = np.floor(c).astype(int)
+        f = c - i0
+        f = f * f * (3 - 2 * f)
+        i1 = (i0 + 1) % P
+        v = lat[i0] * (1 - f)[:, None, None] + lat[i1] * f[:, None, None]
+        v = v[:, i0] * (1 - f)[None, :, None] + v[:, i1] * f[None, :, None]
+        v = (
+            v[:, :, i0] * (1 - f)[None, None, :]
+            + v[:, :, i1] * f[None, None, :]
+        )
+        _NOISE["vol"] = v.astype(np.float32)
+    return _NOISE["vol"]
+
+
+def noise_atlas() -> np.ndarray:
+    """The noise volume as a 2D atlas of z slices (H, W, 3), each tile
+    padded by one wrapped texel so bilinear filtering stays periodic."""
+    if "atlas" not in _NOISE:
+        v = noise_volume()
+        M = v.shape[0]
+        S = M + 2
+        rows = int(np.ceil(M / NOISE_COLS))
+        out = np.zeros((rows * S, NOISE_COLS * S), np.float32)
+        pad = np.pad(v, ((0, 0), (1, 1), (1, 1)), mode="wrap")
+        for z in range(M):
+            r, c = divmod(z, NOISE_COLS)
+            out[r * S : (r + 1) * S, c * S : (c + 1) * S] = pad[z]
+        _NOISE["atlas"] = np.repeat(out[:, :, None], 3, axis=2)
+    return _NOISE["atlas"]
+
+
+def vnoise_baked(x: np.ndarray) -> np.ndarray:
+    """numpy mirror of the shader's baked vnoise (for normalisations)."""
+    v = noise_volume()
+    M = v.shape[0]
+    q = np.mod(np.asarray(x, float) * NOISE_TPU, M)
+    i = np.floor(q).astype(int)
+    f = q - i
+    j = (i + 1) % M
+    out = 0.0
+    for dz, wz in ((i[..., 2], 1 - f[..., 2]), (j[..., 2], f[..., 2])):
+        for dy, wy in ((i[..., 1], 1 - f[..., 1]), (j[..., 1], f[..., 1])):
+            for dx, wx in ((i[..., 0], 1 - f[..., 0]), (j[..., 0], f[..., 0])):
+                out = out + v[dz, dy, dx] * wz * wy * wx
+    return out * 2.0 - 1.0
+
+
+def _noise_glsl() -> str:
+    """vnoise / fbm / fbm2 / fbm6, baked (texture) or procedural."""
+    fbms = """float fbm(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+float fbm6(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 6; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.55; }
+  return s;
+}
+float fbm2(vec3 p) {
+  return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03);
+}
+"""
+    if not BAKED_NOISE:
+        return _PROC_NOISE
+    M = NOISE_P * NOISE_TPU
+    S = M + 2
+    rows = int(np.ceil(M / NOISE_COLS))
+    return (
+        f"""float vnoise(vec3 x) {{
+  vec3 q = mod(x * {float(NOISE_TPU):.1f}, {float(M):.1f});
+  float za = floor(q.z);
+  float fz = q.z - za;
+  float zb = mod(za + 1.0, {float(M):.1f});
+  vec2 inT = q.xy + 1.5;
+  vec2 a0 = vec2(mod(za, {float(NOISE_COLS):.1f}), floor(za / {float(NOISE_COLS):.1f})) * {float(S):.1f} + inT;
+  vec2 a1 = vec2(mod(zb, {float(NOISE_COLS):.1f}), floor(zb / {float(NOISE_COLS):.1f})) * {float(S):.1f} + inT;
+  vec2 sz = vec2({float(NOISE_COLS * S):.1f}, {float(rows * S):.1f});
+  return mix(texture(noiseTex, a0 / sz).r, texture(noiseTex, a1 / sz).r, fz) * 2.0 - 1.0;
+}}
+"""
+        + fbms
+    )
+
+
+# ----------------------------------------------------------------------
 # Shader
 # ----------------------------------------------------------------------
+
+_PROC_NOISE = """float vnoise(vec3 x) {
+  vec3 i = floor(x);
+  vec3 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x),
+                 mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x),
+                 mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z) * 2.0 - 1.0;
+}
+float fbm(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+float fbm6(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 6; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.55; }
+  return s;
+}
+float fbm2(vec3 p) {
+  return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03);
+}
+"""
 
 _DEC = """//VTK::PositionVC::Dec
 in vec3 posMC;
@@ -338,28 +469,6 @@ float hash3(vec3 p) {
   p = fract(p * 0.3183099 + vec3(0.11, 0.17, 0.13));
   p *= 17.0;
   return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
-float vnoise(vec3 x) {
-  vec3 i = floor(x);
-  vec3 f = fract(x);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x),
-                 mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
-             mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x),
-                 mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z) * 2.0 - 1.0;
-}
-float fbm(vec3 p) {
-  float a = 0.5, s = 0.0;
-  for (int i = 0; i < 4; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
-  return s;
-}
-float fbm6(vec3 p) {
-  float a = 0.5, s = 0.0;
-  for (int i = 0; i < 6; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.55; }
-  return s;
-}
-float fbm2(vec3 p) {
-  return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03);
 }
 // Exact integral over one step of a sech^2 layer (z0 -> z1 along the ray),
 // times dt / dz: no banding however coarse the step through a thin layer.
@@ -855,6 +964,7 @@ class GPUGalaxy:
             k: float_texture(arr, mode != "nearest", mode == "mip")
             for k, (arr, mode) in prep["tex"].items()
         }
+        tex["noiseTex"] = float_texture(noise_atlas(), True, False)
         sprinkle = prep["sprinkle"]
         map_half, map_n, npts = prep["map"]
         has_atlas = prep["atlas"] is not None
@@ -929,6 +1039,13 @@ class GPUGalaxy:
         )
         sp.AddFragmentShaderReplacement(
             "//VTK::Light::Impl", True, impl, False
+        )
+        # (after the samplers' declarations: the baked noise reads one)
+        sp.AddFragmentShaderReplacement(
+            "//VTK::Picking::Dec",
+            True,
+            "//VTK::Picking::Dec\n" + _noise_glsl(),
+            False,
         )
 
         u = sp.GetFragmentCustomUniforms()
