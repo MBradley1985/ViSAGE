@@ -276,3 +276,25 @@ def test_frame_gate_waits_for_the_send():
         return pacer.elapsed()
 
     assert asyncio.run(go()) >= 0.045 and sent == [True]
+
+
+def test_a_drag_skips_frames_while_the_browser_is_behind(
+    patched, plotter, monkeypatch
+):
+    """More than two frames in flight: a drag tick sends nothing (no
+    backlog of old frames), and the next tick once it has caught up sends
+    the latest view."""
+    D, _ = patched
+    proto = _Protocol(plotter.ren_win)
+    pending = [5]
+    monkeypatch.setattr(frame_delivery, "backlog", [lambda: pending[0]])
+    frame_delivery._in_timer[0] = True
+    try:
+        frame_delivery._mark_dirty()  # the mouse moved
+        behind = D.still_render(proto, {"view": "1"})
+        assert behind["image"] is None
+        pending[0] = 1  # caught up
+        latest = D.still_render(proto, {"view": "1"})
+        assert latest["memsize"] > 0
+    finally:
+        frame_delivery._in_timer[0] = False

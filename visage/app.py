@@ -242,6 +242,8 @@ def create_app(
             await asyncio.sleep(0.002)
 
     camera_motion.set_frame_gate(_frame_sent)
+    # Mouse drags too: frames beyond two in flight are skipped, not queued.
+    frame_delivery.backlog[0] = lambda: server.context.network_monitor.pending
     # While frames flow, snapshot preloading waits rather than competing
     # with the renderer for the CPU.
     frame_delivery.on_frame.append(lambda: hold_background(0.3))

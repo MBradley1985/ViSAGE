@@ -39,6 +39,14 @@ _dirty = [True]
 _in_timer = [False]
 # Called after every frame sent (e.g. to hold back background work).
 on_frame: list = []
+# How many frames are still on their way to the browser (set by the app
+# from the websocket's network monitor), and the most a mouse drag may
+# have in flight: a drag tick beyond it skips its frame, so a slow link or
+# a slow machine drops frames instead of queueing them -- the view keeps
+# up with the mouse and stops when it stops, rather than replaying a
+# backlog of old frames.
+backlog = [lambda: 0]
+MAX_IN_FLIGHT = 2
 
 
 def _mark_dirty(*_args) -> None:
@@ -177,6 +185,14 @@ def install() -> None:
             _quiet_closed_sockets()
         if _in_timer[0] and not _dirty[0]:
             return {"image": None, "stale": False, "memsize": 0}
+        if _in_timer[0]:
+            try:
+                behind = backlog[0]() > MAX_IN_FLIGHT
+            except Exception:
+                behind = False
+            if behind:
+                # Still dirty: the next tick draws the latest view.
+                return {"image": None, "stale": False, "memsize": 0}
         _dirty[0] = False
         size = list(options.get("size") or view.GetSize()[0:2])
         if size != list(view.GetSize()[0:2]) and size[0] > 10 and size[1] > 10:

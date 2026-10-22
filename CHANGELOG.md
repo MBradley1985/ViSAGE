@@ -14,6 +14,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   or its halo and group); leaving HD lands there too. Go inside HD still
   flies to the galaxy in close-up.
 
+### Fixed
+
+- **No more lag after you stop dragging.** Mouse drags no longer queue
+  frames: while more than two are still on their way to the browser, a
+  drag skips its frame and the next one shows the latest view. On a
+  slower machine or link the view drops frames instead of replaying a
+  backlog after the mouse has stopped.
+
 ## [2.8.3] — 2026-10-22
 
 ### Added
