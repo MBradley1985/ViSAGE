@@ -247,6 +247,18 @@ def resolve_snap(value, count: int, table=None) -> int:
     return max(0, min(last, int(value)))
 
 
+def _load_card(st, text, done: int = 0, total: int = 0) -> None:
+    """Show progress on the loading card (`text` None: hide it)."""
+    if text is None:
+        st.load_card_show = False
+    else:
+        st.load_card_text = f"{text}  {done}/{total}" if total else text
+        st.load_card_percent = int(100 * done / total) if total else 0
+        st.load_card_skip = False
+        st.load_card_show = True
+    st.flush()
+
+
 class StoryPlayer:
     def __init__(self, server, scene) -> None:
         self._server = server
@@ -1245,14 +1257,11 @@ class StoryPlayer:
                 if show_overlay and k == 0:  # cover the live view ASAP
                     st.playback_frame = frames[0]
                     st.playback_active = True
-                st.preload_status = (
-                    f"Pre-rendering z-evolution…  {k + 1}/{len(order)}"
-                )
-                st.flush()
+                _load_card(st, "Pre-rendering z-evolution…", k + 1, len(order))
                 await asyncio.sleep(0)
         finally:
             rw.SetOffScreenRendering(prev_off)
-            st.preload_status = ""
+            _load_card(st, None)
         if not frames:
             # All captures returned None — don't cache so a retry is possible
             # (e.g. if the render window wasn't settled during load).
@@ -1865,18 +1874,19 @@ class StoryPlayer:
                     break
                 if loader.get_tree(int(s)) is not None:
                     continue  # already loaded
-                st.preload_status = (
-                    f"Warming {getattr(mdl, 'name', 'model')}..."
+                _load_card(
+                    st,
+                    f"Loading {getattr(mdl, 'name', 'model')}…",
+                    s - a,
+                    b - a + 1,
                 )
-                st.flush()
                 warmed = True
                 try:
                     await asyncio.to_thread(loader.get, int(s))
                 except Exception:
                     pass
         if warmed:
-            st.preload_status = ""
-            st.flush()
+            _load_card(st, None)
 
     # ---- sandbox preload ------------------------------------------------
 
@@ -1949,14 +1959,12 @@ class StoryPlayer:
                 if self._story is None:  # exited while loading
                     return
                 done += 1
-                st.preload_status = f"Loading story... {done}/{total}"
-                st.flush()
+                _load_card(st, "Loading story…", done, total)
                 try:
                     await asyncio.to_thread(loader.get, int(s))
                 except Exception:
                     pass
-        st.preload_status = ""
-        st.flush()
+        _load_card(st, None)
 
     # ---- user-state stash / restore -------------------------------------
 

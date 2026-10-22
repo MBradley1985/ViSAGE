@@ -661,7 +661,7 @@ def create_app(
                 scene.add_model(entry["par"])
             scene.switch_primary(name)
             # Preload all snapshots of the new primary in the background.
-            scene.primary.loader.preload_all()
+            server.controller.preload_snapshots(scene.primary.loader)
         finally:
             server.state.model_loading = False
             # Map the carried-over redshift onto the new model's snapshot
@@ -708,7 +708,7 @@ def create_app(
                 server.state.notice_color = "warning"
                 server.state.notice_show = True
             elif model.visible:
-                model.loader.preload_all()
+                server.controller.preload_snapshots(model.loader)
         finally:
             server.state.model_loading = False
             _refresh_models_state()
@@ -741,7 +741,7 @@ def create_app(
                 if adj_m and name not in _profiles:
                     _profiles[name] = default_profile(adj_m.snap_count)
                 if adj_m:
-                    adj_m.loader.preload_all()
+                    server.controller.preload_snapshots(adj_m.loader)
                 # Stop any active rotation — it can't be per-box with a shared camera
                 if getattr(server.state, "rotate_mode", "off") != "off":
                     server.state.rotate_mode = "off"
@@ -1507,6 +1507,70 @@ def create_app(
                                 )
                                 html.Div(
                                     "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
+                                    style=(
+                                        "flex:1;font-size:1.1rem;"
+                                        "color:#67e8f9;text-align:right;"
+                                    ),
+                                )
+
+                    # Loading card: every snapshot loading into memory (or
+                    # playback frames being prepared), over a dimmed view.
+                    with html.Div(
+                        v_show=("load_card_show",),
+                        style=(
+                            "position:absolute;inset:0;z-index:8;"
+                            "display:flex;align-items:center;"
+                            "justify-content:center;"
+                            "background:rgba(0,0,0,0.35);"
+                        ),
+                    ):
+                        with v3.VCard(
+                            style=(
+                                "padding:22px 30px;min-width:420px;"
+                                "background:rgba(10,10,26,0.88);"
+                                "border:1px solid #06b6d4;"
+                            ),
+                        ):
+                            html.Div(
+                                "{{ load_card_text }}",
+                                style=(
+                                    "font-size:1.5rem;font-weight:600;"
+                                    "color:#e2e8f0;margin-bottom:4px;"
+                                ),
+                            )
+                            html.Div(
+                                "Loaded once, so moving through time is "
+                                "instant afterwards.",
+                                v_show=("load_card_skip",),
+                                style=(
+                                    "font-size:0.8rem;color:#9ca3af;"
+                                    "margin-bottom:10px;"
+                                ),
+                            )
+                            v3.VProgressLinear(
+                                model_value=("load_card_percent",),
+                                color="cyan",
+                                height=10,
+                                rounded=True,
+                            )
+                            with html.Div(
+                                style=(
+                                    "display:flex;align-items:center;"
+                                    "margin-top:8px;"
+                                ),
+                            ):
+                                v3.VBtn(
+                                    "Continue now",
+                                    v_show=("load_card_skip",),
+                                    size="small",
+                                    variant="outlined",
+                                    color="#9ca3af",
+                                    click=server.controller.load_card_continue,
+                                    title="Use ViSAGE now; the rest loads "
+                                    "in the background",
+                                )
+                                html.Div(
+                                    "{{ load_card_percent }}%",
                                     style=(
                                         "flex:1;font-size:1.1rem;"
                                         "color:#67e8f9;text-align:right;"

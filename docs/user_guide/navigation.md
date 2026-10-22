@@ -40,7 +40,6 @@ The **i** button in the header (or **Show info** at the end of the Structure tab
 | Galaxy / Halo + group | What the actions apply to: the galaxy, or its host halo with the whole group |
 | Go | Fly to it, 3 Mpc/h away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 Mpc/h focus sphere |
 | Isolate, HD | As the header buttons. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
-| In HD | What HD draws for this galaxy: arm class, bar, bulges, rings, star formation, merger debris, ICL, gas… |
 | Gas | HD's halo gas on or off |
 | ← → | Back and forward through what you've selected |
 | ‹ › | Previous / next member of the group, flying to it (the card keeps its Galaxy / Halo + group context) |

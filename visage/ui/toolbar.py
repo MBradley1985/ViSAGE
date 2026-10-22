@@ -140,7 +140,12 @@ def build_toolbar(server, scene: Scene) -> None:
     state.is_repeat = False
     state.rotate_mode = "off"
     state.flythrough_active = False
-    state.preload_status = ""  # non-empty while the snapshot cache warms
+    # The loading card: snapshots loading into memory, or playback frames
+    # being prepared, with a progress bar.
+    state.load_card_show = False
+    state.load_card_text = ""
+    state.load_card_percent = 0
+    state.load_card_skip = False  # offer "Continue now"
     # Pre-rendered playback: frames are rendered once on play, then flipped
     # through as images for stutter-free playback.
     state.playback_active = False  # showing pre-rendered frames
@@ -347,7 +352,10 @@ def build_toolbar(server, scene: Scene) -> None:
                     state.playback_frame = url
                     state.playback_active = True
                 done += 1
-                state.preload_status = f"Loading snapshots...  {done}/{total}"
+                state.load_card_text = f"Preparing playback…  {done}/{total}"
+                state.load_card_percent = int(100 * done / max(total, 1))
+                state.load_card_skip = False
+                state.load_card_show = True
                 state.flush()
                 await asyncio.sleep(0)
         finally:
@@ -356,7 +364,7 @@ def build_toolbar(server, scene: Scene) -> None:
             cam.focal_point = tuple(focal0)
             cam.up = (0.0, 1.0, 0.0)
             state.prerender_busy = False
-            state.preload_status = ""
+            state.load_card_show = False
             state.flush()
 
     async def _image_playback(order: list[int]) -> None:
@@ -488,7 +496,7 @@ def build_toolbar(server, scene: Scene) -> None:
         _suppress_snap[0] = False
         state.is_playing = False
         state.prerender_busy = False
-        state.preload_status = ""
+        state.load_card_show = False
         # Keep the overlay up, showing the target frame if we have it, so it
         # matches the live view we're about to reveal.
         if snap in _frames["data"]:
@@ -860,31 +868,60 @@ def build_toolbar(server, scene: Scene) -> None:
         )
 
     # ------------------------------------------------------------------
-    # Snapshot preloading — warm the whole cache in the background so
-    # playback steps frame-to-frame without disk stalls. A status chip in
-    # the toolbar reports progress while it runs.
+    # Snapshot preloading — every snapshot is loaded into memory up front,
+    # behind a card with a progress bar, so moving through time (slider,
+    # playback, HD) never waits on the disk afterwards.  "Continue now"
+    # lets the rest load in the background instead.
     # ------------------------------------------------------------------
 
     _preload_started = [False]
     _preload_done = [False]
+    _load_skipped = [False]
 
-    async def _preload_loop():
-        loader = scene._loader
+    async def _preload_loop(loader=None, primary: bool = True):
+        loader = loader if loader is not None else scene._loader
         futures = loader.preload_all()
         total = len(futures)
         if total == 0:
-            _preload_done[0] = True
+            if primary:
+                _preload_done[0] = True
             return
-        while True:
-            done = sum(1 for f in futures if f.done())
-            if done >= total:
-                break
-            state.preload_status = f"Loading snapshots...  {done}/{total}"
-            state.flush()
-            await asyncio.sleep(0.25)
-        _preload_done[0] = True
-        state.preload_status = ""
+        _load_skipped[0] = False
+        # The user is waiting: loads run even if frames are flowing.
+        with background_needed():
+            while True:
+                done = sum(1 for f in futures if f.done())
+                if done >= total:
+                    break
+                if not _load_skipped[0]:
+                    state.load_card_text = (
+                        f"Loading snapshots…  {done}/{total}"
+                    )
+                    state.load_card_percent = int(100 * done / total)
+                    state.load_card_skip = True
+                    state.load_card_show = True
+                    state.flush()
+                await asyncio.sleep(0.15)
+        if primary:
+            _preload_done[0] = True
+        state.load_card_show = False
         state.flush()
+
+    @ctrl.set("load_card_continue")
+    def _load_card_continue():
+        """Close the loading card; loading carries on in the background."""
+        _load_skipped[0] = True
+        state.load_card_show = False
+        state.flush()
+
+    @ctrl.set("preload_snapshots")
+    def _preload_snapshots(loader=None):
+        """Load every snapshot of `loader` (a model just opened, overlaid
+        or placed alongside) behind the loading card."""
+        try:
+            asyncio.ensure_future(_preload_loop(loader, primary=False))
+        except RuntimeError:
+            loader.preload_all()
 
     def _start_preload(**_):
         if _preload_started[0]:
@@ -921,11 +958,11 @@ def build_toolbar(server, scene: Scene) -> None:
     # the left.
     v3.VSpacer()
 
-    # Status chip — shows "Loading galaxies..." during model switch/load/overlay,
-    # or "Loading snapshots... X/Y" while the snapshot cache warms up.
+    # Status chip — shows "Loading galaxies..." during model switch/load/
+    # overlay (snapshot loading has its own card over the view).
     v3.VChip(
-        "{{ model_loading ? 'Loading galaxies...' : preload_status }}",
-        v_show=("model_loading || preload_status",),
+        "Loading galaxies...",
+        v_show=("model_loading",),
         size="small",
         color="#FFD700",
         prepend_icon="mdi-database-clock-outline",

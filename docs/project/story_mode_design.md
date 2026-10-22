@@ -55,7 +55,7 @@ tab scans `sage_library/` / `sage_outputs/`).
 
 The sandbox uses `requirements` to switch to the right model and warm the
 snapshot cache (KDTrees included) before the first scene renders, surfacing the
-existing "Loading snapshots… X/Y" chip. Any snapshot referenced by a scene —
+loading card ("Loading story… X/Y"). Any snapshot referenced by a scene —
 including the full range of a `snapshot_sweep` motion — must appear here.
 
 ## Scene object
