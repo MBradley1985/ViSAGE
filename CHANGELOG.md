@@ -8,6 +8,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Go and Isolate** put the camera 3 Mpc/h from the selection (the galaxy,
+  or its halo and group); leaving HD lands there too. Go inside HD still
+  flies to the galaxy in close-up.
+
 ## [2.8.3] — 2026-10-22
 
 ### Added
