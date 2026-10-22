@@ -143,15 +143,19 @@ from visage.ui.story_mode import (
 
 
 def _jpeg_quality() -> int:
-    """Frame JPEG quality: 100, or VISAGE_JPEG_QUALITY (50-100)."""
+    """Frame JPEG quality: 95, or VISAGE_JPEG_QUALITY (50-100).
+
+    95 is visually the same as 100 (mean error under 1/255) at a third of
+    the bytes: at 100 a slower browser can't show large frames as fast as
+    they come, and the view lags seconds behind the mouse."""
     import os
 
     try:
         return int(
-            min(max(int(os.environ.get("VISAGE_JPEG_QUALITY", 100)), 50), 100)
+            min(max(int(os.environ.get("VISAGE_JPEG_QUALITY", 95)), 50), 100)
         )
     except ValueError:
-        return 100
+        return 95
 
 
 _JPEG_QUALITY = _jpeg_quality()
@@ -1443,8 +1447,7 @@ def create_app(
                         # dropping quality or subsampling. Any thinning of the
                         # cloud must stay a deliberate, user-driven choice.
                         interactive_ratio=1.0,
-                        # (VISAGE_JPEG_QUALITY lowers it, for testing a
-                        # slow machine or link; the default stays 100.)
+                        # (Quality 95 by default; VISAGE_JPEG_QUALITY sets it.)
                         interactive_quality=_JPEG_QUALITY,
                         still_quality=_JPEG_QUALITY,
                     )

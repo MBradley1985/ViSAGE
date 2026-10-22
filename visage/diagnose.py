@@ -661,10 +661,10 @@ def _browser(log, par: str, drag: bool = True, port: int = 8080) -> None:
         await asyncio.sleep(10.0)
         watcher = loop.create_task(_watch())
         try:
-            await _rotate("100", None)
+            await _rotate("100", 100)
             await _rotate("95", 95)
             if drag:
-                await _user_drag("100", None)
+                await _user_drag("100", 100)
                 await _user_drag("95", 95)
         finally:
             fd.quality_override[0] = None
@@ -684,8 +684,8 @@ def _browser(log, par: str, drag: bool = True, port: int = 8080) -> None:
         by.get(n.replace(" 100", " 95")) for n in bad if n.endswith(" 100")
     ):
         log(
-            "   Quality 95 keeps up where 100 doesn't, so frame size is the "
-            "limit: try `set VISAGE_JPEG_QUALITY=95` before `visage`."
+            "   Quality 95 (ViSAGE's default) keeps up where 100 doesn't: "
+            "frame size is the limit."
         )
 
 

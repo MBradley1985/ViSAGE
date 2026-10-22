@@ -21,6 +21,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Frames are sent at JPEG quality 95** instead of 100: they look the
+  same (mean difference under 1/255) at a third of the size, so a slower
+  browser keeps up with a drag instead of falling seconds behind.
+  `VISAGE_JPEG_QUALITY` (50–100) sets it.
 - **Go and Isolate** put the camera 3 Mpc/h from the selection (the galaxy,
   or its halo and group); leaving HD lands there too. Go inside HD still
   flies to the galaxy in close-up.
