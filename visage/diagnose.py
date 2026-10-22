@@ -684,7 +684,8 @@ def _browser(log, par: str, drag: bool = True, port: int = 8080) -> None:
         by.get(n.replace(" 100", " 95")) for n in bad if n.endswith(" 100")
     ):
         log(
-            "   Quality 95 (ViSAGE's default) keeps up where 100 doesn't: "
+            "   Quality 95 (ViSAGE's default on Windows) keeps up where 100 "
+            "doesn't: "
             "frame size is the limit."
         )
 

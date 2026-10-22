@@ -92,7 +92,8 @@ stop Windows from delaying the frame loop. If the view still lags:
   `visage_diagnostics.txt` it writes. It checks the GPU, times each step
   of a frame, and opens ViSAGE in your browser to measure whether the
   browser keeps up while the view turns and while you drag it.
-- Frames are JPEG quality 95. `VISAGE_JPEG_QUALITY` (50–100) sets it:
+- On Windows frames are JPEG quality 95 (100 elsewhere).
+  `VISAGE_JPEG_QUALITY` (50–100) sets it:
   lower sends smaller frames, for a slow link or browser.
 
 ## Hardware detection
