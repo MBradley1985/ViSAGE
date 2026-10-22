@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import os
 import io
 import itertools
 import time
@@ -39,6 +40,70 @@ _dirty = [True]
 _in_timer = [False]
 # Called after every frame sent (e.g. to hold back background work).
 on_frame: list = []
+# How many frames are still on their way to the browser (set by the app
+# from the websocket's network monitor), and the most a mouse drag may
+# have in flight: a drag tick beyond it skips its frame, so a slow link or
+# a slow machine drops frames instead of queueing them -- the view keeps
+# up with the mouse and stops when it stops, rather than replaying a
+# backlog of old frames.
+backlog = [lambda: 0]
+MAX_IN_FLIGHT = 2
+
+# End-to-end flow control.  Frames leave the server at once on a local
+# link, so a slow *browser* (decoding large JPEGs) falls behind without the
+# server seeing a backlog: frames pile up in the browser, and clicks wait
+# behind them.  So after a frame the server sends a tiny ping that the page
+# answers once it has worked through everything before it (visage.js);
+# while a ping is unanswered for longer than BROWSER_SLACK, drag frames are
+# skipped, keeping the browser within a frame or two of now.  An answer
+# that never comes (a closed or old page) stops holding after PING_GIVEUP.
+BROWSER_SLACK = 0.06  # s
+PING_GIVEUP = 2.0  # s
+_ping = {"id": 0, "sent": None}
+# Sends ping `id` to the page (set by the app).
+ping_sender: list = [None]
+last_frame = [0.0]  # monotonic time of the last frame sent
+# Counters for `visage --diagnose`: frames sent, drag frames skipped (the
+# browser or the link behind), and how long the page took to catch up to
+# each ping (s).  Reset by whoever reads them.
+stats = {"sent": 0, "skipped": 0, "catch_up": []}
+# For `visage --diagnose`: send frames at this JPEG quality instead of the
+# view's (None: the view's own).
+quality_override: list = [None]
+
+
+def pong(ping_id) -> None:
+    """The page has caught up to ping `ping_id`."""
+    try:
+        if int(ping_id) == _ping["id"] and _ping["sent"] is not None:
+            stats["catch_up"].append(time.monotonic() - _ping["sent"])
+            _ping["sent"] = None
+    except (TypeError, ValueError):
+        pass
+
+
+def browser_behind() -> bool:
+    if os.environ.get("VISAGE_BROWSER_FLOW", "1") == "0":
+        return False
+    sent = _ping["sent"]
+    if sent is None:
+        return False
+    late = time.monotonic() - sent
+    if late > PING_GIVEUP:
+        _ping["sent"] = None  # no answer coming: stop holding back
+        return False
+    return late > BROWSER_SLACK
+
+
+def _send_ping() -> None:
+    if ping_sender[0] is None or _ping["sent"] is not None:
+        return
+    _ping["id"] += 1
+    _ping["sent"] = time.monotonic()
+    try:
+        ping_sender[0](_ping["id"])
+    except Exception:
+        _ping["sent"] = None
 
 
 def _mark_dirty(*_args) -> None:
@@ -177,12 +242,24 @@ def install() -> None:
             _quiet_closed_sockets()
         if _in_timer[0] and not _dirty[0]:
             return {"image": None, "stale": False, "memsize": 0}
+        if _in_timer[0]:
+            try:
+                behind = backlog[0]() > MAX_IN_FLIGHT or browser_behind()
+            except Exception:
+                behind = False
+            if behind:
+                # Still dirty: the next tick draws the latest view.
+                stats["skipped"] += 1
+                return {"image": None, "stale": False, "memsize": 0}
         _dirty[0] = False
         size = list(options.get("size") or view.GetSize()[0:2])
         if size != list(view.GetSize()[0:2]) and size[0] > 10 and size[1] > 10:
             view.SetSize(size)
-        quality = options.get("quality", 100)
+        quality = quality_override[0] or options.get("quality", 100)
         image, real_size = render_jpeg(view, quality, grabbers)
+        last_frame[0] = time.monotonic()
+        stats["sent"] += 1
+        _send_ping()
         for fn in on_frame:
             fn()
         return {

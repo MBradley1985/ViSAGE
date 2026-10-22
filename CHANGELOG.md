@@ -8,6 +8,38 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.4] — 2026-10-22
+
+### Added
+
+- **`visage --diagnose`** runs a performance check (machine and versions,
+  the GPU OpenGL actually uses, frame render / readback / encode times at
+  typical and large window sizes, an HD galaxy, and with `--par` your
+  model) and writes it to `visage_diagnostics.txt`. With `--par` it also
+  opens ViSAGE in your browser and checks that the browser keeps up while
+  the view turns and while you drag it, at JPEG quality 100 and 95
+  (`--no-browser` skips this). `--perf` also reports how late the server
+  handles events.
+
+### Changed
+
+- **On Windows, frames are sent at JPEG quality 95** instead of 100: they
+  look the same (mean difference under 1/255) at a third of the size, so
+  the browser keeps up with a drag instead of falling seconds behind.
+  `VISAGE_JPEG_QUALITY` (50–100) sets it.
+- **Go and Isolate** put the camera 3 Mpc/h from the selection (the galaxy,
+  or its halo and group); leaving HD lands there too. Go inside HD still
+  flies to the galaxy in close-up.
+
+### Fixed
+
+- **No more lag after you stop dragging.** Mouse drags no longer queue
+  frames: while more than two are still on their way to the browser, a
+  drag skips its frame and the next one shows the latest view. On a
+  slower machine or link the view drops frames instead of replaying a
+  backlog after the mouse has stopped. The browser also reports when it
+  has shown each frame, and the view waits for it before sending more.
+
 ## [2.8.3] — 2026-10-22
 
 ### Added

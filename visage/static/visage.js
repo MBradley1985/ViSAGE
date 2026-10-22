@@ -261,6 +261,19 @@
     clickBtn('sel-key-' + name);
   }, true);
 
+  // ─── Frame flow control ────────────────────────────────────────────
+  // After each frame the server sends a ping; answering it once this page
+  // has worked through everything before it tells the server the browser
+  // has caught up, so it never runs more than a frame or two ahead
+  // (visage.utils.frame_delivery).
+  (function watchPing() {
+    var t = window.trame;
+    if (!t || !t.state || !t.state.watch) { setTimeout(watchPing, 300); return; }
+    t.state.watch(['visage_ping'], function (id) {
+      if (id) { try { t.trigger('visage_pong', [id]); } catch (e) {} }
+    });
+  })();
+
   // ─── HD: Esc cancels a build or leaves HD ──────────────────────────
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || inEditable(e.target)) return;

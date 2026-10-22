@@ -235,18 +235,15 @@ def _cam_dist(scene):
     return float(np.linalg.norm(np.subtract(cam.position, cam.focal_point)))
 
 
-def test_go_and_isolate_frame_a_galaxy_alike(hd_panel):
-    """Go and Isolate frame the selected galaxy at the same distance --
-    Go's inside HD: its normal-view size with a margin.  The 3 / 5 / 10
-    Mpc/h buttons remain one-off wider zooms."""
+def test_go_and_isolate_go_3_mpc_from_the_galaxy(hd_panel):
+    """Go and Isolate both put the camera 3 Mpc/h from the selection."""
     server, scene = hd_panel
     state, ctrl = server.state, server.controller
     state.nav_gal_idx = 0
-    ctrl.go_to_galaxy_1()  # 3 Mpc/h
-    assert _cam_dist(scene) == pytest.approx(3.0)
+    ctrl.go_to_galaxy_5()  # 10 Mpc/h
     ctrl.go_to_galaxy_enter()
     d_go = _cam_dist(scene)
-    assert 1e-3 < d_go < 1.0
+    assert d_go == pytest.approx(3.0)
     ctrl.toggle_isolate()
     assert state.isolate_active
     assert _cam_dist(scene) == pytest.approx(d_go)
@@ -377,8 +374,8 @@ def test_hd_draws_the_whole_group(hd_panel):
     ctrl.toggle_hd()
     state.flush()
     assert not state.hd_active and not grp.active
-    # (Leaving HD: the Go view of the selection, not 10 Mpc/h away.)
-    assert _cam_dist(scene) < 1.0
+    # (Leaving HD: the Go view of the selection, 3 Mpc/h away.)
+    assert _cam_dist(scene) == pytest.approx(3.0)
 
 
 def test_group_plan_tiers():

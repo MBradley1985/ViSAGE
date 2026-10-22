@@ -22,7 +22,7 @@ Six buttons sit above the tab panel and work no matter which tab is active:
 | Info (i) | Opens or closes the selection card |
 | Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
 | Centre (✛ crosshair icon) | Places the camera AT the box centre, looking out |
-| Isolate (🔍 magnifier icon) | Shows only the selection, framed as Go frames it: the galaxy, or in halo context its halo and whole group |
+| Isolate (🔍 magnifier icon) | Shows only the selection, 3 Mpc/h away as Go: the galaxy, or in halo context its halo and whole group |
 | HD | Detailed 3D model of the selection and its group — see [HD Mode](hd_mode.md) |
 
 ## Selecting a galaxy
@@ -38,7 +38,7 @@ The **i** button in the header (or **Show info** at the end of the Structure tab
 | Part | What it does |
 |---|---|
 | Galaxy / Halo + group | What the actions apply to: the galaxy, or its host halo with the whole group |
-| Go | Fly to it, at the distance Go uses inside HD: the galaxy filling the view at its normal-view size; in halo context the halo with its whole group in view. Everything else stays shown, within a 10 Mpc/h focus sphere |
+| Go | Fly to it, 3 Mpc/h away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 Mpc/h focus sphere |
 | Isolate, HD | As the header buttons. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
 | In HD | What HD draws for this galaxy: arm class, bar, bulges, rings, star formation, merger debris, ICL, gas… |
 | Gas | HD's halo gas on or off |
