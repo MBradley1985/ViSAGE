@@ -109,6 +109,8 @@ def test_hd_offers_its_galaxies_for_picking(panel):
     _group(scene, [0, 3, 5], central=0)
     state.nav_gal_idx = 0
     state.flush()
+    state.sel_kind = "halo"  # the whole group in HD
+    state.flush()
     ctrl.toggle_hd()
     state.flush()
     idx, pos = ctrl.hd_pick_candidates()
@@ -378,7 +380,9 @@ def test_a_long_fly_with_focus_on_still_draws(panel):
     state.flush()
     ctrl.sel_go()
     near, far = scene.plotter.camera.clipping_range
-    assert near > 1e-9 and far > 1.0
+    cam = scene.plotter.camera
+    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
+    assert near > 1e-9 and far > dist
 
 
 def test_changing_model_or_box_clears_the_selection(panel):

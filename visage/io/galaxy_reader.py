@@ -90,8 +90,13 @@ class GalaxySnapshot:
     # Stellar mass formed (raw, 10^10 Msun/h) in each lookback-time bin of
     # SFH_AGE_EDGES, for the disk ([:, 0]) and the bulge ([:, 1]): shape
     # (N, 2, len(SFH_AGE_EDGES) - 1).  None without SFHMassDisk/Bulge
-    # (SAGE's SaveFullSFH off).
+    # (SAGE's SaveFullSFH off), and None by default with them too: HD reads
+    # the few rows it needs on demand (sfh_bins_for) rather than every
+    # snapshot load binning every galaxy.
     sfh_bins: np.ndarray | None = None
+    # Where the snapshot came from, and whether it has SFH arrays.
+    source_path: str = ""
+    has_sfh: bool = False
 
     @property
     def count(self) -> int:
@@ -491,17 +496,6 @@ def load_galaxy_snapshot(
         omega_l=omega_l,
     )
 
-    sfh_bins = _sfh_age_bins(
-        sfh_disk_raw,
-        sfh_bulge_raw,
-        indices,
-        snap_num,
-        scale_factors,
-        hubble_h,
-        omega_m,
-        omega_l,
-    )
-
     return GalaxySnapshot(
         positions=positions,
         stellar_mass=stellar_mass[indices],
@@ -554,7 +548,8 @@ def load_galaxy_snapshot(
         extra={k: v[indices] for k, v in extra_raw.items()},
         sage_indices=indices.astype(np.int64),
         snap_num=snap_num,
-        sfh_bins=sfh_bins,
+        source_path=str(hdf5_path),
+        has_sfh=sfh_disk_raw is not None and sfh_bulge_raw is not None,
     )
 
 
@@ -617,6 +612,42 @@ def _sfh_age_bins(
             if sel.any():
                 out[:, part, b] = rows[:, sel].sum(axis=1)
     return out
+
+
+def sfh_bins_for(
+    path: str | Path,
+    snap_num: int,
+    raw_rows,
+    scale_factors: np.ndarray,
+    hubble_h: float,
+    omega_m: float,
+) -> np.ndarray | None:
+    """SFH_AGE_EDGES bins (as _sfh_age_bins) for a few raw rows of a
+    snapshot, read from the file on demand; None without SFH arrays."""
+    rows = np.atleast_1d(np.asarray(raw_rows, np.int64))
+    with open_snapshot(path, snap_num) as grp:
+        if grp is None:
+            return None
+        disk, bulge = find_sfh_datasets(grp)
+        if disk is None or bulge is None:
+            return None
+        order = np.argsort(rows)
+        srt = rows[order]
+        d = np.stack([np.asarray(grp[disk][int(r), :]) for r in srt])
+        b = np.stack([np.asarray(grp[bulge][int(r), :]) for r in srt])
+    out = _sfh_age_bins(
+        d,
+        b,
+        np.arange(len(srt)),
+        snap_num,
+        np.asarray(scale_factors, float),
+        hubble_h,
+        omega_m,
+        1.0 - omega_m,
+    )
+    res = np.empty_like(out)
+    res[order] = out
+    return res
 
 
 def _compute_mean_ages(

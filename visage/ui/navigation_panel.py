@@ -1507,7 +1507,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # In HD of a group, Go flies to that member and keeps HD on.
         if _hd_go_to_member():
             return
-        _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
+        on_go_frame()
 
     @ctrl.set("clear_indicator")
     def on_clear_indicator():
@@ -4036,6 +4036,103 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _stop_sparkles()
             _stop_hd()
 
+    # Go and Isolate frame the selection the same way: a galaxy +-GO_HALF_KPC
+    # (physical) around it; a halo (the card's "Halo + group") its whole
+    # group.
+    GO_HALF_KPC = 10.0
+
+    def _selection_targets(halos, galaxies):
+        """(halo indices, galaxy indices) of what's selected: the galaxy,
+        or in halo context the halo with every galaxy of its FOF group."""
+        import numpy as np
+        from visage.utils.group_info import member_indices
+
+        try:
+            hidx = int(state.nav_halo_idx)
+        except (TypeError, ValueError):
+            hidx = -1
+        try:
+            gidx = int(state.nav_gal_idx)
+        except (TypeError, ValueError):
+            gidx = -1
+        if _halo_context() and 0 <= hidx < halos.count:
+            gal = np.array([], dtype=np.int64)
+            if 0 <= gidx < galaxies.count:
+                gal = (
+                    member_indices(galaxies, gidx)
+                    if np.any(galaxies.central_id)
+                    else np.array([gidx], dtype=np.int64)
+                )
+            return [hidx], gal
+        if 0 <= gidx < galaxies.count:
+            return [], np.array([gidx], dtype=np.int64)
+        if 0 <= hidx < halos.count:
+            return [hidx], np.array([], dtype=np.int64)
+        return [], np.array([], dtype=np.int64)
+
+    def _frame_targets(halos, galaxies, halo_indices, gal_indices):
+        """Point the camera at the selection: a lone galaxy +-GO_HALF_KPC
+        across, a halo and its group all in view.  Returns (centre,
+        radius) in world units, or None."""
+        import numpy as np
+
+        off = scene.active_model.offset
+        try:
+            pts = []
+            if halo_indices:
+                pts.append(halos.positions[halo_indices] + off)
+            if len(gal_indices):
+                pts.append(galaxies.positions[gal_indices] + off)
+            pts = np.vstack(pts)
+            center = pts.mean(axis=0) if halo_indices else pts[0]
+            cam = scene.plotter.camera
+            fov = np.deg2rad(cam.view_angle)
+            if halo_indices:
+                extent = (
+                    float(np.linalg.norm(pts - center, axis=1).max())
+                    if len(pts) > 1
+                    else 0.0
+                )
+                rvir = (
+                    float(halos.rvir[halo_indices[0]])
+                    if len(halos.rvir)
+                    else 0.0
+                )
+                radius = max(extent, rvir, 0.05)
+                dist = radius / np.tan(fov / 2.0) * 1.15
+            else:
+                radius = GO_HALF_KPC * float(scene._cfg.hubble_h) / 1000.0
+                dist = radius / np.tan(fov / 2.0)
+            cx, cy, cz = (float(c) for c in center)
+            cam.focal_point = (cx, cy, cz)
+            cam.position = (cx, cy, cz + dist)
+            cam.up = (0.0, 1.0, 0.0)
+            scene.plotter.renderer.ResetCameraClippingRange()
+            _sparkle_target["center"] = (cx, cy, cz)
+            _sparkle_target["radius"] = radius
+            return (cx, cy, cz), radius
+        except Exception:
+            _sparkle_target["center"] = None
+            return None
+
+    @ctrl.set("go_frame")
+    def on_go_frame():
+        """The card's Go: fly to the selection, framed as Isolate frames it
+        (a galaxy +-10 kpc, a halo with its whole group), everything else
+        still shown within the usual 10 Mpc/h focus sphere."""
+        halos, galaxies = scene.active_model.loader.get(scene.current_snap)
+        halo_indices, gal_indices = _selection_targets(halos, galaxies)
+        framed = _frame_targets(halos, galaxies, halo_indices, gal_indices)
+        if framed is None:
+            _push()
+            return
+        center, _ = framed
+        scene.camera.marker.set_target(center)
+        scene.set_focus_sphere(center, _GALAXY_GO_RADIUS)
+        state.focus_active = True
+        state.isolate_active = False
+        _push()
+
     @ctrl.set("toggle_isolate")
     def on_toggle_isolate():
         """Isolate what's selected: the galaxy, or (in the selection's
@@ -4058,38 +4155,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return
 
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
-        off = scene.active_model.offset
-
-        try:
-            hidx = int(state.nav_halo_idx)
-        except (TypeError, ValueError):
-            hidx = -1
-        try:
-            gidx = int(state.nav_gal_idx)
-        except (TypeError, ValueError):
-            gidx = -1
-
-        halo_indices: list[int] = []
-        gal_indices = np.array([], dtype=np.int64)
-
-        halo_context = (
-            str(state.sel_kind) == "halo" if state.has("sel_kind") else False
-        )
-        if halo_context and 0 <= hidx < halos.count:
-            # The halo is what's selected: keep it AND every galaxy of
-            # its FOF group, so the group is actually populated.
-            halo_indices = [hidx]
-            if 0 <= gidx < galaxies.count:
-                gal_indices = (
-                    member_indices(galaxies, gidx)
-                    if np.any(galaxies.central_id)
-                    else np.array([gidx], dtype=np.int64)
-                )
-        elif 0 <= gidx < galaxies.count:
-            gal_indices = np.array([gidx], dtype=np.int64)
-        elif 0 <= hidx < halos.count:
-            halo_indices = [hidx]
-
+        halo_indices, gal_indices = _selection_targets(halos, galaxies)
         if not halo_indices and len(gal_indices) == 0:
             _push()
             return
@@ -4097,40 +4163,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.set_focus_indices(
             halo_indices=halo_indices, galaxy_indices=gal_indices
         )
-
-        # Frame what survived — with everything else masked out the view
-        # would otherwise look empty whenever the camera points elsewhere.
-        try:
-            pts = []
-            if halo_indices:
-                pts.append(halos.positions[halo_indices] + off)
-            if len(gal_indices):
-                pts.append(galaxies.positions[gal_indices] + off)
-            pts = np.vstack(pts)
-            center = pts.mean(axis=0)
-            extent = (
-                float(np.linalg.norm(pts - center, axis=1).max())
-                if len(pts) > 1
-                else 0.0
-            )
-            rvir = (
-                float(halos.rvir[halo_indices[0]])
-                if halo_indices and len(halos.rvir)
-                else 0.0
-            )
-            radius = max(extent, rvir, 0.05)
-            cam = scene.plotter.camera
-            fov = np.deg2rad(cam.view_angle)
-            dist = radius / np.tan(fov / 2.0) * 1.8
-            cx, cy, cz = (float(c) for c in center)
-            cam.focal_point = (cx, cy, cz)
-            cam.position = (cx, cy, cz + dist)
-            cam.up = (0.0, 1.0, 0.0)
-            scene.plotter.renderer.ResetCameraClippingRange()
-            _sparkle_target["center"] = (cx, cy, cz)
-            _sparkle_target["radius"] = radius
-        except Exception:
-            _sparkle_target["center"] = None
+        # Frame what survived (as Go does).
+        _frame_targets(halos, galaxies, halo_indices, gal_indices)
 
         # Isolating IS a focus region — the galaxy layer draws its
         # disk/bulge inner layers off the focus mask either way — so the
@@ -4196,14 +4230,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.hd_active = False
 
     def _hd_off() -> None:
-        """HD button pressed while on: back out to the standard 10 Mpc/h
-        view of the selected galaxy."""
+        """HD button pressed while on: back out to the normal view of the
+        selection, framed as Go frames it."""
         _clear_draw_widgets()
         state.isolate_active = False
         state.focus_active = False
         scene.clear_focus()
         _stop_hd()
-        _go_to_galaxy_at_radius(_GALAXY_GO_RADIUS)
+        on_go_frame()
 
     def _running_loop():
         import asyncio
@@ -4253,7 +4287,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return
         # Its halo (just the galaxy if alone, else the pair, group or
         # cluster) and its surroundings.
-        _hd_build_group(galaxies, _group_members(galaxies, gidx), gidx)
+        _hd_build_group(
+            galaxies,
+            _group_members(galaxies, gidx),
+            gidx,
+            only_focus=not _halo_context(),
+        )
 
     def _hd_frame(center, R, radius: float, keep_view: bool = False) -> None:
         """`radius` (Mpc/h) filling the view, sparkles around it, Isolate
@@ -4320,7 +4359,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
             p = c + d - box * np.round(d / box)
         return p + scene.active_model.offset
 
-    def _hd_build_group(galaxies, idx, focus: int | None = None) -> None:
+    def _halo_context() -> bool:
+        """The selection card's switch on "Halo + group"."""
+        return state.has("sel_kind") and str(state.sel_kind) == "halo"
+
+    def _hd_build_group(
+        galaxies, idx, focus: int | None = None, only_focus: bool = False
+    ) -> None:
         """HD for the selected galaxy's halo.
 
         Every member of the group (just the galaxy, if it is alone) at its
@@ -4343,8 +4388,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         h = float(scene._cfg.hubble_h)
         cosmo = (scene._snap_table, float(scene._cfg.omega))
+        # The members' star-formation histories, in one read.
+        from visage.hd.adapter import prefetch_sfh
+
+        prefetch_sfh(galaxies, idx, scene._snap_table, h, cosmo[1])
         lead = int(idx[0])
         _hd["lead"] = lead
+        # The galaxy HD is built for, by GalaxyIndex: changing snapshot
+        # finds it again and rebuilds HD there.
+        f = lead if focus is None else int(focus)
+        gid = int(galaxies.galaxy_id[f]) if galaxies.count > f else 0
+        _hd["focus_gid"] = gid if gid else None
 
         # Positions at the periodic images nearest the central (a group
         # straddling the box edge stays together).
@@ -4380,6 +4434,18 @@ def build_navigation_panel(server, scene: Scene) -> None:
         ]
         partners = tidal_partners(entries, h)
         sat_ctx = satellite_context(entries, h)
+        if only_focus and focus is not None:
+            # Galaxy context: HD draws just the selected galaxy, at its true
+            # size and own exposure -- its group still sets its context
+            # (tidal features, a jellyfish tail), worked out above.
+            k = next(
+                (j for j, e in enumerate(entries) if e["idx"] == int(focus)),
+                0,
+            )
+            one = dict(entries[k], quality="full", magnify=False)
+            partners = {0: partners.get(k, [])}
+            sat_ctx = {0: sat_ctx[k]} if k in sat_ctx else {}
+            entries = [one]
         todo = [k for k, e in enumerate(entries) if e["quality"]]
         # Built a moment ago (HD off and on, back to the same group)?
         key = (
@@ -4574,6 +4640,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ),
                 None,
             )
+        keep = _hd.pop("keep_cam", None)
         if target is not None:
             lay = target["layer"]
             _hd_frame(
@@ -4582,14 +4649,27 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 lay.radius_world,
                 keep_view=len(grp.members) > 1,
             )
-            return
-        # The group (zoom out for the halo gas).
-        _hd_frame(
-            grp.center,
-            grp.basis,
-            grp.radius_world,
-            keep_view=len(grp.members) > 1,
-        )
+            centre = lay._center
+        else:
+            # The group (zoom out for the halo gas).
+            _hd_frame(
+                grp.center,
+                grp.basis,
+                grp.radius_world,
+                keep_view=len(grp.members) > 1,
+            )
+            centre = grp.center
+        if keep is not None:
+            import numpy as np
+
+            # Rebuilt for a new snapshot: the same view of the galaxy as
+            # before, wherever it has moved to.
+            cam = scene.plotter.camera
+            cam.focal_point = tuple(float(v) for v in centre)
+            cam.position = tuple(float(v) for v in np.add(centre, keep[0]))
+            cam.up = keep[1]
+            scene.plotter.renderer.ResetCameraClippingRange()
+            _push()
 
     def _hd_drop(*_) -> None:
         """HD shows one snapshot of one model: changing either drops it
@@ -4604,13 +4684,72 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _stop_hd()
         _push()
 
+    # Following the galaxy through time: a snapshot change rebuilds HD for
+    # the same galaxy (by GalaxyIndex) once the slider settles, keeping
+    # the view.  Playback (pre-rendered frames) still leaves HD.
+    _HD_FOLLOW_DELAY = 0.4  # s
+
+    def _hd_follow(snap_num) -> None:
+        import numpy as np
+
+        if snap_num != state.snap_num:
+            return  # superseded by a later change
+        gid = _hd.get("focus_gid")
+        _, galaxies = scene.active_model.loader.get(int(snap_num))
+        hit = (
+            np.flatnonzero(galaxies.galaxy_id == gid)
+            if gid is not None
+            else np.zeros(0, int)
+        )
+        if len(hit) == 0 or galaxies.stellar_mass[int(hit[0])] <= 0:
+            _hd_drop()
+            if gid is not None:
+                state.notice_text = (
+                    "HD: the galaxy isn't in this snapshot (not formed "
+                    "yet, or merged)."
+                )
+                state.notice_color = "info"
+                state.notice_show = True
+            _push()
+            return
+        gidx = int(hit[0])
+        cam = scene.plotter.camera
+        keep = (
+            np.subtract(cam.position, cam.focal_point),
+            tuple(cam.up),
+        )
+        if bool(state.hd_building):
+            _hd_cancel()
+        for lay in (_hd["layer"], _hd["group"]):
+            if lay is not None and lay.active:
+                lay.clear()
+        _hd["keep_cam"] = keep
+        _hd_build_group(
+            galaxies,
+            _group_members(galaxies, gidx),
+            gidx,
+            only_focus=not _halo_context(),
+        )
+
     @state.change("snap_num")
     def on_snap_change_hd(snap_num=None, **_):
         shown = _hd["built_snap"] if not state.hd_building else None
         building = _hd.get("build_snap") if state.hd_building else None
         ref = shown if shown is not None else building
-        if ref is not None and snap_num != ref:
+        if ref is None or snap_num == ref:
+            return
+        playing = any(
+            state.has(k) and bool(state[k])
+            for k in ("is_playing", "playback_active")
+        )
+        if playing:
             _hd_drop()
+            return
+        loop = _running_loop()
+        if loop is None:
+            _hd_follow(snap_num)
+        else:
+            loop.call_later(_HD_FOLLOW_DELAY, _hd_follow, snap_num)
 
     scene.register_model_change_callback(_hd_drop)
     ctrl.hd_drop = _hd_drop

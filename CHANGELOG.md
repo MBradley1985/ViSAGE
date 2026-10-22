@@ -20,6 +20,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   stands out from its disk, and intermediate-age (0.1–1 Gyr) clusters
   spread through the disk. Runs without a saved history are unchanged.
 
+- **HD follows the galaxy through time.** Changing snapshot rebuilds HD for
+  the same galaxy (by GalaxyIndex), keeping the view, instead of leaving
+  HD.
+- **"In HD" on the selection card:** what HD draws for the selected
+  galaxy (arm class, bar, bulges, rings, star formation, merger debris,
+  ICL, gas).
 - **Reverse colormaps.** A Reverse box beside each colormap dropdown in the
   Structure tab flips the colormap (matplotlib's `_r`); it is saved with
   each box's settings.
@@ -28,6 +34,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - HD nuclear rings are a faint, diffuse band instead of a thin, bright
   ring.
+- HD follows the card's switch: in **Galaxy** context it draws just the
+  selected galaxy (at its true size; its group still sets its tidal
+  features and jellyfish tail), in **Halo + group** context the whole
+  group.
+- **Go and Isolate frame the selection the same way:** a galaxy ±10 kpc,
+  a halo with its whole group. Leaving HD lands on the same view.
+- HD builds use about 40% less memory (light maps in half precision), so
+  the cache of recent builds holds more; star-formation histories are
+  read only for the galaxies HD and the card need, not binned on every
+  snapshot load.
 
 ## [2.8.2] — 2026-10-21
 

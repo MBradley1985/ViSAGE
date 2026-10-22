@@ -795,6 +795,14 @@ def prepare(
         tex["gIdxTex"] = (dummy3, "nearest")
         tex["gPosTex"] = (np.zeros((2, 2, 4), np.float32), "nearest")
         tex["gColTex"] = (np.zeros((2, 2, 4), np.float32), "nearest")
+    # The light maps are smooth values of order 1: half precision holds
+    # them to ~0.1% and halves a build's memory (the cache of recent
+    # builds, and the copy back from a worker).  Uploads are float32 as
+    # before.  The exact-star tables (indices up to ~1e6, positions) stay
+    # single precision.
+    for k, (arr, mode) in list(tex.items()):
+        if mode != "nearest":
+            tex[k] = (np.asarray(arr, np.float16), mode)
     return {
         "tex": tex,
         "sprinkle": sprinkle,

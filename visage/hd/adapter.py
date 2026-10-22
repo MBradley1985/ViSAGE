@@ -14,13 +14,62 @@ def _extra(snap, name, i, default=0.0):
     return float(arr[i])
 
 
-def _sfh(snap, i, part, mass) -> tuple:
-    """Mass formed (Msun) per lookback bin, disk (0) or bulge (1); () if
-    the run saved no star-formation history."""
+# SFH bins read on demand, kept per (file, snapshot) for the session's
+# recent snapshots: {(path, snap): {raw row: bins}}.
+_SFH_CACHE: dict = {}
+_SFH_CACHE_SNAPS = 4
+
+
+def prefetch_sfh(snap, rows, snap_table, hubble_h, omega_m) -> None:
+    """Read the SFH bins of several galaxies (snapshot rows) in one go --
+    a group's members before its HD build -- so each galaxy doesn't open
+    the files on its own."""
+    if getattr(snap, "sfh_bins", None) is not None:
+        return
+    if not getattr(snap, "has_sfh", False) or snap_table is None:
+        return
+    key = (snap.source_path, int(snap.snap_num))
+    have = _SFH_CACHE.get(key, {})
+    raw = [
+        int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+        for i in rows
+    ]
+    need = sorted({r for r in raw if r not in have})
+    if not need:
+        return
+    from visage.io.galaxy_reader import sfh_bins_for
+
+    try:
+        out = sfh_bins_for(
+            snap.source_path,
+            int(snap.snap_num),
+            need,
+            snap_table.scale_factors,
+            hubble_h,
+            omega_m,
+        )
+    except Exception:
+        return
+    if out is None:
+        return
+    if key not in _SFH_CACHE:
+        while len(_SFH_CACHE) >= _SFH_CACHE_SNAPS:
+            _SFH_CACHE.pop(next(iter(_SFH_CACHE)))
+        _SFH_CACHE[key] = {}
+    _SFH_CACHE[key].update(zip(need, out, strict=True))
+
+
+def _sfh_bins(snap, i, snap_table, hubble_h, omega_m):
+    """Galaxy i's SFH lookback bins, (2, n) raw, or None: from the
+    snapshot if it carries them, else read from the file on demand."""
     bins = getattr(snap, "sfh_bins", None)
-    if bins is None or i >= len(bins):
-        return ()
-    return tuple(float(v) * mass for v in bins[i, part])
+    if bins is not None:
+        return bins[i] if i < len(bins) else None
+    if not getattr(snap, "has_sfh", False) or snap_table is None:
+        return None
+    raw = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+    prefetch_sfh(snap, [i], snap_table, hubble_h, omega_m)
+    return _SFH_CACHE.get((snap.source_path, int(snap.snap_num)), {}).get(raw)
 
 
 def _field(snap, name, i, default=0.0):
@@ -72,6 +121,7 @@ def sage_galaxy_from_snapshot(
                 ) - cosmic_time_gyr(
                     snap_table.snap_to_a(s_in), hubble_h, omega_m
                 )
+    sfh = _sfh_bins(snap, i, snap_table, hubble_h, omega_m)
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
         stellar_mass=_field(snap, "stellar_mass", i),
@@ -130,8 +180,10 @@ def sage_galaxy_from_snapshot(
         tcool_gyr=_extra(snap, "tcool", i),
         tff_gyr=_extra(snap, "tff", i),
         mdot_cool=_extra(snap, "mdot_cool", i),
-        sfh_disk=_sfh(snap, i, 0, mass),
-        sfh_bulge=_sfh(snap, i, 1, mass),
+        sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
+        sfh_bulge=(
+            () if sfh is None else tuple(float(v) * mass for v in sfh[1])
+        ),
     )
 
 

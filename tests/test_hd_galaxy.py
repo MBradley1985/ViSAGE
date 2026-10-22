@@ -224,23 +224,31 @@ def test_hd_button_isolates_and_toggles_off(hd_panel):
     state.flush()
     assert not state.hd_active
     assert not state.isolate_active
-    # Off again backs out to the standard 10 Mpc/h view of the galaxy.
+    # Off again backs out to the Go view of the galaxy: +-10 kpc.
+    assert _view_half_kpc(scene) == pytest.approx(10.0)
+
+
+def _view_half_kpc(scene):
+    """Half-width of the view at the focal point, physical kpc."""
     cam = scene.plotter.camera
     dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
-    assert dist == pytest.approx(10.0)
+    h = float(scene._cfg.hubble_h)
+    return dist * np.tan(np.deg2rad(cam.view_angle) / 2) * 1000 / h
 
 
-def test_target_go_defaults_to_10_mpc(hd_panel):
-    """The 3 / 5 buttons are one-off zooms, and the Coords sphere no longer
-    shares the halo standoff: Go keeps its 10 Mpc/h default."""
+def test_go_and_isolate_frame_a_galaxy_at_10_kpc(hd_panel):
+    """Go and Isolate frame the selected galaxy the same way: +-10 kpc.
+    The 3 / 5 / 10 Mpc/h buttons remain one-off wider zooms."""
     server, scene = hd_panel
     state, ctrl = server.state, server.controller
     state.nav_gal_idx = 0
     ctrl.go_to_galaxy_1()  # 3 Mpc/h
     ctrl.go_to_galaxy_enter()
-    cam = scene.plotter.camera
-    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
-    assert dist == pytest.approx(10.0)
+    assert _view_half_kpc(scene) == pytest.approx(10.0)
+    ctrl.toggle_isolate()
+    assert state.isolate_active
+    assert _view_half_kpc(scene) == pytest.approx(10.0)
+    ctrl.toggle_isolate()
     state.nav_distance = 0.5  # e.g. a drawn Coords sphere
     assert state.nav_halo_distance == 10.0
 
@@ -339,6 +347,7 @@ def test_hd_draws_the_whole_group(hd_panel):
     galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
     galaxies.central_id[[0, 3, 5]] = 99  # a group of three
     state.nav_gal_idx = 3
+    state.sel_kind = "halo"  # Halo + group: the whole group in HD
     ctrl.toggle_hd()
     state.flush()
     assert state.hd_active and state.isolate_active
@@ -366,9 +375,8 @@ def test_hd_draws_the_whole_group(hd_panel):
     ctrl.toggle_hd()
     state.flush()
     assert not state.hd_active and not grp.active
-    cam = scene.plotter.camera
-    dist = np.linalg.norm(np.subtract(cam.position, cam.focal_point))
-    assert dist == pytest.approx(10.0)
+    # (Leaving HD: the Go view of the selection, not 10 Mpc/h away.)
+    assert _view_half_kpc(scene) == pytest.approx(10.0)
 
 
 def test_group_plan_tiers():
@@ -426,6 +434,7 @@ def test_group_across_the_box_edge_stays_together(hd_panel):
     galaxies.positions[0] = [0.5, 30.0, 30.0]
     galaxies.positions[1] = [box - 0.3, 30.2, 30.0]  # just across the edge
     state.nav_gal_idx = 0
+    state.sel_kind = "halo"
     ctrl.toggle_hd()
     state.flush()
     import gc
@@ -659,3 +668,54 @@ def test_sfh_bins_date_each_step_and_the_last_is_current():
     out = _sfh_age_bins(sfh, sfh, np.array([0]), 63, a, 0.73, 0.25, 0.75)
     assert out.shape == (1, 2, len(SFH_AGE_EDGES) - 1)
     assert out[0, 0, 0] == 1.0 and out[0, 0, -1] == 2.0
+
+
+def test_galaxy_context_hd_draws_only_the_galaxy(hd_panel):
+    """Galaxy context: just the selected galaxy, at its true size, even
+    in a group (Halo + group draws the group)."""
+    import gc
+
+    from visage.hd.group import HDGroupLayer
+
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
+    galaxies.central_id[[0, 3, 5]] = 99
+    state.nav_gal_idx = 3
+    state.sel_kind = "galaxy"
+    ctrl.toggle_hd()
+    state.flush()
+    grp = [
+        o for o in gc.get_objects() if isinstance(o, HDGroupLayer) and o.active
+    ][0]
+    assert len(grp.members) == 1 and grp.picks[0] == [3]
+    ctrl.toggle_hd()
+
+
+def test_hd_follows_the_galaxy_to_another_snapshot(hd_panel):
+    """Changing snapshot rebuilds HD for the same galaxy (by
+    GalaxyIndex) instead of leaving HD; gone from the snapshot: HD off."""
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    model = scene.active_model
+    now, before = model.loader.get(63)[1], model.loader.get(62)[1]
+    now.galaxy_id[:] = np.arange(1000, 1000 + now.count)
+    before.galaxy_id[:] = np.arange(5000, 5000 + before.count)
+    before.galaxy_id[11] = now.galaxy_id[4]
+    state.snap_num = 63
+    state.nav_gal_idx = 4
+    state.flush()
+    ctrl.toggle_hd()
+    state.flush()
+    assert state.hd_active
+    model.set_snapshot(62)
+    state.snap_num = 62
+    state.flush()
+    assert state.hd_active  # rebuilt there, not dropped
+    before.galaxy_id[11] = -1  # now it isn't in snapshot 61's neighbour
+    model.set_snapshot(63)
+    state.snap_num = 63
+    state.flush()
+    assert state.hd_active  # back at 63 it is found again
+    ctrl.toggle_hd()

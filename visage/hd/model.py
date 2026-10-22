@@ -1592,3 +1592,75 @@ def _hernquist_radii(rng, n, a):
     u = rng.random(n) * 0.98
     s = np.sqrt(u)
     return a * s / (1 - s)
+
+
+def describe(g: SageGalaxy, rc: GalaxyRecipe | None = None) -> list[str]:
+    """What HD draws for this galaxy, in a few short phrases (the
+    selection card's list) -- from the same recipe the model is built
+    from.  Context that only the group build knows (tidal features,
+    jellyfish tails) isn't included."""
+    rc = rc or recipe_from_sage(g)
+    out: list[str] = []
+    if rc.kind == "elliptical":
+        out.append("elliptical" + (", dust lane" if rc.dust_lane > 0 else ""))
+    else:
+        arms = {
+            "grand": "grand-design arms",
+            "multi": "multi-arm spiral",
+            "partial": "partial arms",
+            "flocculent": "flocculent arms",
+            "clumpy": f"clumpy disk ({rc.clumps} clumps)",
+        }.get(rc.arm_class, rc.arm_class)
+        out.append(arms)
+        if rc.bar_len > 0:
+            out.append("bar")
+        if rc.l_bulge > 0.05:
+            out.append("classical bulge")
+        if rc.l_pseudo > 0.02:
+            out.append("pseudo-bulge")
+        if rc.ring > 0:
+            out.append("nuclear ring")
+        if rc.l_young > 0.05:
+            out.append("young star clusters, HII regions")
+        if rc.tau0 > 0.3:
+            out.append("dusty")
+        if rc.trunc_r > 0:
+            out.append("gas disk stripped from outside in")
+    if rc.lm_disk > 1.05 or rc.lm_bulge > 1.05:
+        if rc.inter_frac > 0.05:
+            out.append(
+                f"{rc.inter_frac:.0%} of disk light from 0.1–1 Gyr stars"
+            )
+        else:
+            out.append("colours from its star-formation history")
+    if rc.agn > 0:
+        out.append("AGN")
+    debris = [
+        name
+        for name, v in (
+            ("shells", rc.shells),
+            ("tidal tails", rc.tails),
+            ("stellar stream", rc.stream),
+        )
+        if v > 0
+    ]
+    if debris:
+        out.append("merger " + ", ".join(debris))
+    if rc.l_icl > 0:
+        out.append(
+            "intracluster light" + (" + streams" if rc.icl_streams > 0 else "")
+        )
+    if rc.halpha > 0:
+        out.append("Hα cooling filaments")
+    gas = []
+    if g.cgm_gas > 0:
+        gas.append("CGM streams")
+    if g.hot_gas > 0:
+        gas.append("hot halo")
+    if g.heating_log > 40.0:
+        gas.append("radio jets")
+    if g.outflow_rate > 0.05:
+        gas.append("winds")
+    if gas:
+        out.append("gas: " + ", ".join(gas))
+    return out
