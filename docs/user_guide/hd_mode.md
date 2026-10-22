@@ -59,7 +59,7 @@ The CPU side of a build runs in background worker processes. A card shows the pr
 To keep it quick:
 
 - the worker processes are started, and the shaders compiled, a few seconds after ViSAGE opens;
-- recent builds are kept in memory (a tenth of the machine's RAM, between 0.5 and 3 GB), so turning HD off and on again, or going back to a group you just viewed, is immediate.
+- recent builds are kept in memory (a tenth of the machine's RAM, between 0.5 and 3 GB), so turning HD off and on again, or going back to a group you just viewed, is immediate;
 - a moment after you select a galaxy, its HD is built quietly in the background, so pressing **HD** is usually immediate;
 - while HD is on, the same galaxy is built at the previous and next snapshots, so stepping through time in HD doesn't wait for a build.
 
