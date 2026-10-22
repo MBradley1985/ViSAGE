@@ -10,7 +10,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Components button** (HD, Galaxy context): labels the parts of the
+- **Components (?) button** on the selection card (HD, Galaxy context):
+  labels the parts of the
   galaxy with leader lines, like an annotated galaxy portrait: black
   hole, bulge, bar, ring, arms, star-forming regions, dust lanes, merger
   debris, ICL and (Gas on) wind, jet, HI disk, cold stream and hot halo.

@@ -40,7 +40,7 @@ Inside HD, double-click picks among the galaxies HD draws; under the cursor, the
 
 ## Components
 
-In **Galaxy** context, the card's **Components** button labels the parts of the HD galaxy, with leader lines to each: the central black hole, bulge or pseudo-bulge, bar, nuclear ring, spiral arms, star-forming regions, dust lanes, merger shells, tails and streams, the intracluster light and, with **Gas** on, the wind, radio jet, HI disk, cold stream and hot halo. Only what the galaxy has, from its SAGE26 properties, is labelled, and the labels follow the galaxy as you turn it. Press it again to hide them. (It isn't offered in **Halo + group** context.)
+In **Galaxy** context, the card's **?** (Components) button, next to the nearest-galaxy button, labels the parts of the HD galaxy, with leader lines to each: the central black hole, bulge or pseudo-bulge, bar, nuclear ring, spiral arms, star-forming regions, dust lanes, merger shells, tails and streams, the intracluster light and, with **Gas** on, the wind, radio jet, HI disk, cold stream and hot halo. Only what the galaxy has, from its SAGE26 properties, is labelled, and the labels follow the galaxy as you turn it. Press it again to hide them. (It isn't offered in **Halo + group** context.)
 
 ## Gas
 

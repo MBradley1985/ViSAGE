@@ -242,8 +242,8 @@ def selection_card(server) -> None:
                 icon="mdi-help-circle-outline",
                 v_show=("hd_active && sel_kind !== 'halo'",),
                 size="x-small",
-                variant=("hd_labels_on ? 'flat' : 'text'",),
-                color="#f472b6",
+                variant="text",
+                color="cyan",
                 click="hd_labels_on = !hd_labels_on",
                 title="Components: label the parts of this galaxy",
             )
