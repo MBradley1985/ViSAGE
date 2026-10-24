@@ -187,6 +187,8 @@ def compute_photometry(
     imf_type: int = IMF_CHABRIER,
     recycle_fraction: float | None = None,
     dust_model: str | None = None,
+    disk_bulge: bool = False,
+    spectra_out: dict | None = None,
 ) -> dict[str, np.ndarray]:
     """Compute AB magnitudes for every galaxy in a lightcone HDF5 file
     (or just `rows`, sorted row indices).
@@ -203,6 +205,15 @@ def compute_photometry(
     ``dust_emission`` (default False) additionally re-emits the absorbed
     energy in the IR (Draine & Li 2007) — only with ``dust`` on.
     ``recycle_fraction`` defaults to the run's own (header RecycleFraction).
+    ``disk_bulge`` also gives the disk's and the bulge's own magnitudes
+    (``disk_mag_*`` / ``bulge_mag_*``; the totals are their sum).
+    With "charlot_fall" dust, ``dust_emission`` re-emits each galaxy's
+    absorbed light in the infrared (Draine & Li 2007, energy balance),
+    and ``LDust`` (L_sun) is each galaxy's dust luminosity.
+    ``spectra_out``: a dict to fill with rest-frame spectra (L_sun/Hz) of
+    every galaxy -- "wave" (Angstrom), "observed" (through the dust, with
+    its emission), "intrinsic" (the stars alone) and, with ``disk_bulge``,
+    "disk" and "bulge" -- for a few ``rows`` only (n x 6000 floats each).
     ``dust_model``: "none", "calzetti" (the ``dust``/``dust2`` screen) or
     "charlot_fall": each galaxy's own dust (Dusty-SAGE equilibrium) in
     birth clouds and a diffuse ISM slab at its inclination (see
@@ -231,6 +242,7 @@ def compute_photometry(
                 "needs the full star-formation history"
             )
         metals = get("MetalsStellarMass")
+        bulge_mass = get("BulgeMass")
         snapnum = get("SnapNum")
         if snapnum is None:
             raise KeyError(f"{path} has no SnapNum")
@@ -242,11 +254,13 @@ def compute_photometry(
             raise KeyError(f"{path} has no redshift field")
         if z_obs is None:
             z_obs = z_cos
-        sfr_now = np.zeros(n)
+        sfr_parts = {}
         for name in ("SfrDisk", "SfrBulge"):
             v = get(name)
-            if v is not None:
-                sfr_now = sfr_now + v.astype(np.float64)  # Msun/yr
+            sfr_parts[name] = (
+                v.astype(np.float64) if v is not None else np.zeros(n)
+            )  # Msun/yr
+        sfr_now = sfr_parts["SfrDisk"] + sfr_parts["SfrBulge"]
         dist = get("distance")  # comoving, Mpc/h
         if dust_model is None:
             dust_model = "calzetti" if dust else "none"
@@ -302,12 +316,27 @@ def compute_photometry(
     )
     # (n, n_bins) Msun FORMED per SFH bin (disk + bulge): SAGE stores what
     # survives recycling, (1 - R) of it.
-    sfh_formed = (
-        (sfh_disk.astype(np.float64) + sfh_bulge.astype(np.float64))
-        * mfac
-        / (1.0 - recycle_fraction)
+    sfh_disk_f = sfh_disk.astype(np.float64) * mfac / (1.0 - recycle_fraction)
+    sfh_bulge_f = (
+        sfh_bulge.astype(np.float64) * mfac / (1.0 - recycle_fraction)
     )
+    if bulge_mass is not None:
+        # SAGE26's bulge history holds only stars formed in the bulge; the
+        # disk stars instabilities and mergers move into it stay in the
+        # disk's (model_mergers.c). Move the share of the disk's history
+        # that makes the bulge's total its BulgeMass -- those stars taken
+        # to have the disk's age mix (SAGE26 doesn't record when they moved).
+        sd = sfh_disk_f.sum(1)
+        need = bulge_mass.astype(np.float64) * mfac / (1.0 - recycle_fraction)
+        f_move = np.clip(
+            (need - sfh_bulge_f.sum(1)) / np.maximum(sd, 1e-30), 0.0, 1.0
+        )
+        moved = f_move[:, None] * sfh_disk_f
+        sfh_disk_f = sfh_disk_f - moved
+        sfh_bulge_f = sfh_bulge_f + moved
+    sfh_formed = sfh_disk_f + sfh_bulge_f
     n_bins = sfh_formed.shape[1]
+    prefixes = ("", "disk_", "bulge_") if disk_bulge else ("",)
 
     dust_info = {}
     if cf:
@@ -379,11 +408,14 @@ def compute_photometry(
 
     # Fluxes are summed over the metallicity nodes, magnitudes at the end.
     flux: dict[str, np.ndarray] = {}
-    for band in bands:
-        if want_rest:
-            flux[f"mag_rest_{band}"] = np.zeros(n)
-        if want_obs:
-            flux[f"mag_obs_{band}"] = np.zeros(n)
+    for pre in prefixes:
+        for band in bands:
+            if want_rest:
+                flux[f"{pre}mag_rest_{band}"] = np.zeros(n)
+            if want_obs:
+                flux[f"{pre}mag_obs_{band}"] = np.zeros(n)
+    re_emit = cf and dust_emission
+    l_dust = np.zeros(n)
 
     has_light = stellar_mass > 0
     unique_snaps = np.unique(snapnum)
@@ -407,6 +439,10 @@ def compute_photometry(
         )
         libraries = grid.libraries
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
+        nu_w = ir_template = None
+        if re_emit:
+            nu_w = dm.frequency_weights(grid.wave)
+            ir_template = dm.emission_template(grid.wave)
 
         for snap in unique_snaps:
             group = has_light & (snapnum == snap) & (w_node > 0)
@@ -451,73 +487,153 @@ def compute_photometry(
                     else bc_spec
                 )
                 bc_frac = bc_age / dt_y if dt_y > 0 else 1.0
-            for start in range(0, len(idx), step):
-                ci = idx[start : start + step]
-                wts = sfh_formed[ci].copy()  # (chunk, n_bins)
-                m_young = np.zeros(len(ci))
-                m_rest = np.zeros(len(ci))
+
+            if not cf:
+                bc_frac = y2_spec = bc_spec = None
+
+            def build(
+                wts_in,
+                sfr_c,
+                t_ism=None,
+                t_bc=None,
+                *,
+                last=last,
+                width=width,
+                dt_y=dt_y,
+                bin_spec=bin_spec,
+                young_spec=young_spec,
+                rest_spec=rest_spec,
+                bc_frac=bc_frac,
+                y2_spec=y2_spec,
+                bc_spec=bc_spec,
+                nu_w=nu_w,
+                ir_template=ir_template,
+            ):
+                """Rest-frame spectra (chunk, n_wave, L_sun/Hz) of stars
+                formed as `wts_in` (Msun per bin), the youngest from the
+                current SFR `sfr_c`, through the dust if any."""
+                wts = wts_in.copy()
+                m_young = np.zeros(len(wts))
+                m_rest = np.zeros(len(wts))
                 if 0 <= last < n_bins and width > 0:
                     m_last = wts[:, last]
-                    m_young = np.minimum(sfr_now[ci] * dt_y * 1e9, m_last)
+                    m_young = np.minimum(sfr_c * dt_y * 1e9, m_last)
                     m_rest = m_last - m_young
                     wts[:, last] = 0.0
                 with np.errstate(
                     divide="ignore", over="ignore", invalid="ignore"
                 ):
-                    if cf:
-                        older = (
-                            wts @ bin_spec
-                            + (m_young * (1 - bc_frac))[:, None] * y2_spec
-                            + m_rest[:, None] * rest_spec
-                        )
-                        t_ism = dm.ism_transmission(
-                            grid.wave, tau_v[ci], cos_i[ci]
-                        )
-                        t_bc = dm.bc_transmission(grid.wave, tau_v[ci])
-                        composite = t_ism * (
-                            older
-                            + (m_young * bc_frac)[:, None] * bc_spec * t_bc
-                        )
-                    else:
-                        composite = (
+                    if not cf:
+                        return (
                             wts @ bin_spec
                             + m_young[:, None] * young_spec
                             + m_rest[:, None] * rest_spec
-                        )  # (chunk, n_wave) L_sun/Hz
+                        )
+                    older = (
+                        wts @ bin_spec
+                        + (m_young * (1 - bc_frac))[:, None] * y2_spec
+                        + m_rest[:, None] * rest_spec
+                    )
+                    young = (m_young * bc_frac)[:, None] * bc_spec
+                    seen = t_ism * (older + young * t_bc)
+                    if re_emit and nu_w is not None:
+                        absorbed = (older + young - seen) @ nu_w
+                        seen = seen + absorbed[:, None] * ir_template
+                    return seen
+
+            for start in range(0, len(idx), step):
+                ci = idx[start : start + step]
+                t_ism = t_bc = None
+                if cf:
+                    t_ism = dm.ism_transmission(
+                        grid.wave, tau_v[ci], cos_i[ci]
+                    )
+                    t_bc = dm.bc_transmission(grid.wave, tau_v[ci])
+                if disk_bulge:
+                    spectra = {
+                        "disk_": build(
+                            sfh_disk_f[ci],
+                            sfr_parts["SfrDisk"][ci],
+                            t_ism,
+                            t_bc,
+                        ),
+                        "bulge_": build(
+                            sfh_bulge_f[ci],
+                            sfr_parts["SfrBulge"][ci],
+                            t_ism,
+                            t_bc,
+                        ),
+                    }
+                    spectra[""] = spectra["disk_"] + spectra["bulge_"]
+                else:
+                    spectra = {
+                        "": build(sfh_formed[ci], sfr_now[ci], t_ism, t_bc)
+                    }
                 wn = w_node[ci]
                 zg = z_obs[ci]
-                for band in bands:
-                    proj = projectors[band]
-                    if want_rest:
-                        f_nu = (
-                            proj.project(composite, 0.0)
-                            * L_SUN_ERG_S
-                            / (4 * np.pi * d10_cm**2)
-                        )
-                        flux[f"mag_rest_{band}"][ci] += wn * f_nu
-                    if want_obs:
-                        # K-correction shape at each galaxy's own z_obs.
-                        fk = np.stack(
-                            [
-                                (1.0 + z) * proj.project(composite, z)
-                                for z in kz
-                            ]
-                        )  # (n_kz, chunk)
-                        if len(kz) > 1:
-                            j = np.clip(
-                                np.searchsorted(kz, zg) - 1, 0, len(kz) - 2
+                if re_emit:
+                    # Dust luminosity: what the re-emission adds.
+                    no_ir = build(
+                        sfh_formed[ci], sfr_now[ci], t_ism, t_bc, nu_w=None
+                    )
+                    l_dust[ci] += wn * ((spectra[""] - no_ir) @ nu_w)
+                if spectra_out is not None:
+                    _keep_spectra(
+                        spectra_out,
+                        grid.wave,
+                        ci,
+                        wn,
+                        spectra,
+                        (
+                            build(
+                                sfh_formed[ci],
+                                sfr_now[ci],
+                                np.ones_like(t_ism),
+                                np.ones_like(t_bc),
+                                nu_w=None,
                             )
-                            t = np.clip(
-                                (zg - kz[j]) / (kz[j + 1] - kz[j]), 0, 1
+                            if cf
+                            else spectra[""]
+                        ),
+                        n,
+                    )
+                for pre, composite in spectra.items():
+                    for band in bands:
+                        proj = projectors[band]
+                        if want_rest:
+                            f_nu = (
+                                proj.project(composite, 0.0)
+                                * L_SUN_ERG_S
+                                / (4 * np.pi * d10_cm**2)
                             )
-                            cols = np.arange(len(ci))
-                            f_eff = (1 - t) * fk[j, cols] + t * fk[j + 1, cols]
-                        else:
-                            f_eff = fk[0]
-                        f_nu = (
-                            f_eff * L_SUN_ERG_S / (4 * np.pi * d_l_cm[ci] ** 2)
-                        )
-                        flux[f"mag_obs_{band}"][ci] += wn * f_nu
+                            flux[f"{pre}mag_rest_{band}"][ci] += wn * f_nu
+                        if want_obs:
+                            # K-correction shape at each galaxy's own z_obs.
+                            fk = np.stack(
+                                [
+                                    (1.0 + z) * proj.project(composite, z)
+                                    for z in kz
+                                ]
+                            )  # (n_kz, chunk)
+                            if len(kz) > 1:
+                                j = np.clip(
+                                    np.searchsorted(kz, zg) - 1, 0, len(kz) - 2
+                                )
+                                t = np.clip(
+                                    (zg - kz[j]) / (kz[j + 1] - kz[j]), 0, 1
+                                )
+                                cols = np.arange(len(ci))
+                                f_eff = (1 - t) * fk[j, cols] + t * fk[
+                                    j + 1, cols
+                                ]
+                            else:
+                                f_eff = fk[0]
+                            f_nu = (
+                                f_eff
+                                * L_SUN_ERG_S
+                                / (4 * np.pi * d_l_cm[ci] ** 2)
+                            )
+                            flux[f"{pre}mag_obs_{band}"][ci] += wn * f_nu
 
             done_groups += 1
             if progress_cb is not None:
@@ -529,6 +645,8 @@ def compute_photometry(
         mag[~has_light] = np.nan
         out[name] = mag
     out.update(dust_info)
+    if re_emit:
+        out["LDust"] = l_dust.astype(np.float32)
     out["_settings"] = {
         "Method": "FSPS SSPs integrated over each SFH bin's time span",
         "SSPLibraries": ", ".join(libraries),
@@ -547,6 +665,11 @@ def compute_photometry(
         "Dust": (
             "Charlot & Fall 2000 birth clouds + ISM slab at each galaxy's "
             "inclination; cold dust from Dusty-SAGE (Triani+20) equilibrium"
+            + (
+                "; re-emitted in the IR (Draine & Li 2007, energy balance)"
+                if re_emit
+                else ""
+            )
             if cf
             else (
                 f"Calzetti 2000, tau_V={dust2}"
@@ -565,7 +688,23 @@ _DUST_FIELDS = {
     "DustToGas": ("Cold-ISM dust-to-gas mass ratio", ""),
     "TauV_ISM": ("Face-on V-band optical depth of the diffuse ISM", ""),
     "CosInclination": ("|cos| of the angle between spin and sight line", ""),
+    "LDust": (
+        "Dust luminosity (absorbed starlight re-emitted in the IR)",
+        "Lsun",
+    ),
 }
+
+
+def _keep_spectra(store, wave, rows, weight, spectra, intrinsic, n):
+    """Accumulate rest-frame spectra of `rows` (weighted by their
+    metallicity-node share) into `store` (see compute_photometry)."""
+    names = {"": "observed", "disk_": "disk", "bulge_": "bulge"}
+    store.setdefault("wave", wave)
+    for pre, spec in spectra.items():
+        arr = store.setdefault(names[pre], np.zeros((n, len(wave))))
+        arr[rows] += weight[:, None] * spec
+    arr = store.setdefault("intrinsic", np.zeros((n, len(wave))))
+    arr[rows] += weight[:, None] * intrinsic
 
 
 def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
@@ -657,8 +796,16 @@ def main(argv: list[str] | None = None) -> None:
         "--dust-emission",
         dest="dust_emission",
         action="store_true",
-        help="Also re-emit absorbed energy in the IR (Draine & Li), making "
-        "the mid/far-IR bands (WISE) physical. Needs --dust.",
+        help="Also re-emit the absorbed energy in the IR (Draine & Li 2007), "
+        "making the mid/far-IR bands (WISE, Spitzer, Herschel) physical. "
+        "Needs dust (--dust or --dust-model charlot_fall).",
+    )
+    p.add_argument(
+        "--disk-bulge",
+        dest="disk_bulge",
+        action="store_true",
+        help="Also write the disk's and the bulge's own magnitudes "
+        "(disk_mag_* / bulge_mag_*).",
     )
     p.add_argument(
         "--alist",
@@ -692,7 +839,9 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Computing synthetic photometry for {args.input} ...")
     _zdesc = "per-galaxy (interpolated)" if args.metallicity else "solar"
     if args.dust_model == "charlot_fall":
-        _ddesc = "each galaxy's own (Charlot & Fall)"
+        _ddesc = "each galaxy's own (Charlot & Fall)" + (
+            ", re-emitted in the IR" if args.dust_emission else ""
+        )
     elif args.dust:
         _ddesc = f"on (dust2={args.dust2}" + (
             ", +emission)" if args.dust_emission else ")"
@@ -714,6 +863,7 @@ def main(argv: list[str] | None = None) -> None:
         alist=args.alist,
         progress_cb=_progress,
         dust_model=args.dust_model,
+        disk_bulge=args.disk_bulge,
     )
     write_photometry(args.input, results)
     n_mags = sum(1 for k in results if not k.startswith("_"))

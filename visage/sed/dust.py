@@ -213,3 +213,40 @@ def bc_transmission(wave, tau_v) -> np.ndarray:
     """(n, n_wave) birth-cloud transmission (a screen)."""
     tau_bc = tau_v * (1 - MU_ISM) / MU_ISM
     return np.exp(-np.outer(tau_bc, (wave / 5500.0) ** -N_BC))
+
+
+_EMISSION: dict = {}
+
+
+def emission_template(wave: np.ndarray) -> np.ndarray:
+    """Dust emission per unit absorbed luminosity (L_nu per L_sun, on
+    `wave`): the Draine & Li (2007) model as FSPS has it (U_min = 1,
+    q_PAH = 3.5%, gamma = 0.01), normalised to integrate to 1 over
+    frequency. Energy balance (da Cunha, Charlot & Elbaz 2008, MNRAS 388,
+    1595): each galaxy re-emits exactly what its dust absorbed."""
+    key = len(wave)
+    if key not in _EMISSION:
+        import fsps
+
+        kw = dict(zcontinuous=1, sfh=0, imf_type=1, dust_type=2, dust2=1.0)
+        w, with_em = fsps.StellarPopulation(
+            add_dust_emission=True, **kw
+        ).get_spectrum(tage=0.1)
+        _, without = fsps.StellarPopulation(
+            add_dust_emission=False, **kw
+        ).get_spectrum(tage=0.1)
+        em = np.clip(np.asarray(with_em) - np.asarray(without), 0.0, None)
+        em = np.interp(wave, np.asarray(w), em)
+        _EMISSION[key] = em / np.dot(em, frequency_weights(wave))
+    return _EMISSION[key]
+
+
+def frequency_weights(wave: np.ndarray) -> np.ndarray:
+    """Weights w with L = sum(L_nu * w) = integral L_nu d(nu), on a
+    wavelength grid in Angstrom."""
+    nu = 2.99792458e18 / np.asarray(wave, float)
+    w = np.zeros_like(nu)
+    d = np.abs(np.diff(nu))
+    w[:-1] += 0.5 * d
+    w[1:] += 0.5 * d
+    return w

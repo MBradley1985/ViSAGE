@@ -363,9 +363,13 @@ SED_DUST_ENABLED=1
 #   every galaxy (Calzetti 2000), of V-band optical depth SED_DUST2.
 SED_DUST_MODEL="charlot_fall"          # charlot_fall | calzetti
 SED_DUST2=0.3                          # calzetti only: V-band optical depth
-# Also re-emit the absorbed energy in the IR (Draine & Li) — makes the mid-IR
-# (WISE) bands physical. Only has an effect when dust (above) is on.
-SED_DUST_EMISSION_ENABLED=0
+# Re-emit the light the dust absorbs in the infrared (Draine & Li 2007,
+# energy balance) -- makes the mid/far-IR bands (WISE, Spitzer, Herschel)
+# physical. Only has an effect when dust (above) is on.
+SED_DUST_EMISSION_ENABLED=1
+# Also write the disk's and the bulge's own magnitudes (disk_mag_*,
+# bulge_mag_*); the totals are their sum.
+SED_DISK_BULGE_ENABLED=1
 {survey_flags}
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
@@ -406,6 +410,7 @@ if [ "$SED_ENABLED" = "1" ]; then
       fi
     fi
     [ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ] && sed_extra="$sed_extra --dust-emission"
+    [ "$SED_DISK_BULGE_ENABLED" = "1" ] && sed_extra="$sed_extra --disk-bulge"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\
