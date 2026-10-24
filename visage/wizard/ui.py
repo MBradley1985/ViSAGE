@@ -1307,7 +1307,7 @@ def _run_view(server) -> None:
                 html.Span(
                     "{{ wiz_run.mode === 'sageswarm' && pso_plots.length "
                     "? pso_plots[pso_plots.length - 1].name "
-                    ": (wiz_run.live_caption || wiz_run.live_note) }}",
+                    ": wiz_run.live_note }}",
                     style="font-size:0.95rem;color:#cbd5e1;",
                 )
             with html.Div(

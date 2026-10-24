@@ -7,7 +7,9 @@ from __future__ import annotations
 import asyncio
 
 from visage.wizard.controller import WizardController
-from visage.wizard.screens import _readable
+from pathlib import Path
+
+from visage.wizard.screens import _fill_frame, _readable
 
 
 class _State(dict):
@@ -162,3 +164,15 @@ def test_physics_toggle_and_run_name(tmp_path):
     c._apply_setup_name()
     assert c._par_path.name == "test_run.par"
     assert c._cfg_values("sage26")["OutputDir"]["value"] == "output/test_run/"
+
+
+def test_fill_frames_follow_progress():
+    static = Path(__file__).resolve().parents[1] / "visage" / "static"
+    assert _fill_frame("sage26", 0) == "/sage_static/wizard/fill/box_000.webp"
+    assert _fill_frame("sage26", 47) == "/sage_static/wizard/fill/box_045.webp"
+    # The cone is full once it has been cut (55%), before photometry.
+    assert _fill_frame("sagelightcone", 60).endswith("cone_100.webp")
+    for mode in ("sage26", "sagelightcone"):
+        for pct in range(0, 101):
+            url = _fill_frame(mode, pct)
+            assert (static / url[len("/sage_static/") :]).is_file()

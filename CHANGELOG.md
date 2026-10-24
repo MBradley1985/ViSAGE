@@ -26,9 +26,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   the output (SAGE26: a .par and output folder of that name).
 - **Runs show their progress:** the stages, a progress bar and time left
   read from each tool's own output, the latest log lines, Cancel, and
-  the full terminal a click away. Live view shows the science: the new
-  model's stellar mass function against GAMA (Driver et al. 2022), the
-  new lightcone drawn as a wedge, or SAGEswarm's plots as they appear.
+  the full terminal a click away. Live view shows a SAGE26 box filling
+  with galaxies, or a lightcone filling outwards from the observer, in
+  step with the run (frames drawn once from a Millennium run and the
+  microUchuu lightcone), or SAGEswarm's plots as they appear.
   When it finishes: Open in Explore / Open in Lightcone view.
 - Model and lightcone pickers are big buttons (size, date, galaxies);
   lightcones in any `sage_outputs/` folder are found. Check for update

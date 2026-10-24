@@ -15,9 +15,7 @@ calibration plots.
 from __future__ import annotations
 
 import asyncio
-import base64
 import codecs
-import io
 import re
 import time
 from collections import deque
@@ -207,138 +205,24 @@ def _constraint_group(name: str) -> str:
     return "Scaling relations"
 
 
-def smf_png(output_dir: Path, gama_file: Path | None) -> str | None:
-    """The z ~ 0 stellar mass function of a SAGE26 output (all its
-    model_*.hdf5 files, last snapshot) against GAMA (Driver et al. 2022),
-    as a PNG data URL."""
-    import h5py
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    files = sorted(Path(output_dir).glob("model_*.hdf5"))
-    if not files:
-        return None
-    with h5py.File(files[0], "r") as h:
-        sim = h["Header/Simulation"].attrs
-        hub, box = float(sim["hubble_h"]), float(sim["box_size"])
-        snaps = sorted(
-            (k for k in h.keys() if k.startswith("Snap_")),
-            key=lambda k: int(k[5:]),
-        )
-    last = snaps[-1]
-    ms = []
-    for f in files:
-        with h5py.File(f, "r") as h:
-            if last in h and "StellarMass" in h[last]:
-                ms.append(h[last]["StellarMass"][:])
-    ms = np.concatenate(ms) * 1e10 / hub if ms else np.array([])
-    ms = ms[ms > 0]
-    vol = (box / hub) ** 3
-    bins = np.arange(8.0, 12.4, 0.2)
-    n, _ = np.histogram(np.log10(ms), bins)
-    c = 0.5 * (bins[1:] + bins[:-1])
-    plt.rcParams.update(
-        {
-            "font.size": 12,
-            "text.color": "#e2e8f0",
-            "axes.labelcolor": "#cbd5e1",
-            "xtick.color": "#94a3b8",
-            "ytick.color": "#94a3b8",
-        }
-    )
-    fig, ax = plt.subplots(figsize=(7.2, 5), dpi=110)
-    fig.patch.set_facecolor("#050a14")
-    ax.set_facecolor("#050a14")
-    for s in ax.spines.values():
-        s.set_color("#334155")
-    if gama_file is not None and Path(gama_file).is_file():
-        g = np.loadtxt(gama_file)
-        ax.errorbar(
-            g[:, 0],
-            g[:, 1],
-            yerr=g[:, 2],
-            fmt="o",
-            color="#f59e0b",
-            ms=5,
-            label="GAMA (Driver et al. 2022)",
-        )
-    ok = n > 0
-    ax.plot(
-        c[ok],
-        np.log10(n[ok] / vol / 0.2),
-        color="#22d3ee",
-        lw=2.6,
-        label=f"SAGE26 {Path(output_dir).name}",
-    )
-    ax.set_xlabel("log M* [M☉]")
-    ax.set_ylabel("log Φ [Mpc⁻³ dex⁻¹]")
-    ax.set_xlim(8, 12.2)
-    ax.set_ylim(-5.5, -0.8)
-    ax.grid(color="#1e293b")
-    ax.legend(frameon=False, fontsize=10)
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+# The live view for SAGE26 and LightSAGE: frames of a box and a lightcone
+# filling up, drawn once from real outputs (Millennium box,
+# microUchuu v2 lightcone).
+_LIVE_NOTE = {
+    "sage26": "A SAGE26 box (Millennium, z = 0) filling with galaxies as "
+    "the trees are built: star-forming blue, quiescent orange",
+    "sagelightcone": "A LightSAGE cone (microUchuu, z < 0.2) filling outwards "
+    "from the observer: star-forming blue, quiescent orange",
+    "sageswarm": "SAGEswarm's plots appear here as it makes them.",
+}
 
 
-def wedge_png(cone: Path) -> str | None:
-    """A lightcone drawn as a redshift-survey wedge (RA against distance):
-    star-forming galaxies blue, quiescent orange, as a PNG data URL."""
-    import h5py
-    import numpy as np
-    from PIL import Image
-    from scipy.ndimage import gaussian_filter
-
-    with h5py.File(cone, "r") as h:
-        if not all(k in h for k in ("ra", "distance", "StellarMass")):
-            return None
-        ra = h["ra"][:]
-        d = h["distance"][:]
-        ms = h["StellarMass"][:]
-        sfr = (
-            (h["SfrDisk"][:] + h["SfrBulge"][:]) if "SfrDisk" in h else ms * 0
-        )
-    ok = ms > 0.01
-    ra, d, ms, sfr = ra[ok], d[ok], ms[ok], sfr[ok]
-    if not len(ra):
-        return None
-    th = np.deg2rad(ra - 0.5 * (ra.min() + ra.max()))
-    x, y = d * np.sin(th), d * np.cos(th)
-    w_px, h_px = 700, 840
-    ymax = float(d.max()) * 1.02
-    half = max(ymax * w_px / h_px / 2, float(np.abs(x).max()) * 1.05)
-    ix = ((x + half) / (2 * half) * w_px).astype(int)
-    iy = ((ymax - y) / ymax * h_px).astype(int)
-    m = (ix >= 0) & (ix < w_px) & (iy >= 0) & (iy < h_px)
-    wgt = np.sqrt(ms[m])
-    sf = (sfr[m] / (ms[m] * 1.5e10)) > 1e-11
-    lay = []
-    for sel in (sf, ~sf):
-        hst = np.zeros((h_px, w_px))
-        np.add.at(hst, (iy[m][sel], ix[m][sel]), wgt[sel])
-        lay.append(gaussian_filter(hst, 0.8))
-    tot = lay[0] + lay[1]
-    if not (tot > 0).any():
-        return None
-    ref = np.percentile(tot[tot > 0], 90)
-    lum = np.clip(np.arcsinh(tot / (0.3 * ref)) / np.arcsinh(6 / 0.3), 0, 1)
-    fb = np.clip(lay[0] / np.maximum(tot, 1e-12), 0, 1)[..., None]
-    col = fb * np.array([0.3, 0.6, 1.0]) + (1 - fb) * np.array(
-        [1.0, 0.5, 0.15]
-    )
-    img = lum[..., None] * col
-    glow = np.stack([gaussian_filter(img[..., k], 5) for k in range(3)], -1)
-    img = np.clip(img * 1.25 + glow * 0.9, 0, 1)
-    buf = io.BytesIO()
-    Image.fromarray((img * 255).astype(np.uint8)).save(buf, "JPEG", quality=85)
-    return (
-        "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
-    )
+def _fill_frame(mode: str, pct: float) -> str:
+    if mode == "sagelightcone":
+        pct = pct / 0.55  # the cone is cut by 55%; photometry follows
+    step = int(min(max(pct, 0.0), 100.0) // 5 * 5)
+    name = "box" if mode == "sage26" else "cone"
+    return f"/sage_static/wizard/fill/{name}_{step:03d}.webp"
 
 
 class SetupRunMixin:
@@ -903,7 +787,6 @@ class SetupRunMixin:
             "log": [],
             "status": "running",
             "live_img": "",
-            "live_caption": "",
             "live_note": "",
             "actions": [],
         }
@@ -1035,37 +918,31 @@ class SetupRunMixin:
             stats.append({"k": "Iteration", "v": f"{run['iter']} / {m_tot}"})
             stats.append({"k": "Particles", "v": run["parts"] or "—"})
             stats.append({"k": "Best score", "v": run["best"] or "—"})
+        pct = 100.0 if status == "done" else run["pct"]
         info.update(
             stages=stages,
-            pct=round(100.0 if status == "done" else run["pct"], 1),
+            pct=round(pct, 1),
             stats=stats,
             log=list(run["lines"])[-6:],
         )
+        if mode != "sageswarm":
+            info["live_img"] = _fill_frame(mode, pct)
         self._st.wiz_run = info
         self._st.flush()
 
     async def _run_live_cone(self, path: str) -> None:
+        """How many galaxies the new cone holds (for the stats)."""
         cone = self._toolchain.native(path.strip().strip('"'))
         if not cone.is_absolute():
             cone = self._lc_script_path().parent / cone
-        loop = asyncio.get_running_loop()
         try:
             import h5py
 
             with h5py.File(cone, "r") as h:
                 self._run["ngal"] = int(h["ra"].shape[0])
-            img = await loop.run_in_executor(None, wedge_png, cone)
         except Exception:
             return
-        if img:
-            info = dict(self._st.wiz_run)
-            info.update(
-                live_img=img,
-                live_caption="Your lightcone: right ascension against distance, "
-                "star-forming galaxies blue, quiescent orange",
-            )
-            self._st.wiz_run = info
-            self._run_publish(force=True)
+        self._run_publish(force=True)
 
     async def _setup_run(self) -> None:
         """Save the config and run it on the progress screen."""
@@ -1079,14 +956,8 @@ class SetupRunMixin:
         self._wiz_buf = bytearray()
         self._push_bytes(b"\x1b[2J\x1b[3J\x1b[H")
         self._last_rc = None
-        if mode == "sage26":
-            live_note = "The stellar mass function appears here when SAGE26 writes its output."
-        elif mode == "sagelightcone":
-            live_note = "Your lightcone appears here once it has been cut."
-        else:
-            live_note = "SAGEswarm's plots appear here as it makes them."
         info = dict(self._st.wiz_run)
-        info["live_note"] = live_note
+        info["live_note"] = _LIVE_NOTE[mode]
         self._st.wiz_run = info
         self._st.flush()
         step = {
@@ -1134,27 +1005,6 @@ class SetupRunMixin:
                             "primary": True,
                         }
                     )
-                if out is not None:
-                    from visage.wizard import screens as _s
-
-                    gama = (
-                        Path(_s.__file__).with_name("data")
-                        / "gama_smf_driver22.dat"
-                    )
-                    loop = asyncio.get_running_loop()
-                    try:
-                        img = await loop.run_in_executor(
-                            None, smf_png, out, gama
-                        )
-                    except Exception:
-                        img = None
-                    if img:
-                        info["live_img"] = img
-                        info["live_caption"] = (
-                            "Stellar mass function at the last output snapshot, "
-                            "against GAMA (Driver et al. 2022)"
-                        )
-                        self._st.wiz_run_live = True
             elif mode == "sagelightcone":
                 actions.append(
                     {
