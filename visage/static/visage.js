@@ -430,6 +430,32 @@
     var _relaunchWatch   = false;  // watching for the server to restart with a model
     var _lastWizActive   = null;
 
+    // A card that covers the page while ViSAGE restarts on another model.
+    // Plain DOM on <body>, so it outlives the app's own "Connection closed"
+    // screen until the page reloads.
+    function _showRelaunchCard(name) {
+      if (document.getElementById('visage-relaunch')) return;
+      var d = document.createElement('div');
+      d.id = 'visage-relaunch';
+      d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;' +
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+        'gap:18px;font-family:system-ui,sans-serif;color:#e2e8f0;';
+      var sp = document.createElement('div');
+      sp.style.cssText = 'width:46px;height:46px;border-radius:50%;' +
+        'border:3px solid #1e293b;border-top-color:#22d3ee;' +
+        'animation:visage-spin 0.9s linear infinite;';
+      var t = document.createElement('div');
+      t.style.cssText = 'font-size:1.35rem;font-weight:700;';
+      t.textContent = 'Opening ' + name;
+      var sub = document.createElement('div');
+      sub.style.cssText = 'font-size:0.9rem;color:#94a3b8;';
+      sub.textContent = 'ViSAGE is restarting on it; this page reloads by itself.';
+      var st = document.createElement('style');
+      st.textContent = '@keyframes visage-spin{to{transform:rotate(360deg)}}';
+      d.appendChild(st); d.appendChild(sp); d.appendChild(t); d.appendChild(sub);
+      document.body.appendChild(d);
+    }
+
     function _getState(key) {
       try { return window.trame.state.get(key); } catch (e) { return undefined; }
     }
@@ -716,8 +742,9 @@
 
       // Opening a model relaunches the server: reload the page once it has
       // gone down and come back up.
-      if (_getState('wiz_loading') && !_relaunchWatch) {
+      if ((_getState('wiz_loading') || _getState('relaunching')) && !_relaunchWatch) {
         _relaunchWatch = true;
+        _showRelaunchCard(_getState('wiz_loading') || _getState('relaunching'));
         var _wentDown = false;
         var _probe = setInterval(function () {
           fetch(window.location.href, { cache: 'no-store' }).then(function (r) {

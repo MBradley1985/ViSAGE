@@ -524,13 +524,23 @@ def create_app(
         for e in _sess_entries
     ]
 
+    server.state.relaunching = ""  # name of the model being opened
+
     @server.controller.set("open_recent_model")
-    def _open_recent_model(path, kind):
+    async def _open_recent_model(path, kind):
+        import asyncio as _asyncio
+
         argv = (
             ["--lightcone", str(path)]
             if kind == "lightcone"
             else ["--par", str(path)]
         ) + ["--port", str(port)]
+        # Show the switching card and have the page reload itself once
+        # the new ViSAGE is up (visage.js watches `relaunching`).
+        server.state.model_loading = True
+        server.state.relaunching = Path(str(path)).stem or "model"
+        server.state.flush()
+        await _asyncio.sleep(0.8)
         system.relaunch_visage(argv)
 
     server.state.active_box_name = scene.primary_name
