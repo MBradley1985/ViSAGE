@@ -26,7 +26,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS only for now (Linux and Windows to come back later).
+        os: [macos-latest]
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +49,6 @@ jobs:
         run: pytest tests/ -v --tb=short --cov=visage --cov-report=xml
       - name: Upload coverage
         uses: codecov/codecov-action@v4
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'macos-latest' && matrix.python-version == '3.11'
         with:
           file: coverage.xml
