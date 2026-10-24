@@ -8,6 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Mock survey images** (Photometry tab, lightcones with photometry):
+  the sky around the selected galaxy (or the cone's brightest) as SDSS,
+  DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would image
+  it: each galaxy's disk and bulge at its own size, inclination and
+  colours, the survey's pixels and seeing, and, at survey depth, its sky
+  noise (depths and seeing from each survey's papers). Saved as PNG and
+  FITS (one band per extension, nanomaggies, with WCS) and opened in the
+  Library viewer.
+
 ### Changed
 
 - **Launch Mode has a new home screen:** three big picture cards
@@ -34,6 +45,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Model and lightcone pickers are big buttons (size, date, galaxies);
   lightcones in any `sage_outputs/` folder are found. Check for update
   works on its button and turns into Update when behind.
+- Photometry filters are named by survey ("SDSS g", "2MASS Ks", "IRAC
+  3.6 µm") and listed blue to red, observed then rest frame; SDSS r is
+  the default.
+
+### Fixed
+
+- Switching models from the Launch menu reloads the page by itself, with
+  an Opening card while ViSAGE restarts.
+- A lightcone fills the view when it first opens (it was framed to the
+  default window size and cut off by the side panel).
+- Recording a movie no longer stays on "Encoding…" after the file is
+  written.
 
 ## [2.9.0] — 2026-10-24
 

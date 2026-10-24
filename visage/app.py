@@ -294,6 +294,29 @@ def create_app(
     # While frames flow, snapshot preloading waits rather than competing
     # with the renderer for the CPU.
     frame_delivery.on_frame.append(lambda: hold_background(0.3))
+
+    # A lightcone is framed to the window's shape, which is only known once
+    # the browser sends its first frame size: frame it again then (once).
+    if scene.is_lightcone:
+        _fit_size = [tuple(scene.plotter.ren_win.GetSize()[:2])]
+
+        def _refit_lightcone() -> None:
+            size = tuple(scene.plotter.ren_win.GetSize()[:2])
+            if _fit_size[0] is None or size == _fit_size[0]:
+                return
+            _fit_size[0] = None
+
+            def _go() -> None:
+                scene.camera.reset()
+                if hasattr(server.controller, "view_update"):
+                    server.controller.view_update()
+
+            try:
+                asyncio.get_running_loop().call_soon(_go)
+            except RuntimeError:
+                pass
+
+        frame_delivery.on_frame.append(_refit_lightcone)
     if perf:
         from visage.utils import perf as _perf
 
