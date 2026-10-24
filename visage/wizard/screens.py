@@ -225,6 +225,84 @@ def _fill_frame(mode: str, pct: float) -> str:
     return f"/sage_static/wizard/fill/{name}_{step:03d}.webp"
 
 
+def _swarm_stats(run: dict, status: str) -> list[dict]:
+    """SAGEswarm's Iteration tile (a bar of rounds: the initial one, then
+    each iteration, the current one filling as its particles finish) and
+    Particles tile (one circle per particle, filled once it's run)."""
+    m_tot = int(run["M"] or 0)
+    n = int(run.get("ptot") or run["S"] or 0)
+    done = int(run.get("pdone") or 0)
+    it = int(run["iter"])
+    finished = status == "done"
+    segs = []
+    for k in range(m_tot + 1 if m_tot else 0):
+        if finished or k < it:
+            segs.append(1.0)
+        elif k == it:
+            segs.append(done / n if n else 0.0)
+        else:
+            segs.append(0.0)
+    return [
+        {
+            "k": "Iteration",
+            "v": ("Initial round" if it == 0 else f"{it} / {m_tot or '?'}"),
+            "kind": "iters",
+            "segs": segs,
+        },
+        {
+            "k": "Particles",
+            "v": f"{n if finished else done} / {n}" if n else "—",
+            "kind": "particles",
+            "dots": [1 if (finished or i < done) else 0 for i in range(n)],
+        },
+    ]
+
+
+def _tree_lines(x, y, length, angle, depth, out):
+    """A merger tree drawn upwards from its root: each halo splits into
+    two progenitors, the main branch carrying on."""
+    import math
+
+    x2 = x + length * math.sin(angle)
+    y2 = y - length * math.cos(angle)
+    out.append((x, y, x2, y2, depth))
+    if depth == 0:
+        return
+    _tree_lines(x2, y2, length * 0.78, angle - 0.42, depth - 1, out)
+    _tree_lines(x2, y2, length * 0.66, angle + 0.5, depth - 1, out)
+
+
+def tree_svg(pct: float, accent: str) -> str:
+    """A small merger tree that fills from its leaves (early times) down
+    to its root as SAGE26 builds the trees, as an SVG data URL."""
+    import base64
+
+    lines = []
+    _tree_lines(40, 60, 15, 0.0, 4, lines)
+    xs = [v for a, b, c, d, _ in lines for v in (a, c)]
+    ys = [v for a, b, c, d, _ in lines for v in (b, d)]
+    x0, x1, y0, y1 = min(xs) - 3, max(xs) + 3, min(ys) - 3, max(ys) + 3
+    # Filled from the tips (top) down to the root over the tree's height.
+    fill = (y1 - y0) * max(0.0, min(100.0, pct)) / 100
+    segs = "".join(
+        f'<line x1="{a:.1f}" y1="{b:.1f}" x2="{c:.1f}" y2="{d:.1f}" '
+        f'stroke-width="{0.9 + 0.55 * k:.2f}"/>'
+        for a, b, c, d, k in lines
+    )
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="{x0:.1f} {y0:.1f} {x1 - x0:.1f} {y1 - y0:.1f}">'
+        f'<defs><clipPath id="f"><rect x="{x0:.1f}" y="{y0:.1f}" '
+        f'width="{x1 - x0:.1f}" height="{fill:.1f}"/></clipPath></defs>'
+        f'<g stroke="#334155" stroke-linecap="round">{segs}</g>'
+        f'<g stroke="{accent}" stroke-linecap="round" clip-path="url(#f)">'
+        f"{segs}</g></svg>"
+    )
+    return (
+        "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+    )
+
+
 class SetupRunMixin:
     """Setup (essentials + All settings) and run (dashboard + live view)."""
 
@@ -855,6 +933,7 @@ class SetupRunMixin:
                 it = int(m.group(2) or 0)
                 done, tot = int(m.group(3)), int(m.group(4))
                 run["iter"], run["parts"] = it, f"{done} / {tot}"
+                run["pdone"], run["ptot"] = done, tot
                 total = tot * (run["M"] + 1) if run["M"] else tot
                 run["pct"] = 100.0 * (it * tot + done) / max(total, 1)
             m = re.search(r"swarm best=\s*([-\d.eE+]+)", line) or re.search(
@@ -894,8 +973,14 @@ class SetupRunMixin:
         stats = [{"k": "Elapsed", "v": elapsed}]
         if mode == "sage26":
             stats.append({"k": "Time left", "v": run["eta"] or "—"})
+            pct_t = 100.0 if status == "done" else run["pct"]
             stats.append(
-                {"k": "Galaxies built", "v": f"{run['pct']:.0f}% of trees"}
+                {
+                    "k": "Galaxies built",
+                    "v": f"{pct_t:.0f}% of trees",
+                    "kind": "tree",
+                    "img": tree_svg(pct_t, info["accent"]),
+                }
             )
         elif mode == "sagelightcone":
             stats.append(
@@ -913,9 +998,7 @@ class SetupRunMixin:
                     {"k": "Galaxies in the cone", "v": f"{run['ngal']:,}"}
                 )
         else:
-            m_tot = int(run["M"]) if run["M"] else "?"
-            stats.append({"k": "Iteration", "v": f"{run['iter']} / {m_tot}"})
-            stats.append({"k": "Particles", "v": run["parts"] or "—"})
+            stats += _swarm_stats(run, status)
             stats.append({"k": "Best score", "v": run["best"] or "—"})
         pct = 100.0 if status == "done" else run["pct"]
         info.update(
@@ -1008,10 +1091,13 @@ class SetupRunMixin:
                         }
                     )
             elif mode == "sagelightcone":
+                # As the lightcone picker does, so the page shows Opening
+                # and reloads itself once ViSAGE has restarted on it.
+                cone = self._lc_output_file()
                 actions.append(
                     {
                         "label": "Open in Lightcone view",
-                        "value": "lc_visualize",
+                        "value": f"lc_open:{cone}" if cone else "lc_visualize",
                         "icon": "mdi-telescope",
                         "primary": True,
                     }

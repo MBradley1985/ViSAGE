@@ -207,3 +207,52 @@ def test_terminal_size_reaches_the_running_command():
     c._on_term_size(wiz_term_size="junk")  # ignored
     c._on_term_size(wiz_term_size="3,2")  # too small: ignored
     assert c._term_size == (30, 142)
+
+
+def test_swarm_tiles_bar_and_particles():
+    from visage.wizard.screens import _swarm_stats
+
+    run = {"M": 3, "S": 5, "iter": 2, "pdone": 2, "ptot": 5}
+    it, parts = _swarm_stats(run, "running")
+    # Initial round + 3 iterations; rounds 0-1 done, round 2 at 2/5.
+    assert it["segs"] == [1.0, 1.0, 0.4, 0.0]
+    assert it["v"] == "2 / 3"
+    assert parts["dots"] == [1, 1, 0, 0, 0] and parts["v"] == "2 / 5"
+    it, parts = _swarm_stats(run, "done")
+    assert set(it["segs"]) == {1.0} and parts["dots"] == [1] * 5
+
+
+def test_tree_fills_from_tips_to_root():
+    import base64
+    import re
+
+    from visage.wizard.screens import tree_svg
+
+    def fill(pct):
+        svg = base64.b64decode(tree_svg(pct, "#fff").split(",")[1]).decode()
+        h = float(
+            re.search(r'viewBox="[\d.-]+ [\d.-]+ [\d.-]+ ([\d.]+)"', svg)[1]
+        )
+        return (
+            float(
+                re.search(
+                    r'clipPath id="f"><rect [^>]*height="([\d.]+)"', svg
+                )[1]
+            )
+            / h
+        )
+
+    assert (
+        fill(0) == 0
+        and abs(fill(50) - 0.5) < 0.01
+        and abs(fill(100) - 1) < 0.01
+    )
+
+
+def test_clone_goes_over_the_old_copy_or_beside_the_others(tmp_path):
+    c = _ctrl()
+    c._sage26_dir = tmp_path / "SAGE26"
+    c._lc_dir = c._sw_dir = None
+    assert c._clone_target("sage26") == tmp_path / "SAGE26"
+    assert c._clone_target("sageswarm") == tmp_path / "SAGEswarm"
+    assert c._clone_target("sagelightcone") == tmp_path / "LightSAGE"

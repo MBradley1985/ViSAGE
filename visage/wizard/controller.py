@@ -9,6 +9,7 @@ from pathlib import Path
 from visage import system
 from visage.utils import terminal
 from visage.wizard import toolchain as _toolchain
+from visage.wizard.install import InstallMixin
 from visage.wizard.screens import SetupRunMixin
 
 _SAGE26_REPO = "https://github.com/MBradley1985/SAGE26.git"
@@ -732,7 +733,7 @@ def _latest_per_constraint(plots: list[dict]) -> list[dict]:
     return [best[g] for g in sorted(best)]
 
 
-class WizardController(SetupRunMixin):
+class WizardController(InstallMixin, SetupRunMixin):
     def __init__(
         self,
         server,
@@ -773,6 +774,8 @@ class WizardController(SetupRunMixin):
         self._plot_watch_stop = True
         self._plot_seen: dict[str, int] = {}  # plot name → last-seen mtime
         self._run_proc = None  # currently-running _run_cmd TerminalProcess
+        self._inline = None  # an Install / Clone running on its button
+        self._job_results: dict = {}  # mode -> (act, ok, text), last run
         # Where the SAGE tools run (native, or WSL on Windows) — detected on
         # the first scan; Rescan re-probes so a fresh WSL install is seen.
         self._tc: _toolchain.Toolchain | None = None
@@ -1259,6 +1262,7 @@ class WizardController(SetupRunMixin):
                     break
                 self._push_bytes(data)
                 self._run_output(data)
+                self._inline_output(data)
             self._last_rc = await loop.run_in_executor(None, proc.wait) or 0
             return self._last_rc
         except Exception as exc:
@@ -1507,7 +1511,9 @@ class WizardController(SetupRunMixin):
                 {**meta, "value": f"mode:{mode}", "badge": badge, "ok": ok}
             )
         self._st.wiz_home_cards = cards
-        n = len(self._models)
+        n = len(self._models) + self._status.get("sagelightcone", {}).get(
+            "n", 0
+        )
         self._st.wiz_home_load = {
             "label": "Load a previous model",
             "sub": f"{n} found" if n else "none found yet",
@@ -1540,16 +1546,16 @@ class WizardController(SetupRunMixin):
             "sage26": {
                 "run": "Pick or create a parameter file, then run",
                 "load": "Open a model you have already run",
-                "install": "Compile SAGE26",
+                "install": "Download the Millennium trees and compile",
             },
             "sagelightcone": {
                 "run": "Configure and build a lightcone",
                 "load": "Open an existing lightcone",
-                "install": "Build the LightSAGE tools",
+                "install": "Libraries, photometry (FSPS) and the two tools",
             },
             "sageswarm": {
                 "run": "Configure and run a calibration",
-                "install": "Install the Python requirements",
+                "install": "Install its Python packages",
             },
         }[mode]
         labels = {
@@ -1561,9 +1567,9 @@ class WizardController(SetupRunMixin):
         }
         subs["update"] = "Compare with GitHub"
         subs["clone"] = (
-            "Fresh copy from GitHub; the old one is kept"
+            "Fresh copy from GitHub, then Install; the old one is kept"
             if found
-            else "Download it from GitHub"
+            else "Download it from GitHub, then Install"
         )
         actions = []
         for act in ("run", "load", "install", "update", "clone"):
@@ -1595,6 +1601,7 @@ class WizardController(SetupRunMixin):
         self._st.wiz_mode = mode
         self._st.wiz_step = 1
         self._set_choices([])
+        self._apply_job_result(mode)
 
     def _set_flow(self, mode: str) -> None:
         self._flow = mode
@@ -1773,54 +1780,69 @@ class WizardController(SetupRunMixin):
             _dt.datetime.fromtimestamp(when).strftime("%d %b %Y"),
         ]
 
-    async def _show_pick(self, mode: str) -> None:
-        """Big buttons for each model (SAGE26) or lightcone (LightSAGE)."""
-        meta = _MODE_META[mode]
+    def _model_items(self) -> list[dict]:
+        self._models = self._find_models()
         items = []
+        for m in self._models:
+            out = Path(m["hdf5"]).parent
+            files = sorted(out.glob("model_*.hdf5")) or [Path(m["hdf5"])]
+            chips = self._file_meta(files)
+            if len(files) > 1:
+                chips.insert(0, f"{len(files)} files")
+            items.append(
+                {
+                    "label": m["name"],
+                    "sub": str(out),
+                    "chips": chips + [Path(m["par"]).name],
+                    "value": f"model:{m['name']}",
+                    "icon": "mdi-database",
+                }
+            )
+        return items
+
+    def _lightcone_items(self) -> list[dict]:
+        items = []
+        for f in self._discover_lightcones():
+            chips = self._file_meta([f])
+            try:
+                import h5py
+
+                with h5py.File(f, "r") as h:
+                    key = "ra" if "ra" in h else "Posx"
+                    chips.insert(0, f"{h[key].shape[0]:,} galaxies")
+            except Exception:
+                pass
+            items.append(
+                {
+                    "label": f.parent.name,
+                    "sub": str(f),
+                    "chips": chips,
+                    "value": f"lc_open:{f}",
+                    "icon": "mdi-telescope",
+                }
+            )
+        return items
+
+    async def _show_pick(self, mode: str) -> None:
+        """Big buttons for each model (SAGE26), lightcone (LightSAGE), or
+        both ("all": the home screen's Load a previous model)."""
         if mode == "sage26":
-            self._models = self._find_models()
-            for m in self._models:
-                out = Path(m["hdf5"]).parent
-                files = sorted(out.glob("model_*.hdf5")) or [Path(m["hdf5"])]
-                chips = self._file_meta(files)
-                if len(files) > 1:
-                    chips.insert(0, f"{len(files)} files")
-                items.append(
-                    {
-                        "label": m["name"],
-                        "sub": str(out),
-                        "chips": chips + [Path(m["par"]).name],
-                        "value": f"model:{m['name']}",
-                        "icon": "mdi-database",
-                    }
-                )
+            items = self._model_items()
             title, empty = "Load a model", (
                 "No SAGE26 models found yet. Run SAGE26 first."
             )
-        else:
-            for f in self._discover_lightcones():
-                chips = self._file_meta([f])
-                try:
-                    import h5py
-
-                    with h5py.File(f, "r") as h:
-                        key = "ra" if "ra" in h else "Posx"
-                        chips.insert(0, f"{h[key].shape[0]:,} galaxies")
-                except Exception:
-                    pass
-                items.append(
-                    {
-                        "label": f.parent.name,
-                        "sub": str(f),
-                        "chips": chips,
-                        "value": f"lc_open:{f}",
-                        "icon": "mdi-telescope",
-                    }
-                )
+        elif mode == "sagelightcone":
+            items = self._lightcone_items()
             title, empty = "Load a lightcone", (
                 "No lightcones found yet. Run LightSAGE first."
             )
-        back = "home" if self._st.wiz_view == "home" else f"mode:{mode}"
+        else:
+            items = self._model_items() + self._lightcone_items()
+            title, empty = "Load a previous model", (
+                "No models or lightcones found yet."
+            )
+        meta = _MODE_META.get(mode, _MODE_META["sage26"])
+        back = "home" if mode == "all" else f"mode:{mode}"
         self._st.wiz_pick = {
             "title": title,
             "empty": empty,
@@ -1831,7 +1853,7 @@ class WizardController(SetupRunMixin):
         }
         self._st.wiz_loading = ""
         self._st.wiz_view = "pick"
-        self._st.wiz_mode = mode
+        self._st.wiz_mode = "" if mode == "all" else mode
         self._set_choices([])
 
     async def _start_action(self, mode: str, act: str) -> None:
@@ -1875,6 +1897,12 @@ class WizardController(SetupRunMixin):
                 await self._show_pick(mode)
             elif act == "run":
                 await self._show_setup(mode)
+            elif act == "install":
+                await self._install_inline(mode)
+            elif act == "clone":
+                await self._clone_inline(mode)
+            elif act == "log":
+                self._show_log(mode)
             else:
                 await self._start_action(mode, act)
             return

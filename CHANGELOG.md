@@ -44,9 +44,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   constraint, sized to share the space. The terminal runs commands at
   its own width (its font shrinks so SAGE26's banner fits). When it
   finishes: Open in Explore / Open in Lightcone view.
-- Every Launch Mode page past the home screen fills the window (no
-  fixed-size box, no scrolling), in one font, Space Grotesk, which now
-  ships with ViSAGE (SIL Open Font License).
+- Every Launch Mode page past the home screen is a bordered panel,
+  centred with black space around it and sized to the window (no
+  scrolling), in one font, Space Grotesk, which now ships with ViSAGE
+  (SIL Open Font License).
+- **Install and Clone run on their buttons:** the button shows the step
+  and the latest output line, then the result (a failed one opens the
+  output). Install: SAGE26 downloads the Millennium trees on a first
+  install and compiles; LightSAGE installs CMake, Boost and HDF5
+  (Homebrew on macOS, apt in WSL), the photometry packages (fsps,
+  astropy) and the FSPS stellar libraries (into ~/.visage/fsps when
+  $SPS_HOME isn't set), then builds its tools; SAGEswarm installs its
+  Python packages. Clone fetches a fresh copy (the old one moved aside)
+  and installs it.
+- Run pages: SAGE26's progress has a merger tree filling from its tips to
+  its root; SAGEswarm's iterations are a bar of rounds and its particles
+  one circle each, filling as they run.
+- Load a previous model (home screen) lists lightcones as well as SAGE26
+  models.
 - Explore's Launch menu starts with SAGE26, LightSAGE and SAGEswarm, each
   opening straight on its setup page, then Setup Wizard (the home
   screen); the toolbar's SAGE26 button opens SAGE26's setup too.
@@ -59,6 +74,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The standalone Launch Mode page sat 64px down (a blue band at the top,
+  its bottom off-screen).
+- Open in Lightcone view after a build shows Opening and reloads the page
+  by itself, as the lightcone picker does.
 - Opening a model restarts the same copy of ViSAGE that's running (it
   ran whichever `visage` was first on the PATH, which can be another
   install).

@@ -32,6 +32,14 @@ _WIZ_CSS = """
 @keyframes wiz-spin { to { transform: rotate(360deg); } }
 .wiz-spin { animation: wiz-spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .wiz-busy, .wiz-spin { animation: none; } }
+/* SAGEswarm particles: waiting ones pulse, run ones pop in */
+.wiz-dot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid;
+  box-sizing: border-box; animation: wiz-wait 1.4s ease-in-out infinite; }
+.wiz-dot-on { animation: wiz-pop 0.35s ease-out; }
+@keyframes wiz-wait { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes wiz-pop { 0% { transform: scale(0.4); } 70% { transform: scale(1.25); }
+  100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .wiz-dot, .wiz-dot-on { animation: none; } }
 .wiz-sans { font-family: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif; }
 /* One font on every page: Vuetify's fields, labels and buttons too; the
    terminal keeps its own. */
@@ -143,7 +151,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 "{flex:'1',minHeight:0,display:'flex',"
                 "alignItems: wiz_view === 'home' ? 'center' : 'stretch',"
                 "justifyContent:'center',overflowX:'auto',overflowY:'hidden',"
-                "padding: wiz_view === 'home' ? '24px' : '20px 24px',"
+                "padding: wiz_view === 'home' ? '24px' : '28px 40px',"
                 "paddingRight: pso_gallery_show "
                 "? 'calc(min(46vw, 720px) + 24px)' : '24px'}",
             ),
@@ -162,7 +170,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 style=(
                     "{"
                     "display:'flex',gap:'16px',alignItems:'stretch',"
-                    "width:'100%',"
+                    "width:'100%',maxWidth:'1240px',margin:'0 auto',"
                     "justifyContent: (wiz_par_show || wiz_sw_config_show || "
                     "wiz_lc_config_show || pso_gallery_show) "
                     "? 'flex-start' : 'center'"
@@ -473,7 +481,7 @@ def _home_view(server) -> None:
             type="button",
             classes="wiz-big",
             disabled=("wiz_home_load.disabled",),
-            click=(choose, "['act:sage26:load']"),
+            click=(choose, "['act:all:load']"),
             style=(
                 "align-self:center;width:min(520px,90%);height:60px;"
                 "border-radius:14px;border:1px solid rgba(6,182,212,0.55);"
@@ -518,7 +526,7 @@ def _mode_view(server) -> None:
     with html.Div(
         v_if=("wiz_view === 'mode'",),
         classes="wiz-sans",
-        style=("width:100%;display:flex;gap:24px;color:#e2e8f0;"),
+        style=("width:100%;display:flex;gap:22px;color:#e2e8f0;" + _PANEL),
     ):
         with html.Section(
             style=(
@@ -552,7 +560,7 @@ def _mode_view(server) -> None:
                 html.H1(
                     "{{ wiz_mode_info.title }}",
                     style=(
-                        "margin:0;font-size:2.9rem;font-weight:700;"
+                        "margin:0;font-size:2.3rem;font-weight:700;"
                         "color:#fff;line-height:1.05;"
                     ),
                 )
@@ -595,7 +603,7 @@ def _mode_view(server) -> None:
                 style=(
                     "{flex: a.primary ? '1.5 1 0' : '1 1 0',minHeight:0,"
                     "borderRadius:'16px',display:'flex',alignItems:'center',"
-                    "gap:'20px',padding:'0 28px',textAlign:'left',"
+                    "gap:'18px',padding:'0 24px',textAlign:'left',"
                     "border: a.primary ? 'none' "
                     ": '1px solid rgba(148,163,184,0.3)',"
                     "background: a.primary ? 'linear-gradient(90deg, ' "
@@ -607,7 +615,7 @@ def _mode_view(server) -> None:
                 v3.VIcon(
                     icon=("a.busy ? 'mdi-loading' : a.icon",),
                     classes=("a.busy ? 'wiz-spin' : ''",),
-                    size=("a.primary ? 40 : 30",),
+                    size=("a.primary ? 32 : 24",),
                     color=("a.primary ? '#0b1020' : wiz_mode_info.accent",),
                 )
                 with html.Span(
@@ -616,7 +624,7 @@ def _mode_view(server) -> None:
                     html.Span(
                         "{{ a.label }}",
                         style=(
-                            "{fontSize: a.primary ? '1.75rem' : '1.35rem',"
+                            "{fontSize: a.primary ? '1.4rem' : '1.12rem',"
                             "fontWeight:700}",
                         ),
                     )
@@ -627,6 +635,7 @@ def _mode_view(server) -> None:
                             "color: a.primary ? '#1e293b' "
                             ": a.tone === 'ok' ? '#86efac' "
                             ": a.tone === 'warn' ? '#fcd34d' "
+                            ": a.tone === 'err' ? '#fca5a5' "
                             ": a.tone === 'new' ? wiz_mode_info.accent "
                             ": '#94a3b8'}",
                         ),
@@ -641,8 +650,8 @@ def _pick_view(server) -> None:
         classes="wiz-sans",
         style=(
             "width:100%;min-height:0;"
-            "display:flex;flex-direction:column;gap:20px;color:#e2e8f0;"
-            "position:relative;"
+            "display:flex;flex-direction:column;gap:18px;color:#e2e8f0;"
+            "position:relative;" + _PANEL
         ),
     ):
         with html.Div(style="display:flex;align-items:center;gap:18px;"):
@@ -661,7 +670,7 @@ def _pick_view(server) -> None:
                 html.Span("{{ wiz_pick.back_label }}")
             html.H1(
                 "{{ wiz_pick.title }}",
-                style="margin:0;font-size:2.1rem;font-weight:700;",
+                style="margin:0;font-size:1.6rem;font-weight:700;",
             )
             html.Span(
                 "{{ (wiz_pick.items || []).length }} found",
@@ -675,7 +684,7 @@ def _pick_view(server) -> None:
         with html.Div(
             style=(
                 "flex:1;min-height:0;overflow-y:auto;display:grid;"
-                "grid-template-columns:repeat(auto-fill,minmax(320px,1fr));"
+                "grid-template-columns:repeat(3,minmax(0,1fr));"
                 "grid-auto-rows:min-content;gap:16px;padding:4px;"
             ),
         ):
@@ -687,7 +696,7 @@ def _pick_view(server) -> None:
                 disabled=("!!wiz_loading",),
                 click=(choose, "[it.value]"),
                 style=(
-                    "{minHeight:'150px',borderRadius:'16px',"
+                    "{minHeight:'124px',borderRadius:'16px',"
                     "border:'1px solid rgba(148,163,184,0.3)',"
                     "background:'linear-gradient(145deg, #0f172a, #020617)',"
                     "color:'#e2e8f0',display:'flex',flexDirection:'column',"
@@ -715,7 +724,7 @@ def _pick_view(server) -> None:
                     html.Span(
                         "{{ it.label }}",
                         style=(
-                            "font-size:1.45rem;font-weight:700;"
+                            "font-size:1.2rem;font-weight:700;"
                             "word-break:break-word;"
                         ),
                     )
@@ -761,6 +770,14 @@ def _pick_view(server) -> None:
             )
 
 
+# Every page past the home screen: a bordered panel, centred, with black
+# space around it.
+_PANEL = (
+    "max-width:1240px;margin:0 auto;box-sizing:border-box;"
+    "border:1px solid #1e293b;border-radius:22px;padding:22px 26px;"
+    "background:#000;"
+)
+
 _BTN_PILL = (
     "height:40px;padding:0 16px 0 10px;border-radius:999px;"
     "border:1px solid rgba(255,255,255,0.45);background:rgba(255,255,255,0.04);"
@@ -777,7 +794,7 @@ def _setup_view(server) -> None:
         classes="wiz-sans",
         style=(
             "width:100%;min-height:0;display:flex;"
-            "flex-direction:column;gap:14px;color:#e2e8f0;"
+            "flex-direction:column;gap:12px;color:#e2e8f0;" + _PANEL
         ),
     ):
         with html.Div(style="display:flex;align-items:center;gap:16px;"):
@@ -791,7 +808,7 @@ def _setup_view(server) -> None:
                 html.Span("{{ wiz_setup.back_label }}")
             html.H1(
                 "{{ wiz_setup.title }}",
-                style="margin:0;font-size:2rem;font-weight:700;",
+                style="margin:0;font-size:1.6rem;font-weight:700;",
             )
             html.Span(
                 "{{ wiz_setup.note }}",
@@ -948,7 +965,7 @@ def _all_settings_view(server) -> None:
         classes="wiz-sans",
         style=(
             "width:100%;min-height:0;display:flex;"
-            "flex-direction:column;gap:14px;color:#e2e8f0;"
+            "flex-direction:column;gap:12px;color:#e2e8f0;" + _PANEL
         ),
     ):
         with html.Div(style="display:flex;align-items:center;gap:14px;"):
@@ -962,7 +979,7 @@ def _all_settings_view(server) -> None:
                 html.Span("{{ wiz_setup.title }}")
             html.H1(
                 "All settings",
-                style="margin:0;font-size:2rem;font-weight:700;",
+                style="margin:0;font-size:1.6rem;font-weight:700;",
             )
             v3.VSpacer()
             v3.VTextField(
@@ -1088,15 +1105,15 @@ def _run_view(server) -> None:
         v_if=("wiz_view === 'run'",),
         classes="wiz-sans",
         style=(
-            "width:100%;display:flex;flex-direction:column;gap:14px;"
-            "color:#e2e8f0;min-height:0;"
+            "width:100%;display:flex;flex-direction:column;gap:12px;"
+            "color:#e2e8f0;min-height:0;" + _PANEL
         ),
     ):
         with html.Div(style="display:flex;align-items:center;gap:16px;"):
             html.H1(
                 "{{ wiz_run.status === 'done' ? 'Finished' : "
                 "(wiz_run.status === 'failed' ? 'Stopped' : wiz_run.title) }}",
-                style="margin:0;font-size:2rem;font-weight:700;",
+                style="margin:0;font-size:1.6rem;font-weight:700;",
             )
             html.Span(
                 "{{ wiz_run.sub }}",
@@ -1122,7 +1139,7 @@ def _run_view(server) -> None:
                 key="si",
                 style=(
                     "{flex:1,display:'flex',alignItems:'center',gap:'10px',"
-                    "padding:'12px 16px',borderRadius:'14px',fontSize:'0.95rem',"
+                    "padding:'9px 14px',borderRadius:'14px',fontSize:'0.88rem',"
                     "border: st.state === 'now' ? '2px solid ' + wiz_run.accent "
                     ": (st.state === 'failed' ? '2px solid #ef4444' "
                     ": '1px solid #1e293b'),"
@@ -1133,7 +1150,7 @@ def _run_view(server) -> None:
             ):
                 with html.Span(
                     style=(
-                        "{width:'28px',height:'28px',borderRadius:'50%',"
+                        "{width:'24px',height:'24px',borderRadius:'50%',"
                         "display:'flex',alignItems:'center',"
                         "justifyContent:'center',flexShrink:0,"
                         "background: st.state === 'done' ? '#22c55e' "
@@ -1197,23 +1214,71 @@ def _run_view(server) -> None:
                 key="i",
                 style=(
                     "border-radius:14px;border:1px solid #1e293b;"
-                    "background:#0b1120;padding:10px 18px;display:flex;"
-                    "flex-direction:column;gap:2px;"
+                    "background:#0b1120;padding:9px 16px;display:flex;"
+                    "align-items:center;gap:12px;min-width:0;"
                 ),
             ):
-                html.Span(
-                    "{{ s.k }}",
+                with html.Div(
                     style=(
-                        "font-size:0.72rem;color:#94a3b8;letter-spacing:0.08em;"
-                        "text-transform:uppercase;"
+                        "flex:1;min-width:0;display:flex;flex-direction:column;"
+                        "gap:3px;"
                     ),
-                )
-                html.Span(
-                    "{{ s.v }}",
-                    style=(
-                        "font-size:1.45rem;font-weight:700;"
-                        "font-variant-numeric:tabular-nums;"
-                    ),
+                ):
+                    html.Span(
+                        "{{ s.k }}",
+                        style=(
+                            "font-size:0.68rem;color:#94a3b8;"
+                            "letter-spacing:0.08em;text-transform:uppercase;"
+                        ),
+                    )
+                    html.Span(
+                        "{{ s.v }}",
+                        style=(
+                            "font-size:1.25rem;font-weight:700;"
+                            "font-variant-numeric:tabular-nums;"
+                        ),
+                    )
+                    # SAGEswarm: one segment per round, filling.
+                    with html.Div(
+                        v_if=("s.kind === 'iters'",),
+                        style="display:flex;gap:3px;margin-top:3px;",
+                    ):
+                        with html.Div(
+                            v_for="(f, fi) in s.segs",
+                            key="fi",
+                            style=(
+                                "flex:1;height:8px;border-radius:3px;"
+                                "background:#1e293b;overflow:hidden;"
+                            ),
+                        ):
+                            html.Div(
+                                style=(
+                                    "{width: (f * 100) + '%',height:'100%',"
+                                    "transition:'width 0.4s',"
+                                    "background:'linear-gradient(90deg, ' + "
+                                    "wiz_run.accent + ', ' + wiz_run.accent2 + ')'}",
+                                ),
+                            )
+                    # SAGEswarm: one circle per particle, filled once run.
+                    with html.Div(
+                        v_if=("s.kind === 'particles'",),
+                        style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;",
+                    ):
+                        html.Span(
+                            v_for="(d, di) in s.dots",
+                            key="di",
+                            classes=("d ? 'wiz-dot wiz-dot-on' : 'wiz-dot'",),
+                            style=(
+                                "{background: d ? wiz_run.accent : 'transparent',"
+                                "borderColor: d ? wiz_run.accent : '#475569'}",
+                            ),
+                        )
+                # SAGE26: a merger tree filling from its tips to its root.
+                html.Img(
+                    v_if=("s.kind === 'tree'",),
+                    src=("s.img",),
+                    alt="",
+                    style="height:46px;flex-shrink:0;",
                 )
         # Terminal (2/3) and what the run is making (1/3)
         with html.Div(style="flex:1;min-height:0;display:flex;gap:14px;"):
@@ -1263,15 +1328,20 @@ def _run_view(server) -> None:
                 with html.Div(
                     style=(
                         "flex:1;min-height:0;display:flex;align-items:center;"
-                        "justify-content:center;padding:8px;"
+                        "justify-content:center;padding:8px;position:relative;"
                     ),
                 ):
+                    # Fitted to the box, so its own size never stretches
+                    # the page.
                     html.Img(
                         v_if=(
                             "wiz_run.mode !== 'sageswarm' && wiz_run.live_img",
                         ),
                         src=("wiz_run.live_img",),
-                        style="max-width:100%;max-height:100%;object-fit:contain;",
+                        style=(
+                            "position:absolute;inset:8px;width:calc(100% - 16px);"
+                            "height:calc(100% - 16px);object-fit:contain;"
+                        ),
                     )
                     # SAGEswarm: the newest figure of each constraint,
                     # sharing the panel.
