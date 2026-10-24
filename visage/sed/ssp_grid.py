@@ -32,8 +32,11 @@ class SSPGrid:
         dust2: float = 0.3,
         dust_emission: bool = False,
         imf_type: int = IMF_CHABRIER,
+        nebular: bool = False,
     ) -> None:
         import fsps
+
+        from visage.sed.nebular import kashino_inoue_logu
 
         # dust: a Calzetti (2000) starburst attenuation curve (dust_type=2)
         # with diffuse V-band optical depth `dust2`. Off by default —
@@ -49,7 +52,17 @@ class SSPGrid:
             dust_type=2 if dust else 0,
             dust2=float(dust2) if dust else 0.0,
             add_dust_emission=bool(dust and dust_emission),
+            # Nebular lines and continuum in the spectra, for gas at this
+            # metallicity (visage/sed/nebular.py).
+            add_neb_emission=bool(nebular),
+            gas_logz=float(logzsol),
+            # (U for a main-sequence galaxy, sSFR 1e-10/yr at 1e10 Msun;
+            # the photometry's own line luminosities use each galaxy's.)
+            gas_logu=float(
+                kashino_inoue_logu(0.0142 * 10 ** float(logzsol), 1e-10, 1e10)
+            ),
         )
+        self.nebular = bool(nebular)
         self.logzsol = float(logzsol)
         self.imf_type = int(imf_type)
         self.libraries = tuple(
@@ -71,6 +84,49 @@ class SSPGrid:
         self._cum = np.vstack(
             [np.zeros((1, spec.shape[1])), np.cumsum(steps, 0)]
         )
+
+    def line_table(self):
+        """Emission lines of stars formed at a constant rate, over gas
+        metallicity x ionisation parameter (nebular.GAS_LOGZ_NODES x
+        GAS_LOGU_NODES): returns a function of the young window's length
+        a (Gyr) giving (n_z, n_u, n_lines) mean luminosities, L_sun per
+        Msun formed, for nebular.LINES in order."""
+        from visage.sed import nebular as nb
+
+        sp = self._sp
+        idx = nb.line_indices(sp.emline_wavelengths)
+        names = list(nb.LINES)
+        keep = (sp.params["gas_logz"], sp.params["gas_logu"])
+        cum = np.zeros(
+            (
+                len(nb.GAS_LOGZ_NODES),
+                len(nb.GAS_LOGU_NODES),
+                len(self._ages),
+                len(names),
+            )
+        )
+        for a, gz in enumerate(nb.GAS_LOGZ_NODES):
+            for b, gu in enumerate(nb.GAS_LOGU_NODES):
+                sp.params["gas_logz"] = float(gz)
+                sp.params["gas_logu"] = float(gu)
+                sp.get_spectrum(tage=0.0)
+                em = np.asarray(sp.emline_luminosity, float)  # (n_age, n_em)
+                lum = np.stack([em[:, idx[n]].sum(1) for n in names], 1)
+                lum = np.vstack([lum[:1], lum])
+                da = np.diff(self._ages)[:, None]
+                cum[a, b, 1:] = np.cumsum(0.5 * (lum[1:] + lum[:-1]) * da, 0)
+        sp.params["gas_logz"], sp.params["gas_logu"] = keep
+        sp.get_spectrum(tage=1.0)  # back to this grid's own gas
+        ages = self._ages
+
+        def mean_lines(window: float) -> np.ndarray:
+            w = float(np.clip(window, 1e-6, ages[-1]))
+            i = int(np.clip(np.searchsorted(ages, w) - 1, 0, len(ages) - 2))
+            f = (w - ages[i]) / (ages[i + 1] - ages[i])
+            c = cum[:, :, i] + f * (cum[:, :, i + 1] - cum[:, :, i])
+            return c / w
+
+        return mean_lines
 
     def _cum_at(self, age: float) -> np.ndarray:
         a = float(np.clip(age, 0.0, self._ages[-1]))

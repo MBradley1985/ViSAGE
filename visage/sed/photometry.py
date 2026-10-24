@@ -189,6 +189,7 @@ def compute_photometry(
     dust_model: str | None = None,
     disk_bulge: bool = False,
     spectra_out: dict | None = None,
+    lines: bool = False,
 ) -> dict[str, np.ndarray]:
     """Compute AB magnitudes for every galaxy in a lightcone HDF5 file
     (or just `rows`, sorted row indices).
@@ -210,6 +211,10 @@ def compute_photometry(
     With "charlot_fall" dust, ``dust_emission`` re-emits each galaxy's
     absorbed light in the infrared (Draine & Li 2007, energy balance),
     and ``LDust`` (L_sun) is each galaxy's dust luminosity.
+    ``lines``: nebular emission (lines and continuum) in the spectra, and
+    each galaxy's emission lines (visage/sed/nebular.py) as
+    ``LineLum_<line>`` (erg/s, through its dust), ``LineLumIntr_<line>``
+    (erg/s, no dust) and ``LineFlux_<line>`` (erg/s/cm^2, observed).
     ``spectra_out``: a dict to fill with rest-frame spectra (L_sun/Hz) of
     every galaxy -- "wave" (Angstrom), "observed" (through the dust, with
     its emission), "intrinsic" (the stars alone) and, with ``disk_bulge``,
@@ -265,12 +270,18 @@ def compute_photometry(
         if dust_model is None:
             dust_model = "calzetti" if dust else "none"
         cf = dust_model == "charlot_fall"
-        if cf:
+        if cf or lines:
             cold = get("ColdGas")
             metals_cold = get("MetalsColdGas")
+            disk_r = get("DiskRadius")
+        if lines:
+            bh_mass = get("BlackHoleMass")
+            quasar_acc = get("QuasarModeBHaccretionMass")
+            radio_heating = get("Heating")
+            step_myr = get("dT")
+        if cf:
             h2 = get("H2gas")
             h1 = get("H1gas")
-            disk_r = get("DiskRadius")
             spin = np.column_stack([get(f"Spin{c}") for c in "xyz"])
             pos = np.column_stack([get(f"Pos{c}") for c in "xyz"])
 
@@ -416,6 +427,22 @@ def compute_photometry(
                 flux[f"{pre}mag_obs_{band}"] = np.zeros(n)
     re_emit = cf and dust_emission
     l_dust = np.zeros(n)
+    if lines:
+        from visage.sed import nebular as nb
+
+        line_wave = np.array([w[0] for w, _ in nb.LINES.values()])
+        line_intr = np.zeros((n, len(nb.LINES)))
+        line_seen = np.zeros((n, len(nb.LINES)))
+        z_gas = np.where(
+            cold > 0,
+            metals_cold.astype(np.float64)
+            / np.maximum(cold.astype(np.float64), 1e-30),
+            1e-4,
+        )
+        gas_logz = np.log10(np.maximum(z_gas, 1e-6) / zsun)
+        gas_logu = nb.kashino_inoue_logu(
+            z_gas, sfr_now / np.maximum(stellar_mass, 1.0), stellar_mass
+        )
 
     has_light = stellar_mass > 0
     unique_snaps = np.unique(snapnum)
@@ -436,8 +463,10 @@ def compute_photometry(
             dust2=dust2,
             dust_emission=dust_emission,
             imf_type=imf_type,
+            nebular=lines,
         )
         libraries = grid.libraries
+        mean_lines = grid.line_table() if lines else None
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
         nu_w = ir_template = None
         if re_emit:
@@ -571,12 +600,57 @@ def compute_photometry(
                     }
                 wn = w_node[ci]
                 zg = z_obs[ci]
+                if lines and 0 <= last < n_bins and width > 0:
+                    # Lines from the young stars (current SFR), in each
+                    # galaxy's own gas, through its birth cloud and ISM.
+                    m_y = np.minimum(
+                        sfr_now[ci] * dt_y * 1e9, sfh_formed[ci, last]
+                    )
+                    per_mass = nb.bilinear(
+                        mean_lines(dt_y),
+                        nb.GAS_LOGZ_NODES,
+                        nb.GAS_LOGU_NODES,
+                        gas_logz[ci],
+                        gas_logu[ci],
+                    )  # (chunk, n_lines), L_sun per Msun formed
+                    intr = m_y[:, None] * per_mass
+                    seen = intr
+                    if cf:
+                        seen = (
+                            intr
+                            * dm.ism_transmission(
+                                line_wave, tau_v[ci], cos_i[ci]
+                            )
+                            * dm.bc_transmission(line_wave, tau_v[ci])
+                        )
+                    line_intr[ci] += wn[:, None] * intr
+                    line_seen[ci] += wn[:, None] * seen
                 if re_emit:
                     # Dust luminosity: what the re-emission adds.
-                    no_ir = build(
-                        sfh_formed[ci], sfr_now[ci], t_ism, t_bc, nu_w=None
-                    )
-                    l_dust[ci] += wn * ((spectra[""] - no_ir) @ nu_w)
+                    # Built the same way as the spectra (per component
+                    # when split), so the difference is only the dust.
+                    if disk_bulge:
+                        no_ir = build(
+                            sfh_disk_f[ci],
+                            sfr_parts["SfrDisk"][ci],
+                            t_ism,
+                            t_bc,
+                            nu_w=None,
+                        ) + build(
+                            sfh_bulge_f[ci],
+                            sfr_parts["SfrBulge"][ci],
+                            t_ism,
+                            t_bc,
+                            nu_w=None,
+                        )
+                    else:
+                        no_ir = build(
+                            sfh_formed[ci], sfr_now[ci], t_ism, t_bc, nu_w=None
+                        )
+                    with np.errstate(
+                        over="ignore", invalid="ignore", divide="ignore"
+                    ):
+                        l_dust[ci] += wn * ((spectra[""] - no_ir) @ nu_w)
                 if spectra_out is not None:
                     _keep_spectra(
                         spectra_out,
@@ -647,6 +721,60 @@ def compute_photometry(
     out.update(dust_info)
     if re_emit:
         out["LDust"] = l_dust.astype(np.float32)
+    if lines:
+        # The AGN's narrow-line region (visage/sed/agn.py), through the
+        # diffuse ISM's dust (not the birth clouds).
+        from visage.sed import agn as ag
+
+        zeros = np.zeros(n)
+        mdot_q = np.zeros(n)
+        if quasar_acc is not None and step_myr is not None:
+            mdot_q = (
+                quasar_acc.astype(np.float64)
+                * mfac
+                / np.maximum(step_myr.astype(np.float64) * 1e6, 1.0)
+            )
+        l_agn, edd = ag.luminosity(
+            (
+                bh_mass.astype(np.float64) * mfac
+                if bh_mass is not None
+                else zeros
+            ),
+            mdot_q,
+            radio_heating if radio_heating is not None else zeros,
+        )
+        n_c = ag.central_gas_density(
+            cold.astype(np.float64) * mfac,
+            (disk_r if disk_r is not None else zeros + 3.0) * 1e3 / hubble_h,
+        )
+        agn_logu = ag.log_u(l_agn, n_c)
+        agn_intr = ag.line_luminosities(l_agn, z_gas, agn_logu) / L_SUN_ERG_S
+        agn_seen = agn_intr
+        if cf:
+            # From the disk's mid-plane: a screen of half the slab.
+            agn_seen = agn_intr * np.exp(
+                -np.outer(
+                    tau_v / (2.0 * np.maximum(cos_i, 0.05)),
+                    (line_wave / 5500.0) ** -dm.N_ISM,
+                )
+            )
+        line_intr += agn_intr
+        line_seen += agn_seen
+        out["LAGN"] = l_agn
+        out["EddingtonRatio"] = edd.astype(np.float32)
+        out["LogU_HII"] = gas_logu.astype(np.float32)
+        out["LogU_AGN"] = np.where(l_agn > 0, agn_logu, np.nan).astype(
+            np.float32
+        )
+        for k, name in enumerate(nb.LINES):
+            # float64: bright galaxies' lines pass float32's 3.4e38 erg/s
+            seen_erg = line_seen[:, k] * L_SUN_ERG_S
+            out[f"LineLum_{name}"] = seen_erg
+            out[f"LineLumIntr_{name}"] = line_intr[:, k] * L_SUN_ERG_S
+            out[f"LineLumAGN_{name}"] = agn_intr[:, k] * L_SUN_ERG_S
+            out[f"LineFlux_{name}"] = (
+                seen_erg / (4 * np.pi * d_l_cm**2)
+            ).astype(np.float32)
     out["_settings"] = {
         "Method": "FSPS SSPs integrated over each SFH bin's time span",
         "SSPLibraries": ", ".join(libraries),
@@ -678,11 +806,36 @@ def compute_photometry(
                 else "none"
             )
         ),
-        "NebularEmission": "none",
+        "NebularEmission": (
+            "HII regions: FSPS (Byler+17 Cloudy grids), gas Z = cold-gas Z, "
+            "log U from Kashino & Inoue 2019, through birth cloud + ISM; "
+            "AGN narrow-line region: Feltre+16 grids coupled as Hirschmann+17 "
+            "(quasar + radio-mode accretion, inefficient below 1% Eddington), "
+            "through half the ISM"
+            if lines
+            else "none"
+        ),
     }
     return out
 
 
+_AGN_FIELDS = {
+    "LAGN": (
+        "AGN luminosity from SAGE26's quasar- and radio-mode accretion "
+        "(radiatively inefficient below 1% Eddington)",
+        "erg/s",
+    ),
+    "EddingtonRatio": ("AGN luminosity / Eddington luminosity", ""),
+    "LogU_HII": (
+        "log ionisation parameter of the HII regions (Kashino & Inoue 2019)",
+        "",
+    ),
+    "LogU_AGN": (
+        "log ionisation parameter of the AGN narrow-line region at the "
+        "Stromgren radius (Feltre+16, Hirschmann+17)",
+        "",
+    ),
+}
 _DUST_FIELDS = {
     "DustMassCold": ("Cold-ISM dust mass", "Msun"),
     "DustToGas": ("Cold-ISM dust-to-gas mass ratio", ""),
@@ -721,7 +874,30 @@ def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
                 continue
             if name in f:
                 del f[name]
-            ds = f.create_dataset(name, data=values.astype(np.float32))
+            # Each output keeps its own dtype (line luminosities are float64).
+            ds = f.create_dataset(name, data=values)
+            if name.startswith(
+                ("LineLum_", "LineLumIntr_", "LineLumAGN_", "LineFlux_")
+            ):
+                kind, line = name.split("_", 1)
+                ds.attrs["Description"] = {
+                    "LineLum": "Emission-line luminosity (star formation + AGN), through the galaxy's dust",
+                    "LineLumIntr": "Emission-line luminosity (star formation + AGN), no dust",
+                    "LineLumAGN": "Emission-line luminosity of the AGN narrow-line region, no dust",
+                    "LineFlux": "Observed emission-line flux, through the dust",
+                }[kind] + f" ({line})"
+                ds.attrs["Units"] = (
+                    "erg/s/cm^2" if kind == "LineFlux" else "erg/s"
+                )
+                ds.attrs["Source"] = (
+                    "ViSAGE nebular emission (HII regions: FSPS, Byler+17; "
+                    "AGN: Feltre+16)"
+                )
+                continue
+            if name in _AGN_FIELDS:
+                ds.attrs["Description"], ds.attrs["Units"] = _AGN_FIELDS[name]
+                ds.attrs["Source"] = "ViSAGE nebular emission"
+                continue
             if name in _DUST_FIELDS:
                 ds.attrs["Description"], ds.attrs["Units"] = _DUST_FIELDS[name]
                 ds.attrs["Source"] = "ViSAGE dust (Dusty-SAGE equilibrium)"
@@ -801,6 +977,13 @@ def main(argv: list[str] | None = None) -> None:
         "Needs dust (--dust or --dust-model charlot_fall).",
     )
     p.add_argument(
+        "--lines",
+        action="store_true",
+        help="Nebular emission: lines and continuum in the spectra, and each "
+        "galaxy's H-alpha, H-beta, [OII], [OIII], [NII], [SII] luminosities "
+        "and fluxes, from its star formation and its AGN.",
+    )
+    p.add_argument(
         "--disk-bulge",
         dest="disk_bulge",
         action="store_true",
@@ -864,6 +1047,7 @@ def main(argv: list[str] | None = None) -> None:
         progress_cb=_progress,
         dust_model=args.dust_model,
         disk_bulge=args.disk_bulge,
+        lines=args.lines,
     )
     write_photometry(args.input, results)
     n_mags = sum(1 for k in results if not k.startswith("_"))

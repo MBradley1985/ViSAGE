@@ -8,6 +8,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **LightSAGE photometry is on by default, with survey presets**
+  (GALEX, SDSS, 2MASS and WISE on; DECam, Pan-STARRS, LSST, Euclid,
+  Roman, JWST, HST, VISTA, UKIDSS, Spitzer and Herschel to choose) in
+  place of per-band checkboxes; older run scripts are migrated.
+- **Disk and bulge magnitudes** (`disk_mag_*`, `bulge_mag_*`) from each
+  component's own star-formation history.
+- **Dust re-emission:** each galaxy's absorbed starlight comes back in the
+  infrared (Draine & Li 2007 spectrum, energy balance), so WISE, Spitzer
+  and Herschel magnitudes include it; `LDust` is the total.
+- **Emission lines** ([OII], Hβ, [OIII], Hα, [NII], [SII]: luminosities
+  with and without dust, and fluxes) from each galaxy's HII regions
+  (FSPS nebular grids; ionisation parameter from its specific SFR,
+  metallicity and density, Kashino & Inoue 2019) and from its AGN
+  (SAGE26's quasar- and radio-mode accretion through the Feltre et al.
+  2016 narrow-line-region models, coupled as Hirschmann et al. 2017).
+  On by default.
+
 ### Fixed
 
 - **LightSAGE lightcones: galaxy spins** are now rotated with the box

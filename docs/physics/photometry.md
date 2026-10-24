@@ -38,22 +38,47 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 **How it dims the light** (Charlot & Fall 2000):
 
 - **Diffuse ISM:** dust mixed with the stars in a slab seen at the galaxy's inclination (its spin against the line of sight), τ<sub>λ</sub> ∝ λ<sup>−0.7</sup>.
-- **Birth clouds:** stars younger than 10 Myr are also behind their birth cloud, of optical depth τ<sub>ISM</sub>(1 − μ<sub>CF</sub>)/μ<sub>CF</sub> with μ<sub>CF</sub> = 0.3, τ<sub>λ</sub> ∝ λ<sup>−1.3</sup>.
+- **Birth clouds:** stars younger than 10 Myr are also behind their birth cloud, of optical depth τ<sub>ISM</sub>(1 − μ<sub>CF</sub>)/μ<sub>CF</sub> with μ<sub>CF</sub> = 0.3, τ<sub>λ</sub> ∝ λ<sup>−1.3</sup> (da Cunha, Charlot & Elbaz 2008; Charlot & Fall used λ<sup>−0.7</sup> for both).
+
+**Where the absorbed light goes** (`--dust-emission`). Each galaxy re-emits exactly the starlight its dust absorbed (energy balance, as in da Cunha et al. 2008), with the Draine & Li (2007) dust-emission spectrum FSPS uses (its default *U*<sub>min</sub> = 1, γ = 0.01, *q*<sub>PAH</sub> = 3.5 %). `LDust` is the total.
+
+## Disk and bulge (`--disk-bulge`)
+
+`disk_mag_*` and `bulge_mag_*` are built from each component's own star-formation history and current SFR, through the same dust. SAGE26's `SFHMassBulge` holds only the stars formed in bulge starbursts: the disk stars that mergers and disk instabilities move into the bulge stay in `SFHMassDisk`. So the share of the disk's history that makes the bulge's total equal its `BulgeMass` is moved into the bulge, taking those stars to have the disk's age mix.
+
+## Emission lines (`--lines`)
+
+[OII] 3727, Hβ, [OIII] 5007, Hα, [NII] 6584 and [SII] 6716+6731: `LineLum_*` (erg/s, through the dust), `LineLumIntr_*` (no dust), `LineLumAGN_*` (the AGN's share, no dust) and `LineFlux_*` (erg/s/cm², observed).
+
+**HII regions.** Lines from the stars younger than 100 Myr (formed at the current SFR), from FSPS's nebular model (Byler et al. 2017: Cloudy grids over gas metallicity and ionisation parameter). The gas metallicity is the cold gas's. The ionisation parameter follows SDSS galaxies' relation with specific SFR, metallicity and density (Kashino & Inoue 2019, eqs. 3 and 5), with O/H from the solar 12 + log O/H = 8.69 (Asplund et al. 2009). The lines pass through the birth cloud and the diffuse ISM. The FSPS spectra used for the magnitudes also include nebular lines and continuum, for each metallicity node at a main-sequence galaxy's ionisation parameter.
+
+**AGN.** SAGE26's black holes accrete in quasar mode (`QuasarModeBHaccretionMass` over the snapshot step `dT`) and radio mode (`Heating` = η*Ṁc*², η = 0.1). Their luminosity is η*Ṁc*² above 1 % of Eddington and falls as *ṁ*² below it, where the flow becomes radiatively inefficient (Narayan & Yi 1995; Merloni & Heinz 2008). The narrow-line region uses the photoionisation models of Feltre, Charlot & Gutkin (2016), coupled to each galaxy as Hirschmann et al. (2017) do: an ionising spectrum *S*<sub>ν</sub> ∝ ν<sup>−1.7</sup>, gas clumps of *n*<sub>H</sub> = 10³ cm⁻³, dust-to-metal ratio 0.3, the cold gas's metallicity, and the ionisation parameter at the Strömgren radius from the AGN's ionising photons and the filling factor of the cold gas within 1 kpc. The lines pass through half the disk's dust, as a screen. `LAGN`, `EddingtonRatio`, `LogU_HII` and `LogU_AGN` are written too.
 
 ## Not included (yet)
 
-Nebular emission lines, IGM absorption (irrelevant below *z* ≈ 2), dust emission with this dust model, and separate disk and bulge magnitudes.
+- IGM absorption (irrelevant below *z* ≈ 2).
+- The AGN's own continuum in the magnitudes (its lines aren't in the broad bands either).
+- Line emission from old (post-AGB) stars, which powers many LINER-like spectra in quiescent galaxies.
+- At solar metallicity and above, FSPS's HII-region line grid gives [OIII]/Hβ about 0.3 dex above SDSS star-forming galaxies at the same [NII]/Hα, so many purely star-forming model galaxies fall in the BPT "composite" region.
 
 ## References
 
 - Asano R. S. et al. 2013, *Earth, Planets and Space* 65, 213
+- Asplund M. et al. 2009, *ARA&A* 47, 481
 - Bohlin R. C., Savage B. D., Drake J. F. 1978, *ApJ* 224, 132
+- Byler N. et al. 2017, *ApJ* 840, 44
 - Chabrier G. 2003, *PASP* 115, 763
 - Charlot S., Fall S. M. 2000, *ApJ* 539, 718
+- da Cunha E., Charlot S., Elbaz D. 2008, *MNRAS* 388, 1595
 - Conroy C., Gunn J. E., White M. 2009, *ApJ* 699, 486; Conroy C., Gunn J. E. 2010, *ApJ* 712, 833
 - Davis T. M. et al. 2011, *ApJ* 741, 67
 - Draine B. T., Li A. 2007, *ApJ* 657, 810
+- Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354
+- Hirschmann M. et al. 2017, *MNRAS* 472, 2468
+- Kashino D., Inoue A. K. 2019, *MNRAS* 486, 1053
 - Leroy A. K. et al. 2008, *AJ* 136, 2782
+- Merloni A., Heinz S. 2008, *MNRAS* 388, 1011
+- Narayan R., Yi I. 1995, *ApJ* 452, 710
 - Popping G., Somerville R. S., Galametz M. 2017, *MNRAS* 471, 3152
 - Shamshiri S. et al. 2015, *MNRAS* 451, 2681
 - Triani D. P. et al. 2020, *MNRAS* 493, 2490

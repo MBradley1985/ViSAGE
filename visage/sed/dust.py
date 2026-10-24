@@ -55,6 +55,9 @@ MNRAS 375, 2):
   birth clouds  stars younger than 10 Myr are also behind their birth
                 cloud, tau_V^BC = tau_V (1 - mu) / mu with mu = 0.3,
                 tau_lambda^BC = tau_V^BC (lambda / 5500 A)^-1.3
+(Charlot & Fall used lambda^-0.7 for both; the steeper birth-cloud curve
+and mu = 0.3 are those of da Cunha, Charlot & Elbaz 2008, MNRAS 388, 1595,
+fitted to nearby galaxies' UV-to-IR SEDs.)
 """
 
 from __future__ import annotations
@@ -66,9 +69,9 @@ ETA_SN = 0.1  # Asano et al. 2013; Dusty-SAGE
 TAU_ACC_MYR = 20.0  # Asano et al. 2013; Dusty-SAGE
 AV_PER_NH = 5.3e-22  # mag cm^2 (Bohlin et al. 1978, R_V = 3.1)
 DTG_MW = 0.010  # Draine & Li 2007: dust per hydrogen mass
-MU_ISM = 0.3  # Charlot & Fall 2000
+MU_ISM = 0.3  # da Cunha et al. 2008 (Charlot & Fall 2000 model)
 BC_AGE_GYR = 0.01  # birth clouds disperse after 10 Myr (Charlot & Fall)
-N_ISM, N_BC = 0.7, 1.3  # Charlot & Fall 2000 slopes
+N_ISM, N_BC = 0.7, 1.3  # Charlot & Fall 2000; da Cunha et al. 2008
 DISK_A = 1.68  # gas disk half-mass radius / scale length (De Lucia & Blaizot)
 M_P = 1.6726e-24  # g
 MSUN = 1.989e33  # g

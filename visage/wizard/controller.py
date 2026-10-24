@@ -370,6 +370,10 @@ SED_DUST_EMISSION_ENABLED=1
 # Also write the disk's and the bulge's own magnitudes (disk_mag_*,
 # bulge_mag_*); the totals are their sum.
 SED_DISK_BULGE_ENABLED=1
+# Nebular emission from star-forming regions: lines and continuum in the
+# magnitudes, and each galaxy's H-alpha, H-beta, [OII], [OIII], [NII] and
+# [SII] luminosities and fluxes, through its dust.
+SED_LINES_ENABLED=1
 {survey_flags}
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
@@ -411,6 +415,7 @@ if [ "$SED_ENABLED" = "1" ]; then
     fi
     [ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ] && sed_extra="$sed_extra --dust-emission"
     [ "$SED_DISK_BULGE_ENABLED" = "1" ] && sed_extra="$sed_extra --disk-bulge"
+    [ "$SED_LINES_ENABLED" = "1" ] && sed_extra="$sed_extra --lines"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\

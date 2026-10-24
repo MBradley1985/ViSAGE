@@ -87,7 +87,7 @@ include = ["visage*"]
 # Include nested static assets too (e.g. vendored KaTeX under static/katex/
 # and its fonts) — "static/*" alone does not recurse into subdirectories.
 # Also bundle the example Story Mode stories so they ship with the package.
-visage = ["static/*", "static/**/*", "examples/*.json", "wizard/patches/**/*"]
+visage = ["static/*", "static/**/*", "examples/*.json", "wizard/patches/**/*", "sed/data/*"]
 
 [tool.ruff]
 line-length = 79
