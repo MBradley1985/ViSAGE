@@ -21,7 +21,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   and Herschel magnitudes include it; `LDust` is the total.
 - **Emission lines** ([OII], Hβ, [OIII], Hα, [NII], [SII]: luminosities
   with and without dust, and fluxes) from each galaxy's HII regions
-  (FSPS nebular grids; ionisation parameter from its specific SFR,
+  (Gutkin et al. 2016 models; ionisation parameter from its specific SFR,
   metallicity and density, Kashino & Inoue 2019) and from its AGN
   (SAGE26's quasar- and radio-mode accretion through the Feltre et al.
   2016 narrow-line-region models, coupled as Hirschmann et al. 2017).

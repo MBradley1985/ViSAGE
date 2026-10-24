@@ -26,7 +26,32 @@ def test_kashino_inoue_logu():
     u = nb.kashino_inoue_logu(
         np.array([1e-6]), np.array([1e-6]), np.array([1e6])
     )
-    assert nb.GAS_LOGU_NODES[0] <= u[0] <= nb.GAS_LOGU_NODES[-1]
+    assert nb.LOGU_MIN <= u[0] <= nb.LOGU_MAX
+
+
+def test_hii_lines():
+    z_nodes, u_nodes, n_nodes, table, names = nb.grid()
+    assert names == list(nb.LINES)
+    assert table.shape == (
+        len(z_nodes),
+        len(u_nodes),
+        len(n_nodes),
+        len(nb.LINES),
+    )
+    # At a node the interpolation returns the grid.
+    i, j = list(z_nodes).index(0.014), list(u_nodes).index(-3.0)
+    got = nb.hii_lines_per_sfr(np.array([0.014]), np.array([-3.0]), [2.0])
+    np.testing.assert_allclose(got[0], table[i, j, 0], rtol=1e-9)
+    # H-alpha per unit SFR near the Kennicutt & Evans (2012) calibration,
+    # 10^41.27 erg/s per Msun/yr (Kroupa IMF, Starburst99).
+    ha = got[0, names.index("Halpha")]
+    assert 41.2 < np.log10(ha) < 41.6
+    # Metal-rich, low-U gas: below the Kauffmann et al. (2003) line, as
+    # SDSS star-forming galaxies are.
+    r = nb.hii_lines_per_sfr(np.array([0.02]), np.array([-3.5]), [2.0])[0]
+    x = np.log10(r[names.index("NII6584")] / r[names.index("Halpha")])
+    y = np.log10(r[names.index("OIII5007")] / r[names.index("Hbeta")])
+    assert y < 0.61 / (x - 0.05) + 1.30
 
 
 def test_agn_grid_and_photons():

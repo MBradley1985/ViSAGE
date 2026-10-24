@@ -50,7 +50,14 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 
 [OII] 3727, Hβ, [OIII] 5007, Hα, [NII] 6584 and [SII] 6716+6731: `LineLum_*` (erg/s, through the dust), `LineLumIntr_*` (no dust), `LineLumAGN_*` (the AGN's share, no dust) and `LineFlux_*` (erg/s/cm², observed).
 
-**HII regions.** Lines from the stars younger than 100 Myr (formed at the current SFR), from FSPS's nebular model (Byler et al. 2017: Cloudy grids over gas metallicity and ionisation parameter). The gas metallicity is the cold gas's. The ionisation parameter follows SDSS galaxies' relation with specific SFR, metallicity and density (Kashino & Inoue 2019, eqs. 3 and 5), with O/H from the solar 12 + log O/H = 8.69 (Asplund et al. 2009). The lines pass through the birth cloud and the diffuse ISM. The FSPS spectra used for the magnitudes also include nebular lines and continuum, for each metallicity node at a main-sequence galaxy's ionisation parameter.
+**HII regions.** Lines from the star-forming nebular models of Gutkin, Charlot & Bruzual (2016): Bruzual & Charlot stellar populations through Cloudy, for a Chabrier IMF and constant star formation over 100 Myr, given per unit SFR. They are the companions of the AGN models below and are coupled to each galaxy the same way (Hirschmann et al. 2017). Each galaxy's lines are its current SFR times the grid at:
+
+- the cold gas's metallicity;
+- the ionisation parameter of SDSS galaxies with its specific SFR, metallicity and density (Kashino & Inoue 2019, eq. 5), with O/H from the solar 12 + log O/H = 8.69 (Asplund et al. 2009);
+- the electron density from their eq. 3 (within the grid's 100–1000 cm⁻³);
+- dust-to-metal ratio 0.3 and solar C/O, the models' fiducial values.
+
+The lines pass through the birth cloud and the diffuse ISM. The FSPS spectra used for the magnitudes include FSPS's own nebular lines and continuum (Byler et al. 2017), for each metallicity node at a main-sequence galaxy's ionisation parameter.
 
 **AGN.** SAGE26's black holes accrete in quasar mode (`QuasarModeBHaccretionMass` over the snapshot step `dT`) and radio mode (`Heating` = η*Ṁc*², η = 0.1). Their luminosity is η*Ṁc*² above 1 % of Eddington and falls as *ṁ*² below it, where the flow becomes radiatively inefficient (Narayan & Yi 1995; Merloni & Heinz 2008). The narrow-line region uses the photoionisation models of Feltre, Charlot & Gutkin (2016), coupled to each galaxy as Hirschmann et al. (2017) do: an ionising spectrum *S*<sub>ν</sub> ∝ ν<sup>−1.7</sup>, gas clumps of *n*<sub>H</sub> = 10³ cm⁻³, dust-to-metal ratio 0.3, the cold gas's metallicity, and the ionisation parameter at the Strömgren radius from the AGN's ionising photons and the filling factor of the cold gas within 1 kpc. The lines pass through half the disk's dust, as a screen. `LAGN`, `EddingtonRatio`, `LogU_HII` and `LogU_AGN` are written too.
 
@@ -59,7 +66,6 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 - IGM absorption (irrelevant below *z* ≈ 2).
 - The AGN's own continuum in the magnitudes (its lines aren't in the broad bands either).
 - Line emission from old (post-AGB) stars, which powers many LINER-like spectra in quiescent galaxies.
-- At solar metallicity and above, FSPS's HII-region line grid gives [OIII]/Hβ about 0.3 dex above SDSS star-forming galaxies at the same [NII]/Hα, so many purely star-forming model galaxies fall in the BPT "composite" region.
 
 ## References
 
@@ -74,6 +80,7 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 - Davis T. M. et al. 2011, *ApJ* 741, 67
 - Draine B. T., Li A. 2007, *ApJ* 657, 810
 - Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354
+- Gutkin J., Charlot S., Bruzual G. 2016, *MNRAS* 462, 1757
 - Hirschmann M. et al. 2017, *MNRAS* 472, 2468
 - Kashino D., Inoue A. K. 2019, *MNRAS* 486, 1053
 - Leroy A. K. et al. 2008, *AJ* 136, 2782

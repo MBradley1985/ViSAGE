@@ -1,40 +1,51 @@
-"""Nebular emission lines for the lightcone photometry.
+"""Nebular emission lines from each galaxy's HII regions.
 
 Young stars' ionising light lights up their HII regions. The lines come
-from FSPS's nebular model (Byler et al. 2017, ApJ 840, 44: Cloudy
-photoionisation grids over gas metallicity and ionisation parameter),
-from each galaxy's stars younger than the young window (formed at its
-current SFR), at:
+from the star-forming nebular models of Gutkin, Charlot & Bruzual (2016,
+MNRAS 462, 1757: Bruzual & Charlot stellar populations through Cloudy,
+for a Chabrier IMF to 100 Msun and constant star formation for 100 Myr),
+the companions of the AGN models in visage/sed/agn.py and coupled to
+galaxies the same way (Hirschmann et al. 2017, MNRAS 472, 2468). They
+give line luminosity per unit SFR, so each galaxy's lines are its
+current SFR (that of its stars younger than the young window) times the
+grid at:
 
   gas metallicity       the galaxy's cold-gas metallicity
-                        (MetalsColdGas / ColdGas)
+                        (MetalsColdGas / ColdGas), as the grid's total
+                        (gas + dust) interstellar metallicity
   ionisation parameter  from the galaxy's specific star-formation rate,
                         gas metallicity and HII-region density, as measured
                         in SDSS by Kashino & Inoue (2019, MNRAS 486, 1053,
                         eq. 5): log U = -2.316 - 0.360 (log O/H + 4)
-                        - 0.292 log n_e + 0.428 (log sSFR + 9), with the
-                        density from their eq. 3, log sSFR = -12.661
-                        - 0.627 (log M* - 10) + 1.753 log n_e. More young
+                        - 0.292 log n_e + 0.428 (log sSFR + 9). More young
                         stars per unit mass ionise their gas more; metal-
                         rich stars are softer and denser gas less ionised.
                         O/H from Z with the solar 12 + log O/H = 8.69
-                        (Asplund et al. 2009)
+                        (Asplund et al. 2009). Their U is Cloudy's in
+                        plane-parallel geometry, which is close to the
+                        grid's U at the Stromgren radius (Feltre et al.
+                        2016, sec. 2.1)
+  density               n_H = n_e from their eq. 3, log sSFR = -12.661
+                        - 0.627 (log M* - 10) + 1.753 log n_e, within the
+                        grid's 100-1000 cm^-3
+  dust-to-metal ratio   0.3, carbon-to-oxygen ratio solar (the models'
+                        fiducial values; Hirschmann et al. 2017)
 
 Lines arise in the birth clouds, so they are dimmed by the birth cloud
 and the diffuse ISM at their wavelength and the galaxy's inclination
-(Charlot & Fall 2000). Ionising photons absorbed by dust inside the HII
-regions, and any that escape, are neglected (all are taken to ionise).
-FSPS line wavelengths are vacuum.
+(visage/sed/dust.py). Wavelengths below are vacuum.
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+
 import numpy as np
 
-C_CM_S = 2.99792458e10
 Z_SUN = 0.0142  # Asplund et al. 2009
 LOG_OH_SUN = 8.69 - 12.0
-L_SUN_ERG_S = 3.828e33
+L_SUN_GRID = 3.826e33  # erg/s, the solar luminosity the grid is given in
 
 # name: (vacuum wavelengths [A] summed into it, label)
 LINES = {
@@ -46,32 +57,71 @@ LINES = {
     "SII6716_6731": ((6718.3, 6732.7), "[SII] 6716+6731"),
 }
 
-# Gas-metallicity and ionisation-parameter nodes of the line table
-# (within FSPS's nebular grid: log Z/Zsun -2..0.5, log U -4..-1).
-GAS_LOGZ_NODES = np.array([-2.0, -1.5, -1.0, -0.6, -0.3, 0.0, 0.25, 0.5])
-GAS_LOGU_NODES = np.array([-4.0, -3.5, -3.0, -2.5, -2.0, -1.5, -1.0])
+# The grid's ionisation-parameter range.
+LOGU_MIN, LOGU_MAX = -4.0, -1.0
+
+_GRID_FILE = Path(__file__).with_name("data") / "gutkin16_hii.npz"
+
+
+@lru_cache(maxsize=1)
+def grid():
+    """(Z nodes, log U_S nodes, n_H nodes, table (n_Z, n_U, n_nH,
+    n_lines) erg/s per Msun/yr, line names), in LINES order."""
+    g = np.load(_GRID_FILE)
+    return (
+        g["Z"],
+        g["logU"],
+        g["nH"],
+        g["lines"] * L_SUN_GRID,
+        [str(s) for s in g["names"]],
+    )
+
+
+def kashino_inoue_log_ne(ssfr, stellar_mass) -> np.ndarray:
+    """log10 electron density (cm^-3) of a galaxy's HII regions from its
+    sSFR (1/yr) and stellar mass (Msun), Kashino & Inoue 2019 eq. 3."""
+    lssfr = np.log10(np.maximum(np.asarray(ssfr, float), 1e-14))
+    lm = np.log10(np.maximum(np.asarray(stellar_mass, float), 1.0))
+    return np.clip((lssfr + 12.661 + 0.627 * (lm - 10.0)) / 1.753, 0, 4)
 
 
 def kashino_inoue_logu(z_gas, ssfr, stellar_mass) -> np.ndarray:
     """log10 U of a galaxy's HII regions (Kashino & Inoue 2019, eqs. 3, 5)
     from its gas metallicity (mass fraction), sSFR (1/yr) and stellar
-    mass (Msun); clipped to the line table's range."""
+    mass (Msun); clipped to the grid's range."""
     z = np.maximum(np.asarray(z_gas, float), 1e-6)
     lssfr = np.log10(np.maximum(np.asarray(ssfr, float), 1e-14))
-    lm = np.log10(np.maximum(np.asarray(stellar_mass, float), 1.0))
-    log_ne = np.clip((lssfr + 12.661 + 0.627 * (lm - 10.0)) / 1.753, 0, 4)
+    log_ne = kashino_inoue_log_ne(ssfr, stellar_mass)
     log_oh_4 = np.log10(z / Z_SUN) + LOG_OH_SUN + 4.0
     logu = -2.316 - 0.360 * log_oh_4 - 0.292 * log_ne + 0.428 * (lssfr + 9)
-    return np.clip(logu, GAS_LOGU_NODES[0], GAS_LOGU_NODES[-1])
+    return np.clip(logu, LOGU_MIN, LOGU_MAX)
 
 
-def line_indices(emline_wavelengths) -> dict[str, list[int]]:
-    """For each LINES entry, the FSPS emission-line indices it sums."""
-    w = np.asarray(emline_wavelengths, float)
-    return {
-        name: [int(np.argmin(np.abs(w - lw))) for lw in waves]
-        for name, (waves, _) in LINES.items()
-    }
+def hii_lines_per_sfr(z_gas, logu, log_nh) -> np.ndarray:
+    """(n, n_lines) HII-region line luminosities, erg/s per Msun/yr, no
+    dust outside the HII regions: the grid interpolated in log Z, log U
+    and log n_H (clipped to its edges)."""
+    z_nodes, u_nodes, n_nodes, table, _ = grid()
+    logt = np.log10(table)
+    lz = np.log10(np.maximum(np.asarray(z_gas, float), 1e-6))
+    u = np.asarray(logu, float)
+    ln = np.clip(
+        np.asarray(log_nh, float),
+        np.log10(n_nodes[0]),
+        np.log10(n_nodes[-1]),
+    )
+    lnn = np.log10(n_nodes)
+    j = np.clip(np.searchsorted(lnn, ln) - 1, 0, len(lnn) - 2)
+    t = ((ln - lnn[j]) / (lnn[j + 1] - lnn[j]))[:, None]
+    zn = np.log10(z_nodes)
+    lo = np.empty((len(lz), logt.shape[-1]))
+    hi = np.empty_like(lo)
+    for k in range(len(lnn) - 1):
+        m = j == k
+        if m.any():
+            lo[m] = bilinear(logt[:, :, k], zn, u_nodes, lz[m], u[m])
+            hi[m] = bilinear(logt[:, :, k + 1], zn, u_nodes, lz[m], u[m])
+    return 10.0 ** ((1 - t) * lo + t * hi)
 
 
 def bilinear(table, x_nodes, y_nodes, x, y) -> np.ndarray:

@@ -212,9 +212,11 @@ def compute_photometry(
     absorbed light in the infrared (Draine & Li 2007, energy balance),
     and ``LDust`` (L_sun) is each galaxy's dust luminosity.
     ``lines``: nebular emission (lines and continuum) in the spectra, and
-    each galaxy's emission lines (visage/sed/nebular.py) as
-    ``LineLum_<line>`` (erg/s, through its dust), ``LineLumIntr_<line>``
-    (erg/s, no dust) and ``LineFlux_<line>`` (erg/s/cm^2, observed).
+    each galaxy's emission lines from its HII regions (visage/sed/
+    nebular.py) and AGN (visage/sed/agn.py) as ``LineLum_<line>`` (erg/s,
+    through its dust), ``LineLumIntr_<line>`` (erg/s, no dust),
+    ``LineLumAGN_<line>`` (the AGN's, no dust) and ``LineFlux_<line>``
+    (erg/s/cm^2, observed).
     ``spectra_out``: a dict to fill with rest-frame spectra (L_sun/Hz) of
     every galaxy -- "wave" (Angstrom), "observed" (through the dust, with
     its emission), "intrinsic" (the stars alone) and, with ``disk_bulge``,
@@ -439,9 +441,12 @@ def compute_photometry(
             / np.maximum(cold.astype(np.float64), 1e-30),
             1e-4,
         )
-        gas_logz = np.log10(np.maximum(z_gas, 1e-6) / zsun)
-        gas_logu = nb.kashino_inoue_logu(
-            z_gas, sfr_now / np.maximum(stellar_mass, 1.0), stellar_mass
+        ssfr_now = sfr_now / np.maximum(stellar_mass, 1.0)
+        gas_logu = nb.kashino_inoue_logu(z_gas, ssfr_now, stellar_mass)
+        gas_log_ne = nb.kashino_inoue_log_ne(ssfr_now, stellar_mass)
+        # L_sun per Msun/yr of current star formation (Gutkin et al. 2016).
+        hii_per_sfr = (
+            nb.hii_lines_per_sfr(z_gas, gas_logu, gas_log_ne) / L_SUN_ERG_S
         )
 
     has_light = stellar_mass > 0
@@ -466,7 +471,6 @@ def compute_photometry(
             nebular=lines,
         )
         libraries = grid.libraries
-        mean_lines = grid.line_table() if lines else None
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
         nu_w = ir_template = None
         if re_emit:
@@ -603,17 +607,12 @@ def compute_photometry(
                 if lines and 0 <= last < n_bins and width > 0:
                     # Lines from the young stars (current SFR), in each
                     # galaxy's own gas, through its birth cloud and ISM.
-                    m_y = np.minimum(
-                        sfr_now[ci] * dt_y * 1e9, sfh_formed[ci, last]
+                    # (the rate of the young stars the spectra hold)
+                    sfr_y = np.minimum(
+                        sfr_now[ci],
+                        sfh_formed[ci, last] / max(dt_y * 1e9, 1.0),
                     )
-                    per_mass = nb.bilinear(
-                        mean_lines(dt_y),
-                        nb.GAS_LOGZ_NODES,
-                        nb.GAS_LOGU_NODES,
-                        gas_logz[ci],
-                        gas_logu[ci],
-                    )  # (chunk, n_lines), L_sun per Msun formed
-                    intr = m_y[:, None] * per_mass
+                    intr = sfr_y[:, None] * hii_per_sfr[ci]
                     seen = intr
                     if cf:
                         seen = (
@@ -807,7 +806,8 @@ def compute_photometry(
             )
         ),
         "NebularEmission": (
-            "HII regions: FSPS (Byler+17 Cloudy grids), gas Z = cold-gas Z, "
+            "HII regions: Gutkin+16 grids (lines; FSPS nebular in the "
+            "spectra), gas Z = cold-gas Z, "
             "log U from Kashino & Inoue 2019, through birth cloud + ISM; "
             "AGN narrow-line region: Feltre+16 grids coupled as Hirschmann+17 "
             "(quasar + radio-mode accretion, inefficient below 1% Eddington), "
@@ -890,7 +890,7 @@ def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
                     "erg/s/cm^2" if kind == "LineFlux" else "erg/s"
                 )
                 ds.attrs["Source"] = (
-                    "ViSAGE nebular emission (HII regions: FSPS, Byler+17; "
+                    "ViSAGE nebular emission (HII regions: Gutkin+16; "
                     "AGN: Feltre+16)"
                 )
                 continue
