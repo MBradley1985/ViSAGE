@@ -3,26 +3,33 @@ and how it dims and reddens the galaxy's light.
 
 Dust mass (cold ISM), from Dusty-SAGE (Triani et al. 2020, MNRAS 493,
 2490), whose dust model -- production by stars, growth in molecular
-clouds, destruction by supernovae, locking into new stars -- is solved
-here for its steady state from each galaxy's SAGE26 properties (SAGE26
-doesn't evolve dust). Per unit cold gas, with delta = M_dust / M_cold:
+clouds, destruction by supernovae -- is solved here for its steady state
+from each galaxy's SAGE26 properties (SAGE26 doesn't evolve dust).
 
-    0 = y_d - (1 - R) delta - eta m_swept(Z) N_SN delta
-          + t_dep (f_H2 / tau_acc) delta (Z - 2 delta) / (Z - delta)
+It is solved for the dust-to-metal ratio mu = M_dust / M_Z (cold gas),
+not the dust-to-gas ratio: gas inflow (pristine), outflows and locking
+into new stars move dust and metals together, so they cancel from mu --
+in SAGE26 a metal-poor galaxy is metal-poor largely because inflow
+dilutes it, and that dilutes its dust in the same way. What's left:
 
-  production    y_d = delta_cond * Yield: the condensed share of the new
-                metals (condensation efficiency 0.2, Dusty-SAGE after
-                Popping et al. 2017, MNRAS 471, 3152)
-  astration     (1 - R) delta: dust locked into new stars
+    0 = Y (d_c - mu) - eta m_swept(Z) N_SN Z mu
+          + t_dep Z (f_H2 / tau_acc) mu (1 - 2 mu) / (1 - mu)
+
+  stars         new metals Y per mass formed (the run's Yield), a share
+                d_c = 0.2 condensed into dust (Dusty-SAGE, after Popping
+                et al. 2017, MNRAS 471, 3152)
   destruction   supernova shocks: eta = 0.1 of the swept mass
                 m_swept(Z) = 1535 (Z/0.02 + 0.039)^-0.289 Msun cleared
                 per SN (Asano et al. 2013, EP&S 65, 213), SNe per mass
                 formed N_SN from the Chabrier (2003) IMF (8-40 Msun)
   growth        accretion of gas-phase metals in molecular clouds,
                 tau_acc = 20 Myr (0.02 / Z_gas) (Asano et al. 2013),
-                stopping when the dust equals the gas-phase metals
+                stopping at mu = 1/2 (the dust equals the gas-phase metals)
   t_dep = M_cold / SFR, f_H2 = H2gas / ColdGas, Z = MetalsColdGas /
   ColdGas (SAGE26's metals include those in dust).
+Metal-poor gas: growth (~Z^2) and destruction (~Z) fade, so mu -> d_c and
+the dust-to-gas ratio falls with Z; metal-rich gas: growth takes over
+(the critical metallicity of Asano et al. 2013) and mu -> 1/2.
 
 Hot gas and the CGM (the CGM is part of the hot gas): dust there is
 sputtered (Tsai & Mathews 1995, ApJ 448, 84) and its column is far below
@@ -88,9 +95,10 @@ def sn_per_mass_formed(m_lo=8.0, m_hi=40.0) -> float:
 def cold_dust_ratio(
     cold, metals_cold, h2, sfr, recycle=0.43, yield_=0.025
 ) -> np.ndarray:
-    """Dust-to-gas ratio of each galaxy's cold ISM (see the module
-    docstring). Arrays in Msun and Msun/yr; returns delta (0 where there
-    is no cold gas)."""
+    """Dust-to-gas ratio of each galaxy's cold ISM, delta = mu Z (see the
+    module docstring). Arrays in Msun and Msun/yr; 0 without cold gas.
+    (``recycle`` cancels from the dust-to-metal balance; kept for the
+    call signature.)"""
     cold = np.asarray(cold, float)
     z = np.where(
         cold > 0, np.asarray(metals_cold, float) / np.maximum(cold, 1e-30), 0.0
@@ -104,39 +112,36 @@ def cold_dust_ratio(
     )
     sfr = np.asarray(sfr, float)
     t_dep = np.where(sfr > 0, cold / np.maximum(sfr, 1e-30), np.inf)  # yr
-    y_d = COND_EFFICIENCY * yield_
     n_sn = sn_per_mass_formed()
 
-    def f(d):
-        zg = np.maximum(z - d, 1e-6)  # gas-phase metals
+    def f(mu):
+        zg = np.maximum(z * (1 - mu), 1e-8)  # gas-phase metals
         tau_acc = TAU_ACC_MYR * 1e6 * 0.02 / zg
         grow = np.where(
-            z - d > d,
-            (f_h2 / tau_acc) * d * (z - 2 * d) / np.maximum(z - d, 1e-12),
+            mu < 0.5,
+            (f_h2 / tau_acc) * mu * (1 - 2 * mu) / np.maximum(1 - mu, 1e-12),
             0.0,
         )
         m_sw = 1535.0 * (zg / 0.02 + 0.039) ** -0.289
-        kappa = (1 - recycle) + ETA_SN * m_sw * n_sn
+        stars = yield_ * (COND_EFFICIENCY - mu) - ETA_SN * m_sw * n_sn * z * mu
         with np.errstate(invalid="ignore", over="ignore"):
-            star = np.where(np.isfinite(t_dep), y_d - kappa * d, 0.0)
-            g = np.where(np.isfinite(t_dep), t_dep * grow, grow * 1e12)
-        return star + g
+            # Not forming stars: only growth acts (toward mu = 1/2).
+            return np.where(np.isfinite(t_dep), stars + t_dep * z * grow, grow)
 
-    # Bisection on (0, Z): f(0) = y_d > 0 for star-forming galaxies.
+    # Bisection on mu in (0, 1): f(0) > 0 where stars form.
     lo = np.zeros_like(z)
-    hi = np.maximum(z, 0.0)
-    for _ in range(60):
+    hi = np.ones_like(z)
+    for _ in range(50):
         mid = 0.5 * (lo + hi)
         pos = f(mid) > 0
         lo = np.where(pos, mid, lo)
         hi = np.where(pos, hi, mid)
-    delta = 0.5 * (lo + hi)
-    # No star formation and no H2: nothing sets the dust; take the dust
-    # the growth limit allows at its metallicity times a typical DTM is
-    # not defensible -- leave such (gas-poor, quiescent) galaxies dust-free.
+    mu = 0.5 * (lo + hi)
+    # No star formation and no H2: nothing processes the dust; it keeps
+    # the share stars condense.
     quiet = ~np.isfinite(t_dep) & (f_h2 <= 0)
-    delta = np.where(quiet | (cold <= 0), 0.0, delta)
-    return delta
+    mu = np.where(quiet, COND_EFFICIENCY, mu)
+    return np.where(cold > 0, mu * z, 0.0)
 
 
 def _exp_scale_hi(m_hi, r1_pc):

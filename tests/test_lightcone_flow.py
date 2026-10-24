@@ -296,7 +296,10 @@ def test_lc_migrate_adds_alist_and_keeps_choices(tmp_path, monkeypatch):
     )
     text = text.replace('\\\n      --alist "$ALIST_FILE"', "")  # drop --alist
     text = text.replace("BAND_WISE_W4_ENABLED=1", "BAND_WISE_W4_ENABLED=0")
-    text = text.replace("SED_DUST_ENABLED=0", "SED_DUST_ENABLED=1")
+    text = text.replace("SED_DUST_ENABLED=1", "SED_DUST_ENABLED=0")
+    text = text.replace(
+        'SED_DUST_MODEL="charlot_fall"', 'SED_DUST_MODEL="calzetti"'
+    )
     assert "--alist" not in text  # precondition
 
     script_path = tmp_path / ".visage" / _LC_RUN_SCRIPT
@@ -310,7 +313,8 @@ def test_lc_migrate_adds_alist_and_keeps_choices(tmp_path, monkeypatch):
 
     assert '--alist "$ALIST_FILE"' in out  # upgraded
     assert "BAND_WISE_W4_ENABLED=0" in out  # user's unticked band preserved
-    assert "SED_DUST_ENABLED=1" in out  # user's dust choice preserved
+    assert "SED_DUST_ENABLED=0" in out  # user's dust choice preserved
+    assert 'SED_DUST_MODEL="calzetti"' in out
 
 
 def test_lc_seed_script_prefills_sage_paths(tmp_path):
@@ -422,6 +426,8 @@ def test_run_template_has_metallicity_and_dust_options():
     assert "SED_METALLICITY_ENABLED" in keys  # checkbox
     assert "SED_DUST_ENABLED" in keys  # checkbox
     assert "SED_DUST2" in keys  # numeric field
+    assert "SED_DUST_MODEL" in keys  # charlot_fall | calzetti
+    assert "--dust-model charlot_fall" in s
     assert "SED_DUST_EMISSION_ENABLED" in keys  # checkbox
     # forwarded to the CLI
     assert "--no-metallicity" in s and "--dust" in s and "--dust2" in s

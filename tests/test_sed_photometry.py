@@ -233,7 +233,10 @@ def test_dust_equilibrium_and_attenuation():
     )
     assert 0.003 < delta[0] < 0.0072
     assert delta[2] < delta[0]  # metal-poor: less dust
-    assert (delta <= z + 1e-9).all()
+    assert (delta <= 0.5 * z + 1e-9).all()  # growth stops at half
+    # Metal-poor: dust-to-metals ~ the stellar condensation share (0.2),
+    # so dust-to-gas falls with metallicity.
+    assert 0.15 < delta[2] / z[2] < 0.3
     # No gas: no dust.
     assert (
         dust.cold_dust_ratio(

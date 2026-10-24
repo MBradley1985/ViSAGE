@@ -332,9 +332,14 @@ SED_FRAME="both"                       # rest | obs | both
 # Use each galaxy's own mass-weighted stellar metallicity
 # (MetalsStellarMass/StellarMass); uncheck to force solar for everyone.
 SED_METALLICITY_ENABLED=1
-# Apply Calzetti starburst dust attenuation to the SEDs (reddens galaxies).
-SED_DUST_ENABLED=0
-SED_DUST2=0.3                          # diffuse V-band optical depth when dust is on
+# Dust attenuation (dims and reddens galaxies, as observed).
+SED_DUST_ENABLED=1
+# charlot_fall: each galaxy's own dust, from its cold gas, metals and H2
+#   (Dusty-SAGE physics), in birth clouds and a disk seen at its
+#   inclination (Charlot & Fall 2000).  calzetti: one fixed screen for
+#   every galaxy (Calzetti 2000), of V-band optical depth SED_DUST2.
+SED_DUST_MODEL="charlot_fall"          # charlot_fall | calzetti
+SED_DUST2=0.3                          # calzetti only: V-band optical depth
 # Also re-emit the absorbed energy in the IR (Draine & Li) — makes the mid-IR
 # (WISE) bands physical. Only has an effect when dust (above) is on.
 SED_DUST_EMISSION_ENABLED=0
@@ -401,7 +406,13 @@ if [ "$SED_ENABLED" = "1" ]; then
     bands_csv="$(echo "$sed_bands" | tr -s ' ' ',' | sed 's/^,//')"
     sed_extra=""
     [ "$SED_METALLICITY_ENABLED" != "1" ] && sed_extra="$sed_extra --no-metallicity"
-    [ "$SED_DUST_ENABLED" = "1" ] && sed_extra="$sed_extra --dust --dust2 $SED_DUST2"
+    if [ "$SED_DUST_ENABLED" = "1" ]; then
+      if [ "$SED_DUST_MODEL" = "calzetti" ]; then
+        sed_extra="$sed_extra --dust --dust2 $SED_DUST2"
+      else
+        sed_extra="$sed_extra --dust-model charlot_fall"
+      fi
+    fi
     [ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ] && sed_extra="$sed_extra --dust-emission"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
@@ -2833,6 +2844,7 @@ class WizardController:
                 # SED physics switches (may be absent in older scripts).
                 "SED_METALLICITY_ENABLED",
                 "SED_DUST_ENABLED",
+                "SED_DUST_MODEL",
                 "SED_DUST2",
                 "SED_DUST_EMISSION_ENABLED",
             )

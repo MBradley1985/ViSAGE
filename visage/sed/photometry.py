@@ -560,6 +560,14 @@ def compute_photometry(
     return out
 
 
+_DUST_FIELDS = {
+    "DustMassCold": ("Cold-ISM dust mass", "Msun"),
+    "DustToGas": ("Cold-ISM dust-to-gas mass ratio", ""),
+    "TauV_ISM": ("Face-on V-band optical depth of the diffuse ISM", ""),
+    "CosInclination": ("|cos| of the angle between spin and sight line", ""),
+}
+
+
 def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
     """Append/overwrite the computed magnitude datasets in the lightcone file."""
     settings = results.get("_settings", {})
@@ -575,6 +583,10 @@ def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
             if name in f:
                 del f[name]
             ds = f.create_dataset(name, data=values.astype(np.float32))
+            if name in _DUST_FIELDS:
+                ds.attrs["Description"], ds.attrs["Units"] = _DUST_FIELDS[name]
+                ds.attrs["Source"] = "ViSAGE dust (Dusty-SAGE equilibrium)"
+                continue
             band = name.split("_", 2)[-1]
             frame_word = (
                 "Rest-frame absolute"
@@ -626,6 +638,16 @@ def main(argv: list[str] | None = None) -> None:
         help="Apply Calzetti starburst dust attenuation to the SEDs.",
     )
     p.add_argument(
+        "--dust-model",
+        dest="dust_model",
+        choices=("none", "calzetti", "charlot_fall"),
+        default=None,
+        help="charlot_fall: each galaxy's own dust (Dusty-SAGE physics) in "
+        "birth clouds and a disk at its inclination (Charlot & Fall 2000); "
+        "calzetti: the --dust2 screen; none. (Default: calzetti with --dust, "
+        "else none.)",
+    )
+    p.add_argument(
         "--dust2",
         type=float,
         default=0.3,
@@ -669,7 +691,9 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Computing synthetic photometry for {args.input} ...")
     _zdesc = "per-galaxy (interpolated)" if args.metallicity else "solar"
-    if args.dust:
+    if args.dust_model == "charlot_fall":
+        _ddesc = "each galaxy's own (Charlot & Fall)"
+    elif args.dust:
         _ddesc = f"on (dust2={args.dust2}" + (
             ", +emission)" if args.dust_emission else ")"
         )
@@ -689,6 +713,7 @@ def main(argv: list[str] | None = None) -> None:
         dust_emission=args.dust_emission,
         alist=args.alist,
         progress_cb=_progress,
+        dust_model=args.dust_model,
     )
     write_photometry(args.input, results)
     n_mags = sum(1 for k in results if not k.startswith("_"))

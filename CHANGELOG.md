@@ -26,7 +26,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   galaxy's own observed redshift with peculiar velocities in the distance.
   Optional dust from each galaxy's own cold gas and metals (a Dusty-SAGE
   equilibrium) in birth clouds and a diffuse disk seen at its inclination
-  (Charlot & Fall 2000). The settings used are recorded in the file.
+  (Charlot & Fall 2000), solved for the dust-to-metal ratio so gas
+  inflow and outflows dilute dust and metals alike. Dust is now on by
+  default in the LightSAGE flow (`SED_DUST_MODEL`: `charlot_fall` or the
+  old fixed `calzetti` screen). The settings used are recorded in the
+  file; the method and references are in Lightcone Photometry.
 
 ## [2.8.7] — 2026-10-22
 
