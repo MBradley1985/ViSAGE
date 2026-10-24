@@ -206,7 +206,7 @@ def _constraint_group(name: str) -> str:
 
 
 # The live view for SAGE26 and LightSAGE: frames of a box and a lightcone
-# filling up, drawn once from real outputs (Millennium box,
+# filling up, drawn once from real outputs (a fresh Millennium box,
 # microUchuu v2 lightcone).
 _LIVE_NOTE = {
     "sage26": "A SAGE26 box (Millennium, z = 0) filling with galaxies as "
