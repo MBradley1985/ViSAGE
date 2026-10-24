@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-10-24
+
 ### Added
 
 - **LightSAGE photometry is on by default, with survey presets**
