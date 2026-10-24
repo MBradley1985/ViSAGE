@@ -718,6 +718,20 @@ _KIND_COLORS = {
 }
 
 
+def _latest_per_constraint(plots: list[dict]) -> list[dict]:
+    """SAGEswarm's newest figure of each constraint (its file names start
+    with the constraint, e.g. SMF_z0_iter3_all.png), for the run page."""
+    best: dict[str, dict] = {}
+    for it in plots:
+        stem = Path(it["name"]).stem
+        group = stem.split("_iter")[0].split("_all")[0] or stem
+        if group not in best or it.get("mtime", 0) >= best[group].get(
+            "mtime", 0
+        ):
+            best[group] = {**it, "group": group}
+    return [best[g] for g in sorted(best)]
+
+
 class WizardController(SetupRunMixin):
     def __init__(
         self,
@@ -784,7 +798,7 @@ class WizardController(SetupRunMixin):
         self._st.wiz_section = ""
         self._st.wiz_param_search = ""
         self._st.wiz_run = {}
-        self._st.wiz_run_live = False
+        self._st.wiz_run_plots = []
         self._setup_mode = "sage26"
         self._run = None
         self._last_rc = None
@@ -826,16 +840,26 @@ class WizardController(SetupRunMixin):
         server.controller.set("wiz_close")(self._on_close)
         server.controller.set("wiz_rescan")(self._on_rescan)
         server.controller.set("wiz_cancel_run")(self._on_cancel_run)
+        # The terminal's size in the browser (visage.js), so commands run in
+        # a terminal as wide as the one showing them.
+        self._term_size = (24, 220)
+        self._st.wiz_term_size = ""
+        change = getattr(server.state, "change", None)
+        if callable(change):
+            change("wiz_term_size")(self._on_term_size)
 
         if auto_start:
             asyncio.ensure_future(self._step_scan())
 
-    def reset_and_start(self, flow: str | None = None) -> None:
+    def reset_and_start(
+        self, flow: str | None = None, setup: bool = False
+    ) -> None:
         """Clear terminal and restart — used when (re-)opening the wizard.
 
-        ``flow`` selects the guided flow: ``"sage26"`` (default, the original
-        clone/compile/run-and-explore path) or ``"sageswarm"`` (clone / install
-        / configure / run the PSO calibration tool with a live plot gallery).
+        ``flow`` selects the tool (``"sage26"``, ``"sagelightcone"`` or
+        ``"sageswarm"``) whose screen opens; none opens the home screen.
+        ``setup`` opens straight on that tool's setup screen when the tool
+        is ready to run (its own screen otherwise).
         """
         self._flow = flow if flow in _MODE_META else "sage26"
         self._sage26_dir = None
@@ -872,13 +896,14 @@ class WizardController(SetupRunMixin):
         self._st.wiz_params_target = ""
         self._init_param_pool()
         self._st.pso_plots = []
+        self._st.wiz_run_plots = []
         self._st.pso_gallery_show = False
         # Push a clear sequence as the first "chunk" so a late-mounting xterm
         # clears itself before replaying buffered output.
         self._push_bytes(b"\x1b[2J\x1b[H")
         self._st.flush()
         if flow in _MODE_META:
-            asyncio.ensure_future(self._enter(flow))
+            asyncio.ensure_future(self._enter(flow, setup=setup))
         else:
             asyncio.ensure_future(self._go_home())
 
@@ -895,6 +920,20 @@ class WizardController(SetupRunMixin):
         self._tc_refresh = True
         view, mode = self._st.wiz_view, self._st.wiz_mode
         self.reset_and_start(flow=mode if view != "home" else None)
+
+    def _on_term_size(self, wiz_term_size="", **_) -> None:
+        try:
+            cols, rows = (int(v) for v in str(wiz_term_size).split(","))
+        except ValueError:
+            return
+        if cols < 20 or rows < 5:
+            return
+        self._term_size = (rows, cols)
+        if self._run_proc is not None:
+            try:
+                self._run_proc.resize(rows, cols)
+            except Exception:
+                pass
 
     def _on_cancel_run(self, **_) -> None:
         """Interrupt the running command — equivalent to pressing Ctrl+C.
@@ -1197,8 +1236,8 @@ class WizardController(SetupRunMixin):
                 argv,
                 cwd=run_cwd,
                 env={**os.environ, **extra} if extra else None,
-                rows=24,
-                cols=220,
+                rows=self._term_size[0],
+                cols=self._term_size[1],
             )
         except Exception as exc:
             self._push_bytes(f"\x1b[1;31mError: {exc}\x1b[0m\r\n".encode())
@@ -1580,10 +1619,13 @@ class WizardController(SetupRunMixin):
         await self._refresh_status()
         self._show_home()
 
-    async def _enter(self, mode: str) -> None:
+    async def _enter(self, mode: str, setup: bool = False) -> None:
         self._close_panels()
         self._set_flow(mode)
         await self._refresh_status()
+        if setup and self._status.get(mode, {}).get("ready"):
+            await self._show_setup(mode)
+            return
         self._show_mode(mode)
 
     async def _menu_return(self, mode: str) -> None:
@@ -1855,10 +1897,6 @@ class WizardController(SetupRunMixin):
             return
         if value.startswith("su:"):
             await self._setup_choose(value[len("su:") :])
-            return
-        if value in ("run:term", "run:view"):
-            self._st.wiz_view = "term" if value == "run:term" else "run"
-            self._set_choices(self._st.wiz_choices or [])
             return
         if value == "tools":
             self._st.wiz_view = "term"
@@ -2771,6 +2809,7 @@ class WizardController(SetupRunMixin):
         self._stop_plot_watch()
         self._plot_seen = {}
         self._st.pso_plots = []
+        self._st.wiz_run_plots = []
         self._st.pso_gallery_show = self._st.wiz_view != "run"
         self._st.flush()
         if main_dir is None:
@@ -2844,6 +2883,7 @@ class WizardController(SetupRunMixin):
                 self._emit(f"  [gallery] + {rel}", "ok")
         if changed:
             self._st.pso_plots = [by_name[k] for k in sorted(by_name)]
+            self._st.wiz_run_plots = _latest_per_constraint(self._st.pso_plots)
             self._st.flush()
 
     # ── LightSAGE (lightcone extraction) flow ────────────────────────────────

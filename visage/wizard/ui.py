@@ -33,6 +33,14 @@ _WIZ_CSS = """
 .wiz-spin { animation: wiz-spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .wiz-busy, .wiz-spin { animation: none; } }
 .wiz-sans { font-family: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif; }
+/* One font on every page: Vuetify's fields, labels and buttons too; the
+   terminal keeps its own. */
+.wiz-sans *:not(.v-icon):not(.mdi) { font-family: inherit; }
+.wiz-sans .xterm, .wiz-sans .xterm * {
+  font-family: "Menlo", "Monaco", "Consolas", "DejaVu Sans Mono", monospace; }
+@font-face { font-family: 'Space Grotesk'; font-style: normal;
+  font-weight: 300 700; font-display: swap;
+  src: url('/sage_static/fonts/SpaceGrotesk-wght.woff2') format('woff2'); }
 """
 
 
@@ -52,6 +60,16 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
         ),
     ):
         html.Link(rel="stylesheet", href=css_url)
+        # The wizard terminal's size, from visage.js ("cols,rows").
+        html.Input(
+            id="wiz-term-size-relay",
+            v_model=("wiz_term_size",),
+            type="text",
+            style=(
+                "position:fixed;left:-9999px;width:1px;height:1px;"
+                "opacity:0;pointer-events:none;"
+            ),
+        )
 
         # ── Header ──────────────────────────────────────────────────────────
         with html.Div(
@@ -120,10 +138,12 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
         # right) so the terminal is never hidden under it; overflowX lets the
         # user scroll horizontally if the content is still wider than the gap.
         with html.Div(
+            # The home page sits centred; every other page fills the area.
             style=(
-                "{flex:'1',display:'flex',alignItems:'center',"
+                "{flex:'1',minHeight:0,display:'flex',"
+                "alignItems: wiz_view === 'home' ? 'center' : 'stretch',"
                 "justifyContent:'center',overflowX:'auto',overflowY:'hidden',"
-                "padding:'24px',"
+                "padding: wiz_view === 'home' ? '24px' : '20px 24px',"
                 "paddingRight: pso_gallery_show "
                 "? 'calc(min(46vw, 720px) + 24px)' : '24px'}",
             ),
@@ -142,8 +162,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 style=(
                     "{"
                     "display:'flex',gap:'16px',alignItems:'stretch',"
-                    "height:'640px',maxHeight:'80vh',"
-                    "width:'100%',maxWidth:'calc(100vw - 48px)',"
+                    "width:'100%',"
                     "justifyContent: (wiz_par_show || wiz_sw_config_show || "
                     "wiz_lc_config_show || pso_gallery_show) "
                     "? 'flex-start' : 'center'"
@@ -154,8 +173,6 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 with v3.VCard(
                     style=(
                         "`flex:1;min-width:0;"
-                        "max-width:${(wiz_par_show || wiz_sw_config_show "
-                        "|| wiz_lc_config_show) ? '860px' : '1100px'};"
                         "background:#000000;border:2px solid #06b6d4;"
                         "display:grid;grid-template-rows:1fr auto;"
                         "overflow:hidden;position:relative;`",
@@ -177,6 +194,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
 
                     # Action bar
                     with html.Div(
+                        classes="wiz-sans",
                         style=(
                             "border-top:1px solid #374151;"
                             "background:#000000;"
@@ -206,9 +224,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                 bg_color="#000000",
                                 hide_details=True,
                                 suffix=".par",
-                                style=(
-                                    "font-family:monospace;" "max-width:320px;"
-                                ),
+                                style="max-width:320px;",
                             )
                         # Clone directory input — shown before cloning SAGE26
                         with html.Div(
@@ -223,31 +239,14 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                 color="cyan",
                                 bg_color="#000000",
                                 hide_details=True,
-                                style="font-family:monospace;max-width:520px;",
+                                style="max-width:520px;",
                             )
                         # Cancel button — shown whenever a command is running;
                         # sends SIGINT (Ctrl+C) to the process group.
                         with html.Div(
-                            v_show=(
-                                "wiz_run_active || (wiz_run && wiz_run.mode)",
-                            ),
+                            v_show=("wiz_run_active",),
                             style="display:flex;align-items:center;gap:8px;",
                         ):
-                            v3.VBtn(
-                                "Back to progress",
-                                v_show=("wiz_run && wiz_run.mode",),
-                                prepend_icon="mdi-chart-timeline-variant",
-                                color="#06b6d4",
-                                variant="outlined",
-                                size="small",
-                                click=(
-                                    server.controller.wiz_choose,
-                                    "['run:view']",
-                                ),
-                                style=(
-                                    "font-family:monospace;text-transform:none;"
-                                ),
-                            )
                             v3.VBtn(
                                 "Cancel (Ctrl+C)",
                                 v_show=("wiz_run_active",),
@@ -256,9 +255,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                 variant="outlined",
                                 size="small",
                                 click=server.controller.wiz_cancel_run,
-                                style=(
-                                    "font-family:monospace;text-transform:none;"
-                                ),
+                                style="text-transform:none;",
                             )
                         with html.Div(
                             v_show=("!wiz_busy && wiz_choices.length > 0",),
@@ -284,7 +281,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                                         server.controller.wiz_choose,
                                         "[ch.value]",
                                     ),
-                                    style="font-family:monospace;text-transform:none;",
+                                    style="text-transform:none;",
                                 )
 
                 # ── Right: editor card — SAGE26 .par / SAGEswarm run_pso.sh /
@@ -521,14 +518,11 @@ def _mode_view(server) -> None:
     with html.Div(
         v_if=("wiz_view === 'mode'",),
         classes="wiz-sans",
-        style=(
-            "width:100%;max-width:1180px;height:min(620px,76vh);"
-            "display:flex;gap:24px;color:#e2e8f0;"
-        ),
+        style=("width:100%;display:flex;gap:24px;color:#e2e8f0;"),
     ):
         with html.Section(
             style=(
-                "{width:'40%',maxWidth:'460px',flexShrink:0,"
+                "{width:'40%',flexShrink:0,"
                 "borderRadius:'18px',padding:'28px',display:'flex',"
                 "flexDirection:'column',justifyContent:'space-between',"
                 "border:'1px solid ' + wiz_mode_info.accent + '66',"
@@ -583,10 +577,7 @@ def _mode_view(server) -> None:
                     )
                 html.Span(
                     "{{ wiz_mode_info.path }}",
-                    style=(
-                        "font-family:monospace;font-size:0.75rem;"
-                        "color:#94a3b8;word-break:break-all;"
-                    ),
+                    style="font-size:0.78rem;color:#94a3b8;word-break:break-all;",
                 )
         with html.Div(
             style=(
@@ -649,7 +640,7 @@ def _pick_view(server) -> None:
         v_if=("wiz_view === 'pick'",),
         classes="wiz-sans",
         style=(
-            "width:100%;max-width:1180px;height:min(640px,78vh);"
+            "width:100%;min-height:0;"
             "display:flex;flex-direction:column;gap:20px;color:#e2e8f0;"
             "position:relative;"
         ),
@@ -743,10 +734,7 @@ def _pick_view(server) -> None:
                     )
                 html.Span(
                     "{{ it.sub }}",
-                    style=(
-                        "font-family:monospace;font-size:0.72rem;"
-                        "color:#64748b;word-break:break-all;"
-                    ),
+                    style="font-size:0.75rem;color:#64748b;word-break:break-all;",
                 )
         # Opening a model relaunches ViSAGE; say so over the picker.
         with html.Div(
@@ -788,7 +776,7 @@ def _setup_view(server) -> None:
         v_if=("wiz_view === 'setup'",),
         classes="wiz-sans",
         style=(
-            "width:100%;max-width:1220px;height:min(700px,82vh);display:flex;"
+            "width:100%;min-height:0;display:flex;"
             "flex-direction:column;gap:14px;color:#e2e8f0;"
         ),
     ):
@@ -813,13 +801,13 @@ def _setup_view(server) -> None:
         with html.Div(
             style=(
                 "flex:1;min-height:0;overflow-y:auto;display:flex;"
-                "flex-direction:column;gap:12px;padding:2px;"
+                "flex-direction:column;gap:8px;padding:2px;"
             ),
         ):
             with html.Div(
                 v_for="(g, gi) in wiz_setup.groups",
                 key="gi",
-                style="display:flex;flex-direction:column;gap:10px;",
+                style="display:flex;flex-direction:column;gap:7px;",
             ):
                 html.Div(
                     "{{ g.title }}",
@@ -834,8 +822,8 @@ def _setup_view(server) -> None:
                 with html.Div(
                     v_if=("g.kind === 'cards' || g.kind === 'toggles'",),
                     style=(
-                        "display:grid;gap:12px;"
-                        "grid-template-columns:repeat(auto-fill,minmax(240px,1fr));"
+                        "display:grid;gap:10px;"
+                        "grid-template-columns:repeat(auto-fill,minmax(220px,1fr));"
                     ),
                 ):
                     with html.Button(
@@ -845,8 +833,8 @@ def _setup_view(server) -> None:
                         classes="wiz-big",
                         click=(choose, "[it.value]"),
                         style=(
-                            "{borderRadius:'14px',padding:'14px 16px',"
-                            "display:'flex',flexDirection:'column',gap:'5px',"
+                            "{borderRadius:'14px',padding:'10px 14px',"
+                            "display:'flex',flexDirection:'column',gap:'3px',"
                             "textAlign:'left',color:'#e2e8f0',"
                             "opacity: it.dim ? 0.55 : 1,"
                             "border: it.on ? '2px solid ' + wiz_setup.accent "
@@ -858,7 +846,7 @@ def _setup_view(server) -> None:
                         with html.Span(
                             style=(
                                 "display:flex;align-items:center;gap:8px;"
-                                "font-size:1.1rem;font-weight:700;"
+                                "font-size:1.02rem;font-weight:700;"
                             ),
                         ):
                             v3.VIcon(
@@ -882,14 +870,14 @@ def _setup_view(server) -> None:
                             "{{ it.code }}",
                             v_if=("it.code",),
                             style=(
-                                "{fontFamily:'monospace',fontSize:'0.7rem',"
+                                "{fontSize:'0.75rem',"
                                 "color: it.on ? wiz_setup.accent : '#64748b'}",
                             ),
                         )
                 # Chips (several on).
                 with html.Div(
                     v_if=("g.kind === 'chips'",),
-                    style="display:flex;flex-wrap:wrap;gap:8px;",
+                    style="display:flex;flex-wrap:wrap;gap:6px;",
                 ):
                     with html.Button(
                         v_for="(it, ii) in g.items",
@@ -899,8 +887,8 @@ def _setup_view(server) -> None:
                         disabled=("!!g.static",),
                         click=(choose, "[it.value]"),
                         style=(
-                            "{fontFamily:'monospace',fontSize:'0.8rem',"
-                            "padding:'7px 13px',borderRadius:'999px',"
+                            "{fontSize:'0.82rem',"
+                            "padding:'5px 12px',borderRadius:'999px',"
                             "opacity:1,"
                             "border: it.on ? '1px solid ' + wiz_setup.accent "
                             ": '1px solid #334155',"
@@ -920,7 +908,7 @@ def _setup_view(server) -> None:
                 style=(
                     "width:300px;height:46px;border-radius:12px;"
                     "border:1px solid #334155;background:#020617;color:#e2e8f0;"
-                    "padding:0 14px;font-family:monospace;font-size:0.95rem;"
+                    "padding:0 14px;font-size:1rem;"
                 ),
             )
             with html.Button(
@@ -959,7 +947,7 @@ def _all_settings_view(server) -> None:
         v_if=("wiz_view === 'all'",),
         classes="wiz-sans",
         style=(
-            "width:100%;max-width:1220px;height:min(700px,82vh);display:flex;"
+            "width:100%;min-height:0;display:flex;"
             "flex-direction:column;gap:14px;color:#e2e8f0;"
         ),
     ):
@@ -1030,8 +1018,8 @@ def _all_settings_view(server) -> None:
                     html.Span(
                         "{{ sec.count }}",
                         style=(
-                            "margin-left:auto;font-family:monospace;"
-                            "font-size:0.72rem;color:#64748b;"
+                            "margin-left:auto;"
+                            "font-size:0.75rem;color:#64748b;"
                         ),
                     )
             with html.Div(
@@ -1062,7 +1050,7 @@ def _all_settings_view(server) -> None:
                             html.Span(
                                 f"{{{{ wiz_pl_{i} }}}}",
                                 style=(
-                                    "font-family:monospace;font-size:0.85rem;"
+                                    "font-size:0.92rem;font-weight:600;"
                                     "color:#e2e8f0;word-break:break-all;"
                                 ),
                             )
@@ -1088,20 +1076,20 @@ def _all_settings_view(server) -> None:
                             density="compact",
                             hide_details=True,
                             bg_color="#020617",
-                            style="font-family:monospace;",
                         )
 
 
 def _run_view(server) -> None:
-    """Progress while a tool runs, with a switch to the live science
-    view."""
+    """A run's progress: stages, a bar and numbers, then the terminal
+    (2/3) beside what the run is making (1/3): a box or a lightcone
+    filling up, or SAGEswarm's plots."""
     choose = server.controller.wiz_choose
     with html.Div(
         v_if=("wiz_view === 'run'",),
         classes="wiz-sans",
         style=(
-            "width:100%;max-width:1220px;height:min(700px,82vh);display:flex;"
-            "flex-direction:column;gap:16px;color:#e2e8f0;"
+            "width:100%;display:flex;flex-direction:column;gap:14px;"
+            "color:#e2e8f0;min-height:0;"
         ),
     ):
         with html.Div(style="display:flex;align-items:center;gap:16px;"):
@@ -1112,60 +1100,21 @@ def _run_view(server) -> None:
             )
             html.Span(
                 "{{ wiz_run.sub }}",
-                style="font-family:monospace;font-size:0.85rem;color:#94a3b8;",
+                style="font-size:0.9rem;color:#94a3b8;",
             )
             v3.VSpacer()
-            # Progress <-> live science view.
-            with html.Div(
-                style=(
-                    "display:flex;border:1px solid #334155;border-radius:999px;"
-                    "padding:3px;gap:3px;"
-                ),
-            ):
-                for live, label, icon in (
-                    ("false", "Progress", "mdi-chart-timeline-variant"),
-                    ("true", "Live view", "mdi-eye"),
-                ):
-                    with html.Button(
-                        type="button",
-                        click=f"wiz_run_live = {live}",
-                        style=(
-                            "{height:'36px',padding:'0 16px',borderRadius:'999px',"
-                            "border:'none',cursor:'pointer',display:'flex',"
-                            "alignItems:'center',gap:'6px',fontSize:'0.9rem',"
-                            f"color: wiz_run_live === {live} ? '#0b1020' : '#cbd5e1',"
-                            f"background: wiz_run_live === {live} ? "
-                            "wiz_run.accent : 'transparent'}",
-                        ),
-                    ):
-                        v3.VIcon(
-                            icon,
-                            size=18,
-                            color=(
-                                f"wiz_run_live === {live} ? '#0b1020' : '#94a3b8'",
-                            ),
-                        )
-                        html.Span(label)
             with html.Button(
+                v_if=("wiz_run.status === 'running'",),
                 type="button",
                 classes="wiz-big",
-                click=(choose, "['run:term']"),
+                click=server.controller.wiz_cancel_run,
                 style=(
-                    "height:40px;padding:0 14px;border-radius:12px;"
-                    "border:1px solid #334155;background:#0b1120;color:#e2e8f0;"
-                    "font-size:0.9rem;display:flex;align-items:center;gap:6px;"
+                    "height:42px;padding:0 18px;border-radius:12px;"
+                    "border:1px solid #ef4444;background:transparent;"
+                    "color:#fca5a5;font-size:0.95rem;"
                 ),
             ):
-                v3.VIcon("mdi-console", size=18, color="#94a3b8")
-                html.Span("Full terminal")
-            v3.VBtn(
-                "Cancel run",
-                v_if=("wiz_run.status === 'running'",),
-                color="#ef4444",
-                variant="outlined",
-                click=server.controller.wiz_cancel_run,
-                style="text-transform:none;height:40px;",
-            )
+                html.Span("Cancel run")
         # Stages
         with html.Div(style="display:flex;gap:12px;"):
             with html.Div(
@@ -1173,7 +1122,7 @@ def _run_view(server) -> None:
                 key="si",
                 style=(
                     "{flex:1,display:'flex',alignItems:'center',gap:'10px',"
-                    "padding:'14px 16px',borderRadius:'14px',fontSize:'0.95rem',"
+                    "padding:'12px 16px',borderRadius:'14px',fontSize:'0.95rem',"
                     "border: st.state === 'now' ? '2px solid ' + wiz_run.accent "
                     ": (st.state === 'failed' ? '2px solid #ef4444' "
                     ": '1px solid #1e293b'),"
@@ -1205,147 +1154,183 @@ def _run_view(server) -> None:
                         color="#0b1020",
                     )
                 html.Span("{{ st.label }}")
-        # Progress body
-        with html.Div(
-            v_show=("!wiz_run_live",),
-            style="flex:1;min-height:0;display:flex;flex-direction:column;gap:16px;",
-        ):
-            with html.Div(style="display:flex;flex-direction:column;gap:8px;"):
-                with html.Div(
-                    style="display:flex;justify-content:space-between;font-size:0.9rem;",
-                ):
-                    html.Span(
-                        "{{ wiz_run.error || 'Overall' }}",
-                        style=(
-                            "{color: wiz_run.error ? '#fca5a5' : '#cbd5e1'}",
-                        ),
-                    )
-                    html.Span(
-                        "{{ Math.round(wiz_run.pct) }}%",
-                        style=(
-                            "{color: wiz_run.accent,fontWeight:700,"
-                            "fontVariantNumeric:'tabular-nums'}",
-                        ),
-                    )
-                with html.Div(
-                    style=(
-                        "height:14px;border-radius:7px;background:#1e293b;"
-                        "overflow:hidden;"
-                    ),
-                ):
-                    html.Div(
-                        style=(
-                            "{width: wiz_run.pct + '%',height:'100%',"
-                            "borderRadius:'7px',transition:'width 0.4s',"
-                            "background: wiz_run.status === 'failed' ? '#ef4444' "
-                            ": 'linear-gradient(90deg, ' + wiz_run.accent + ', ' "
-                            "+ wiz_run.accent2 + ')'}",
-                        ),
-                    )
+        # Overall progress
+        with html.Div(style="display:flex;flex-direction:column;gap:6px;"):
             with html.Div(
-                style=(
-                    "display:grid;gap:14px;"
-                    "grid-template-columns:repeat(auto-fit,minmax(200px,1fr));"
-                ),
+                style="display:flex;justify-content:space-between;font-size:0.9rem;",
             ):
-                with html.Div(
-                    v_for="(s, i) in wiz_run.stats",
-                    key="i",
+                html.Span(
+                    "{{ wiz_run.error || 'Overall' }}",
+                    style=("{color: wiz_run.error ? '#fca5a5' : '#cbd5e1'}",),
+                )
+                html.Span(
+                    "{{ Math.round(wiz_run.pct) }}%",
                     style=(
-                        "border-radius:14px;border:1px solid #1e293b;"
-                        "background:#0b1120;padding:14px 18px;display:flex;"
-                        "flex-direction:column;gap:4px;"
+                        "{color: wiz_run.accent,fontWeight:700,"
+                        "fontVariantNumeric:'tabular-nums'}",
                     ),
-                ):
-                    html.Span(
-                        "{{ s.k }}",
-                        style=(
-                            "font-size:0.72rem;color:#94a3b8;letter-spacing:0.08em;"
-                            "text-transform:uppercase;"
-                        ),
-                    )
-                    html.Span(
-                        "{{ s.v }}",
-                        style=(
-                            "font-size:1.6rem;font-weight:700;"
-                            "font-variant-numeric:tabular-nums;"
-                        ),
-                    )
+                )
             with html.Div(
                 style=(
-                    "flex:1;min-height:90px;border-radius:14px;border:1px solid "
-                    "#1e293b;background:#020617;padding:10px 16px;overflow:hidden;"
-                    "font-family:monospace;font-size:0.78rem;line-height:1.7;"
-                    "color:#94a3b8;"
+                    "height:12px;border-radius:6px;background:#1e293b;"
+                    "overflow:hidden;"
                 ),
             ):
                 html.Div(
-                    "{{ ln }}",
-                    v_for="(ln, li) in wiz_run.log",
-                    key="li",
-                    style="white-space:pre;overflow:hidden;text-overflow:ellipsis;",
+                    style=(
+                        "{width: wiz_run.pct + '%',height:'100%',"
+                        "borderRadius:'6px',transition:'width 0.4s',"
+                        "background: wiz_run.status === 'failed' ? '#ef4444' "
+                        ": 'linear-gradient(90deg, ' + wiz_run.accent + ', ' "
+                        "+ wiz_run.accent2 + ')'}",
+                    ),
                 )
-        # Live science view
+        # Numbers
         with html.Div(
-            v_show=("wiz_run_live",),
             style=(
-                "{flex:1,minHeight:0,borderRadius:'18px',background:'#050a14',"
-                "border:'1px solid ' + wiz_run.accent + '55',display:'flex',"
-                "flexDirection:'column',overflow:'hidden'}",
+                "display:grid;gap:12px;"
+                "grid-template-columns:repeat(auto-fit,minmax(180px,1fr));"
             ),
         ):
             with html.Div(
-                style="display:flex;align-items:center;gap:10px;padding:12px 18px;",
-            ):
-                html.Span(
-                    v_if=("wiz_run.status === 'running'",),
-                    style=(
-                        "width:9px;height:9px;border-radius:50%;background:#ef4444;"
-                        "box-shadow:0 0 10px #ef4444;"
-                    ),
-                )
-                html.Span(
-                    "{{ wiz_run.mode === 'sageswarm' && pso_plots.length "
-                    "? pso_plots[pso_plots.length - 1].name "
-                    ": wiz_run.live_note }}",
-                    style="font-size:0.95rem;color:#cbd5e1;",
-                )
-            with html.Div(
+                v_for="(s, i) in wiz_run.stats",
+                key="i",
                 style=(
-                    "flex:1;min-height:0;display:flex;align-items:center;"
-                    "justify-content:center;padding:0 18px 18px;"
+                    "border-radius:14px;border:1px solid #1e293b;"
+                    "background:#0b1120;padding:10px 18px;display:flex;"
+                    "flex-direction:column;gap:2px;"
                 ),
             ):
-                html.Img(
-                    v_if=("wiz_run.mode === 'sageswarm' && pso_plots.length",),
-                    src=("pso_plots[pso_plots.length - 1].data_url",),
+                html.Span(
+                    "{{ s.k }}",
                     style=(
-                        "max-width:100%;max-height:100%;object-fit:contain;"
-                        "border-radius:10px;background:#fff;"
+                        "font-size:0.72rem;color:#94a3b8;letter-spacing:0.08em;"
+                        "text-transform:uppercase;"
                     ),
                 )
-                html.Img(
-                    v_if=("wiz_run.mode !== 'sageswarm' && wiz_run.live_img",),
-                    src=("wiz_run.live_img",),
-                    style="max-width:100%;max-height:100%;object-fit:contain;",
+                html.Span(
+                    "{{ s.v }}",
+                    style=(
+                        "font-size:1.45rem;font-weight:700;"
+                        "font-variant-numeric:tabular-nums;"
+                    ),
                 )
+        # Terminal (2/3) and what the run is making (1/3)
+        with html.Div(style="flex:1;min-height:0;display:flex;gap:14px;"):
+            with html.Section(
+                style=(
+                    "flex:2;min-width:0;border-radius:14px;border:1px solid "
+                    "#1e293b;background:#000;display:flex;flex-direction:column;"
+                    "overflow:hidden;"
+                ),
+            ):
+                html.Div(
+                    "Terminal",
+                    style=(
+                        "padding:7px 14px;border-bottom:1px solid #1e293b;"
+                        "font-size:0.8rem;color:#94a3b8;"
+                    ),
+                )
+                # The wizard's xterm moves in here (visage.js) while the
+                # run page shows.
+                html.Div(
+                    id="wiz-run-pty",
+                    style="flex:1;min-height:0;overflow:hidden;padding:4px 6px;",
+                )
+            with html.Section(
+                style=(
+                    "flex:1;min-width:0;border-radius:14px;border:1px solid "
+                    "#1e293b;background:#050a14;display:flex;"
+                    "flex-direction:column;overflow:hidden;"
+                ),
+            ):
                 with html.Div(
-                    v_if=(
-                        "!(wiz_run.mode === 'sageswarm' ? pso_plots.length "
-                        ": wiz_run.live_img)",
-                    ),
                     style=(
-                        "display:flex;flex-direction:column;align-items:center;"
-                        "gap:14px;color:#94a3b8;"
+                        "display:flex;align-items:center;gap:8px;"
+                        "padding:7px 14px;border-bottom:1px solid #1e293b;"
+                        "font-size:0.8rem;color:#cbd5e1;"
                     ),
                 ):
-                    v3.VProgressCircular(
-                        indeterminate=("wiz_run.status === 'running'",),
-                        color=("wiz_run.accent",),
-                        size=48,
-                        width=3,
+                    html.Span(
+                        v_if=("wiz_run.status === 'running'",),
+                        style=(
+                            "width:8px;height:8px;border-radius:50%;"
+                            "background:#ef4444;box-shadow:0 0 8px #ef4444;"
+                            "flex-shrink:0;"
+                        ),
                     )
                     html.Span("{{ wiz_run.live_note }}")
+                with html.Div(
+                    style=(
+                        "flex:1;min-height:0;display:flex;align-items:center;"
+                        "justify-content:center;padding:8px;"
+                    ),
+                ):
+                    html.Img(
+                        v_if=(
+                            "wiz_run.mode !== 'sageswarm' && wiz_run.live_img",
+                        ),
+                        src=("wiz_run.live_img",),
+                        style="max-width:100%;max-height:100%;object-fit:contain;",
+                    )
+                    # SAGEswarm: the newest figure of each constraint,
+                    # sharing the panel.
+                    with html.Div(
+                        v_if=(
+                            "wiz_run.mode === 'sageswarm' && wiz_run_plots.length",
+                        ),
+                        style=(
+                            "{width:'100%',height:'100%',minHeight:0,"
+                            "display:'grid',gap:'8px',"
+                            "gridTemplateColumns: wiz_run_plots.length > 3 "
+                            "? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)',"
+                            "gridAutoRows:'minmax(0, 1fr)'}",
+                        ),
+                    ):
+                        with html.Div(
+                            v_for="pl in wiz_run_plots",
+                            key="pl.name",
+                            style=(
+                                "min-height:0;display:flex;flex-direction:column;"
+                                "align-items:center;gap:2px;"
+                            ),
+                        ):
+                            html.Span(
+                                "{{ pl.group }}",
+                                style="font-size:0.72rem;color:#94a3b8;",
+                            )
+                            # The figure fits its share of the panel.
+                            with html.Div(
+                                style=(
+                                    "flex:1;min-height:0;width:100%;"
+                                    "position:relative;"
+                                ),
+                            ):
+                                html.Img(
+                                    src=("pl.data_url",),
+                                    title=("pl.name",),
+                                    style=(
+                                        "position:absolute;inset:0;width:100%;"
+                                        "height:100%;object-fit:contain;"
+                                    ),
+                                )
+                    with html.Div(
+                        v_if=(
+                            "wiz_run.mode === 'sageswarm' ? !wiz_run_plots.length "
+                            ": !wiz_run.live_img",
+                        ),
+                        style=(
+                            "display:flex;flex-direction:column;align-items:center;"
+                            "gap:12px;color:#94a3b8;text-align:center;"
+                        ),
+                    ):
+                        v3.VProgressCircular(
+                            indeterminate=("wiz_run.status === 'running'",),
+                            color=("wiz_run.accent",),
+                            size=44,
+                            width=3,
+                        )
+                        html.Span("Plots appear here as SAGEswarm makes them.")
         # When it's finished (or stopped)
         with html.Div(
             v_if=("wiz_run.actions && wiz_run.actions.length",),

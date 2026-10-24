@@ -872,15 +872,23 @@ def create_app(
         server.state.wiz_active = True
         server.state.flush()
 
+    # Each tool opens straight on its setup screen (its own screen if it
+    # isn't installed yet).
+    @server.controller.set("open_sage26_wizard")
+    def _open_sage26_wizard():
+        _wiz_ctrl.reset_and_start(flow="sage26", setup=True)
+        server.state.wiz_active = True
+        server.state.flush()
+
     @server.controller.set("open_sageswarm_wizard")
     def _open_sageswarm_wizard():
-        _wiz_ctrl.reset_and_start(flow="sageswarm")
+        _wiz_ctrl.reset_and_start(flow="sageswarm", setup=True)
         server.state.wiz_active = True
         server.state.flush()
 
     @server.controller.set("open_sagelightcone_wizard")
     def _open_sagelightcone_wizard():
-        _wiz_ctrl.reset_and_start(flow="sagelightcone")
+        _wiz_ctrl.reset_and_start(flow="sagelightcone", setup=True)
         server.state.wiz_active = True
         server.state.flush()
 
@@ -1031,9 +1039,16 @@ def create_app(
                         style="color:#06b6d4;font-size:0.65rem;",
                     )
                     v3.VListItem(
-                        title="Setup Wizard",
-                        prepend_icon="mdi-console",
-                        click=server.controller.open_wizard,
+                        title="SAGE26",
+                        prepend_icon="mdi-cube-outline",
+                        click=server.controller.open_sage26_wizard,
+                        color="cyan",
+                        density="compact",
+                    )
+                    v3.VListItem(
+                        title="LightSAGE",
+                        prepend_icon="mdi-telescope",
+                        click=server.controller.open_sagelightcone_wizard,
                         color="cyan",
                         density="compact",
                     )
@@ -1045,9 +1060,9 @@ def create_app(
                         density="compact",
                     )
                     v3.VListItem(
-                        title="LightSAGE",
-                        prepend_icon="mdi-telescope",
-                        click=server.controller.open_sagelightcone_wizard,
+                        title="Setup Wizard",
+                        prepend_icon="mdi-rocket-launch",
+                        click=server.controller.open_wizard,
                         color="cyan",
                         density="compact",
                     )
@@ -1212,7 +1227,7 @@ def create_app(
                 density="compact",
                 color="white",
                 title="SAGE26 Setup",
-                click=server.controller.open_wizard,
+                click=server.controller.open_sage26_wizard,
                 style="margin-left:2px;",
             )
 

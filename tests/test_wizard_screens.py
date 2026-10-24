@@ -176,3 +176,34 @@ def test_fill_frames_follow_progress():
         for pct in range(0, 101):
             url = _fill_frame(mode, pct)
             assert (static / url[len("/sage_static/") :]).is_file()
+
+
+def test_newest_plot_per_constraint():
+    from visage.wizard.controller import _latest_per_constraint
+
+    plots = [
+        {"name": "plots/SMF_z0_iter1_all.png", "data_url": "a", "mtime": 1},
+        {"name": "plots/SMF_z0_iter2_all.png", "data_url": "b", "mtime": 2},
+        {"name": "plots/BHBM_all.png", "data_url": "c", "mtime": 1},
+    ]
+    got = _latest_per_constraint(plots)
+    assert [(p["group"], p["data_url"]) for p in got] == [
+        ("BHBM", "c"),
+        ("SMF_z0", "b"),
+    ]
+
+
+def test_terminal_size_reaches_the_running_command():
+    c = _ctrl()
+    sizes = []
+
+    class _Proc:
+        def resize(self, rows, cols):
+            sizes.append((rows, cols))
+
+    c._run_proc = _Proc()
+    c._on_term_size(wiz_term_size="142,30")
+    assert c._term_size == (30, 142) and sizes == [(30, 142)]
+    c._on_term_size(wiz_term_size="junk")  # ignored
+    c._on_term_size(wiz_term_size="3,2")  # too small: ignored
+    assert c._term_size == (30, 142)

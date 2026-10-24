@@ -213,7 +213,7 @@ _LIVE_NOTE = {
     "the trees are built: star-forming blue, quiescent orange",
     "sagelightcone": "A LightSAGE cone (microUchuu, z < 0.2) filling outwards "
     "from the observer: star-forming blue, quiescent orange",
-    "sageswarm": "SAGEswarm's plots appear here as it makes them.",
+    "sageswarm": "SAGEswarm's plots, the newest of each constraint",
 }
 
 
@@ -790,7 +790,6 @@ class SetupRunMixin:
             "live_note": "",
             "actions": [],
         }
-        self._st.wiz_run_live = False
         self._run_publish(force=True)
 
     def _run_output(self, data: bytes) -> None:
@@ -960,6 +959,9 @@ class SetupRunMixin:
         info["live_note"] = _LIVE_NOTE[mode]
         self._st.wiz_run = info
         self._st.flush()
+        # Let the page's terminal settle into its box and report its size,
+        # so the run starts as wide as the terminal showing it.
+        await asyncio.sleep(0.6)
         step = {
             "sage26": self._step_run_sage26,
             "sagelightcone": self._step_lc_run,
@@ -1014,8 +1016,6 @@ class SetupRunMixin:
                         "primary": True,
                     }
                 )
-            else:
-                self._st.wiz_run_live = True
         else:
             actions.append(
                 {

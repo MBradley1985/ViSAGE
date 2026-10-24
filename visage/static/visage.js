@@ -590,9 +590,66 @@
     var _pendingPtyWrite  = false;
 
     // ── Wizard xterm ─────────────────────────────────────────────────────
+    // The wizard terminal lives in the run page's terminal box while a run
+    // shows, and in the full-page terminal otherwise (clone, install...).
+    function _wizTermContainer() {
+      var id = _getState('wiz_view') === 'run' ? 'wiz-run-pty' : 'sage-wiz-pty';
+      return document.getElementById(id);
+    }
+    var _wizRO = null;
+
+    // SAGE26's banner is 138 columns wide and redraws itself in place, so
+    // a narrower terminal scrambles it: shrink the font (to 9px at least)
+    // until ~140 columns fit the box.
+    function _wizFontFor(box) {
+      var w = box ? box.clientWidth : 0;
+      if (!w) return 12;
+      return Math.max(9, Math.min(12, Math.floor(w / (140 * 0.6))));
+    }
+    function _wizSetFont() {
+      if (!_wizTerm || !_wizTerm.element) return;
+      var fs = _wizFontFor(_wizTerm.element.parentElement);
+      if (_wizTerm.options.fontSize !== fs) {
+        try { _wizTerm.options.fontSize = fs; } catch (e) {}
+      }
+    }
+
+    // Tell the server the terminal's size, so commands run as wide as it.
+    var _wizSentSize = '';
+    function _sendWizSize() {
+      if (!_wizTerm) return;
+      var size = _wizTerm.cols + ',' + _wizTerm.rows;
+      if (size !== _wizSentSize) {
+        _wizSentSize = size;
+        _vueInput('wiz-term-size-relay', size);
+      }
+    }
+
+    function _wizFitSoon() {
+      requestAnimationFrame(function () {
+        _wizSetFont();
+        if (_wizFit) { try { _wizFit.fit(); } catch (e) {} }
+        _sendWizSize();
+      });
+    }
+
+    // Move the terminal into the box the current view shows (if it isn't
+    // already there) and fit it to that box.
+    function _placeWizTerm() {
+      if (!_wizTerm || !_wizTerm.element) return;
+      var target = _wizTermContainer();
+      if (!target || target.offsetWidth === 0) return;
+      if (_wizTerm.element.parentElement !== target) {
+        target.appendChild(_wizTerm.element);
+        if (_wizRO) { try { _wizRO.observe(target); } catch (e) {} }
+        _wizFitSoon();
+        setTimeout(_wizFitSoon, 150);
+      }
+    }
+
     function _initWizTerm(attempt) {
       if (_wizTerm) return;
-      var container = document.getElementById('sage-wiz-pty');
+      var container = _wizTermContainer();
       // Wait until the container has BOTH a real width AND a real height.
       // The card is flex:1 inside a column — height resolves after width,
       // so checking only offsetWidth lets us proceed with a zero-height
@@ -616,7 +673,7 @@
           background: '#000000', foreground: '#ffffff',
           cursor: '#06b6d4', selectionBackground: 'rgba(6,182,212,0.25)',
         },
-        fontSize: 12,
+        fontSize: _wizFontFor(container),
         fontFamily: '"Menlo","Monaco","Consolas","DejaVu Sans Mono",monospace',
         scrollback: 10000, convertEol: false, allowTransparency: false,
         cursorBlink: false, disableStdin: true,
@@ -630,14 +687,18 @@
       // The container height is now set by CSS grid (1fr row) so it always has
       // a real pixel height before open() is called.  Still defer the first
       // fit() to the next paint so xterm has measured its font metrics.
-      function _doFit() { if (_wizFit) { try { _wizFit.fit(); } catch (e) {} } }
+      function _doFit() {
+        _wizSetFont();
+        if (_wizFit) { try { _wizFit.fit(); } catch (e) {} }
+        _sendWizSize();
+      }
       requestAnimationFrame(function () {
         _doFit();
         setTimeout(_doFit, 200);
       });
-      // Re-fit whenever the container is resized (window resize, panel toggles, etc.)
+      // Re-fit whenever its box is resized (window resize, view changes).
       if (typeof ResizeObserver !== 'undefined' && fitAddon) {
-        var _wizRO = new ResizeObserver(function () { _doFit(); });
+        _wizRO = new ResizeObserver(function () { _doFit(); });
         _wizRO.observe(container);
       }
       // Replay full session buffer so late-mounting xterm shows all prior output.
@@ -651,6 +712,8 @@
     }
 
     function _destroyWizTerm() {
+      if (_wizRO) { try { _wizRO.disconnect(); } catch (e) {} }
+      _wizRO = null;
       if (_wizTerm) { try { _wizTerm.dispose(); } catch (e) {} }
       _wizTerm    = null;
       _wizFit     = null;
@@ -756,7 +819,9 @@
       // The wizard's terminal box is hidden behind the home and mode
       // screens, so it may never have had a size to start in: start it
       // once the terminal view shows.
-      if (!_wizTerm && !_wizIniting && _getState('wiz_view') === 'term') {
+      var _wv = _getState('wiz_view');
+      if (_wizTerm && (_wv === 'term' || _wv === 'run')) _placeWizTerm();
+      if (!_wizTerm && !_wizIniting && (_wv === 'term' || _wv === 'run')) {
         _wizIniting = true;
         setTimeout(function () { _wizIniting = false; _initWizTerm(); }, 60);
       }

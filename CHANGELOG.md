@@ -36,12 +36,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   All settings, grouped into sections with a search. The run name sets
   the output (SAGE26: a .par and output folder of that name).
 - **Runs show their progress:** the stages, a progress bar and time left
-  read from each tool's own output, the latest log lines, Cancel, and
-  the full terminal a click away. Live view shows a SAGE26 box filling
-  with galaxies, or a lightcone filling outwards from the observer, in
-  step with the run (frames drawn once from a Millennium run and the
-  microUchuu lightcone), or SAGEswarm's plots as they appear.
-  When it finishes: Open in Explore / Open in Lightcone view.
+  read from each tool's own output, and Cancel; below them the terminal
+  itself (2/3) beside what the run is making (1/3): a SAGE26 box
+  filling with galaxies, or a lightcone filling outwards from the
+  observer, in step with the run (frames drawn once from a Millennium
+  run and the microUchuu lightcone), or SAGEswarm's newest plot of each
+  constraint, sized to share the space. The terminal runs commands at
+  its own width (its font shrinks so SAGE26's banner fits). When it
+  finishes: Open in Explore / Open in Lightcone view.
+- Every Launch Mode page past the home screen fills the window (no
+  fixed-size box, no scrolling), in one font, Space Grotesk, which now
+  ships with ViSAGE (SIL Open Font License).
+- Explore's Launch menu starts with SAGE26, LightSAGE and SAGEswarm, each
+  opening straight on its setup page, then Setup Wizard (the home
+  screen); the toolbar's SAGE26 button opens SAGE26's setup too.
 - Model and lightcone pickers are big buttons (size, date, galaxies);
   lightcones in any `sage_outputs/` folder are found. Check for update
   works on its button and turns into Update when behind.
@@ -51,6 +59,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Opening a model restarts the same copy of ViSAGE that's running (it
+  ran whichever `visage` was first on the PATH, which can be another
+  install).
 - Switching models from the Launch menu reloads the page by itself, with
   an Opening card while ViSAGE restarts.
 - A lightcone fills the view when it first opens (it was framed to the

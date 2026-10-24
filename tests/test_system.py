@@ -310,7 +310,13 @@ def test_session_options_survive_relaunch(monkeypatch):
     launched = []
     monkeypatch.setattr(system, "SESSION_ARGS", ["--perf"])
     monkeypatch.setattr(system, "IS_WINDOWS", False)
-    monkeypatch.setattr(system.shutil, "which", lambda _: None)
-    monkeypatch.setattr(system.os, "execv", lambda exe, a: launched.append(a))
+    monkeypatch.setattr(
+        system.os, "execve", lambda exe, a, env: launched.append((a, env))
+    )
     system.relaunch_visage(["--par", "m.par", "--port", "8080"])
-    assert launched[0][-5:] == ["--par", "m.par", "--port", "8080", "--perf"]
+    argv, env = launched[0]
+    assert argv[-5:] == ["--par", "m.par", "--port", "8080", "--perf"]
+    # The same copy of ViSAGE, not whichever `visage` is on the PATH.
+    assert argv[1:3] == ["-m", "visage.cli"]
+    here = str(system.Path(system.__file__).resolve().parent.parent)
+    assert env["PYTHONPATH"].split(system.os.pathsep)[0] == here
