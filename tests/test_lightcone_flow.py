@@ -232,23 +232,19 @@ def test_lc_config_migrates_old_format_script(tmp_path, monkeypatch):
     asyncio.run(c._step_lc_config())
 
     text = c._st.wiz_lc_script_text
-    # Structure upgraded: checkboxes present, old text field gone.
-    assert "BAND_GALEX_FUV_ENABLED" in text
-    assert "SED_BANDS" not in text
+    # Structure upgraded: survey checkboxes present, old text field gone.
+    assert "SURVEY_SDSS_ENABLED" in text
+    assert "SED_BANDS" not in text and "BAND_" not in text
     # User's chosen values carried forward.
     assert 'SAGE_OUTPUT_DIR="/x/sage/output/millennium"' in text
     assert "DECMAX=5" in text and "ZMAX=0.1" in text
     assert "SED_ENABLED=1" in text
     assert 'SED_FRAME="both"' in text
-    # Old SED_BANDS mapped onto the matching checkboxes...
-    assert "BAND_SDSS_U_ENABLED=1" in text
-    assert "BAND_SDSS_G_ENABLED=1" in text
-    assert "BAND_SDSS_R_ENABLED=1" in text
-    assert "BAND_SDSS_I_ENABLED=1" in text
-    assert "BAND_SDSS_Z_ENABLED=1" in text
-    # ...and everything NOT in the old list is off, not defaulted on.
-    assert "BAND_GALEX_FUV_ENABLED=0" in text
-    assert "BAND_WISE_W1_ENABLED=0" in text
+    # Old SED_BANDS mapped onto the matching survey...
+    assert "SURVEY_SDSS_ENABLED=1" in text
+    # ...and surveys NOT in the old list are off, not defaulted on.
+    assert "SURVEY_GALEX_ENABLED=0" in text
+    assert "SURVEY_WISE_ENABLED=0" in text
     # Old hardcoded OUTDIR default upgraded to the new convention.
     assert 'OUTDIR="./lightcone_output"' not in text
     assert "sage_outputs/lightcone" in text.replace("\\", "/")
@@ -295,7 +291,7 @@ def test_lc_migrate_adds_alist_and_keeps_choices(tmp_path, monkeypatch):
         python_exe="/usr/bin/python3",
     )
     text = text.replace('\\\n      --alist "$ALIST_FILE"', "")  # drop --alist
-    text = text.replace("BAND_WISE_W4_ENABLED=1", "BAND_WISE_W4_ENABLED=0")
+    text = text.replace("SURVEY_WISE_ENABLED=1", "SURVEY_WISE_ENABLED=0")
     text = text.replace("SED_DUST_ENABLED=1", "SED_DUST_ENABLED=0")
     text = text.replace(
         'SED_DUST_MODEL="charlot_fall"', 'SED_DUST_MODEL="calzetti"'
@@ -312,7 +308,7 @@ def test_lc_migrate_adds_alist_and_keeps_choices(tmp_path, monkeypatch):
     out = c._st.wiz_lc_script_text
 
     assert '--alist "$ALIST_FILE"' in out  # upgraded
-    assert "BAND_WISE_W4_ENABLED=0" in out  # user's unticked band preserved
+    assert "SURVEY_WISE_ENABLED=0" in out  # user's unticked survey preserved
     assert "SED_DUST_ENABLED=0" in out  # user's dust choice preserved
     assert 'SED_DUST_MODEL="calzetti"' in out
 
@@ -367,12 +363,14 @@ def test_run_template_formats_cleanly():
     assert "/usr/bin/python3" in s and "visage.sed.photometry" in s
 
 
-def test_run_template_sed_bands_are_individual_checkboxes():
-    # Each filter is its own BAND_<NAME>_ENABLED checkbox (not a single
-    # space-separated SED_BANDS text field), and the params parser must pick
-    # up all of them plus SED_ENABLED/SED_FRAME — but NOT the lowercase
-    # internal accumulator vars (those must never become editable params,
-    # or a user's edit could desync them from the checkboxes above).
+def test_run_template_offers_surveys_as_checkboxes():
+    # Each survey is a SURVEY_<KEY>_ENABLED checkbox ticking its whole
+    # filter set; the params parser picks them up plus SED_ENABLED/SED_FRAME
+    # -- but NOT the lowercase internal accumulator vars (never editable, or
+    # a user's edit could desync them from the checkboxes above).
+    from visage.sed.filters import SURVEYS
+    from visage.wizard.controller import _parse_params
+
     s = _LC_RUN_SCRIPT_TEMPLATE.format(
         lightcone_dir="/x/LightSAGE",
         sage_output_dir="/x/out",
@@ -381,32 +379,24 @@ def test_run_template_sed_bands_are_individual_checkboxes():
         outdir="/x/sage_outputs/lightcone",
         python_exe="/usr/bin/python3",
     )
-    assert "SED_BANDS" not in s
-    for band in (
-        "GALEX_FUV",
-        "GALEX_NUV",
-        "SDSS_U",
-        "SDSS_G",
-        "SDSS_R",
-        "SDSS_I",
-        "SDSS_Z",
-        "2MASS_J",
-        "2MASS_H",
-        "2MASS_KS",
-        "WISE_W1",
-        "WISE_W2",
-        "WISE_W3",
-        "WISE_W4",
-    ):
-        assert f"BAND_{band}_ENABLED" in s
-
-    from visage.wizard.controller import _parse_params
-
+    assert "SED_BANDS" not in s and "BAND_" not in s
     keys = [p["key"] for p in _parse_params(s, "sh")]
-    band_keys = [k for k in keys if k.startswith("BAND_")]
-    assert len(band_keys) == 14
+    for key, _, filters, on in SURVEYS:
+        assert f"SURVEY_{key}_ENABLED={int(on)}" in s
+        assert f"SURVEY_{key}_ENABLED" in keys
+        assert " ".join(filters) in s  # its filters go to --bands
+    assert "SED_ENABLED=1" in s  # photometry on by default
     assert "SED_ENABLED" in keys and "SED_FRAME" in keys
     assert "sed_bands" not in keys and "bands_csv" not in keys
+
+
+def test_survey_checkbox_label_names_the_survey():
+    from visage.wizard.controller import WizardController
+
+    assert (
+        WizardController._pretty_param_label("SURVEY_SDSS_ENABLED")
+        == "SDSS (ugriz)"
+    )
 
 
 def test_run_template_has_metallicity_and_dust_options():

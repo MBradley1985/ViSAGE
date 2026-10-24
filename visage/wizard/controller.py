@@ -297,6 +297,29 @@ make -C bin -j"$NJOBS" sage2kdtree cli_lightcone
 echo "==> Done: $(ls bin/sage2kdtree bin/cli_lightcone 2>/dev/null)"
 """
 
+
+def _survey_blocks() -> dict:
+    """The run script's survey checkboxes and the bash that turns the
+    ticked ones into the --bands list (visage.sed.filters.SURVEYS)."""
+    from visage.sed.filters import SURVEYS
+
+    flags = [
+        "# Surveys to compute magnitudes for -- each ticks its whole filter",
+        "# set; any FSPS filter can also be passed to visage.sed.photometry.",
+    ]
+    bands = []
+    for key, label, filters, on in SURVEYS:
+        var = f"SURVEY_{key}_ENABLED"
+        flags.append(f"{var}={int(on)}".ljust(39) + f"# {label}")
+        bands.append(
+            f'  [ "${var}" = "1" ] && sed_bands="$sed_bands {" ".join(filters)}"'
+        )
+    return {
+        "survey_flags": "\n".join(flags) + "\n",
+        "survey_bands": "\n".join(bands) + "\n",
+    }
+
+
 _LC_RUN_SCRIPT_TEMPLATE = """\
 #!/bin/bash
 # ViSAGE-managed LightSAGE run script.
@@ -324,10 +347,10 @@ ZMAX=1                     # redshift max
 OUTDIR="{outdir}"          # ViSAGE's standard output folder (see docs)
 OUTFILE="lightcone.h5"
 
-# -- Stage 3 (optional): synthetic photometry (SED synthesis) ---------------
+# -- Stage 3: synthetic photometry (what observers would measure) -----------
 # Forward-models AB magnitudes per galaxy from its star-formation history
 # using FSPS. Requires: pip install "sage-viewer[sed]"
-SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
+SED_ENABLED=1                          # 1 = compute synthetic photometry after the lightcone is built
 SED_FRAME="both"                       # rest | obs | both
 # Use each galaxy's own mass-weighted stellar metallicity
 # (MetalsStellarMass/StellarMass); uncheck to force solar for everyone.
@@ -343,24 +366,7 @@ SED_DUST2=0.3                          # calzetti only: V-band optical depth
 # Also re-emit the absorbed energy in the IR (Draine & Li) — makes the mid-IR
 # (WISE) bands physical. Only has an effect when dust (above) is on.
 SED_DUST_EMISSION_ENABLED=0
-# Filter bands to compute — all checked by default; uncheck any you don't
-# need. WISE (mid-IR, W1-W4) flux is dominated by dust emission — enable
-# SED_DUST_ENABLED + SED_DUST_EMISSION_ENABLED above for those to be physical.
-BAND_GALEX_FUV_ENABLED=1
-BAND_GALEX_NUV_ENABLED=1
-BAND_SDSS_U_ENABLED=1
-BAND_SDSS_G_ENABLED=1
-BAND_SDSS_R_ENABLED=1
-BAND_SDSS_I_ENABLED=1
-BAND_SDSS_Z_ENABLED=1
-BAND_2MASS_J_ENABLED=1
-BAND_2MASS_H_ENABLED=1
-BAND_2MASS_KS_ENABLED=1
-BAND_WISE_W1_ENABLED=1
-BAND_WISE_W2_ENABLED=1
-BAND_WISE_W3_ENABLED=1
-BAND_WISE_W4_ENABLED=1
-
+{survey_flags}
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
   -s "$SAGE_OUTPUT_DIR" \\
@@ -386,22 +392,8 @@ if [ "$SED_ENABLED" = "1" ]; then
   # wizard parameter (only UPPERCASE VAR=value assignments are, so a user's
   # edit here can never desync the checkboxes above from what actually runs).
   sed_bands=""
-  [ "$BAND_GALEX_FUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_fuv"
-  [ "$BAND_GALEX_NUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_nuv"
-  [ "$BAND_SDSS_U_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_u"
-  [ "$BAND_SDSS_G_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_g"
-  [ "$BAND_SDSS_R_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_r"
-  [ "$BAND_SDSS_I_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_i"
-  [ "$BAND_SDSS_Z_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_z"
-  [ "$BAND_2MASS_J_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_j"
-  [ "$BAND_2MASS_H_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_h"
-  [ "$BAND_2MASS_KS_ENABLED" = "1" ]   && sed_bands="$sed_bands 2mass_ks"
-  [ "$BAND_WISE_W1_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w1"
-  [ "$BAND_WISE_W2_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w2"
-  [ "$BAND_WISE_W3_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w3"
-  [ "$BAND_WISE_W4_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w4"
-  if [ -z "$sed_bands" ]; then
-    echo "No bands checked — skipping SED synthesis."
+{survey_bands}  if [ -z "$sed_bands" ]; then
+    echo "No surveys checked — skipping SED synthesis."
   else
     bands_csv="$(echo "$sed_bands" | tr -s ' ' ',' | sed 's/^,//')"
     sed_extra=""
@@ -422,6 +414,10 @@ if [ "$SED_ENABLED" = "1" ]; then
   fi
 fi
 """
+# (The survey checkboxes are generated from visage.sed.filters.SURVEYS.)
+_LC_RUN_SCRIPT_TEMPLATE = _LC_RUN_SCRIPT_TEMPLATE.replace(
+    "{survey_flags}", _survey_blocks()["survey_flags"]
+).replace("{survey_bands}", _survey_blocks()["survey_bands"])
 
 _MILLENNIUM_PAR_TEMPLATE = """\
 %------------------------------------------
@@ -877,6 +873,11 @@ class WizardController:
         Every other key (including plain ``SED_ENABLED``) is left as-is."""
         if key.startswith("BAND_") and key.endswith("_ENABLED"):
             return key[len("BAND_") : -len("_ENABLED")].lower()
+        if key.startswith("SURVEY_") and key.endswith("_ENABLED"):
+            from visage.sed.filters import SURVEYS
+
+            k = key[len("SURVEY_") : -len("_ENABLED")]
+            return next((lab for sk, lab, _, _ in SURVEYS if sk == k), k)
         return key
 
     def _init_param_pool(self) -> None:
@@ -2819,7 +2820,11 @@ class WizardController:
         relative header paths like microUchuu's still resolve). A script
         missing any of them is regenerated, carrying the user's values over.
         """
-        if "BAND_GALEX_FUV_ENABLED" in text and "--alist" in text:
+        if (
+            "SURVEY_SDSS_ENABLED" in text
+            and "--alist" in text
+            and "SED_DUST_MODEL" in text
+        ):
             return text
 
         old = {p["key"]: p["value"] for p in _parse_params(text, "sh")}
@@ -2847,6 +2852,8 @@ class WizardController:
                 "SED_DUST_MODEL",
                 "SED_DUST2",
                 "SED_DUST_EMISSION_ENABLED",
+                "SED_DISK_BULGE_ENABLED",
+                "SED_LINES_ENABLED",
             )
             if k in old
         }
@@ -2854,19 +2861,26 @@ class WizardController:
         if old_outdir and old_outdir != "./lightcone_output":
             carry["OUTDIR"] = old_outdir
 
+        # Bands the old script asked for: a space-separated SED_BANDS list
+        # (pre-checkbox) or per-band BAND_*_ENABLED checkboxes. A survey is
+        # ticked if any of its bands was; surveys the old script never knew
+        # keep the fresh defaults.
+        from visage.sed.filters import SURVEYS
+
+        old_bands = None
         if "SED_BANDS" in old:
-            # Pre-checkbox script: map the old space-separated list onto the
-            # new per-band checkboxes.
             old_bands = set(old["SED_BANDS"].split())
-            for band_key, fsps_name in self._LC_BAND_KEYS:
-                carry[band_key] = "1" if fsps_name in old_bands else "0"
-        else:
-            # Already has per-band checkboxes (e.g. a 2.2.0 script missing only
-            # --alist): preserve whatever the user ticked. Absent -> fresh
-            # template's all-on default.
-            for band_key, _ in self._LC_BAND_KEYS:
-                if band_key in old:
-                    carry[band_key] = old[band_key]
+        elif any(k in old for k, _ in self._LC_BAND_KEYS):
+            old_bands = {
+                f for k, f in self._LC_BAND_KEYS if old.get(k, "1") == "1"
+            }
+        known = {f for _, f in self._LC_BAND_KEYS}
+        for key, _, filters, _ in SURVEYS:
+            var = f"SURVEY_{key}_ENABLED"
+            if var in old:
+                carry[var] = old[var]
+            elif old_bands is not None and set(filters) <= known:
+                carry[var] = "1" if old_bands & set(filters) else "0"
 
         params = [{"key": k, "value": v} for k, v in carry.items()]
         return _apply_params(fresh, params, "sh")
