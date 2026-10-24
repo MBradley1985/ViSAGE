@@ -3,7 +3,10 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        # Patches carry meaningful whitespace (blank context lines are " ").
+        exclude: ^visage/wizard/patches/
       - id: end-of-file-fixer
+        exclude: ^visage/wizard/patches/
       - id: check-yaml
         # mkdocs.yml uses mkdocs-material's !!python/name: tags, which
         # check-yaml cannot parse.

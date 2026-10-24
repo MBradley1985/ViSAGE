@@ -8,6 +8,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **LightSAGE lightcones: galaxy spins** are now rotated with the box
+  tiling, as positions and velocities are, so each galaxy's inclination
+  to the observer is right (a ViSAGE patch to the LightSAGE tools, applied
+  only while building them).
+- **LightSAGE builds again on macOS with Command Line Tools 27** (a patch
+  to its sort iterator for the newer C++ library).
+
+### Changed
+
+- **LightSAGE photometry** follows each galaxy's star-formation history
+  properly: history bins spread over their real time span, the mass
+  formed rather than what survives (÷ (1 − R)), a Chabrier IMF as SAGE26
+  assumes, smoothly interpolated metallicity, and K-corrections at each
+  galaxy's own observed redshift with peculiar velocities in the distance.
+  Optional dust from each galaxy's own cold gas and metals (a Dusty-SAGE
+  equilibrium) in birth clouds and a diffuse disk seen at its inclination
+  (Charlot & Fall 2000). The settings used are recorded in the file.
+
 ## [2.8.7] — 2026-10-22
 
 ### Added

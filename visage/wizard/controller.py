@@ -218,7 +218,14 @@ _LC_RUN_SCRIPT = "run_lightcone.sh"
 # manages SAGE (SAGE26) and feeds its HDF5 output into the pipeline. So we run
 # a leaner, tools-only cmake build from this ViSAGE-managed helper (kept in
 # ~/.visage, never written into the repo).
+#
+# Fixes ViSAGE needs in the tools ship as patches (visage/wizard/patches/
+# lightsage/*.patch). The build applies each one that still applies, builds,
+# and always takes them back out, so the checkout stays as upstream has it
+# and only the built tools carry the fixes. A patch upstream has already
+# made (or that no longer fits) is skipped with a note.
 _LC_BUILD_SCRIPT = "build_lightcone_tools.sh"
+_LC_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "lightsage"
 
 _LC_BUILD_SCRIPT_TEMPLATE = """\
 #!/bin/bash
@@ -228,7 +235,29 @@ _LC_BUILD_SCRIPT_TEMPLATE = """\
 set -e
 
 LC_DIR="{lc_dir}"
+PATCH_DIR="{patch_dir}"
 cd "$LC_DIR"
+
+# ViSAGE's fixes to the tools: in for the build, out again afterwards.
+APPLIED=()
+unpatch() {{
+    for ((i=${{#APPLIED[@]}}-1; i>=0; i--)); do
+        git apply -R "${{APPLIED[$i]}}" && echo "==> Removed ViSAGE patch: $(basename "${{APPLIED[$i]}}")"
+    done
+}}
+trap unpatch EXIT
+for P in "$PATCH_DIR"/*.patch; do
+    [ -e "$P" ] || continue
+    if git apply --check "$P" 2>/dev/null; then
+        git apply "$P"
+        APPLIED+=("$P")
+        echo "==> Applied ViSAGE patch: $(basename "$P")"
+    elif git apply -R --check "$P" 2>/dev/null; then
+        echo "==> Already in LightSAGE: $(basename "$P")"
+    else
+        echo "==> WARNING: ViSAGE patch no longer fits LightSAGE, skipped: $(basename "$P")"
+    fi
+done
 
 EXTRA=""
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -3045,7 +3074,8 @@ class WizardController:
             self._write_unix_text(
                 build_script,
                 _LC_BUILD_SCRIPT_TEMPLATE.format(
-                    lc_dir=self._tc_path(self._lc_dir)
+                    lc_dir=self._tc_path(self._lc_dir),
+                    patch_dir=self._tc_path(_LC_PATCH_DIR),
                 ),
             )
         except OSError as exc:

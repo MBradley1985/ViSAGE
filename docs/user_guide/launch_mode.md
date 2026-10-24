@@ -131,6 +131,15 @@ LightSAGE turns existing SAGE26 HDF5 output into a lightcone catalogue — see
 
 All generated build/run scripts (and the LightSAGE checkout itself) live outside the ViSAGE repository — the build/run scripts specifically under `~/.visage/` — so nothing is ever written into the third-party checkout. The lightcone output itself is written to `<cwd>/sage_outputs/lightcone/` (the `OUTDIR` variable in `run_lightcone.sh`), alongside ViSAGE's other exports.
 
+### Fixes ViSAGE makes to the LightSAGE tools
+
+ViSAGE builds LightSAGE's two tools itself and carries a few fixes to them as patches (in `visage/wizard/patches/lightsage/`). Each build applies the patches, builds, and takes them out again, so your LightSAGE checkout stays exactly as upstream has it and only the built tools carry the fixes. A patch LightSAGE already includes is skipped.
+
+| Patch | Fixes |
+|---|---|
+| Rotate spins with the box tiling | When a lightcone tiles copies of the box, each copy's axes are permuted. Positions and velocities were permuted but galaxy spins weren't, so each galaxy's orientation to the observer (its inclination) was wrong. Spins now get the same permutation, with the sign flip an axial vector takes when two axes swap (a mirror). |
+| Sort iterator for newer compilers | Newer C++ standard libraries (Xcode / Command Line Tools 27) sort through `it[n]`, which LightSAGE's sort iterator didn't support, so the tools no longer compiled. |
+
 ## Parameter form
 
 Every editable config the wizard opens — the SAGE26 `.par`, SAGEswarm's
