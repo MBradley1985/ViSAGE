@@ -8,6 +8,51 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-10-24
+
+### Added
+
+- **LightSAGE photometry is on by default, with survey presets**
+  (GALEX, SDSS, 2MASS and WISE on; DECam, Pan-STARRS, LSST, Euclid,
+  Roman, JWST, HST, VISTA, UKIDSS, Spitzer and Herschel to choose) in
+  place of per-band checkboxes; older run scripts are migrated.
+- **Disk and bulge magnitudes** (`disk_mag_*`, `bulge_mag_*`) from each
+  component's own star-formation history.
+- **Dust re-emission:** each galaxy's absorbed starlight comes back in the
+  infrared (Draine & Li 2007 spectrum, energy balance), so WISE, Spitzer
+  and Herschel magnitudes include it; `LDust` is the total.
+- **Emission lines** ([OII], Hβ, [OIII], Hα, [NII], [SII]: luminosities
+  with and without dust, and fluxes) from each galaxy's HII regions
+  (Gutkin et al. 2016 models; ionisation parameter from its specific SFR,
+  metallicity and density, Kashino & Inoue 2019) and from its AGN
+  (SAGE26's quasar- and radio-mode accretion through the Feltre et al.
+  2016 narrow-line-region models, coupled as Hirschmann et al. 2017).
+  On by default.
+
+### Fixed
+
+- **LightSAGE lightcones: galaxy spins** are now rotated with the box
+  tiling, as positions and velocities are, so each galaxy's inclination
+  to the observer is right (a ViSAGE patch to the LightSAGE tools, applied
+  only while building them).
+- **LightSAGE builds again on macOS with Command Line Tools 27** (a patch
+  to its sort iterator for the newer C++ library).
+
+### Changed
+
+- **LightSAGE photometry** follows each galaxy's star-formation history
+  properly: history bins spread over their real time span, the mass
+  formed rather than what survives (÷ (1 − R)), a Chabrier IMF as SAGE26
+  assumes, smoothly interpolated metallicity, and K-corrections at each
+  galaxy's own observed redshift with peculiar velocities in the distance.
+  Optional dust from each galaxy's own cold gas and metals (a Dusty-SAGE
+  equilibrium) in birth clouds and a diffuse disk seen at its inclination
+  (Charlot & Fall 2000), solved for the dust-to-metal ratio so gas
+  inflow and outflows dilute dust and metals alike. Dust is now on by
+  default in the LightSAGE flow (`SED_DUST_MODEL`: `charlot_fall` or the
+  old fixed `calzetti` screen). The settings used are recorded in the
+  file; the method and references are in Lightcone Photometry.
+
 ## [2.8.7] — 2026-10-22
 
 ### Added

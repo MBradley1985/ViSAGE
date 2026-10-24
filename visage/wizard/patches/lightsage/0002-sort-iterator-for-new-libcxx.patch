@@ -1,0 +1,29 @@
+diff --git a/src/libhpc/algorithm/sort_permute_iter.hh b/src/libhpc/algorithm/sort_permute_iter.hh
+index 583ffef..72d9d9a 100644
+--- a/src/libhpc/algorithm/sort_permute_iter.hh
++++ b/src/libhpc/algorithm/sort_permute_iter.hh
+@@ -96,6 +96,15 @@ public:
+     {
+     }
+ 
++    // Indexing gives the same reference as dereferencing (newer libc++
++    // sorts through it[n], where iterator_facade's proxy won't convert).
++    typename sort_permute_iter_helper_type<SortIter, PermuteIter>::reference_type
++    operator[](difference_type n) const
++    {
++        return typename sort_permute_iter_helper_type<SortIter, PermuteIter>::reference_type(
++            this->_si[n], this->_pi[n]);
++    }
++
+ protected:
+     void increment()
+     {
+@@ -144,7 +153,7 @@ struct sort_permute_iter_compare
+     typedef T second_argument_type;
+     typedef bool result_type;
+ 
+-    bool operator()(T const& t1, T const& t2)
++    bool operator()(T const& t1, T const& t2) const
+     {
+         return Comparison()(std::get<0>(t1.data), std::get<0>(t2.data));
+     }

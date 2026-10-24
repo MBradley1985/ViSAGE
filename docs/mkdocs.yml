@@ -97,6 +97,7 @@ nav:
       - Dark Matter Haloes: physics/haloes.md
       - Galaxies: physics/galaxies.md
       - HD Galaxy Components: physics/hd_components.md
+      - Lightcone Photometry: physics/photometry.md
   - API Reference: api/index.md
   - Project:
       - Changelog: project/changelog.md

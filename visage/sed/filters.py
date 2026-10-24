@@ -2,28 +2,130 @@ from __future__ import annotations
 
 import numpy as np
 
-# Pre-checked default band set for SED synthesis — the wizard's LightSAGE
-# checkboxes and this module's own CLI both default to every band here (any
-# FSPS filter name — see fsps.list_filters() — can be requested beyond this
-# set). Note WISE (mid-IR, W1-W4) flux is dominated by dust emission this
-# pipeline doesn't model (add_dust_emission=False — see ssp_grid.py), so
-# treat those bands with that caveat in mind.
-DEFAULT_BANDS = (
-    "galex_fuv",
-    "galex_nuv",
-    "sdss_u",
-    "sdss_g",
-    "sdss_r",
-    "sdss_i",
-    "sdss_z",
-    "2mass_j",
-    "2mass_h",
-    "2mass_ks",
-    "wise_w1",
-    "wise_w2",
-    "wise_w3",
-    "wise_w4",
+# Surveys the LightSAGE flow offers, as presets of FSPS filters:
+# (key, label, filters, on by default). The wizard's run script gets one
+# SURVEY_<key>_ENABLED checkbox per survey. DESI's Legacy Imaging uses
+# DECam (the DES filters); HSC isn't in FSPS.
+SURVEYS = (
+    ("GALEX", "GALEX (FUV, NUV)", ("galex_fuv", "galex_nuv"), True),
+    (
+        "SDSS",
+        "SDSS (ugriz)",
+        ("sdss_u", "sdss_g", "sdss_r", "sdss_i", "sdss_z"),
+        True,
+    ),
+    ("2MASS", "2MASS (JHKs)", ("2mass_j", "2mass_h", "2mass_ks"), True),
+    (
+        "WISE",
+        "WISE (W1-W4)",
+        ("wise_w1", "wise_w2", "wise_w3", "wise_w4"),
+        True,
+    ),
+    (
+        "DECAM",
+        "DES / DESI Legacy (DECam grizY)",
+        ("des_g", "des_r", "des_i", "des_z", "des_y"),
+        False,
+    ),
+    (
+        "PS1",
+        "Pan-STARRS1 (grizy)",
+        ("ps1_g", "ps1_r", "ps1_i", "ps1_z", "ps1_y"),
+        False,
+    ),
+    (
+        "LSST",
+        "Rubin LSST (ugrizy)",
+        ("lsst_u", "lsst_g", "lsst_r", "lsst_i", "lsst_z", "lsst_y"),
+        False,
+    ),
+    (
+        "EUCLID",
+        "Euclid (VIS, Y, J, H)",
+        ("euclid_vis", "euclid_y", "euclid_j", "euclid_h"),
+        False,
+    ),
+    (
+        "ROMAN",
+        "Roman (F062-F184)",
+        (
+            "roman_f062",
+            "roman_f087",
+            "roman_f106",
+            "roman_f129",
+            "roman_f158",
+            "roman_f184",
+        ),
+        False,
+    ),
+    (
+        "JWST",
+        "JWST NIRCam (F070W-F444W)",
+        (
+            "jwst_f070w",
+            "jwst_f090w",
+            "jwst_f115w",
+            "jwst_f150w",
+            "jwst_f200w",
+            "jwst_f277w",
+            "jwst_f356w",
+            "jwst_f444w",
+        ),
+        False,
+    ),
+    (
+        "HST",
+        "HST ACS/WFC3 (F435W, F606W, F814W, F125W, F160W)",
+        (
+            "wfc_acs_f435w",
+            "wfc_acs_f606w",
+            "wfc_acs_f814w",
+            "wfc3_ir_f125w",
+            "wfc3_ir_f160w",
+        ),
+        False,
+    ),
+    (
+        "VISTA",
+        "VISTA (YJHKs)",
+        ("vista_y", "vista_j", "vista_h", "vista_k"),
+        False,
+    ),
+    (
+        "UKIDSS",
+        "UKIDSS / WFCAM (ZYJHK)",
+        ("wfcam_z", "wfcam_y", "wfcam_j", "wfcam_h", "wfcam_k"),
+        False,
+    ),
+    (
+        "SPITZER",
+        "Spitzer (IRAC 1-4, MIPS 24)",
+        ("irac_1", "irac_2", "irac_3", "irac_4", "mips_24"),
+        False,
+    ),
+    (
+        "HERSCHEL",
+        "Herschel (PACS 70-160, SPIRE 250-500)",
+        (
+            "pacs_70",
+            "pacs_100",
+            "pacs_160",
+            "spire_250",
+            "spire_350",
+            "spire_500",
+        ),
+        False,
+    ),
 )
+
+# The default band set: every survey on by default.
+DEFAULT_BANDS = tuple(f for _, _, fs, on in SURVEYS if on for f in fs)
+
+
+def survey_bands(keys) -> tuple[str, ...]:
+    """FSPS filters of the given survey keys, in survey order."""
+    want = {k.upper() for k in keys}
+    return tuple(f for k, _, fs, _ in SURVEYS if k in want for f in fs)
 
 
 def available_bands() -> list[str]:

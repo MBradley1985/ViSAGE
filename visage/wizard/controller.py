@@ -218,7 +218,14 @@ _LC_RUN_SCRIPT = "run_lightcone.sh"
 # manages SAGE (SAGE26) and feeds its HDF5 output into the pipeline. So we run
 # a leaner, tools-only cmake build from this ViSAGE-managed helper (kept in
 # ~/.visage, never written into the repo).
+#
+# Fixes ViSAGE needs in the tools ship as patches (visage/wizard/patches/
+# lightsage/*.patch). The build applies each one that still applies, builds,
+# and always takes them back out, so the checkout stays as upstream has it
+# and only the built tools carry the fixes. A patch upstream has already
+# made (or that no longer fits) is skipped with a note.
 _LC_BUILD_SCRIPT = "build_lightcone_tools.sh"
+_LC_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "lightsage"
 
 _LC_BUILD_SCRIPT_TEMPLATE = """\
 #!/bin/bash
@@ -228,7 +235,29 @@ _LC_BUILD_SCRIPT_TEMPLATE = """\
 set -e
 
 LC_DIR="{lc_dir}"
+PATCH_DIR="{patch_dir}"
 cd "$LC_DIR"
+
+# ViSAGE's fixes to the tools: in for the build, out again afterwards.
+APPLIED=()
+unpatch() {{
+    for ((i=${{#APPLIED[@]}}-1; i>=0; i--)); do
+        git apply -R "${{APPLIED[$i]}}" && echo "==> Removed ViSAGE patch: $(basename "${{APPLIED[$i]}}")"
+    done
+}}
+trap unpatch EXIT
+for P in "$PATCH_DIR"/*.patch; do
+    [ -e "$P" ] || continue
+    if git apply --check "$P" 2>/dev/null; then
+        git apply "$P"
+        APPLIED+=("$P")
+        echo "==> Applied ViSAGE patch: $(basename "$P")"
+    elif git apply -R --check "$P" 2>/dev/null; then
+        echo "==> Already in LightSAGE: $(basename "$P")"
+    else
+        echo "==> WARNING: ViSAGE patch no longer fits LightSAGE, skipped: $(basename "$P")"
+    fi
+done
 
 EXTRA=""
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -268,6 +297,29 @@ make -C bin -j"$NJOBS" sage2kdtree cli_lightcone
 echo "==> Done: $(ls bin/sage2kdtree bin/cli_lightcone 2>/dev/null)"
 """
 
+
+def _survey_blocks() -> dict:
+    """The run script's survey checkboxes and the bash that turns the
+    ticked ones into the --bands list (visage.sed.filters.SURVEYS)."""
+    from visage.sed.filters import SURVEYS
+
+    flags = [
+        "# Surveys to compute magnitudes for -- each ticks its whole filter",
+        "# set; any FSPS filter can also be passed to visage.sed.photometry.",
+    ]
+    bands = []
+    for key, label, filters, on in SURVEYS:
+        var = f"SURVEY_{key}_ENABLED"
+        flags.append(f"{var}={int(on)}".ljust(39) + f"# {label}")
+        bands.append(
+            f'  [ "${var}" = "1" ] && sed_bands="$sed_bands {" ".join(filters)}"'
+        )
+    return {
+        "survey_flags": "\n".join(flags) + "\n",
+        "survey_bands": "\n".join(bands) + "\n",
+    }
+
+
 _LC_RUN_SCRIPT_TEMPLATE = """\
 #!/bin/bash
 # ViSAGE-managed LightSAGE run script.
@@ -295,38 +347,34 @@ ZMAX=1                     # redshift max
 OUTDIR="{outdir}"          # ViSAGE's standard output folder (see docs)
 OUTFILE="lightcone.h5"
 
-# -- Stage 3 (optional): synthetic photometry (SED synthesis) ---------------
+# -- Stage 3: synthetic photometry (what observers would measure) -----------
 # Forward-models AB magnitudes per galaxy from its star-formation history
 # using FSPS. Requires: pip install "sage-viewer[sed]"
-SED_ENABLED=0                          # 1 = compute synthetic photometry after the lightcone is built
+SED_ENABLED=1                          # 1 = compute synthetic photometry after the lightcone is built
 SED_FRAME="both"                       # rest | obs | both
 # Use each galaxy's own mass-weighted stellar metallicity
 # (MetalsStellarMass/StellarMass); uncheck to force solar for everyone.
 SED_METALLICITY_ENABLED=1
-# Apply Calzetti starburst dust attenuation to the SEDs (reddens galaxies).
-SED_DUST_ENABLED=0
-SED_DUST2=0.3                          # diffuse V-band optical depth when dust is on
-# Also re-emit the absorbed energy in the IR (Draine & Li) — makes the mid-IR
-# (WISE) bands physical. Only has an effect when dust (above) is on.
-SED_DUST_EMISSION_ENABLED=0
-# Filter bands to compute — all checked by default; uncheck any you don't
-# need. WISE (mid-IR, W1-W4) flux is dominated by dust emission — enable
-# SED_DUST_ENABLED + SED_DUST_EMISSION_ENABLED above for those to be physical.
-BAND_GALEX_FUV_ENABLED=1
-BAND_GALEX_NUV_ENABLED=1
-BAND_SDSS_U_ENABLED=1
-BAND_SDSS_G_ENABLED=1
-BAND_SDSS_R_ENABLED=1
-BAND_SDSS_I_ENABLED=1
-BAND_SDSS_Z_ENABLED=1
-BAND_2MASS_J_ENABLED=1
-BAND_2MASS_H_ENABLED=1
-BAND_2MASS_KS_ENABLED=1
-BAND_WISE_W1_ENABLED=1
-BAND_WISE_W2_ENABLED=1
-BAND_WISE_W3_ENABLED=1
-BAND_WISE_W4_ENABLED=1
-
+# Dust attenuation (dims and reddens galaxies, as observed).
+SED_DUST_ENABLED=1
+# charlot_fall: each galaxy's own dust, from its cold gas, metals and H2
+#   (Dusty-SAGE physics), in birth clouds and a disk seen at its
+#   inclination (Charlot & Fall 2000).  calzetti: one fixed screen for
+#   every galaxy (Calzetti 2000), of V-band optical depth SED_DUST2.
+SED_DUST_MODEL="charlot_fall"          # charlot_fall | calzetti
+SED_DUST2=0.3                          # calzetti only: V-band optical depth
+# Re-emit the light the dust absorbs in the infrared (Draine & Li 2007,
+# energy balance) -- makes the mid/far-IR bands (WISE, Spitzer, Herschel)
+# physical. Only has an effect when dust (above) is on.
+SED_DUST_EMISSION_ENABLED=1
+# Also write the disk's and the bulge's own magnitudes (disk_mag_*,
+# bulge_mag_*); the totals are their sum.
+SED_DISK_BULGE_ENABLED=1
+# Nebular emission from star-forming regions: lines and continuum in the
+# magnitudes, and each galaxy's H-alpha, H-beta, [OII], [OIII], [NII] and
+# [SII] luminosities and fluxes, through its dust.
+SED_LINES_ENABLED=1
+{survey_flags}
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
   -s "$SAGE_OUTPUT_DIR" \\
@@ -352,28 +400,22 @@ if [ "$SED_ENABLED" = "1" ]; then
   # wizard parameter (only UPPERCASE VAR=value assignments are, so a user's
   # edit here can never desync the checkboxes above from what actually runs).
   sed_bands=""
-  [ "$BAND_GALEX_FUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_fuv"
-  [ "$BAND_GALEX_NUV_ENABLED" = "1" ]  && sed_bands="$sed_bands galex_nuv"
-  [ "$BAND_SDSS_U_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_u"
-  [ "$BAND_SDSS_G_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_g"
-  [ "$BAND_SDSS_R_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_r"
-  [ "$BAND_SDSS_I_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_i"
-  [ "$BAND_SDSS_Z_ENABLED" = "1" ]     && sed_bands="$sed_bands sdss_z"
-  [ "$BAND_2MASS_J_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_j"
-  [ "$BAND_2MASS_H_ENABLED" = "1" ]    && sed_bands="$sed_bands 2mass_h"
-  [ "$BAND_2MASS_KS_ENABLED" = "1" ]   && sed_bands="$sed_bands 2mass_ks"
-  [ "$BAND_WISE_W1_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w1"
-  [ "$BAND_WISE_W2_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w2"
-  [ "$BAND_WISE_W3_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w3"
-  [ "$BAND_WISE_W4_ENABLED" = "1" ]    && sed_bands="$sed_bands wise_w4"
-  if [ -z "$sed_bands" ]; then
-    echo "No bands checked — skipping SED synthesis."
+{survey_bands}  if [ -z "$sed_bands" ]; then
+    echo "No surveys checked — skipping SED synthesis."
   else
     bands_csv="$(echo "$sed_bands" | tr -s ' ' ',' | sed 's/^,//')"
     sed_extra=""
     [ "$SED_METALLICITY_ENABLED" != "1" ] && sed_extra="$sed_extra --no-metallicity"
-    [ "$SED_DUST_ENABLED" = "1" ] && sed_extra="$sed_extra --dust --dust2 $SED_DUST2"
+    if [ "$SED_DUST_ENABLED" = "1" ]; then
+      if [ "$SED_DUST_MODEL" = "calzetti" ]; then
+        sed_extra="$sed_extra --dust --dust2 $SED_DUST2"
+      else
+        sed_extra="$sed_extra --dust-model charlot_fall"
+      fi
+    fi
     [ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ] && sed_extra="$sed_extra --dust-emission"
+    [ "$SED_DISK_BULGE_ENABLED" = "1" ] && sed_extra="$sed_extra --disk-bulge"
+    [ "$SED_LINES_ENABLED" = "1" ] && sed_extra="$sed_extra --lines"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\
@@ -382,6 +424,10 @@ if [ "$SED_ENABLED" = "1" ]; then
   fi
 fi
 """
+# (The survey checkboxes are generated from visage.sed.filters.SURVEYS.)
+_LC_RUN_SCRIPT_TEMPLATE = _LC_RUN_SCRIPT_TEMPLATE.replace(
+    "{survey_flags}", _survey_blocks()["survey_flags"]
+).replace("{survey_bands}", _survey_blocks()["survey_bands"])
 
 _MILLENNIUM_PAR_TEMPLATE = """\
 %------------------------------------------
@@ -837,6 +883,11 @@ class WizardController:
         Every other key (including plain ``SED_ENABLED``) is left as-is."""
         if key.startswith("BAND_") and key.endswith("_ENABLED"):
             return key[len("BAND_") : -len("_ENABLED")].lower()
+        if key.startswith("SURVEY_") and key.endswith("_ENABLED"):
+            from visage.sed.filters import SURVEYS
+
+            k = key[len("SURVEY_") : -len("_ENABLED")]
+            return next((lab for sk, lab, _, _ in SURVEYS if sk == k), k)
         return key
 
     def _init_param_pool(self) -> None:
@@ -2779,7 +2830,11 @@ class WizardController:
         relative header paths like microUchuu's still resolve). A script
         missing any of them is regenerated, carrying the user's values over.
         """
-        if "BAND_GALEX_FUV_ENABLED" in text and "--alist" in text:
+        if (
+            "SURVEY_SDSS_ENABLED" in text
+            and "--alist" in text
+            and "SED_DUST_MODEL" in text
+        ):
             return text
 
         old = {p["key"]: p["value"] for p in _parse_params(text, "sh")}
@@ -2804,8 +2859,11 @@ class WizardController:
                 # SED physics switches (may be absent in older scripts).
                 "SED_METALLICITY_ENABLED",
                 "SED_DUST_ENABLED",
+                "SED_DUST_MODEL",
                 "SED_DUST2",
                 "SED_DUST_EMISSION_ENABLED",
+                "SED_DISK_BULGE_ENABLED",
+                "SED_LINES_ENABLED",
             )
             if k in old
         }
@@ -2813,19 +2871,26 @@ class WizardController:
         if old_outdir and old_outdir != "./lightcone_output":
             carry["OUTDIR"] = old_outdir
 
+        # Bands the old script asked for: a space-separated SED_BANDS list
+        # (pre-checkbox) or per-band BAND_*_ENABLED checkboxes. A survey is
+        # ticked if any of its bands was; surveys the old script never knew
+        # keep the fresh defaults.
+        from visage.sed.filters import SURVEYS
+
+        old_bands = None
         if "SED_BANDS" in old:
-            # Pre-checkbox script: map the old space-separated list onto the
-            # new per-band checkboxes.
             old_bands = set(old["SED_BANDS"].split())
-            for band_key, fsps_name in self._LC_BAND_KEYS:
-                carry[band_key] = "1" if fsps_name in old_bands else "0"
-        else:
-            # Already has per-band checkboxes (e.g. a 2.2.0 script missing only
-            # --alist): preserve whatever the user ticked. Absent -> fresh
-            # template's all-on default.
-            for band_key, _ in self._LC_BAND_KEYS:
-                if band_key in old:
-                    carry[band_key] = old[band_key]
+        elif any(k in old for k, _ in self._LC_BAND_KEYS):
+            old_bands = {
+                f for k, f in self._LC_BAND_KEYS if old.get(k, "1") == "1"
+            }
+        known = {f for _, f in self._LC_BAND_KEYS}
+        for key, _, filters, _ in SURVEYS:
+            var = f"SURVEY_{key}_ENABLED"
+            if var in old:
+                carry[var] = old[var]
+            elif old_bands is not None and set(filters) <= known:
+                carry[var] = "1" if old_bands & set(filters) else "0"
 
         params = [{"key": k, "value": v} for k, v in carry.items()]
         return _apply_params(fresh, params, "sh")
@@ -3045,7 +3110,8 @@ class WizardController:
             self._write_unix_text(
                 build_script,
                 _LC_BUILD_SCRIPT_TEMPLATE.format(
-                    lc_dir=self._tc_path(self._lc_dir)
+                    lc_dir=self._tc_path(self._lc_dir),
+                    patch_dir=self._tc_path(_LC_PATCH_DIR),
                 ),
             )
         except OSError as exc:

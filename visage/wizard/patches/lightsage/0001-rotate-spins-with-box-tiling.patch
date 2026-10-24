@@ -1,0 +1,62 @@
+diff --git a/src/libtao/base/kdtree_backend/kdtree_backend.hh b/src/libtao/base/kdtree_backend/kdtree_backend.hh
+index f489913..506d59f 100644
+--- a/src/libtao/base/kdtree_backend/kdtree_backend.hh
++++ b/src/libtao/base/kdtree_backend/kdtree_backend.hh
+@@ -614,6 +614,44 @@ protected:
+         _done_so_far += count;
+     }
+ 
++    // Permute an axial-vector field (x, y, z components, if all present)
++    // as the tile's axis permutation does positions, with the sign the
++    // permutation's handedness gives (det = -1 for an odd permutation).
++    template <class U>
++    void _permute_axial_as(const char* nx, const char* ny, const char* nz, int ix, int iy, int iz,
++                           U sign)
++    {
++        auto X = _bat->template scalar<U>(nx);
++        auto Y = _bat->template scalar<U>(ny);
++        auto Z = _bat->template scalar<U>(nz);
++        for (unsigned ii = 0; ii < _bat->size(); ++ii)
++        {
++            U v[3] = {X[ii], Y[ii], Z[ii]};
++            X[ii] = sign * v[ix];
++            Y[ii] = sign * v[iy];
++            Z[ii] = sign * v[iz];
++        }
++    }
++
++    void _permute_axial(const char* nx, const char* ny, const char* nz, int ix, int iy, int iz)
++    {
++        if (!_bat->has_field(nx) || !_bat->has_field(ny) || !_bat->has_field(nz))
++            return;
++        // Parity of the permutation (ix, iy, iz) of (0, 1, 2).
++        int parity = (iy - ix) * (iz - ix) * (iz - iy);
++        switch (static_cast<tao::batch<real_type>::field_value_type>(_bat->get_field_type(nx)))
++        {
++        case tao::batch<real_type>::DOUBLE:
++            _permute_axial_as<double>(nx, ny, nz, ix, iy, iz, parity > 0 ? 1.0 : -1.0);
++            break;
++        case tao::batch<real_type>::FLOAT:
++            _permute_axial_as<float>(nx, ny, nz, ix, iy, iz, parity > 0 ? 1.0f : -1.0f);
++            break;
++        default:
++            break;
++        }
++    }
++
+     void _calc_fields(bool satellite_mode = false)
+     {
+         if (_lc)
+@@ -654,6 +692,12 @@ protected:
+             int iy = _dom.rotation()[1];
+             int iz = _dom.rotation()[2];
+ 
++            // Spins get the same axis permutation as positions and
++            // velocities. Spin is an axial vector (angular momentum,
++            // r x v): an odd permutation (two axes swapped) is a mirror,
++            // under which it also flips sign.
++            _permute_axial("spinx", "spiny", "spinz", ix, iy, iz);
++
+             // std::cout<<"+++COUNT="<<_bat->size()<<std::endl;
+             auto off = _be->cell_offs()[_it.cell()] + _done_so_far;
+             for (unsigned ii = 0; ii < _bat->size(); ++ii)
