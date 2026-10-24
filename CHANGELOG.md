@@ -17,6 +17,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   Run, Load existing (SAGE26, LightSAGE), Install, Check for update and
   Clone / Re-clone buttons; the terminal appears only while one of them
   runs, with a way back to that tool's screen.
+- **Setting up a run** is a screen of big choices: SAGE26's simulation
+  (each .par, with its box and snapshots) and physics switches (described
+  by the .par's own comments); LightSAGE's source model, sky-and-depth
+  presets, surveys and light options; SAGEswarm's observations to match,
+  search effort and free parameters. Every value of the file is under
+  All settings, grouped into sections with a search. The run name sets
+  the output (SAGE26: a .par and output folder of that name).
+- **Runs show their progress:** the stages, a progress bar and time left
+  read from each tool's own output, the latest log lines, Cancel, and
+  the full terminal a click away. Live view shows the science: the new
+  model's stellar mass function against GAMA (Driver et al. 2022), the
+  new lightcone drawn as a wedge, or SAGEswarm's plots as they appear.
+  When it finishes: Open in Explore / Open in Lightcone view.
+- Model and lightcone pickers are big buttons (size, date, galaxies);
+  lightcones in any `sage_outputs/` folder are found. Check for update
+  works on its button and turns into Update when behind.
 
 ## [2.9.0] — 2026-10-24
 

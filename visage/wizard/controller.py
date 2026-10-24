@@ -9,6 +9,7 @@ from pathlib import Path
 from visage import system
 from visage.utils import terminal
 from visage.wizard import toolchain as _toolchain
+from visage.wizard.screens import SetupRunMixin
 
 _SAGE26_REPO = "https://github.com/MBradley1985/SAGE26.git"
 _SAGESWARM_REPO = "https://github.com/MBradley1985/SAGEswarm.git"
@@ -717,7 +718,7 @@ _KIND_COLORS = {
 }
 
 
-class WizardController:
+class WizardController(SetupRunMixin):
     def __init__(
         self,
         server,
@@ -776,6 +777,17 @@ class WizardController:
         self._st.wiz_tools_note = ""
         self._st.wiz_tools_missing = False
         self._st.wiz_pick = {}  # model / lightcone picker screen
+        # Setup (essentials + All settings) and run screens (screens.py).
+        self._st.wiz_setup = {}
+        self._st.wiz_setup_name = ""
+        self._st.wiz_sections = []
+        self._st.wiz_section = ""
+        self._st.wiz_param_search = ""
+        self._st.wiz_run = {}
+        self._st.wiz_run_live = False
+        self._setup_mode = "sage26"
+        self._run = None
+        self._last_rc = None
         self._st.wiz_loading = ""  # name of the model being opened
         self._status: dict = {}
         self._st.wiz_lines = []  # kept for compat; no longer populated
@@ -963,6 +975,7 @@ class WizardController:
             self._st[f"wiz_pv_{i}"] = ""
             self._st[f"wiz_ph_{i}"] = ""
             self._st[f"wiz_pcb_{i}"] = False
+            self._st[f"wiz_pg_{i}"] = ""
         self._st.wiz_param_count = 0
 
     def _show_params(self, text: str, kind: str, target: str) -> None:
@@ -1206,9 +1219,12 @@ class WizardController:
                 if not data:
                     break
                 self._push_bytes(data)
-            return await loop.run_in_executor(None, proc.wait) or 0
+                self._run_output(data)
+            self._last_rc = await loop.run_in_executor(None, proc.wait) or 0
+            return self._last_rc
         except Exception as exc:
             self._push_bytes(f"\x1b[1;31mError: {exc}\x1b[0m\r\n".encode())
+            self._last_rc = 1
             return 1
         finally:
             self._run_proc = None
@@ -1815,6 +1831,8 @@ class WizardController:
                 await self._pull_inline(mode)
             elif act == "load":
                 await self._show_pick(mode)
+            elif act == "run":
+                await self._show_setup(mode)
             else:
                 await self._start_action(mode, act)
             return
@@ -1831,6 +1849,16 @@ class WizardController:
             return
         if value in back_to_mode:
             await self._enter(back_to_mode[value])
+            return
+        if value == "su:reopen":
+            await self._show_setup(self._setup_mode)
+            return
+        if value.startswith("su:"):
+            await self._setup_choose(value[len("su:") :])
+            return
+        if value in ("run:term", "run:view"):
+            self._st.wiz_view = "term" if value == "run:term" else "run"
+            self._set_choices(self._st.wiz_choices or [])
             return
         if value == "tools":
             self._st.wiz_view = "term"
@@ -2371,6 +2399,8 @@ class WizardController:
 
         self._emit("", "info")
         self._emit("SAGE26 run complete!", "ok")
+        if self._st.wiz_view in ("run", "term") and self._run is not None:
+            return
         self._models = self._find_models()
         if not self._models:
             self._emit(
@@ -2741,7 +2771,7 @@ class WizardController:
         self._stop_plot_watch()
         self._plot_seen = {}
         self._st.pso_plots = []
-        self._st.pso_gallery_show = True
+        self._st.pso_gallery_show = self._st.wiz_view != "run"
         self._st.flush()
         if main_dir is None:
             return
