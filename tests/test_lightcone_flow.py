@@ -161,7 +161,7 @@ def test_lc_config_resyncs_stale_lightcone_dir(tmp_path, monkeypatch):
 
 
 def test_lc_scan_offers_load_existing(tmp_path, monkeypatch):
-    # The LightSAGE scan step always offers "Load Existing Lightcone", and it
+    # The LightSAGE screen always offers "Load existing", and it
     # discovers cli_lightcone .h5 files in the standard output folder so they
     # can be opened without building/running anything.
     monkeypatch.setattr(Path, "home", lambda: tmp_path)  # no legacy dir
@@ -181,8 +181,12 @@ def test_lc_scan_offers_load_existing(tmp_path, monkeypatch):
     found = c._discover_lightcones()
     assert cone.resolve() in found
 
+    # The LightSAGE screen offers Load existing, and counts the cone.
     asyncio.run(c._step_lc_scan())
-    assert "lc_load" in [ch["value"] for ch in c._st.wiz_choices]
+    info = c._st.wiz_mode_info
+    assert c._st.wiz_view == "mode"
+    assert "act:sagelightcone:load" in [a["value"] for a in info["actions"]]
+    assert {"text": f"{len(found)} lightcones", "ok": True} in info["chips"]
 
     asyncio.run(c._step_lc_load())
     vals = [ch["value"] for ch in c._st.wiz_choices]

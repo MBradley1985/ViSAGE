@@ -17,6 +17,15 @@ _WIZ_CSS = """
 /* Par-file textarea: match terminal font size, override DOS-blue theme */
 .wiz-par-area .v-field__input,
 .wiz-par-area textarea { font-size: 0.75rem !important; line-height: 1.45 !important; }
+/* Home cards and mode-screen buttons */
+.wiz-big { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease,
+  border-color 0.15s ease, filter 0.15s ease; font-family: 'Space Grotesk',
+  'Segoe UI', system-ui, -apple-system, sans-serif; }
+.wiz-big:hover:not(:disabled) { transform: translateY(-3px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.wiz-big:focus-visible { outline: 2px solid #22d3ee; outline-offset: 3px; }
+.wiz-big:disabled { cursor: not-allowed; opacity: 0.4; }
+.wiz-sans { font-family: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif; }
 """
 
 
@@ -112,8 +121,13 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 "? 'calc(min(46vw, 720px) + 24px)' : '24px'}",
             ),
         ):
-            # Row wrapper — expands to two columns when an editor is visible
+            _home_view(server)
+            _mode_view(server)
+            # Row wrapper — expands to two columns when an editor is visible.
+            # Kept mounted (v-show) so the xterm terminal survives view
+            # switches.
             with html.Div(
+                v_show=("wiz_view === 'term'",),
                 style=(
                     "{"
                     "display:'flex',gap:'16px',alignItems:'stretch',"
@@ -353,6 +367,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
 
         # SAGE logo — pinned to bottom-right corner of the wizard screen
         html.Img(
+            v_show=("wiz_view === 'term'",),
             src="/sage_static/SAGElogo.jpg",
             style=(
                 "position:absolute;bottom:16px;right:16px;"
@@ -360,3 +375,234 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 "pointer-events:none;"
             ),
         )
+
+
+def _home_view(server) -> None:
+    """Three big cards (SAGE26, LightSAGE, SAGEswarm) and a smaller Load
+    button: the Launch Mode home screen."""
+    choose = server.controller.wiz_choose
+    with html.Div(
+        v_if=("wiz_view === 'home'",),
+        classes="wiz-sans",
+        style=(
+            "width:100%;max-width:1180px;display:flex;flex-direction:column;"
+            "gap:22px;"
+        ),
+    ):
+        with html.Div(
+            style=(
+                "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));"
+                "gap:24px;"
+            ),
+        ):
+            with html.Button(
+                v_for="c in wiz_home_cards",
+                key="c.value",
+                type="button",
+                classes="wiz-big",
+                click=(choose, "[c.value]"),
+                style=(
+                    "{height:'min(58vh, 460px)',borderRadius:'18px',"
+                    "border:'1px solid rgba(255,255,255,0.16)',"
+                    "padding:'28px',display:'flex',flexDirection:'column',"
+                    "justifyContent:'flex-end',alignItems:'flex-start',"
+                    "gap:'10px',textAlign:'left',color:'#fff',"
+                    "overflow:'hidden',backgroundColor:'#000',"
+                    "backgroundSize:'cover',backgroundPosition:'center',"
+                    "backgroundImage:'linear-gradient(180deg, rgba(0,0,0,0) "
+                    "0%, rgba(0,0,0,0.2) 45%, rgba(0,0,0,0.93) 100%), url(' "
+                    "+ c.bg + ')'}",
+                ),
+            ):
+                with html.Span(
+                    style=(
+                        "{display:'flex',alignItems:'center',"
+                        "justifyContent:'center',width:'54px',height:'54px',"
+                        "borderRadius:'14px',background:'rgba(0,0,0,0.45)',"
+                        "border:'1px solid ' + c.accent}",
+                    ),
+                ):
+                    v3.VIcon(icon=("c.icon",), color=("c.accent",), size=30)
+                html.Span(
+                    "{{ c.title }}",
+                    style="font-size:2.1rem;font-weight:700;line-height:1.1;",
+                )
+                html.Span(
+                    "{{ c.desc }}",
+                    style="font-size:0.95rem;color:#cbd5e1;line-height:1.4;",
+                )
+                html.Span(
+                    "{{ c.badge }}",
+                    style=(
+                        "{fontSize:'0.75rem',borderRadius:'999px',"
+                        "padding:'3px 10px',"
+                        "color: c.ok ? '#86efac' : '#fcd34d',"
+                        "background: c.ok ? 'rgba(34,197,94,0.15)' "
+                        ": 'rgba(245,158,11,0.15)',"
+                        "border: '1px solid ' + (c.ok ? 'rgba(34,197,94,0.55)' "
+                        ": 'rgba(245,158,11,0.55)')}",
+                    ),
+                )
+        with html.Button(
+            type="button",
+            classes="wiz-big",
+            disabled=("wiz_home_load.disabled",),
+            click=(choose, "['act:sage26:load']"),
+            style=(
+                "align-self:center;width:min(520px,90%);height:60px;"
+                "border-radius:14px;border:1px solid rgba(6,182,212,0.55);"
+                "background:linear-gradient(90deg, rgba(6,182,212,0.10), "
+                "rgba(6,182,212,0.24));color:#e2e8f0;font-size:1.05rem;"
+                "font-weight:500;display:flex;align-items:center;"
+                "justify-content:center;gap:12px;"
+            ),
+        ):
+            v3.VIcon("mdi-folder-open", color="#22d3ee", size=24)
+            html.Span("{{ wiz_home_load.label }}")
+            html.Span(
+                "{{ wiz_home_load.sub }}",
+                style="font-size:0.82rem;color:#94a3b8;",
+            )
+        # Windows: where WSL or its build tools are missing.
+        with html.Div(
+            v_if=("wiz_tools_note",),
+            style=(
+                "align-self:center;display:flex;align-items:center;gap:12px;"
+                "color:#fcd34d;font-size:0.85rem;"
+            ),
+        ):
+            v3.VIcon("mdi-alert-outline", color="#f59e0b", size=20)
+            html.Span("{{ wiz_tools_note }}")
+            v3.VBtn(
+                "Install Linux build tools",
+                v_if=("wiz_tools_missing",),
+                prepend_icon="mdi-penguin",
+                color="#f59e0b",
+                variant="outlined",
+                size="small",
+                click=(choose, "['tools']"),
+                style="text-transform:none;",
+            )
+
+
+def _mode_view(server) -> None:
+    """One tool's screen: its picture and status on the left, its actions
+    (Run, Load existing, Install, Check for update, Clone) on the right."""
+    choose = server.controller.wiz_choose
+    with html.Div(
+        v_if=("wiz_view === 'mode'",),
+        classes="wiz-sans",
+        style=(
+            "width:100%;max-width:1180px;height:min(620px,76vh);"
+            "display:flex;gap:24px;color:#e2e8f0;"
+        ),
+    ):
+        with html.Section(
+            style=(
+                "{width:'40%',maxWidth:'460px',flexShrink:0,"
+                "borderRadius:'18px',padding:'28px',display:'flex',"
+                "flexDirection:'column',justifyContent:'space-between',"
+                "border:'1px solid ' + wiz_mode_info.accent + '66',"
+                "backgroundColor:'#000',backgroundSize:'cover',"
+                "backgroundPosition:'center',"
+                "backgroundImage:'linear-gradient(180deg, rgba(0,0,0,0.05) "
+                "0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.95) 100%), url(' "
+                "+ wiz_mode_info.bg + ')'}",
+            ),
+        ):
+            with html.Button(
+                type="button",
+                classes="wiz-big",
+                click=(choose, "['home']"),
+                style=(
+                    "align-self:flex-start;height:40px;padding:0 16px 0 10px;"
+                    "border-radius:999px;border:1px solid rgba(255,255,255,0.45);"
+                    "background:rgba(0,0,0,0.55);color:#fff;font-size:0.9rem;"
+                    "display:flex;align-items:center;gap:6px;"
+                ),
+            ):
+                v3.VIcon("mdi-chevron-left", color="#fff", size=20)
+                html.Span("Home")
+            with html.Div(
+                style="display:flex;flex-direction:column;gap:10px;",
+            ):
+                html.H1(
+                    "{{ wiz_mode_info.title }}",
+                    style=(
+                        "margin:0;font-size:2.9rem;font-weight:700;"
+                        "color:#fff;line-height:1.05;"
+                    ),
+                )
+                html.P(
+                    "{{ wiz_mode_info.desc }}",
+                    style="margin:0;font-size:0.95rem;color:#cbd5e1;",
+                )
+                with html.Div(
+                    style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;",
+                ):
+                    html.Span(
+                        "{{ ch.text }}",
+                        v_for="(ch, i) in wiz_mode_info.chips",
+                        key="i",
+                        style=(
+                            "{fontSize:'0.75rem',borderRadius:'999px',"
+                            "padding:'3px 10px',background:'rgba(0,0,0,0.55)',"
+                            "color: ch.ok ? '#86efac' : '#fcd34d',"
+                            "border:'1px solid ' + (ch.ok ? "
+                            "'rgba(34,197,94,0.6)' : 'rgba(245,158,11,0.6)')}",
+                        ),
+                    )
+                html.Span(
+                    "{{ wiz_mode_info.path }}",
+                    style=(
+                        "font-family:monospace;font-size:0.75rem;"
+                        "color:#94a3b8;word-break:break-all;"
+                    ),
+                )
+        with html.Div(
+            style=(
+                "flex:1;min-width:0;display:flex;flex-direction:column;"
+                "gap:12px;"
+            ),
+        ):
+            with html.Button(
+                v_for="a in wiz_mode_info.actions",
+                key="a.value",
+                type="button",
+                classes="wiz-big",
+                disabled=("a.disabled",),
+                click=(choose, "[a.value]"),
+                style=(
+                    "{flex: a.primary ? '1.5 1 0' : '1 1 0',minHeight:0,"
+                    "borderRadius:'16px',display:'flex',alignItems:'center',"
+                    "gap:'20px',padding:'0 28px',textAlign:'left',"
+                    "border: a.primary ? 'none' "
+                    ": '1px solid rgba(148,163,184,0.3)',"
+                    "background: a.primary ? 'linear-gradient(90deg, ' "
+                    "+ wiz_mode_info.accent + ', ' + wiz_mode_info.accent2 "
+                    "+ ')' : '#0b1120',"
+                    "color: a.primary ? '#0b1020' : '#e2e8f0'}",
+                ),
+            ):
+                v3.VIcon(
+                    icon=("a.icon",),
+                    size=("a.primary ? 40 : 30",),
+                    color=("a.primary ? '#0b1020' : wiz_mode_info.accent",),
+                )
+                with html.Span(
+                    style="display:flex;flex-direction:column;gap:2px;",
+                ):
+                    html.Span(
+                        "{{ a.label }}",
+                        style=(
+                            "{fontSize: a.primary ? '1.75rem' : '1.35rem',"
+                            "fontWeight:700}",
+                        ),
+                    )
+                    html.Span(
+                        "{{ a.sub }}",
+                        style=(
+                            "{fontSize:'0.85rem',"
+                            "color: a.primary ? '#1e293b' : '#94a3b8'}",
+                        ),
+                    )

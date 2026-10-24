@@ -8,6 +8,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Launch Mode has a new home screen:** three big picture cards
+  (SAGE26 with its logo, LightSAGE with a real lightcone, SAGEswarm),
+  each showing whether it's installed, and a Load a previous model
+  button. No startup scan text. Each tool opens its own screen with big
+  Run, Load existing (SAGE26, LightSAGE), Install, Check for update and
+  Clone / Re-clone buttons; the terminal appears only while one of them
+  runs, with a way back to that tool's screen.
+
 ## [2.9.0] — 2026-10-24
 
 ### Added

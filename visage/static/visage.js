@@ -426,6 +426,7 @@
     var _wizLastSeq      = -1;
     var _wizListenerInstalled = false;
     var _wizPending      = false;
+    var _wizIniting      = false;  // a deferred start of the wizard xterm is queued
     var _lastWizActive   = null;
 
     function _getState(key) {
@@ -710,6 +711,14 @@
         } else {
           _destroyWizTerm();
         }
+      }
+
+      // The wizard's terminal box is hidden behind the home and mode
+      // screens, so it may never have had a size to start in: start it
+      // once the terminal view shows.
+      if (!_wizTerm && !_wizIniting && _getState('wiz_view') === 'term') {
+        _wizIniting = true;
+        setTimeout(function () { _wizIniting = false; _initWizTerm(); }, 60);
       }
 
       // Detect terminal mode becoming active — mount or re-focus panel terminal.
