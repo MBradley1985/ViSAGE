@@ -427,6 +427,7 @@
     var _wizListenerInstalled = false;
     var _wizPending      = false;
     var _wizIniting      = false;  // a deferred start of the wizard xterm is queued
+    var _relaunchWatch   = false;  // watching for the server to restart with a model
     var _lastWizActive   = null;
 
     function _getState(key) {
@@ -711,6 +712,18 @@
         } else {
           _destroyWizTerm();
         }
+      }
+
+      // Opening a model relaunches the server: reload the page once it has
+      // gone down and come back up.
+      if (_getState('wiz_loading') && !_relaunchWatch) {
+        _relaunchWatch = true;
+        var _wentDown = false;
+        var _probe = setInterval(function () {
+          fetch(window.location.href, { cache: 'no-store' }).then(function (r) {
+            if (_wentDown && r.ok) { clearInterval(_probe); window.location.reload(); }
+          }).catch(function () { _wentDown = true; });
+        }, 1000);
       }
 
       // The wizard's terminal box is hidden behind the home and mode

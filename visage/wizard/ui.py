@@ -25,6 +25,13 @@ _WIZ_CSS = """
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .wiz-big:focus-visible { outline: 2px solid #22d3ee; outline-offset: 3px; }
 .wiz-big:disabled { cursor: not-allowed; opacity: 0.4; }
+.wiz-big.wiz-busy:disabled { cursor: progress; opacity: 1; }
+@keyframes wiz-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.0); }
+  50% { box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.45), 0 0 28px rgba(34, 211, 238, 0.25); } }
+.wiz-busy { animation: wiz-pulse 1.2s ease-in-out infinite; }
+@keyframes wiz-spin { to { transform: rotate(360deg); } }
+.wiz-spin { animation: wiz-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .wiz-busy, .wiz-spin { animation: none; } }
 .wiz-sans { font-family: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif; }
 """
 
@@ -123,6 +130,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
         ):
             _home_view(server)
             _mode_view(server)
+            _pick_view(server)
             # Row wrapper — expands to two columns when an editor is visible.
             # Kept mounted (v-show) so the xterm terminal survives view
             # switches.
@@ -569,8 +577,8 @@ def _mode_view(server) -> None:
                 v_for="a in wiz_mode_info.actions",
                 key="a.value",
                 type="button",
-                classes="wiz-big",
-                disabled=("a.disabled",),
+                classes=("a.busy ? 'wiz-big wiz-busy' : 'wiz-big'",),
+                disabled=("a.disabled || a.busy",),
                 click=(choose, "[a.value]"),
                 style=(
                     "{flex: a.primary ? '1.5 1 0' : '1 1 0',minHeight:0,"
@@ -585,7 +593,8 @@ def _mode_view(server) -> None:
                 ),
             ):
                 v3.VIcon(
-                    icon=("a.icon",),
+                    icon=("a.busy ? 'mdi-loading' : a.icon",),
+                    classes=("a.busy ? 'wiz-spin' : ''",),
                     size=("a.primary ? 40 : 30",),
                     color=("a.primary ? '#0b1020' : wiz_mode_info.accent",),
                 )
@@ -603,6 +612,141 @@ def _mode_view(server) -> None:
                         "{{ a.sub }}",
                         style=(
                             "{fontSize:'0.85rem',"
-                            "color: a.primary ? '#1e293b' : '#94a3b8'}",
+                            "color: a.primary ? '#1e293b' "
+                            ": a.tone === 'ok' ? '#86efac' "
+                            ": a.tone === 'warn' ? '#fcd34d' "
+                            ": a.tone === 'new' ? wiz_mode_info.accent "
+                            ": '#94a3b8'}",
                         ),
                     )
+
+
+def _pick_view(server) -> None:
+    """Big buttons for each model (SAGE26) or lightcone (LightSAGE)."""
+    choose = server.controller.wiz_choose
+    with html.Div(
+        v_if=("wiz_view === 'pick'",),
+        classes="wiz-sans",
+        style=(
+            "width:100%;max-width:1180px;height:min(640px,78vh);"
+            "display:flex;flex-direction:column;gap:20px;color:#e2e8f0;"
+            "position:relative;"
+        ),
+    ):
+        with html.Div(style="display:flex;align-items:center;gap:18px;"):
+            with html.Button(
+                type="button",
+                classes="wiz-big",
+                click=(choose, "[wiz_pick.back]"),
+                style=(
+                    "height:40px;padding:0 16px 0 10px;border-radius:999px;"
+                    "border:1px solid rgba(255,255,255,0.45);"
+                    "background:rgba(255,255,255,0.04);color:#fff;"
+                    "font-size:0.9rem;display:flex;align-items:center;gap:6px;"
+                ),
+            ):
+                v3.VIcon("mdi-chevron-left", color="#fff", size=20)
+                html.Span("{{ wiz_pick.back_label }}")
+            html.H1(
+                "{{ wiz_pick.title }}",
+                style="margin:0;font-size:2.1rem;font-weight:700;",
+            )
+            html.Span(
+                "{{ (wiz_pick.items || []).length }} found",
+                style="font-size:0.9rem;color:#94a3b8;",
+            )
+        html.Div(
+            "{{ wiz_pick.empty }}",
+            v_if=("!(wiz_pick.items || []).length",),
+            style="color:#94a3b8;font-size:1rem;padding:40px 0;",
+        )
+        with html.Div(
+            style=(
+                "flex:1;min-height:0;overflow-y:auto;display:grid;"
+                "grid-template-columns:repeat(auto-fill,minmax(320px,1fr));"
+                "grid-auto-rows:min-content;gap:16px;padding:4px;"
+            ),
+        ):
+            with html.Button(
+                v_for="it in wiz_pick.items",
+                key="it.value",
+                type="button",
+                classes="wiz-big",
+                disabled=("!!wiz_loading",),
+                click=(choose, "[it.value]"),
+                style=(
+                    "{minHeight:'150px',borderRadius:'16px',"
+                    "border:'1px solid rgba(148,163,184,0.3)',"
+                    "background:'linear-gradient(145deg, #0f172a, #020617)',"
+                    "color:'#e2e8f0',display:'flex',flexDirection:'column',"
+                    "alignItems:'flex-start',gap:'10px',padding:'20px 22px',"
+                    "textAlign:'left'}",
+                ),
+            ):
+                with html.Span(
+                    style="display:flex;align-items:center;gap:12px;",
+                ):
+                    with html.Span(
+                        style=(
+                            "{display:'flex',alignItems:'center',"
+                            "justifyContent:'center',width:'44px',"
+                            "height:'44px',borderRadius:'12px',"
+                            "border:'1px solid ' + wiz_pick.accent,"
+                            "background:'rgba(0,0,0,0.4)'}",
+                        ),
+                    ):
+                        v3.VIcon(
+                            icon=("it.icon",),
+                            color=("wiz_pick.accent",),
+                            size=24,
+                        )
+                    html.Span(
+                        "{{ it.label }}",
+                        style=(
+                            "font-size:1.45rem;font-weight:700;"
+                            "word-break:break-word;"
+                        ),
+                    )
+                with html.Span(
+                    style="display:flex;flex-wrap:wrap;gap:6px;",
+                ):
+                    html.Span(
+                        "{{ ch }}",
+                        v_for="(ch, i) in it.chips",
+                        key="i",
+                        style=(
+                            "font-size:0.75rem;color:#cbd5e1;"
+                            "border:1px solid rgba(148,163,184,0.4);"
+                            "border-radius:999px;padding:2px 9px;"
+                        ),
+                    )
+                html.Span(
+                    "{{ it.sub }}",
+                    style=(
+                        "font-family:monospace;font-size:0.72rem;"
+                        "color:#64748b;word-break:break-all;"
+                    ),
+                )
+        # Opening a model relaunches ViSAGE; say so over the picker.
+        with html.Div(
+            v_if=("wiz_loading",),
+            style=(
+                "position:absolute;inset:0;display:flex;flex-direction:column;"
+                "align-items:center;justify-content:center;gap:16px;"
+                "background:rgba(0,0,0,0.78);border-radius:16px;"
+            ),
+        ):
+            v3.VProgressCircular(
+                indeterminate=True,
+                color=("wiz_pick.accent",),
+                size=56,
+                width=4,
+            )
+            html.Div(
+                "Opening {{ wiz_loading }} ...",
+                style="font-size:1.6rem;font-weight:700;",
+            )
+            html.Div(
+                "ViSAGE is restarting with it; the page reloads when it's ready.",
+                style="color:#94a3b8;",
+            )

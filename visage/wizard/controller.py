@@ -775,6 +775,8 @@ class WizardController:
         self._st.wiz_mode_info = {}
         self._st.wiz_tools_note = ""
         self._st.wiz_tools_missing = False
+        self._st.wiz_pick = {}  # model / lightcone picker screen
+        self._st.wiz_loading = ""  # name of the model being opened
         self._status: dict = {}
         self._st.wiz_lines = []  # kept for compat; no longer populated
         self._st.wiz_choices = []
@@ -1520,6 +1522,8 @@ class WizardController:
                     "icon": icon,
                     "value": f"act:{mode}:{act}",
                     "primary": act == "run",
+                    "busy": False,
+                    "tone": "",
                     "disabled": (
                         act in ("run", "install", "update") and not found
                     ),
@@ -1583,6 +1587,195 @@ class WizardController:
             "disabled": False,
         }
 
+    # ── in-place update check, and the model / lightcone picker ──────────
+
+    def _set_action(self, mode: str, act: str, **fields) -> None:
+        """Change one button on the mode screen (a fresh dict, so the
+        browser sees the change)."""
+        info = dict(self._st.wiz_mode_info)
+        if info.get("mode") != mode:
+            return
+        info["actions"] = [
+            {**a, **fields} if a["value"].endswith(f":{act}") else a
+            for a in info["actions"]
+        ]
+        self._st.wiz_mode_info = info
+        self._st.wiz_busy = False
+        self._st.flush()
+
+    def _repo_of(self, mode: str) -> Path | None:
+        return {
+            "sage26": self._sage26_dir,
+            "sagelightcone": self._lc_dir,
+            "sageswarm": self._sw_dir,
+        }[mode]
+
+    async def _check_update_inline(self, mode: str) -> None:
+        """Check for update on the button itself: it spins while checking
+        GitHub, then says what it found (and becomes Update if behind)."""
+        self._set_action(mode, "update", busy=True, sub="Checking GitHub ...")
+        st = await self._git_status(self._repo_of(mode))
+        where = f"{st['branch']} @ {st['short']}" if st["short"] else ""
+        if not st["repo"]:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub="Not a git checkout",
+                tone="warn",
+            )
+        elif st["offline"]:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub="Could not reach GitHub",
+                tone="warn",
+            )
+        elif st["behind"]:
+            n = st["behind"]
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                label="Update",
+                icon="mdi-download",
+                sub=f"{n} new commit{'s' if n > 1 else ''} on GitHub "
+                f"({where}) — click to update",
+                tone="new",
+                value=f"act:{mode}:pull",
+            )
+        elif not st["upstream"]:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub=f"No upstream branch to compare ({where})",
+                tone="warn",
+            )
+        else:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub=f"Up to date ({where})",
+                tone="ok",
+            )
+
+    async def _pull_inline(self, mode: str) -> None:
+        repo = self._repo_of(mode)
+        self._set_action(
+            mode, "pull", busy=True, sub="Updating from GitHub ..."
+        )
+        rc, _ = await self._git_capture(
+            ["pull", "--ff-only", "--recurse-submodules"], repo
+        )
+        if rc != 0:
+            self._set_action(
+                mode,
+                "pull",
+                busy=False,
+                sub="Update blocked by local changes — commit, stash or "
+                "re-clone",
+                tone="warn",
+            )
+            return
+        _, short = await self._git_capture(
+            ["rev-parse", "--short", "HEAD"], repo
+        )
+        rebuild = {
+            "sage26": " — Install to recompile",
+            "sagelightcone": " — Install to rebuild",
+            "sageswarm": "",
+        }[mode]
+        self._set_action(
+            mode,
+            "pull",
+            busy=False,
+            label="Check for update",
+            icon="mdi-update",
+            sub=f"Updated to {short}{rebuild}",
+            tone="ok",
+            value=f"act:{mode}:update",
+        )
+
+    @staticmethod
+    def _file_meta(paths: list[Path]) -> list[str]:
+        import datetime as _dt
+
+        paths = [q for q in paths if q.exists()]
+        if not paths:
+            return []
+        size = sum(q.stat().st_size for q in paths)
+        when = max(q.stat().st_mtime for q in paths)
+        units = (("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("KB", 1e3))
+        unit, div = next(((u, d) for u, d in units if size >= d), ("B", 1))
+        return [
+            f"{size / div:.1f} {unit}",
+            _dt.datetime.fromtimestamp(when).strftime("%d %b %Y"),
+        ]
+
+    async def _show_pick(self, mode: str) -> None:
+        """Big buttons for each model (SAGE26) or lightcone (LightSAGE)."""
+        meta = _MODE_META[mode]
+        items = []
+        if mode == "sage26":
+            self._models = self._find_models()
+            for m in self._models:
+                out = Path(m["hdf5"]).parent
+                files = sorted(out.glob("model_*.hdf5")) or [Path(m["hdf5"])]
+                chips = self._file_meta(files)
+                if len(files) > 1:
+                    chips.insert(0, f"{len(files)} files")
+                items.append(
+                    {
+                        "label": m["name"],
+                        "sub": str(out),
+                        "chips": chips + [Path(m["par"]).name],
+                        "value": f"model:{m['name']}",
+                        "icon": "mdi-database",
+                    }
+                )
+            title, empty = "Load a model", (
+                "No SAGE26 models found yet. Run SAGE26 first."
+            )
+        else:
+            for f in self._discover_lightcones():
+                chips = self._file_meta([f])
+                try:
+                    import h5py
+
+                    with h5py.File(f, "r") as h:
+                        key = "ra" if "ra" in h else "Posx"
+                        chips.insert(0, f"{h[key].shape[0]:,} galaxies")
+                except Exception:
+                    pass
+                items.append(
+                    {
+                        "label": f.parent.name,
+                        "sub": str(f),
+                        "chips": chips,
+                        "value": f"lc_open:{f}",
+                        "icon": "mdi-telescope",
+                    }
+                )
+            title, empty = "Load a lightcone", (
+                "No lightcones found yet. Run LightSAGE first."
+            )
+        back = "home" if self._st.wiz_view == "home" else f"mode:{mode}"
+        self._st.wiz_pick = {
+            "title": title,
+            "empty": empty,
+            "accent": meta["accent"],
+            "back": back,
+            "back_label": "Home" if back == "home" else meta["title"],
+            "items": items,
+        }
+        self._st.wiz_loading = ""
+        self._st.wiz_view = "pick"
+        self._st.wiz_mode = mode
+        self._set_choices([])
+
     async def _start_action(self, mode: str, act: str) -> None:
         """A mode-screen button: open the terminal and start that step."""
         value = _MODE_ACTIONS.get(mode, {}).get(act)
@@ -1595,32 +1788,7 @@ class WizardController:
         self._push_bytes(b"\x1b[2J\x1b[3J\x1b[H")
         self._emit(f"ViSAGE  ::  {_MODE_META[mode]['title']}", "title")
         self._emit("=" * 52, "sep")
-        if value == "check_update":
-            await self._step_check_update(mode)
-        else:
-            await self._handle_choice(value)
-
-    async def _step_check_update(self, mode: str) -> None:
-        name = _MODE_META[mode]["title"]
-        repo = {
-            "sage26": self._sage26_dir,
-            "sagelightcone": self._lc_dir,
-            "sageswarm": self._sw_dir,
-        }[mode]
-        self._emit(f"Checking {name} against GitHub ...", "info")
-        st = await self._report_git_status(name, repo)
-        choices = []
-        if st.get("behind"):
-            choices.append(
-                {
-                    "label": f"Update {name} ({st['behind']} behind)",
-                    "value": _UPDATE_VALUE[mode],
-                    "icon": "mdi-download",
-                    "disabled": False,
-                }
-            )
-        choices.append(self._mode_back_choice(mode))
-        self._set_choices(choices)
+        await self._handle_choice(value)
 
     def _on_choice(self, value: str, **_) -> None:
         asyncio.ensure_future(self._handle_choice(value))
@@ -1641,8 +1809,23 @@ class WizardController:
             return
         if value.startswith("act:"):
             _, mode, act = value.split(":", 2)
-            await self._start_action(mode, act)
+            if act == "update":
+                await self._check_update_inline(mode)
+            elif act == "pull":
+                await self._pull_inline(mode)
+            elif act == "load":
+                await self._show_pick(mode)
+            else:
+                await self._start_action(mode, act)
             return
+        if value.startswith("model:") or value.startswith("lc_open:"):
+            self._st.wiz_loading = (
+                value[len("model:") :]
+                if value.startswith("model:")
+                else Path(value[len("lc_open:") :]).parent.name
+            )
+            self._st.flush()
+            await asyncio.sleep(0.8)  # let "Opening ..." show before relaunch
         if value in ("home", "back_main", "back_sage26"):
             await self._go_home()
             return
@@ -2710,6 +2893,18 @@ class WizardController:
                 seen.add(rp)
                 out.append(rp)
 
+        def _is_cone(f: Path) -> bool:
+            # A lightcone, not the KD-tree index LightSAGE builds beside it.
+            if "kdtree" in f.name:
+                return False
+            try:
+                import h5py
+
+                with h5py.File(f, "r") as h:
+                    return "ra" in h or "Posx" in h
+            except Exception:
+                return False
+
         for d in (
             Path.cwd() / "sage_outputs" / "lightcone",
             Path.home() / ".visage" / "lightcone_output",
@@ -2717,6 +2912,19 @@ class WizardController:
             if d.is_dir():
                 for f in sorted(d.glob("*.h5")):
                     _add(f)
+        # Other runs' output folders (sage_outputs/<name>/), and wherever
+        # the run script currently writes.
+        outs = Path.cwd() / "sage_outputs"
+        if outs.is_dir():
+            for f in sorted(outs.glob("*/*.h5")):
+                if _is_cone(f):
+                    _add(f)
+        try:
+            cur = self._lc_output_file()
+            if cur is not None and _is_cone(cur):
+                _add(cur)
+        except Exception:
+            pass
         try:
             from visage.utils import recent_models
 
