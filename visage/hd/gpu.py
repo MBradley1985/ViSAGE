@@ -28,6 +28,7 @@ from scipy.ndimage import gaussian_filter
 
 from visage.hd.model import (
     BULGE_RGB,
+    HII_LOOK,
     YOUNG_RGB,
     GalaxyRecipe,
     PlaneMaps,
@@ -74,7 +75,14 @@ def _splat_plane(pts, half, n, px_proto):
         fx = (p.pos[:, 0] + half) / cell - 0.5
         fy = (p.pos[:, 1] + half) / cell - 0.5
         ok = (fx >= 0) & (fx < n - 1) & (fy >= 0) & (fy < n - 1)
-        sig = np.maximum(p.sigma * px_proto / cell, 0.6)
+        # (HII regions can be splatted at the size the shader draws them
+        # exactly, HII_LOOK["sharp"], so near and far ones match.)
+        k = (
+            _POINT_SIZE.get(p.name, 1.0)
+            if p.name in ("hii", "ring_hii") and HII_LOOK.get("sharp")
+            else 1.0
+        )
+        sig = np.maximum(k * p.sigma * px_proto / cell, 0.6)
         # PSF classes a factor of 2 apart: one blur per class.
         cls = 2.0 ** np.round(np.log2(sig))
         for s in np.unique(cls[ok]):

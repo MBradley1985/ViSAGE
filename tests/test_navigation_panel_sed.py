@@ -67,6 +67,7 @@ def sed_panel(tmp_path):
         def __init__(self, state, scene):
             self.state = state
             self.scene = scene
+            self.ctrl = server.controller
 
         @property
         def gal(self):
@@ -184,3 +185,19 @@ def test_band_colours_are_representative():
     for blue_band in ("sdss_u", "galex_fuv"):
         c = band_colour(blue_band)
         assert c[2] > c[1]  # blue channel over green
+
+
+def test_lightcone_coords_tab_has_box_and_slice_controls(sed_panel):
+    """A lightcone has no Box tab: its box (and slice) controls are at the
+    top of Coords, and zooming to a thin box focuses on that slice."""
+    state, ctrl = sed_panel.state, sed_panel.ctrl
+    # Defaults: the cone's own extent, not a box from the origin.
+    lo, hi = sed_panel.scene.active_model.bounds
+    assert state.nav_box_xmin == pytest.approx(lo[0], abs=0.01)
+    assert state.nav_box_zmax == pytest.approx(hi[2], abs=0.01)
+    state.focus_active = False
+    state.nav_box_xmin, state.nav_box_xmax = 0.0, 100.0
+    state.nav_box_ymin, state.nav_box_ymax = 0.0, 100.0
+    state.nav_box_zmin, state.nav_box_zmax = 40.0, 45.0  # a 5 Mpc/h slice
+    ctrl.zoom_to_box()
+    assert state.focus_active

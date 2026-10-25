@@ -347,6 +347,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.nav_box_ymax = round(scene._cfg.box_size / 2, 2)
     state.nav_box_zmin = 0.0
     state.nav_box_zmax = round(scene._cfg.box_size / 2, 2)
+    if scene.is_lightcone:
+        # A cone isn't a box from the origin: its own extent, and the
+        # sphere at its middle.
+        import numpy as np
+
+        try:
+            lo, hi = (
+                np.asarray(scene.active_model.bounds, float)
+                + scene.active_model.offset
+            )
+            for a, k in zip("xyz", range(3), strict=True):
+                state[f"nav_box_{a}min"] = round(float(lo[k]), 2)
+                state[f"nav_box_{a}max"] = round(float(hi[k]), 2)
+                state[f"nav_{a}"] = round(float(lo[k] + hi[k]) / 2, 2)
+        except Exception:
+            pass
     state.focus_active = False
     state.isolate_active = False
     state.hd_active = False  # HD model of the selected galaxy (Target tab)
@@ -5496,6 +5512,79 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # UI helper
     # ------------------------------------------------------------------
 
+    def _box_controls():
+        """Box bounds, Draw / Lock Box, Use Current View, Zoom, Clear: the
+        Box tab of a SAGE26 box, the top of the Coords tab of a lightcone
+        (boxes and slices; a slice is a thin box)."""
+        for label, key in [
+            ("X min", "nav_box_xmin"),
+            ("X max", "nav_box_xmax"),
+            ("Y min", "nav_box_ymin"),
+            ("Y max", "nav_box_ymax"),
+            ("Z min", "nav_box_zmin"),
+            ("Z max", "nav_box_zmax"),
+        ]:
+            with v3.VSheet(color="transparent", style=_FIELD):
+                _tf(
+                    key,
+                    label,
+                    on_enter=ctrl.zoom_to_box,
+                    target_id="btn-box-zoom",
+                )
+        with v3.VSheet(color="transparent", style=_BTN):
+            v3.VBtn(
+                "{{ draw_box_active ? 'Lock Box' : 'Draw Box' }}",
+                block=True,
+                variant="outlined",
+                color=("draw_box_active ? 'orange' : 'cyan'",),
+                density="compact",
+                prepend_icon=(
+                    "draw_box_active ? 'mdi-lock-outline' : 'mdi-cube-outline'",
+                ),
+                click=ctrl.toggle_draw_box,
+                title=(
+                    "draw_box_active "
+                    "? 'Lock this box and apply as focus region' "
+                    ": 'Place an interactive box you can drag to resize'"
+                ),
+                style="margin-bottom:6px;",
+            )
+            v3.VBtn(
+                "Use Current View",
+                block=True,
+                variant="outlined",
+                color="cyan",
+                density="compact",
+                prepend_icon="mdi-crosshairs-gps",
+                click=ctrl.populate_box_from_camera,
+                style="margin-bottom:6px;",
+            )
+            v3.VBtn(
+                "Zoom",
+                block=True,
+                color="cyan",
+                density="compact",
+                click=ctrl.zoom_to_box,
+                id="btn-box-zoom",
+                style="margin-bottom:6px;",
+            )
+            v3.VBtn(
+                "Clear",
+                block=True,
+                variant="outlined",
+                color="#ef4444",
+                density="compact",
+                prepend_icon="mdi-close-circle-outline",
+                click=ctrl.clear_draw_box,
+                title="Clear box widget, zoom indicator and focus region",
+                v_show=("draw_box_active || focus_active",),
+            )
+
+    _COORDS_HEAD = (
+        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+        "color:#7FDBFF;padding:2px 0 6px;"
+    )
+
     def _tf(v_model, label, on_enter=None, target_id=None):
         """Number-input helper. Enter binds via `target_id` (the id of
         an action button to simulate-click via the global JS handler);
@@ -5922,6 +6011,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 color="transparent",
                 v_show=("nav_active_tab === 'coords'",),
             ):
+                if scene.is_lightcone:
+                    html.Div("BOX / SLICE", style=_COORDS_HEAD)
+                    _box_controls()
+                    html.Div(
+                        "SPHERE",
+                        style=_COORDS_HEAD + "margin-top:14px;",
+                    )
                 for label, key in [
                     ("X (Mpc/h)", "nav_x"),
                     ("Y (Mpc/h)", "nav_y"),
@@ -5984,74 +6080,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         v_show=("draw_sphere_active || focus_active",),
                     )
 
-            # Box
-            with v3.VSheet(
-                color="transparent",
-                v_show=("nav_active_tab === 'box'",),
-            ):
-                for label, key in [
-                    ("X min", "nav_box_xmin"),
-                    ("X max", "nav_box_xmax"),
-                    ("Y min", "nav_box_ymin"),
-                    ("Y max", "nav_box_ymax"),
-                    ("Z min", "nav_box_zmin"),
-                    ("Z max", "nav_box_zmax"),
-                ]:
-                    with v3.VSheet(color="transparent", style=_FIELD):
-                        _tf(
-                            key,
-                            label,
-                            on_enter=ctrl.zoom_to_box,
-                            target_id="btn-box-zoom",
-                        )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "{{ draw_box_active ? 'Lock Box' : 'Draw Box' }}",
-                        block=True,
-                        variant="outlined",
-                        color=("draw_box_active ? 'orange' : 'cyan'",),
-                        density="compact",
-                        prepend_icon=(
-                            "draw_box_active ? 'mdi-lock-outline' : 'mdi-cube-outline'",
-                        ),
-                        click=ctrl.toggle_draw_box,
-                        title=(
-                            "draw_box_active "
-                            "? 'Lock this box and apply as focus region' "
-                            ": 'Place an interactive box you can drag to resize'"
-                        ),
-                        style="margin-bottom:6px;",
-                    )
-                    v3.VBtn(
-                        "Use Current View",
-                        block=True,
-                        variant="outlined",
-                        color="cyan",
-                        density="compact",
-                        prepend_icon="mdi-crosshairs-gps",
-                        click=ctrl.populate_box_from_camera,
-                        style="margin-bottom:6px;",
-                    )
-                    v3.VBtn(
-                        "Zoom",
-                        block=True,
-                        color="cyan",
-                        density="compact",
-                        click=ctrl.zoom_to_box,
-                        id="btn-box-zoom",
-                        style="margin-bottom:6px;",
-                    )
-                    v3.VBtn(
-                        "Clear",
-                        block=True,
-                        variant="outlined",
-                        color="#ef4444",
-                        density="compact",
-                        prepend_icon="mdi-close-circle-outline",
-                        click=ctrl.clear_draw_box,
-                        title="Clear box widget, zoom indicator and focus region",
-                        v_show=("draw_box_active || focus_active",),
-                    )
+            # Box (a lightcone has it at the top of Coords instead)
+            if not scene.is_lightcone:
+                with v3.VSheet(
+                    color="transparent",
+                    v_show=("nav_active_tab === 'box'",),
+                ):
+                    _box_controls()
 
             # Photometry (Lightcone Mode only — replaces the Box tab). Its own
             # independent splat layer: a false-colour image built from the

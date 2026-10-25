@@ -44,12 +44,33 @@ HII_RICH_RGB = np.array([0.45, 1.00, 0.62])
 # to orange in metal-rich, gathered into complexes along the arms.  How
 # rich and how spread out each complex is comes from the galaxy (recipe
 # hii_group, hii_spread).
+# Chosen from options on SAGE26 disks (2026-10-25, "H, but less"): small
+# crisp knots in a faint nebula, every one equally sharp, dimmer than
+# before (was size 1.3, gain 0.8, one knot group, no nebula, blurred
+# splats).
 HII_LOOK = dict(
     poor=(1.00, 0.40, 0.80),
     rich=(1.00, 0.55, 0.32),
-    size=1.3,
-    gain=0.8,
+    size=0.5,
+    gain=0.55,
     conc=0.7,
+    # How a complex is built: sub-regions per complex (x the recipe's
+    # hii_group), how tightly they cluster (x hii_spread), and a faint
+    # surrounding nebula (its share of the light, and size x the knots').
+    knots=2.5,
+    spread=0.6,
+    halo=0.25,
+    halo_size=4.0,
+    # Splatted (not drawn exactly) HII regions at the exact ones' size.
+    sharp=True,
+    # Each complex's colour between poor and rich: the galaxy's own (its
+    # star-forming gas's metallicity), an abundance gradient (orange
+    # inside, pink outside; ~-0.1 dex per effective radius, Sanchez et al.
+    # 2014, A&A 563, A49: -0.067 of the colour range per disk scale
+    # length), and a scatter for each region's own abundance and
+    # reddening.  gradient = 0 and mix = 0: one colour per galaxy.
+    gradient=-0.067,
+    mix=0.18,
 )
 # Dust lanes along the arms: width of the lane profile (arm-phase units),
 # extra sharpness, contrast power, and streaks (0-1: lanes broken into
@@ -344,6 +365,7 @@ class GalaxyRecipe:
     clumps: int = 0  # giant star-forming clumps (high-z / FFB disks)
     trunc_r: float = 0.0  # gas/young-star disk cut-off radius (0 = none)
     hii_rgb: tuple = tuple(HII_RGB)
+    hii_f: float = 0.5  # its HII colour between poor (0) and rich (1)
     icl_rgb: tuple = tuple(ICL_RGB)
     icl_streams: float = 0.0  # streams feeding the ICL (0-1)
     icl_n_streams: int = 3  # how many disrupted satellites they come from
@@ -485,6 +507,7 @@ def _extras(
         out["hii_rgb"] = tuple(
             np.asarray(poor) * (1 - f) + np.asarray(rich) * f
         )
+        out["hii_f"] = f
     elif HII_LOOK["poor"] is not None:
         out["hii_rgb"] = tuple(
             0.5 * (np.asarray(HII_LOOK["poor"]) + np.asarray(HII_LOOK["rich"]))
@@ -1367,6 +1390,25 @@ class Points:
     name: str = ""
 
 
+def _hii_colours(rc, x, y, rng) -> np.ndarray:
+    """(n, 3) colours of HII complexes at (x, y) (model units = disk scale
+    lengths): between HII_LOOK's poor and rich colours by the galaxy's own
+    position (rc.hii_f), its abundance gradient and a per-region scatter
+    (HII_LOOK gradient, mix)."""
+    n = len(x)
+    poor, rich = HII_LOOK["poor"], HII_LOOK["rich"]
+    if poor is None or rich is None or n == 0:
+        return np.tile(np.asarray(rc.hii_rgb), (n, 1))
+    r = np.hypot(x, y)
+    f = (
+        rc.hii_f
+        + HII_LOOK["gradient"] * (r - 2.0)
+        + rng.normal(0.0, HII_LOOK["mix"], n)
+    )
+    f = np.clip(f, 0.0, 1.0)[:, None]
+    return np.asarray(poor) * (1 - f) + np.asarray(rich) * f
+
+
 def _sample_map(arr, half, n, rng):
     p = arr.ravel().astype(np.float64)
     p = np.clip(p, 0, None)
@@ -1421,24 +1463,44 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
             rc.n_hii,
             rng,
         )
-        hi = max(int(rc.hii_group), 1)
+        cx, cy = hx, hy  # the complexes' centres
+        # (Its own random stream: the rest of the galaxy is unchanged.)
+        crgb = _hii_colours(rc, cx, cy, np.random.default_rng(rc.seed + 77))
+        hi = max(int(round(rc.hii_group * HII_LOOK["knots"])), 1)
         k = rng.integers(max(hi // 3, 1), hi + 1, len(hx))
-        sp = rc.hii_spread
+        sp = rc.hii_spread * HII_LOOK["spread"]
         hx = np.repeat(hx, k) + rng.normal(0, sp, k.sum())
         hy = np.repeat(hy, k) + rng.normal(0, sp, k.sum())
         m = len(hx)
         lum = rng.pareto(1.5, m) + 1
         lum = np.minimum(lum, 12)
-        lum *= rc.l_young * HII_LOOK["gain"] / lum.sum()
+        halo = float(HII_LOOK["halo"])
+        lum *= rc.l_young * HII_LOOK["gain"] * (1 - halo) / lum.sum()
         out.append(
             Points(
                 np.c_[hx, hy, rng.normal(0, 0.03, m)],
                 lum,
-                np.tile(np.asarray(rc.hii_rgb), (m, 1)),
+                np.repeat(crgb, k, axis=0),
                 HII_LOOK["size"] * rng.uniform(1.0, 2.0, m),
                 "hii",
             )
         )
+        if halo > 0 and len(cx):
+            # The faint nebula each complex sits in.
+            n = len(cx)
+            hl = rng.uniform(0.5, 1.5, n)
+            hl *= rc.l_young * HII_LOOK["gain"] * halo / hl.sum()
+            out.append(
+                Points(
+                    np.c_[cx, cy, rng.normal(0, 0.03, n)],
+                    hl,
+                    crgb,
+                    HII_LOOK["size"]
+                    * HII_LOOK["halo_size"]
+                    * rng.uniform(1.0, 1.6, n),
+                    "hii",
+                )
+            )
 
         # Intermediate-age (0.1-1 Gyr) clusters, from the star-formation
         # history: white to yellow-white, spread through the disk (they
@@ -1737,7 +1799,13 @@ def tidal_points(
 
 # Jellyfish tails: brightness (x the galaxy's light) and how it splits
 # between pink H-alpha streamers and blue star-forming knots.
-JELLY = dict(gain=1.0, halpha=0.45, knots=0.55)
+# Jellyfish tails: brightness, the shares of ionised gas and of young
+# star knots, length (x), and the gas's colour: None for H-alpha red
+# (HALPHA_RGB), "hii" for the galaxy's own HII colour, or an RGB.
+# Chosen from options (2026-10-25, between "faint, own HII colour" and
+# "faint, mostly blue knots", the gas fainter): was gain 1, halpha 0.45,
+# knots 0.55, H-alpha red.
+JELLY = dict(gain=0.35, halpha=0.22, knots=0.58, length=1.0, rgb="hii")
 
 
 def jelly_points(
@@ -1759,7 +1827,7 @@ def jelly_points(
     a /= np.linalg.norm(a)
     b = np.cross(u, a)
     e = rc.extent
-    length = (1.5 + 3.5 * strength) * e
+    length = (1.5 + 3.5 * strength) * e * JELLY["length"]
     n = int(6000 + 14000 * strength)
     # Streamers start across the disk's trailing side and fan out.
     k = int(5 + 7 * strength)
@@ -1779,9 +1847,13 @@ def jelly_points(
     # Ionised gas: diffuse pink streamers.
     lum = 1.15 - t
     lum = lum * JELLY["halpha"] * total / lum.sum()
-    gas = Points(
-        pos, lum, np.tile(HALPHA_RGB, (n, 1)), np.full(n, 1.0), "jelly"
+    rgb = JELLY["rgb"]
+    rgb = (
+        HALPHA_RGB
+        if rgb is None
+        else np.asarray(rc.hii_rgb) if rgb == "hii" else np.asarray(rgb)
     )
+    gas = Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.0), "jelly")
     # Stars formed in the tail: compact blue knots along the streamers.
     m = int(200 + 900 * strength)
     w = (1.15 - t) / (1.15 - t).sum()
