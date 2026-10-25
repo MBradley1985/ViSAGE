@@ -20,10 +20,17 @@ def create_launch_app(port: int):
     _sage_static_dir = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "static"
     )
+    # Tag visage.js with its modification time, as Explore does: without
+    # it the browser keeps running a cached old copy after an update (no
+    # automatic reload, no terminal on the run page).
+    try:
+        _v = int(os.path.getmtime(os.path.join(_sage_static_dir, "visage.js")))
+    except OSError:
+        _v = 0
     server.enable_module(
         {
             "serve": {"sage_static": _sage_static_dir},
-            "scripts": ["sage_static/visage.js"],
+            "scripts": [f"sage_static/visage.js?v={_v}"],
         }
     )
 

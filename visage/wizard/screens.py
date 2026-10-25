@@ -217,12 +217,25 @@ _LIVE_NOTE = {
 }
 
 
+def _fill_version() -> int:
+    """The frames' modification time, so a browser never shows a cached
+    older drawing of them."""
+    d = Path(__file__).resolve().parent.parent / "static" / "wizard" / "fill"
+    try:
+        return int(max(f.stat().st_mtime for f in d.glob("*.webp")))
+    except ValueError:
+        return 0
+
+
+_FILL_V = _fill_version()
+
+
 def _fill_frame(mode: str, pct: float) -> str:
     if mode == "sagelightcone":
         pct = pct / 0.55  # the cone is cut by 55%; photometry follows
     step = int(min(max(pct, 0.0), 100.0) // 5 * 5)
     name = "box" if mode == "sage26" else "cone"
-    return f"/sage_static/wizard/fill/{name}_{step:03d}.webp"
+    return f"/sage_static/wizard/fill/{name}_{step:03d}.webp?v={_FILL_V}"
 
 
 def _swarm_stats(run: dict, status: str) -> list[dict]:

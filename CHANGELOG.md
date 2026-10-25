@@ -76,6 +76,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page loaded visage.js without a version tag, so
+  browsers kept running a cached old copy after an update: no automatic
+  reload when opening a model and no terminal on the run page. It's
+  tagged now (as Explore's is), and so are the box / lightcone frames.
 - Launch Mode on its own page could grow taller than the window (the
   run page's terminal fitting itself to a box that grew with it), which
   pushed the terminal and the box off the page.

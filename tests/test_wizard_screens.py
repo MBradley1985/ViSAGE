@@ -168,13 +168,17 @@ def test_physics_toggle_and_run_name(tmp_path):
 
 def test_fill_frames_follow_progress():
     static = Path(__file__).resolve().parents[1] / "visage" / "static"
-    assert _fill_frame("sage26", 0) == "/sage_static/wizard/fill/box_000.webp"
-    assert _fill_frame("sage26", 47) == "/sage_static/wizard/fill/box_045.webp"
+    assert _fill_frame("sage26", 0).startswith(
+        "/sage_static/wizard/fill/box_000.webp?v="
+    )
+    assert _fill_frame("sage26", 47).startswith(
+        "/sage_static/wizard/fill/box_045.webp?v="
+    )
     # The cone is full once it has been cut (55%), before photometry.
-    assert _fill_frame("sagelightcone", 60).endswith("cone_100.webp")
+    assert "cone_100.webp" in _fill_frame("sagelightcone", 60)
     for mode in ("sage26", "sagelightcone"):
         for pct in range(0, 101):
-            url = _fill_frame(mode, pct)
+            url = _fill_frame(mode, pct).split("?")[0]
             assert (static / url[len("/sage_static/") :]).is_file()
 
 
