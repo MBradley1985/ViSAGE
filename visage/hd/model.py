@@ -608,7 +608,10 @@ def _extras(
         )
 
     # Quasar-mode accretion this step: a bright, bluish point nucleus.
-    if g.qso_accretion > 0:
+    # (Below ~1e4 Msun a step there is nothing an observer would see:
+    # SAGE26's black holes start at zero, so a dwarf's first merger or
+    # instability "accretes" its whole, tiny new black hole at once.)
+    if g.qso_accretion >= 1e4:
         out["agn"] = float(
             0.05 * np.clip(g.qso_accretion / 1e6, 0.01, 1e3) ** 0.4
         )

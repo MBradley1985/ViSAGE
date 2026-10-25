@@ -279,7 +279,11 @@ def compute_photometry(
         if lines:
             bh_mass = get("BlackHoleMass")
             quasar_acc = get("QuasarModeBHaccretionMass")
+            # Radio-mode accretion since the last snapshot (newer SAGE26);
+            # older outputs only have its power, Heating.
+            radio_acc = get("RadioModeBHaccretionMass")
             radio_heating = get("Heating")
+            # The time step, in h^-1 Myr (SAGE26's internal time unit).
             step_myr = get("dT")
         if cf:
             h2 = get("H2gas")
@@ -727,12 +731,16 @@ def compute_photometry(
 
         zeros = np.zeros(n)
         mdot_q = np.zeros(n)
-        if quasar_acc is not None and step_myr is not None:
-            mdot_q = (
-                quasar_acc.astype(np.float64)
-                * mfac
-                / np.maximum(step_myr.astype(np.float64) * 1e6, 1.0)
+        mdot_r = None
+        if step_myr is not None:
+            # dT is in h^-1 Myr: years = dT / h * 1e6.
+            step_yr = np.maximum(
+                step_myr.astype(np.float64) / hubble_h * 1e6, 1.0
             )
+            if quasar_acc is not None:
+                mdot_q = quasar_acc.astype(np.float64) * mfac / step_yr
+            if radio_acc is not None:
+                mdot_r = radio_acc.astype(np.float64) * mfac / step_yr
         l_agn, edd = ag.luminosity(
             (
                 bh_mass.astype(np.float64) * mfac
@@ -741,6 +749,7 @@ def compute_photometry(
             ),
             mdot_q,
             radio_heating if radio_heating is not None else zeros,
+            mdot_radio=mdot_r,
         )
         n_c = ag.central_gas_density(
             cold.astype(np.float64) * mfac,
