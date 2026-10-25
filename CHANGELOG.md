@@ -72,6 +72,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   of rounds and its particles one circle each, filling as they run.
 - Setup warns when the run's name is already a model or lightcone
   (running replaces its output).
+- **SAGE26 can run under MPI:** Run on 1 process, or 2, 4, 8 ... up to
+  the machine's cores (`mpirun -np N`), offered when mpirun is there and
+  SAGE26 was built with MPI (otherwise it says why). The run page waits
+  for every process to finish.
+- The setup screen and All settings always agree, in all three tools:
+  the run's name is its output folder (SAGE26 OutputDir; LightSAGE
+  OUTDIR / OUTFILE; SAGEswarm OUTPUT_PATH), updated as you type and read
+  back when changed in All settings; switches, presets and search effort
+  follow either screen.
 - Load a previous model (home screen) lists lightcones as well as SAGE26
   models.
 - The SAGE26 picture (home card, SAGE26 screen) is the whole logo at full

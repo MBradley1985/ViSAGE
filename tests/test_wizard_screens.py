@@ -266,3 +266,47 @@ def test_terminal_output_is_never_skipped():
     c._on_pty_need(wiz_pty_need="-1:2")
     ch = c._st.wiz_pty_chunk
     assert ch["full"] and base64.b64decode(ch["d"]) == b"hello world"
+
+
+def test_run_name_and_output_settings_stay_in_step():
+    c = _ctrl()
+    c._setup_mode = "sageswarm"
+    c._st.wiz_sw_script_text = _SW_SCRIPT
+    c._st.wiz_view = "setup"
+    # Typing a name updates the output settings straight away...
+    c._on_setup_name(wiz_setup_name="calib a")
+    vals = c._cfg_values("sageswarm")
+    assert vals["OUTPUT_PATH"]["value"] == "./calib_a"
+    assert vals["CSVOUTPUT"]["value"] == "./calib_a/pso.csv"
+    # ...and the setup screen reads the name back from them.
+    c._render_setup()
+    assert c._st.wiz_setup_name == "calib_a"
+
+
+def test_sage26_mpi_command_and_completion():
+    from pathlib import Path
+
+    c = _ctrl()
+    c._mpi = {"ok": True, "max": 8, "why": "", "openmpi": True}
+    c._mpi_np = 1
+    assert c._sage26_command(Path("sage"), Path("m.par")) == [
+        Path("sage"),
+        Path("m.par"),
+    ]
+    c._mpi_np = 4
+    cmd = c._sage26_command(Path("sage"), Path("m.par"))
+    assert cmd[:3] == ["mpirun", "-np", "4"] and cmd[-2:] == [
+        Path("sage"),
+        Path("m.par"),
+    ]
+    # Every process reports done; the run is only done after the last.
+    c._st.wiz_par_text = "OutputDir output/x/\n"
+    c._run_init("sage26")
+    c._st.wiz_view = "run"
+    for k in range(3):
+        c._run_output(
+            f"ThisTask = {k} done processing all forests\r\n".encode()
+        )
+    assert c._run["pct"] < 100
+    c._run_output(b"ThisTask = 3 done processing all forests\r\n")
+    assert c._run["pct"] == 100

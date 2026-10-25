@@ -872,6 +872,7 @@ class WizardController(InstallMixin, SetupRunMixin):
         if callable(change):
             change("wiz_term_size")(self._on_term_size)
             change("wiz_pty_need")(self._on_pty_need)
+            change("wiz_setup_name")(self._on_setup_name)
 
         if auto_start:
             asyncio.ensure_future(self._step_scan())
@@ -2486,7 +2487,8 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._emit("This may take a while for large simulations.", "info")
         self._emit("", "info")
         rc = await self._run_cmd(
-            [sage_bin, self._par_path], cwd=self._sage26_dir
+            self._sage26_command(sage_bin, self._par_path),
+            cwd=self._sage26_dir,
         )
         if rc != 0:
             self._emit(

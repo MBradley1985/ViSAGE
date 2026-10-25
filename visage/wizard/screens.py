@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import os
 import re
 import time
 from collections import deque
@@ -392,6 +393,60 @@ class SetupRunMixin:
 
     # ── setup: load, render, choose ──────────────────────────────────────
 
+    # ── SAGE26 under MPI ─────────────────────────────────────────────────
+
+    def _mpi_info(self) -> dict:
+        """Whether SAGE26 can run on several processes here: mpirun found
+        (where the tools run) and the sage binary built with MPI."""
+        info = {"ok": False, "max": 1, "why": "", "openmpi": False}
+        tc = self._toolchain
+        d = self._sage26_dir
+        rc, out = tc.capture(["sh", "-c", "command -v mpirun"], d)
+        if rc != 0 or not out.strip():
+            info["why"] = "mpirun not found (install Open MPI)"
+            return info
+        binary = (
+            next(
+                (b for b in (d / "bin" / "sage", d / "sage") if b.is_file()),
+                None,
+            )
+            if d
+            else None
+        )
+        try:
+            built = binary is not None and b"MPI_Init" in binary.read_bytes()
+        except OSError:
+            built = False
+        if not built:
+            info["why"] = "SAGE26 was built without MPI (Install rebuilds it)"
+            return info
+        rc, out = tc.capture(
+            ["sh", "-c", "nproc 2>/dev/null || sysctl -n hw.ncpu"], d
+        )
+        try:
+            info["max"] = max(1, int(out.split()[0]))
+        except (ValueError, IndexError):
+            info["max"] = os.cpu_count() or 1
+        rc, out = tc.capture(["mpirun", "--version"], d)
+        info["openmpi"] = "Open MPI" in out or "OpenRTE" in out
+        info["ok"] = info["max"] > 1
+        if not info["ok"]:
+            info["why"] = "only one CPU core"
+        return info
+
+    def _sage26_command(self, sage_bin, par) -> list:
+        """The command that runs SAGE26: under mpirun with the chosen
+        number of processes, or on its own."""
+        n = int(getattr(self, "_mpi_np", 1) or 1)
+        mpi = getattr(self, "_mpi", None) or {}
+        if n > 1 and mpi.get("ok"):
+            cmd = ["mpirun", "-np", str(n)]
+            if mpi.get("openmpi"):
+                # Count hardware threads as slots, as the core count does.
+                cmd.append("--use-hwthread-cpus")
+            return [*cmd, sage_bin, par]
+        return [sage_bin, par]
+
     async def _show_setup(self, mode: str) -> None:
         """Load the tool's config (as the old editor steps did) and show
         its essentials screen."""
@@ -408,6 +463,10 @@ class SetupRunMixin:
                 )
             if self._par_path is not None:
                 self._st.wiz_par_text = self._read_text(self._par_path)
+            loop = asyncio.get_running_loop()
+            self._mpi = await loop.run_in_executor(None, self._mpi_info)
+            if not hasattr(self, "_mpi_np"):
+                self._mpi_np = 1
         elif mode == "sagelightcone":
             await self._step_lc_config()
             self._st.wiz_lc_config_show = False
@@ -430,7 +489,14 @@ class SetupRunMixin:
         groups: list[dict] = []
         note = ""
         if mode == "sage26":
-            name = self._par_path.stem if self._par_path else "my_run"
+            # The run's name is where its output goes (OutputDir), so the
+            # Name box and All settings always agree.
+            od = str(vals.get("OutputDir", {}).get("value", "")).strip()
+            name = (
+                Path(od.rstrip("/")).name
+                if od
+                else (self._par_path.stem if self._par_path else "my_run")
+            )
             sims = []
             for p in self._find_par_files():
                 from visage.wizard.controller import _parse_params
@@ -479,6 +545,40 @@ class SetupRunMixin:
             groups.append(
                 {"title": "Physics", "kind": "toggles", "items": tiles}
             )
+            mpi = getattr(self, "_mpi", None) or {}
+            if mpi.get("ok"):
+                top = mpi["max"]
+                counts = sorted(
+                    {1, top} | {2**k for k in range(1, 8) if 2**k < top}
+                )
+                procs = [
+                    {
+                        "label": (
+                            "1 process" if n == 1 else f"{n} processes (MPI)"
+                        ),
+                        "value": f"su:np:{n}",
+                        "on": n == getattr(self, "_mpi_np", 1),
+                    }
+                    for n in counts
+                ]
+                groups.append(
+                    {"title": "Run on", "kind": "chips", "items": procs}
+                )
+            elif mpi:
+                groups.append(
+                    {
+                        "title": "Run on",
+                        "kind": "chips",
+                        "static": True,
+                        "items": [
+                            {
+                                "label": f"1 process · MPI: {mpi['why']}",
+                                "value": "",
+                                "on": True,
+                            }
+                        ],
+                    }
+                )
             if not self._status.get("sage26", {}).get("ready"):
                 note = "SAGE26 isn't compiled yet: use Install first."
             run_label = "Run SAGE26"
@@ -745,6 +845,8 @@ class SetupRunMixin:
                 e for e in _SW_EFFORT if e[0] == what[len("effort:") :]
             )
             self._cfg_set(mode, {"PARTICLES": p, "ITERATIONS": n})
+        elif what.startswith("np:"):
+            self._mpi_np = int(what[len("np:") :])
         elif what == "all":
             await self._show_all_settings()
             return
@@ -796,49 +898,64 @@ class SetupRunMixin:
         self._st.wiz_view = "all"
         self._set_choices([])
 
+    def _name_values(self, mode: str, name: str) -> dict:
+        """The output settings a run name means: SAGE26 OutputDir
+        <folder>/<name>/; LightSAGE OUTDIR <folder>/<name>, OUTFILE
+        <name>.h5; SAGEswarm OUTPUT_PATH ./<name> and its CSV."""
+        vals = self._cfg_values(mode)
+        if mode == "sage26":
+            od = str(vals.get("OutputDir", {}).get("value", ""))
+            if not od:
+                return {}
+            trail = "/" if od.endswith("/") else ""
+            parent = (
+                od.rstrip("/").rsplit("/", 1)[0]
+                if "/" in od.rstrip("/")
+                else ""
+            )
+            return {
+                "OutputDir": (
+                    f"{parent}/{name}{trail}" if parent else f"{name}{trail}"
+                )
+            }
+        if mode == "sagelightcone":
+            od = str(vals.get("OUTDIR", {}).get("value", ""))
+            parent = od.rstrip("/").rsplit("/", 1)[0] if "/" in od else od
+            return {"OUTDIR": f"{parent}/{name}", "OUTFILE": f"{name}.h5"}
+        return {"OUTPUT_PATH": f"./{name}", "CSVOUTPUT": f"./{name}/pso.csv"}
+
+    def _on_setup_name(self, wiz_setup_name="", **_) -> None:
+        """Typing a run name updates the output settings at once, so All
+        settings shows them (and they show here when changed there)."""
+        mode = getattr(self, "_setup_mode", None)
+        if not mode or self._st.wiz_view != "setup":
+            return
+        name = re.sub(r"[^\w.-]+", "_", str(wiz_setup_name or "").strip())
+        if not name:
+            return
+        new = self._name_values(mode, name)
+        vals = self._cfg_values(mode)
+        if any(
+            str(vals.get(k, {}).get("value", "")) != v for k, v in new.items()
+        ):
+            self._cfg_set(mode, new)
+            self._st.flush()
+
     def _apply_setup_name(self) -> None:
-        """The run name: SAGE26 -> a .par of that name (OutputDir
-        output/<name>/, so ViSAGE pairs model and .par); LightSAGE ->
-        OUTDIR/OUTFILE; SAGEswarm -> its output folder."""
+        """At Run: the name's output settings, and for SAGE26 a .par of
+        that name (so ViSAGE pairs the model and its .par)."""
         mode = self._setup_mode
         name = re.sub(
             r"[^\w.-]+", "_", str(self._st.wiz_setup_name or "").strip()
         )
         if not name:
             return
-        vals = self._cfg_values(mode)
         if mode == "sage26" and self._par_path is not None:
             if name != self._par_path.stem:
                 self._par_path = self._par_path.with_name(f"{name}.par")
-            od = str(vals.get("OutputDir", {}).get("value", ""))
-            if od:
-                trail = "/" if od.endswith("/") else ""
-                parent = (
-                    od.rstrip("/").rsplit("/", 1)[0]
-                    if "/" in od.rstrip("/")
-                    else ""
-                )
-                self._cfg_set(
-                    mode,
-                    {
-                        "OutputDir": (
-                            f"{parent}/{name}{trail}"
-                            if parent
-                            else f"{name}{trail}"
-                        )
-                    },
-                )
-        elif mode == "sagelightcone":
-            od = str(vals.get("OUTDIR", {}).get("value", ""))
-            parent = od.rstrip("/").rsplit("/", 1)[0] if "/" in od else od
-            self._cfg_set(
-                mode, {"OUTDIR": f"{parent}/{name}", "OUTFILE": f"{name}.h5"}
-            )
-        elif mode == "sageswarm":
-            self._cfg_set(
-                mode,
-                {"OUTPUT_PATH": f"./{name}", "CSVOUTPUT": f"./{name}/pso.csv"},
-            )
+        new = self._name_values(mode, name)
+        if new:
+            self._cfg_set(mode, new)
 
     # ── run: dashboard + live view ───────────────────────────────────────
 
@@ -881,9 +998,22 @@ class SetupRunMixin:
                 vals.get("SED_ENABLED", {}).get("value", "0")
             ).strip()
             == "1",
+            # SAGE26 processes that must each report done.
+            "ntasks": (
+                int(getattr(self, "_mpi_np", 1) or 1)
+                if mode == "sage26"
+                and (getattr(self, "_mpi", None) or {}).get("ok")
+                else 1
+            ),
         }
         sub = {
-            "sage26": self._par_path.name if self._par_path else "",
+            "sage26": (self._par_path.name if self._par_path else "")
+            + (
+                f" · {self._mpi_np} MPI processes"
+                if getattr(self, "_mpi_np", 1) > 1
+                and (getattr(self, "_mpi", None) or {}).get("ok")
+                else ""
+            ),
             "sagelightcone": str(self._st.wiz_setup_name or ""),
             "sageswarm": ", ".join(self._sw_constraints(vals)),
         }[mode]
@@ -946,7 +1076,10 @@ class SetupRunMixin:
                 h, mi, s = (int(m.group(i)) for i in (2, 3, 4))
                 run["eta"] = f"{h}:{mi:02d}:{s:02d}" if h else f"{mi}:{s:02d}"
             if "done processing all forests" in line:
-                run["stage"], run["pct"] = 2, 100.0
+                # Under MPI each process says so; done when all have.
+                run["done_tasks"] = run.get("done_tasks", 0) + 1
+                if run["done_tasks"] >= run.get("ntasks", 1):
+                    run["stage"], run["pct"] = 2, 100.0
         elif mode == "sagelightcone":
             if "==> Stage 1" in line:
                 run["stage"] = 0

@@ -998,7 +998,8 @@ def _setup_view(server) -> None:
                 html.Span("{{ wiz_setup.run_label }}")
         html.Div(
             "{{ wiz_setup_name }} already exists: running replaces its "
-            "output. Give this run a new name to keep it.",
+            "output{{ wiz_setup.mode === 'sage26' ? ' (and its .par)' : '' }}. "
+            "Give this run a new name to keep it.",
             v_if=(
                 "(wiz_setup.taken || []).includes("
                 "(wiz_setup_name || '').trim().replace(/[^\\w.-]+/g, '_'))",
