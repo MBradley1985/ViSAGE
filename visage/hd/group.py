@@ -132,9 +132,12 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
 
 
 # Ram pressure: log10(rho_ICM v^2 / (Sigma_* Sigma_gas)) in the units of
-# `ram_pressure`, mapped to a 0-1 tail strength -- calibrated on Millennium
-# SAGE26 satellites in hot haloes: ~27% get a tail and ~1% a full one.
-RAM_LO = -7.8
+# `ram_pressure`, mapped to a 0-1 tail strength.  Set so a few per cent of
+# satellites in hot haloes have a tail, as observed jellyfish are a few
+# per cent of cluster galaxies (e.g. Poggianti et al. 2016, AJ 151, 78):
+# on Millennium SAGE26 at z = 0, 7% any tail, 2% a strong one (>0.5),
+# 0.7% a full one (was -7.8: 54%, 28%, 11%).
+RAM_LO = -5.5
 RAM_SPAN = 2.0
 
 

@@ -6,6 +6,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.12.0] — 2026-10-25
+
+### Changed
+
+- **HII regions** (HD): small crisp knots in a faint nebula, every one
+  as sharp close up as the brightest (no blurry blobs), and dimmer. Each
+  is coloured between pink (metal-poor) and orange (metal-rich) on its
+  own: the galaxy's gas metallicity sets which dominates, an abundance
+  gradient (Sánchez et al. 2014) makes the inner disk oranger, and each
+  region scatters about that.
+- **Jellyfish tails** (HD): far fewer (7% of satellites in hot haloes, 2%
+  strong, was 54%; observed jellyfish are a few per cent of cluster
+  galaxies), and fainter: gas in the galaxy's own HII colour (no longer
+  red) with blue star-forming knots.
+- **Lightcone Coords tab** has the box and slice controls (bounds, Draw
+  Box, Use Current View, Zoom) above the sphere, starting from the
+  cone's own extent.
+
+---
+
 ## [2.11.0] — 2026-10-25
 
 ### Added
