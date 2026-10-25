@@ -248,3 +248,21 @@ def test_clone_goes_over_the_old_copy_or_beside_the_others(tmp_path):
     assert c._clone_target("sage26") == tmp_path / "SAGE26"
     assert c._clone_target("sageswarm") == tmp_path / "SAGEswarm"
     assert c._clone_target("sagelightcone") == tmp_path / "LightSAGE"
+
+
+def test_terminal_output_is_never_skipped():
+    import base64
+
+    c = _ctrl()
+    c._push_bytes(b"hello ")
+    c._push_bytes(b"world")
+    assert c._st.wiz_pty_chunk["o"] == 6  # each piece knows its position
+    # A browser that missed output asks from where it got to...
+    c._on_pty_need(wiz_pty_need="2:1")
+    ch = c._st.wiz_pty_chunk
+    assert (ch["o"], ch["full"]) == (2, False)
+    assert base64.b64decode(ch["d"]) == b"llo world"
+    # ...and a terminal just starting (or too far behind) gets all of it.
+    c._on_pty_need(wiz_pty_need="-1:2")
+    ch = c._st.wiz_pty_chunk
+    assert ch["full"] and base64.b64decode(ch["d"]) == b"hello world"

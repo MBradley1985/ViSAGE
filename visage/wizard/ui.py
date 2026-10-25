@@ -68,6 +68,16 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
         ),
     ):
         html.Link(rel="stylesheet", href=css_url)
+        # The wizard terminal asking for output it missed (visage.js).
+        html.Input(
+            id="wiz-pty-need-relay",
+            v_model=("wiz_pty_need",),
+            type="text",
+            style=(
+                "position:fixed;left:-9999px;width:1px;height:1px;"
+                "opacity:0;pointer-events:none;"
+            ),
+        )
         # The wizard terminal's size, from visage.js ("cols,rows").
         html.Input(
             id="wiz-term-size-relay",
@@ -1187,7 +1197,7 @@ def _run_view(server) -> None:
                     "padding:'9px 14px',borderRadius:'14px',fontSize:'0.88rem',"
                     "border: st.state === 'now' ? '2px solid ' + wiz_run.accent "
                     ": (st.state === 'failed' ? '2px solid #ef4444' "
-                    ": '1px solid #1e293b'),"
+                    ": '2px solid #1e293b'),"
                     "background: st.state === 'now' ? wiz_run.accent + '1a' "
                     ": '#0b1120',"
                     "color: st.state === 'next' ? '#64748b' : '#e2e8f0'}",

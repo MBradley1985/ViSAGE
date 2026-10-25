@@ -756,10 +756,11 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._sage26_dir: Path | None = None
         self._par_path: Path | None = None
         self._models: list[dict] = []
-        self._wiz_seq: int = 0
-        self._wiz_buf: bytearray = (
-            bytearray()
-        )  # replay buffer for late-mounting xterm
+        # Terminal output: every byte has a position in the stream
+        # (_wiz_total counts them); _wiz_buf keeps the latest of them, so a
+        # browser that missed some, or a terminal starting late, catches up.
+        self._wiz_total: int = 0
+        self._wiz_buf: bytearray = bytearray()
         self._back: str = (
             "back_sage26_menu"  # Back target for par/compile steps
         )
@@ -815,9 +816,13 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._st.wiz_filename_show = False
         self._st.wiz_filename = "millennium"
         self._st.wiz_kind_colors = _KIND_COLORS
-        self._st.wiz_pty_data = ""  # base64 PTY chunk → xterm.js
-        self._st.wiz_pty_seq = 0  # monotonically increasing
-        self._st.wiz_pty_buf = ""  # base64 full replay buffer
+        # The latest output for the browser's terminal: its position in
+        # the stream ("o") and its bytes ("d", base64); "full" when it is
+        # the whole kept history (the terminal starts again from it).
+        self._st.wiz_pty_chunk = {"o": 0, "d": "", "full": False}
+        # The browser asks for output from a position ("offset:nonce"; -1 =
+        # everything kept) when it has missed some.
+        self._st.wiz_pty_need = ""
         self._st.wiz_clone_dir_show = False
         self._st.wiz_clone_dir = str(Path.home())
         # SAGEswarm config (run_pso.sh editor) + live plot gallery
@@ -850,6 +855,7 @@ class WizardController(InstallMixin, SetupRunMixin):
         change = getattr(server.state, "change", None)
         if callable(change):
             change("wiz_term_size")(self._on_term_size)
+            change("wiz_pty_need")(self._on_pty_need)
 
         if auto_start:
             asyncio.ensure_future(self._step_scan())
@@ -884,7 +890,6 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._st.wiz_par_text = ""
         self._st.wiz_filename_show = False
         self._st.wiz_filename = "millennium"
-        self._st.wiz_pty_buf = ""
         self._st.wiz_clone_dir_show = False
         self._st.wiz_clone_dir = str(Path.home())
         self._st.wiz_sw_config_show = False
@@ -955,19 +960,46 @@ class WizardController(InstallMixin, SetupRunMixin):
     _WIZ_BUF_CAP = 512 * 1024  # 512 KB replay buffer cap
 
     def _push_bytes(self, data: bytes) -> None:
-        """Push raw bytes to the wizard xterm.js terminal.
-
-        Maintains a rolling replay buffer (wiz_pty_buf) so a late-mounting
-        xterm can reconstruct the full session history on first paint.
-        """
+        """Send output to the wizard terminal, tagged with its position in
+        the stream so the browser can tell when it has missed some (and
+        ask for it: _on_pty_need). Programs that redraw in place (SAGE26's
+        banner and progress bar) scramble if any bytes are skipped."""
+        start = self._wiz_total
         self._wiz_buf.extend(data)
+        self._wiz_total += len(data)
         if len(self._wiz_buf) > self._WIZ_BUF_CAP:
-            # Keep the most recent half so the display stays coherent.
+            # Keep the most recent half.
             self._wiz_buf = self._wiz_buf[len(self._wiz_buf) // 2 :]
-        self._wiz_seq = (self._wiz_seq + 1) % 10**9
-        self._st.wiz_pty_data = _b64.b64encode(data).decode()
-        self._st.wiz_pty_seq = self._wiz_seq
-        self._st.wiz_pty_buf = _b64.b64encode(bytes(self._wiz_buf)).decode()
+        self._st.wiz_pty_chunk = {
+            "o": start,
+            "d": _b64.b64encode(data).decode(),
+            "full": False,
+        }
+        self._st.flush()
+
+    def _on_pty_need(self, wiz_pty_need="", **_) -> None:
+        """The browser missed output (or its terminal just started): send
+        everything from the position it asks for, or all that's kept."""
+        try:
+            want = int(str(wiz_pty_need).split(":", 1)[0])
+        except ValueError:
+            return
+        start = self._wiz_total - len(self._wiz_buf)
+        if start <= want <= self._wiz_total:
+            chunk = {
+                "o": want,
+                "d": _b64.b64encode(
+                    bytes(self._wiz_buf[want - start :])
+                ).decode(),
+                "full": False,
+            }
+        else:
+            chunk = {
+                "o": start,
+                "d": _b64.b64encode(bytes(self._wiz_buf)).decode(),
+                "full": True,
+            }
+        self._st.wiz_pty_chunk = chunk
         self._st.flush()
 
     def _emit(self, text: str, kind: str = "info") -> None:

@@ -43,6 +43,9 @@ def create_launch_app(port: int):
             "scripts": [
                 "https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js",
                 "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js",
+                # Canvas renderer: block characters (SAGE26's banner) fill
+                # their cells, as in a normal terminal.
+                "https://cdn.jsdelivr.net/npm/xterm-addon-canvas@0.5.0/lib/xterm-addon-canvas.js",
             ],
         }
     )

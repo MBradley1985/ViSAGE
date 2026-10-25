@@ -46,7 +46,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   its banner and progress bar in place, up to 138 columns wide; a
   wrapped line made the frames pile up in narrower windows): its font
   shrinks to fit, and in a box too narrow even then long lines are cut
-  off at the edge instead of wrapping. When it
+  off at the edge instead of wrapping. Its size doesn't change while a
+  command runs; it draws block characters edge to edge (canvas
+  renderer), so SAGE26's banner reads as in a normal terminal; and its
+  output is delivered without loss (each piece carries its position, and
+  a browser that falls behind asks for what it missed) instead of
+  resending the whole history with every piece. When it
   finishes: Open in Explore / Open in Lightcone view.
 - Every Launch Mode page past the home screen is centred, with black
   space around it and no outline, sized to the window (no scrolling),
