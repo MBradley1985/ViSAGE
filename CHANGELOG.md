@@ -42,8 +42,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   observer, in step with the run (frames drawn once from a Millennium
   run and the microUchuu lightcone), or SAGEswarm's newest plot of each
   constraint, sized to share the space. The terminal runs commands at
-  its own width (its font shrinks to fit ~100 columns, so SAGE26's
-  in-place banner and progress bar never wrap). When it
+  its own width, and is never narrower than 140 columns (SAGE26 redraws
+  its banner and progress bar in place, up to 138 columns wide; a
+  wrapped line made the frames pile up in narrower windows): its font
+  shrinks to fit, and in a box too narrow even then long lines are cut
+  off at the edge instead of wrapping. When it
   finishes: Open in Explore / Open in Lightcone view.
 - Every Launch Mode page past the home screen is centred, with black
   space around it and no outline, sized to the window (no scrolling),

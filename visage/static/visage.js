@@ -599,12 +599,27 @@
     var _wizRO = null;
 
     // SAGE26 redraws its banner and progress bar in place (cursor up 7
-    // lines), so a line that wraps scrambles it; its widest is 85 columns.
-    // Shrink the font (to 9px at least) until ~100 columns fit the box.
+    // lines), and those lines are up to 138 columns wide: if they wrap,
+    // the redraw lands on the wrong rows and frames pile up. So the
+    // terminal is never narrower than WIZ_MIN_COLS: the font shrinks (to
+    // 9px at least) to fit that many, and in a box too narrow even then
+    // the ends of long lines are cut off at the edge instead of wrapping.
+    var WIZ_MIN_COLS = 140;
     function _wizFontFor(box) {
       var w = box ? box.clientWidth : 0;
       if (!w) return 12;
-      return Math.max(9, Math.min(12, Math.floor(w / (100 * 0.6))));
+      return Math.max(9, Math.min(12, Math.floor(w / (WIZ_MIN_COLS * 0.6))));
+    }
+    function _wizFitMin() {
+      if (!_wizFit || !_wizTerm) return;
+      try {
+        var d = _wizFit.proposeDimensions();
+        if (!d || !d.cols || !d.rows) return;
+        var cols = Math.max(d.cols, WIZ_MIN_COLS);
+        if (cols !== _wizTerm.cols || d.rows !== _wizTerm.rows) {
+          _wizTerm.resize(cols, d.rows);
+        }
+      } catch (e) {}
     }
     function _wizSetFont() {
       if (!_wizTerm || !_wizTerm.element) return;
@@ -628,7 +643,7 @@
     function _wizFitSoon() {
       requestAnimationFrame(function () {
         _wizSetFont();
-        if (_wizFit) { try { _wizFit.fit(); } catch (e) {} }
+        _wizFitMin();
         _sendWizSize();
       });
     }
@@ -689,7 +704,7 @@
       // fit() to the next paint so xterm has measured its font metrics.
       function _doFit() {
         _wizSetFont();
-        if (_wizFit) { try { _wizFit.fit(); } catch (e) {} }
+        _wizFitMin();
         _sendWizSize();
       }
       requestAnimationFrame(function () {
