@@ -46,7 +46,7 @@ Show / hide (filters):
 
 Navigation:
   go to halo N
-  go to galaxy N
+  go to galaxy N            (N = GalaxyIndex)
   snap N  /  snapshot N
   redshift X  /  z X
   centre camera  /  reset camera
@@ -183,8 +183,13 @@ def _h_goto_halo(m, ctx) -> str:
 
 
 def _h_goto_galaxy(m, ctx) -> str:
+    """`go to galaxy N`: N is SAGE's GalaxyIndex."""
     n = int(m.group("idx"))
-    ctx.state.nav_gal_idx = n
+    find = getattr(ctx.ctrl, "galaxy_row_for_id", None)
+    row = find(n) if find is not None else n
+    if row is None:
+        return f"No galaxy with GalaxyIndex {n} in this snapshot."
+    ctx.state.nav_gal_idx = int(row)
     ctx.state.flush()
     ctx.ctrl.go_to_galaxy_enter()
     return f"Flying to galaxy {n}."
@@ -384,10 +389,20 @@ def _h_list_models(_m, ctx) -> str:
 
 
 def _h_whats_selected(_m, ctx) -> str:
+    gal = "none"
+    if ctx.state.nav_gal_idx is not None:
+        try:
+            from visage.utils.group_info import galaxy_label
+
+            model = ctx.scene.active_model
+            _, g = model.loader.get(model.current_snap)
+            gal = galaxy_label(g, int(ctx.state.nav_gal_idx))
+        except Exception:
+            gal = "?"
     parts = [
         f"snap          = {ctx.scene.current_snap}",
         f"primary model = {ctx.scene.primary_name}",
-        f"nav_gal_idx   = {ctx.state.nav_gal_idx}",
+        f"GalaxyIndex   = {gal}",
         f"nav_halo_idx  = {ctx.state.nav_halo_idx}",
         f"focus_active  = {bool(ctx.state.focus_active)}",
         f"is_playing    = {bool(ctx.state.is_playing)}",

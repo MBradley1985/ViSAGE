@@ -793,10 +793,6 @@ def _pick_view(server) -> None:
                 "Opening {{ wiz_loading }} ...",
                 style="font-size:1.6rem;font-weight:700;",
             )
-            html.Div(
-                "ViSAGE is restarting with it; the page reloads when it's ready.",
-                style="color:#94a3b8;",
-            )
 
 
 # Every page past the home screen: centred, with black space around it

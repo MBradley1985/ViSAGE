@@ -40,6 +40,7 @@ class Scene:
         max_galaxies: int | None = None,
         cache_bytes: int | None = None,
         lightcone_path: str | Path | None = None,
+        min_particles: int | None = None,
     ) -> None:
         self._plotter = pv.Plotter(
             off_screen=off_screen, window_size=[1600, 900]
@@ -66,6 +67,7 @@ class Scene:
             max_halos=max_halos,
             max_galaxies=max_galaxies,
             cache_bytes=cache_bytes,
+            min_particles=min_particles,
         )
 
         self._models: dict[str, Model] = {}

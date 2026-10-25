@@ -179,8 +179,9 @@ ssh -L 8080:localhost:8080 user@cluster
 --perf                  Print frame timing (fps, render/encode ms, KB/frame)
                         every few seconds while the view moves
 --max-halos N           Downsample ceiling per snapshot
---min-halo-mass MSUN    Minimum halo mass to load
---min-stellar-mass MSUN Minimum stellar mass to load
+--min-particles N       Resolved haloes have N particles (default 20): sets the mass cuts
+--min-halo-mass MSUN    A fixed minimum halo mass instead
+--min-stellar-mass MSUN A fixed minimum stellar mass instead
 ```
 
 ViSAGE sizes itself to the machine. At startup it prints what it found,

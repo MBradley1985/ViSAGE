@@ -176,6 +176,28 @@ _SW_SECTIONS = [
 ]
 
 
+def _resolution_group(kind: str) -> dict:
+    """Setup chips: how many particles a halo needs to count as resolved
+    in the viewer (sets its halo and stellar-mass cuts per snapshot;
+    visage.utils.resolution)."""
+    from visage.utils import resolution
+
+    cur = resolution.particles(kind)
+    return {
+        "title": "Resolved haloes (sets the viewer's mass cuts)",
+        "kind": "chips",
+        "items": [
+            {
+                "label": f"{n} particles"
+                + (" (default)" if n == resolution.DEFAULT_PARTICLES else ""),
+                "value": f"su:res:{n}",
+                "on": n == cur,
+            }
+            for n in resolution.CHOICES
+        ],
+    }
+
+
 def _readable(line: str) -> bool:
     """A log line worth showing: words, not progress bars or ASCII art."""
     text = line.strip()
@@ -579,6 +601,7 @@ class SetupRunMixin:
                         ],
                     }
                 )
+            groups.append(_resolution_group("box"))
             if not self._status.get("sage26", {}).get("ready"):
                 note = "SAGE26 isn't compiled yet: use Install first."
             run_label = "Run SAGE26"
@@ -677,6 +700,7 @@ class SetupRunMixin:
             groups.append(
                 {"title": "Light", "kind": "toggles", "items": tiles}
             )
+            groups.append(_resolution_group("cone"))
             run_label = "Build lightcone"
         else:
             name = Path(
@@ -847,6 +871,13 @@ class SetupRunMixin:
             self._cfg_set(mode, {"PARTICLES": p, "ITERATIONS": n})
         elif what.startswith("np:"):
             self._mpi_np = int(what[len("np:") :])
+        elif what.startswith("res:"):
+            from visage.utils import resolution
+
+            resolution.set_particles(
+                "box" if mode == "sage26" else "cone",
+                int(what[len("res:") :]),
+            )
         elif what == "all":
             await self._show_all_settings()
             return

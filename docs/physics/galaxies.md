@@ -28,7 +28,7 @@ In `type` colour mode, centrals are shown in Blues and satellites in Reds.
 
 ## Mass floor
 
-The default stellar mass floor is `1e8 Msun`. Galaxies with `Mvir = 0` are also excluded (they have no associated halo). Adjust with `--min-stellar-mass`.
+The stellar mass floor follows the simulation's resolution: per snapshot, the stellar mass from which 90% of central galaxies live in haloes of at least 20 particles (or 50 or 100: **Resolved haloes** on the setup screens, or `--min-particles`). Galaxies with `Mvir = 0` are also excluded (they have no associated halo). A fixed floor can be set with `--min-stellar-mass`.
 
 ## SAGE26 output format reference
 

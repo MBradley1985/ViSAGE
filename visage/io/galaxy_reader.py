@@ -97,6 +97,44 @@ class GalaxySnapshot:
     # Where the snapshot came from, and whether it has SFH arrays.
     source_path: str = ""
     has_sfh: bool = False
+    # ── Lightcones: each galaxy is from its own snapshot ────────────────
+    # (N,) source snapshot and cosmological redshift per galaxy; None in a
+    # box, where every galaxy is at `snap_num`.
+    snap_nums: np.ndarray | None = None
+    redshifts: np.ndarray | None = None
+    # The cone's PhotometryHeader (how its synthetic photometry was made;
+    # empty without photometry).
+    photometry: dict = field(default_factory=dict)
+
+    def sed_dust(self) -> tuple[str | None, float]:
+        """The dust in this catalogue's synthetic photometry: ("charlot_fall",
+        0) for each galaxy's own (TauV_ISM, CosInclination), ("calzetti",
+        tau_V) for one screen for all, ("none", 0), or (None, 0) without
+        photometry."""
+        desc = str(self.photometry.get("Dust", "")) if self.photometry else ""
+        if not self.photometry:
+            return None, 0.0
+        low = desc.lower()
+        if low.startswith("charlot"):
+            return "charlot_fall", 0.0
+        if low.startswith("calzetti"):
+            import re
+
+            m = re.search(r"tau_v\s*=\s*([0-9.eE+-]+)", desc, re.I)
+            return "calzetti", float(m.group(1)) if m else 0.0
+        if low == "none":
+            return "none", 0.0
+        return None, 0.0
+
+    @property
+    def is_cone(self) -> bool:
+        return self.snap_nums is not None
+
+    def snap_of(self, i: int) -> int:
+        """The snapshot galaxy `i` is from."""
+        if self.snap_nums is not None:
+            return int(self.snap_nums[i])
+        return int(self.snap_num)
 
     @property
     def count(self) -> int:
@@ -300,6 +338,8 @@ def load_galaxy_snapshot(
     scale_factors: np.ndarray | None = None,
     omega_m: float | None = None,
     omega_l: float | None = None,
+    min_particles: int | None = None,
+    particle_mass: float | None = None,
 ) -> GalaxySnapshot:
     # Prefer the cosmology + scale factors that are written into the HDF5
     # header.  Arguments are now overrides / fallbacks only.
@@ -322,6 +362,10 @@ def load_galaxy_snapshot(
                       other rank files model_1.hdf5 … are read with it)
     snap_num:         snapshot index
     min_stellar_mass: minimum stellar mass in Msun (after h correction)
+    min_particles:    with `particle_mass` (10^10 Msun/h), cut instead at
+                      the stellar mass where this snapshot's haloes are
+                      resolved with that many particles
+                      (visage.utils.resolution)
     max_galaxies:     random downsample if more galaxies than this are found
     hubble_h:         Hubble parameter h (from par file)
     """
@@ -468,6 +512,21 @@ def load_galaxy_snapshot(
     sfr_bulge_z = sfr_bulge_z_raw.astype(np.float32)  # dimensionless
     sfr_disk_z = sfr_disk_z_raw.astype(np.float32)  # dimensionless
 
+    if min_particles and particle_mass:
+        from visage.utils.resolution import resolved_stellar_mass
+
+        cut = resolved_stellar_mass(
+            stellar_mass,
+            mvir_raw / particle_mass,
+            gal_type == 0,
+            min_particles,
+        )
+        min_stellar_mass = cut if cut is not None else 0.0
+        if VERBOSE:
+            print(
+                f"  Galaxies: resolved (haloes >= {min_particles} particles)"
+                f" from M* = {min_stellar_mass:.2e} Msun"
+            )
     mask = (stellar_mass > min_stellar_mass) & (mvir_raw > 0)
     indices = np.where(mask)[0]
 
@@ -648,6 +707,47 @@ def sfh_bins_for(
     res = np.empty_like(out)
     res[order] = out
     return res
+
+
+def lightcone_sfh_bins(
+    path: str | Path,
+    raw_rows,
+    snap_nums,
+    scale_factors: np.ndarray,
+    hubble_h: float,
+    omega_m: float,
+) -> np.ndarray | None:
+    """SFH_AGE_EDGES bins for a few rows of a lightcone file, each dated
+    from its own snapshot; None without SFH arrays."""
+    from visage.io.lightcone_reader import _open_ro
+
+    rows = np.atleast_1d(np.asarray(raw_rows, np.int64))
+    snaps = np.atleast_1d(np.asarray(snap_nums, np.int64))
+    with _open_ro(Path(path)) as f:
+        disk, bulge = find_sfh_datasets(f)
+        if disk is None or bulge is None:
+            return None
+        d = np.stack([np.asarray(f[disk][int(r), :]) for r in rows])
+        b = np.stack([np.asarray(f[bulge][int(r), :]) for r in rows])
+    a = np.asarray(scale_factors, float)
+    out = None
+    for k, sn in enumerate(snaps):
+        one = _sfh_age_bins(
+            d[k : k + 1],
+            b[k : k + 1],
+            np.arange(1),
+            int(sn),
+            a,
+            hubble_h,
+            omega_m,
+            1.0 - omega_m,
+        )
+        if one is None:
+            return None
+        if out is None:
+            out = np.zeros((len(rows),) + one.shape[1:], np.float32)
+        out[k] = one[0]
+    return out
 
 
 def _compute_mean_ages(

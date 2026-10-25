@@ -381,12 +381,12 @@ def test_hd_draws_the_whole_group(hd_panel):
 def test_group_plan_tiers():
     from visage.hd.group import N_FULL, N_GROUP, N_HD, N_TOP, plan
 
-    gals = [_disk()] * 60
+    gals = [_disk()] * (N_HD + 50)
     q = plan(gals)
     assert q[:N_TOP] == ["full"] * N_TOP
     assert set(q[N_TOP:N_GROUP]) == {"group"}
     assert set(q[N_GROUP:N_HD]) == {"lite"}
-    assert q[N_HD:] == [None] * (60 - N_HD)
+    assert q[N_HD:] == [None] * 50
     assert plan(gals[:N_FULL]) == ["full"] * N_FULL
 
 

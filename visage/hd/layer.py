@@ -66,6 +66,81 @@ def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
     return float(np.clip(r, 1.0, MAX_MAGNIFY))
 
 
+# HD's colour scale against observed-frame photometry: integrated HD
+# colour ln(I/V) = a + gamma ln(f_i / f_r) and ln(B/V) = a + gamma
+# ln(f_g / f_r), fitted over 300 random microUchuu lightcone galaxies
+# (scripts/lightsage/hd_colour_scale.py).  A galaxy with photometry is
+# given the colour its own magnitudes put it at on this scale.
+SED_COLOUR = {"I": (-0.035, 0.610), "B": (0.466, 0.862)}
+
+
+def observer_rotation(los, spin, seed) -> np.ndarray:
+    """Galaxy frame -> observer frame (x right, y up, z toward the
+    observer, who is along `los` from the galaxy)."""
+    B = galaxy_basis(spin, seed)
+    z = np.asarray(los, float)
+    z = z / np.linalg.norm(z)
+    x = np.cross([0.0, 0.0, 1.0], z)
+    if np.linalg.norm(x) < 1e-6:
+        x = np.cross([0.0, 1.0, 0.0], z)
+    x /= np.linalg.norm(x)
+    return np.vstack([x, np.cross(z, x), z]) @ B
+
+
+# HD's point layers that are line emission or the AGN, not starlight.
+EMISSION_LAYERS = ("hii", "ring_hii", "halpha", "jelly", "jellyknots", "agn")
+
+
+def _on_stellar_locus(x: float, y: float) -> np.ndarray:
+    """(ln I/V, ln B/V) moved onto the line stellar light spans in HD's
+    palette, from its young stars to its old bulge.  Broadband colours of
+    strongly star-forming galaxies carry emission lines (H-alpha in r,
+    [OIII] and H-beta in g at these redshifts) that push them off it; HD
+    draws that light as its HII regions, so a uniform tint for it would
+    count it twice and give colours no stars have (violet)."""
+    from visage.hd.model import BULGE_RGB, YOUNG_RGB
+
+    p0 = np.log([YOUNG_RGB[0] / YOUNG_RGB[1], YOUNG_RGB[2] / YOUNG_RGB[1]])
+    p1 = np.log([BULGE_RGB[0] / BULGE_RGB[1], BULGE_RGB[2] / BULGE_RGB[1]])
+    d = p1 - p0
+    t = float(np.clip(np.dot(np.array([x, y]) - p0, d) / np.dot(d, d), 0, 1))
+    return p0 + t * d
+
+
+def photometry_gain(rc, maps, pts, gal, spin, threads=1) -> tuple:
+    """Per-channel gain matching the galaxy's integrated colour, seen
+    from the observer with its photometry's dust, to its observed
+    magnitudes on HD's colour scale (SED_COLOUR); brightness unchanged."""
+    if not gal.sed_ratio or not gal.los:
+        return (1.0, 1.0, 1.0)
+    from visage.hd.raymarch import render
+
+    R = observer_rotation(gal.los, spin, rc.seed)
+    lay = render(rc, maps, pts, R=R, npix=96, threads=threads)
+    # Starlight only: emission-line regions and the AGN are off the
+    # stellar colour line (as the target is put on it, below).
+    tot = lay.total.reshape(-1, 3).sum(axis=0)
+    for name in EMISSION_LAYERS:
+        if name in lay.points:
+            tot = tot - lay.points[name].reshape(-1, 3).sum(axis=0)
+    r, g, b = (float(v) for v in tot)
+    if min(r, g, b) <= 0:
+        return (1.0, 1.0, 1.0)
+    f_i, f_b = gal.sed_ratio
+    if not (np.isfinite(f_i) and np.isfinite(f_b) and f_i > 0 and f_b > 0):
+        return (1.0, 1.0, 1.0)
+    a_i, k_i = SED_COLOUR["I"]
+    a_b, k_b = SED_COLOUR["B"]
+    want = _on_stellar_locus(a_i + k_i * np.log(f_i), a_b + k_b * np.log(f_b))
+    gain = np.array(
+        [np.exp(want[0]) / (r / g), 1.0, np.exp(want[1]) / (b / g)]
+    )
+    gain /= (gain * (r, g, b)).sum() / (r + g + b)
+    if not np.all(np.isfinite(gain)):
+        return (1.0, 1.0, 1.0)
+    return tuple(float(v) for v in gain)
+
+
 # Texture resolutions per build quality.
 # A jellyfish's own CGM streams fade with its ram pressure: by up to
 # CGM_STRIP of their strength at full ram pressure (the user found 1.0 too
@@ -205,6 +280,20 @@ class HDGalaxyLayer:
                         sense,
                     )
                 )
+        if gal.sed_ratio and gal.los:
+            import dataclasses
+
+            rc = dataclasses.replace(
+                rc,
+                col_gain=photometry_gain(
+                    rc,
+                    maps,
+                    pts,
+                    gal,
+                    ctx.get("spin"),
+                    threads=8 if quality == "full" else 1,
+                ),
+            )
         return {
             "gal": gal,
             "rc": rc,

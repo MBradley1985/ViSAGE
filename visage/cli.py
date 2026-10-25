@@ -67,18 +67,32 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--min-particles",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Resolved haloes have at least N particles: haloes are cut at "
+            "N particle masses and galaxies at the stellar mass where "
+            "their haloes are resolved, per snapshot (default: the setup "
+            "screens' choice, 20)"
+        ),
+    )
+    p.add_argument(
         "--min-halo-mass",
         type=float,
-        default=1.0e10,
+        default=None,
         metavar="MSUN",
-        help="Minimum halo mass in Msun (default: 1e10)",
+        help="Fixed minimum halo mass in Msun, instead of --min-particles",
     )
     p.add_argument(
         "--min-stellar-mass",
         type=float,
-        default=1.0e8,
+        default=None,
         metavar="MSUN",
-        help="Minimum stellar mass in Msun (default: 1e8)",
+        help=(
+            "Fixed minimum stellar mass in Msun, instead of --min-particles"
+        ),
     )
     p.add_argument(
         "--cache-gb",
@@ -227,6 +241,28 @@ def _print_system(args) -> None:
         print(f"GPU      : {note}")
 
 
+def _mass_cuts(args, kind: str) -> dict:
+    """The loaders' cuts: by resolution (particles) unless fixed masses
+    are given."""
+    from visage.utils import resolution
+
+    fixed = args.min_stellar_mass is not None or args.min_halo_mass is not None
+    n = args.min_particles
+    if n is None and not fixed:
+        n = resolution.particles(kind)
+    return dict(
+        min_particles=n,
+        min_halo_mass=(
+            args.min_halo_mass if args.min_halo_mass is not None else 1.0e10
+        ),
+        min_stellar_mass=(
+            args.min_stellar_mass
+            if args.min_stellar_mass is not None
+            else (0.0 if n else 1.0e8)
+        ),
+    )
+
+
 def _explore_mode(args) -> None:
     par_path = Path(args.par)
     if not par_path.exists():
@@ -248,8 +284,7 @@ def _explore_mode(args) -> None:
         par_dir=args.par_dir,
         initial_snap=args.snap,
         n_jobs=args.n_jobs,
-        min_halo_mass=args.min_halo_mass,
-        min_stellar_mass=args.min_stellar_mass,
+        **_mass_cuts(args, "box"),
         max_halos=args.max_halos,
         cache_gb=args.cache_gb,
         port=args.port,
@@ -285,8 +320,7 @@ def _lightcone_mode(args) -> None:
         par_path="",
         initial_snap=args.snap,
         n_jobs=args.n_jobs,
-        min_halo_mass=args.min_halo_mass,
-        min_stellar_mass=args.min_stellar_mass,
+        **_mass_cuts(args, "cone"),
         max_halos=args.max_halos,
         cache_gb=args.cache_gb,
         port=args.port,

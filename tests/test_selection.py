@@ -53,7 +53,7 @@ def test_selecting_a_galaxy_fills_the_card_and_marks_it(panel):
     ctrl = server.controller
     ctrl.sel_toggle_card()
     assert state.sel_show
-    assert state.sel_title == "Galaxy 6"
+    assert state.sel_title == "Galaxy row 6"
     assert "satellite" in state.sel_sub
     # Group list: central first, the selected one flagged.
     assert state.sel_members[0]["idx"] == 4
@@ -76,7 +76,7 @@ def test_typing_a_halo_selects_its_central(panel):
     state.flush()
     state.nav_halo_idx = 5
     state.flush()  # a halo with no galaxy on it: selection stays
-    assert state.sel_title == "Galaxy 1"
+    assert state.sel_title == "Galaxy row 1"
     halos, galaxies = scene.active_model.loader.get(scene.current_snap)
     halos.positions[7] = galaxies.positions[3]
     state.nav_halo_idx = 7
@@ -176,7 +176,7 @@ def test_isolate_follows_the_galaxy_or_halo_context(panel):
     # A galaxy picked: galaxy context, isolate keeps just it.
     state.nav_gal_idx = 6
     state.flush()
-    assert state.sel_kind == "galaxy" and state.sel_title == "Galaxy 6"
+    assert state.sel_kind == "galaxy" and state.sel_title == "Galaxy row 6"
     ctrl.toggle_isolate()
     state.flush()
     assert list(np.flatnonzero(gl._focus_mask)) == [6]
@@ -313,7 +313,7 @@ def test_the_selection_holds_during_playback(panel):
     state.flush()
     state.snap_num = 62  # scene.current_snap stays 63
     state.flush()
-    assert _props(state)["GalaxyIndex"] == "1004"
+    assert state.sel_title == "Galaxy 1004"
 
 
 def test_nothing_acts_on_a_galaxy_that_isnt_there(panel):

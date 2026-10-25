@@ -6,6 +6,62 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.11.0] — 2026-10-25
+
+### Added
+
+- **HD in Lightcone Mode, as an observer sees it:** each galaxy at its own
+  redshift, with its star-formation history and spin, framed along the
+  line of sight from the cone's apex (the inclination its photometry
+  used); dimmed and reddened by its photometry's own dust (Charlot & Fall
+  optical depth and curve), and its overall colour matched to its observed
+  g, r, i magnitudes. Works with any photometry: none, without dust, one
+  dust screen, or each galaxy's own dust.
+- **HD mock:** a survey image of the selected galaxy from its HD model
+  (card button; "HD galaxies" for the Photometry tab's mock image): the
+  galaxy and other resolved galaxies in the field from their HD models,
+  scaled to their magnitudes, with the survey's pixels, seeing and noise.
+- **The card in a lightcone:** redshift, distance, apparent and absolute r,
+  rest g − r and A_V; All properties adds sky position, dust, emission-line
+  fluxes, AGN and dust luminosities and every magnitude.
+- **Group section on the card** (Halo + group): halo mass and radius,
+  members, velocity dispersion, stellar-mass and magnitude gaps (fossil
+  groups), quenched share, intracluster light and hot gas. Every member
+  is listed (scroll).
+- **Resolved haloes** setting on the SAGE26 and LightSAGE setup screens
+  (and `--min-particles`): the halo and stellar mass cuts follow the
+  simulation's particle mass, per snapshot (per shell in a lightcone).
+
+### Changed
+
+- **Group names by halo mass:** Cluster from 10¹⁴ M☉, Group from 10¹³ M☉;
+  below that Small group / Pair / Isolated by members of at least
+  10⁹ M☉.
+- **HD draws up to 100 members** of a group or cluster as models (was 40);
+  the rest are glows, and Go on one builds it as an extra.
+- **The HD build card's bar moves** with the build (each model, jellyfish
+  tails, then the GPU), including builds already running in the
+  background.
+- **Galaxies are named by SAGE's GalaxyIndex** everywhere (card, members,
+  Find, Console); `go to galaxy N` and typed numbers take a GalaxyIndex.
+- The "Opening …" page no longer says ViSAGE is restarting.
+
+### Fixed
+
+- Lightcone HD drew every galaxy at the first snapshot's redshift, in a
+  random orientation, without its star-formation history.
+- Lightcones whose snapshot list file isn't found dated every snapshot
+  before the cone at the cone's redshift (now from the redshifts in the
+  cone's header); lightcone halo masses used h = 0.73 whatever the
+  simulation's; Omega_m now from the header.
+- FOF groups in a lightcone gathered the copies of a group from every box
+  tile (and both sides of a snapshot shell); moving the redshift slider
+  could jump the selection to another copy.
+- Re-running photometry with another dust setting left HD and the card
+  using the old dust columns.
+
+---
+
 ## [2.10.0] — 2026-10-25
 
 ### Added

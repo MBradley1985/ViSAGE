@@ -36,7 +36,29 @@ In **Halo + group** context, HD draws every member of the FOF group at its own p
 
 In **Galaxy** context HD draws the selected galaxy alone, at its true size and its own exposure. Its group still shapes it: a satellite keeps its jellyfish tail, and a close companion still raises tidal features, though the companion isn't drawn.
 
+A big group or cluster has its 100 most massive members drawn as models (the 4 most massive in full detail) and the rest as soft glows. **Go** on a glow (from the card's member list, a double-click or the browsing keys) builds that galaxy on its own and adds it to the scene. The galaxy you selected is always a model. The card tags each member **HD**, **glow** or **HD extra**.
+
 Inside HD, double-click picks among the galaxies HD draws; under the cursor, the most massive one wins. **Go** on the card flies to that galaxy without leaving HD.
+
+## The group on the card
+
+The card lists every member of the selected galaxy's group (scroll for the rest). In **Halo + group** context it also describes the group:
+
+- **Type:** a **Cluster** (host halo from 10¹⁴ M☉) or **Group** (10¹³–10¹⁴ M☉) by its halo mass (e.g. Kravtsov & Borgani 2012; Lovisari et al. 2021); in smaller haloes a **Small group**, **Pair** or **Isolated** galaxy by how many members have at least 10⁹ M☉ of stars, so the name doesn't change with the resolution cut.
+- the host halo's Mvir and Rvir, the members (and how many have M* ≥ 10⁹ M☉), their velocity dispersion along one axis, total stellar mass, the gap in stellar mass between the two most massive (and in a lightcone with photometry, the r-band gap Δm₁₂, a **fossil** group from 2 mag; Jones et al. 2003), the share quenched (sSFR < 10⁻¹¹ yr⁻¹; Weinmann et al. 2006), the intracluster light and the hot gas.
+
+## In a lightcone
+
+HD works in Lightcone Mode with each galaxy as an observer sees it:
+
+- **Its own redshift**, star-formation history and spin, and its group (the cone repeats the simulation box, so a group is the copies of its members around this copy of its central).
+- **Seen from the observer:** HD frames the galaxy along the line of sight from the cone's apex, so it is at the inclination its photometry used.
+- **Its photometry's dust:** with each galaxy's own dust (the Charlot & Fall model of the photometry), HD dims and reddens it with the same face-on optical depth and attenuation curve as its magnitudes. Photometry made with one dust screen for every galaxy, or without dust, leaves HD its own dust.
+- **Its colours:** the galaxy's overall colour is matched to its observed g, r and i magnitudes, on HD's colour scale (fitted on 300 cone galaxies) and on the colours stars can have: emission lines in the broadband magnitudes are drawn as its HII regions, not as a tint.
+
+The card shows its redshift, distance, apparent and absolute r magnitude, rest-frame g − r and A_V at its inclination; **All properties** adds the sky position, dust mass, dust-to-gas ratio, face-on optical depth, emission-line fluxes, AGN and dust luminosities and every magnitude. Galaxies are named by SAGE's GalaxyIndex.
+
+**HD mock** on the card makes a survey image of the selected galaxy from its HD model (see [Lightcone Mode → Mock images](lightcone.md#mock-images)).
 
 ## Components
 

@@ -28,7 +28,6 @@ from scipy.ndimage import gaussian_filter
 
 from visage.hd.model import (
     BULGE_RGB,
-    DUST_K,
     YOUNG_RGB,
     GalaxyRecipe,
     PlaneMaps,
@@ -766,6 +765,10 @@ _IMPL = """//VTK::Light::Impl
               + 0.05 * gauss2(bimp, uFrameProto / 60.0)) * vec3(0.85, 0.92, 1.0) * tC;
   }
 
+  // The galaxy's colour as its photometry has it (1 without).
+  col *= uColGain;
+  starD *= uColGain;
+
   // asinh tone map (as raymarch.tonemap).
   float lum = (col.r + col.g + col.b) / 3.0;
   float x = max(lum / uWhite, 1e-12);
@@ -1146,7 +1149,8 @@ class GPUGalaxy:
         u.SetUniform2f(
             "uAtlasSize", [float(atlas_size[0]), float(atlas_size[1])]
         )
-        u.SetUniform3f("uDustK", [float(v) for v in DUST_K])
+        u.SetUniform3f("uDustK", [float(v) for v in rc.dust_k])
+        u.SetUniform3f("uColGain", [float(v) for v in rc.col_gain])
         f("uWhite", float(white))
         f("uWhite0", float(white))
         f("uPtsGain", 1.0)  # star sources on (component views switch it)

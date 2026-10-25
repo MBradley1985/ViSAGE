@@ -40,7 +40,19 @@ class _SyntheticSnapTable:
     """SnapshotTable-compatible table derived from the cone's own per-galaxy
     (SnapNum, redshift), used when the SAGE a_list isn't resolvable on disk."""
 
-    def __init__(self, snapnum: np.ndarray, redshift: np.ndarray) -> None:
+    def __init__(
+        self,
+        snapnum: np.ndarray,
+        redshift: np.ndarray,
+        snap_redshifts: np.ndarray | None = None,
+    ) -> None:
+        if snap_redshifts is not None and len(snap_redshifts):
+            # The SAGE run's own snapshot redshifts (the cone's header):
+            # exact, and they cover the snapshots before the cone too,
+            # which star-formation histories are dated by.
+            self._z = np.asarray(snap_redshifts, np.float64)
+            self._a = 1.0 / (1.0 + self._z)
+            return
         n = int(snapnum.max()) + 1 if len(snapnum) else 1
         z = np.zeros(n, dtype=np.float64)
         for s in range(n):
@@ -109,6 +121,7 @@ class LightconeModel(Model):
             min_stellar_mass=loader_kwargs.get("min_stellar_mass", 0.0),
             min_halo_mass=loader_kwargs.get("min_halo_mass", 1.0e10),
             max_galaxies=loader_kwargs.get("max_galaxies", None),
+            min_particles=loader_kwargs.get("min_particles", None),
         )
         self._lc = lc
         self._snapnum_per_gal = lc.snapnum
@@ -126,15 +139,22 @@ class LightconeModel(Model):
             box_size=float(lc.box_extent),
             hubble_h=float(lc.hubble_h),
         )
+        if lc.omega_m:
+            self.cfg.omega = float(lc.omega_m)
+            self.cfg.omega_lambda = 1.0 - float(lc.omega_m)
 
         # snap↔z table: prefer the real SAGE a_list; else synthesize from data.
         if lc.a_list_path and Path(lc.a_list_path).is_file():
             try:
                 self.snap_table = SnapshotTable(lc.a_list_path)
             except Exception:
-                self.snap_table = _SyntheticSnapTable(lc.snapnum, lc.redshift)
+                self.snap_table = _SyntheticSnapTable(
+                    lc.snapnum, lc.redshift, lc.snap_redshifts
+                )
         else:
-            self.snap_table = _SyntheticSnapTable(lc.snapnum, lc.redshift)
+            self.snap_table = _SyntheticSnapTable(
+                lc.snapnum, lc.redshift, lc.snap_redshifts
+            )
 
         self.loader = _LightconeLoader(lc.halos, lc.galaxies)
 

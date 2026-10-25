@@ -25,8 +25,6 @@ import numpy as np
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
-# Members listed on the card (the rest are counted).
-MAX_LISTED = 30
 _DOUBLE_CLICK = 0.45  # s
 _PICK_PX = 28.0  # how close (pixels) a double-click must be to a galaxy
 
@@ -39,7 +37,9 @@ def _init_state(state) -> None:
         "sel_sub": "",
         "sel_props": [],
         "sel_members": [],
-        "sel_more": 0,
+        "sel_group_props": [],
+        # HD's drawing of each member, by row: "HD" / "glow" / "extra".
+        "hd_member_tags": {},
         "sel_note": "",
         "sel_info_open": False,
         "sel_info_items": [],
@@ -58,6 +58,9 @@ def _init_state(state) -> None:
         "find_note": "",
         "hd_available": True,
         "hd_unavailable": "",
+        "is_lightcone": False,
+        "mock_hd_ok": False,
+        "mock_busy": False,
     }.items():
         if not state.has(k):
             state[k] = v
@@ -147,7 +150,7 @@ def selection_card(server) -> None:
                 )
         # Actions.
         with html.Div(
-            style="display:flex;gap:5px;padding:8px 12px;flex-shrink:0;"
+            style="display:flex;flex-wrap:wrap;gap:5px;padding:8px 12px;flex-shrink:0;"
         ):
             v3.VBtn(
                 "Go",
@@ -181,6 +184,21 @@ def selection_card(server) -> None:
                 color="#a3e635",
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
+            )
+            v3.VBtn(
+                "HD mock",
+                v_show=("is_lightcone && mock_hd_ok",),
+                size="small",
+                variant="outlined",
+                color="#7FDBFF",
+                loading=("mock_busy",),
+                click=ctrl.create_hd_mock,
+                title=(
+                    "A survey image of this galaxy from its HD model: its "
+                    "photometry, dust and colours, the survey's pixels, "
+                    "seeing and noise (Photometry tab's survey)"
+                ),
+                style="min-width:0;padding:0 8px;",
             )
 
         # Moving on: history, the group's members, its central, the nearest
@@ -342,7 +360,25 @@ def selection_card(server) -> None:
                     "margin:10px 0 4px;font-weight:700;"
                 ),
             )
-            with html.Div(v_show=("sel_members.length > 1",)):
+            with html.Div(
+                v_for="(p, i) in sel_group_props",
+                key="i",
+                v_show=("sel_members.length > 1 && sel_kind === 'halo'",),
+                style=(
+                    "display:flex;justify-content:space-between;gap:8px;"
+                    "font-size:0.74rem;padding:1px 0;"
+                ),
+            ):
+                html.Span("{{ p.label }}", style="color:#c4b5fd;")
+                html.Span(
+                    "{{ p.value }}",
+                    style="font-family:monospace;text-align:right;",
+                )
+            # Every member (the card scrolls).
+            with html.Div(
+                v_show=("sel_members.length > 1",),
+                style="margin-top:6px;",
+            ):
                 with html.Div(
                     v_for="m in sel_members",
                     key="m.idx",
@@ -355,17 +391,14 @@ def selection_card(server) -> None:
                     ),
                 ):
                     html.Span("{{ m.text }}")
-                html.Div(
-                    "+ {{ sel_more }} more",
-                    v_show=("sel_more > 0",),
-                    style="font-size:0.72rem;color:#6b7280;padding:2px 6px;",
-                )
-
-
-def _classify(host_mvir: float, n: int) -> str:
-    from visage.utils.group_info import _classify
-
-    return _classify(host_mvir, n)
+                    html.Span(
+                        "{{ hd_member_tags[m.idx] }}",
+                        v_show=("hd_active && hd_member_tags[m.idx]",),
+                        style=(
+                            "float:right;font-size:0.66rem;color:#94a3b8;"
+                            "margin-left:6px;"
+                        ),
+                    )
 
 
 def build_selection(server, scene) -> None:
@@ -439,6 +472,15 @@ def build_selection(server, scene) -> None:
     def _fmt(x, unit=""):
         return f"{x:.2e}{unit}" if x else "0"
 
+    def _cone_props(galaxies, i: int, props: list) -> list:
+        """A lightcone galaxy: where it is, then (with synthetic
+        photometry) how it looks and its dust, after its SAGE basics."""
+        from visage.utils.galaxy_info import cone_summary
+
+        head = cone_summary(galaxies, i)
+        # (Where it is first, its look and dust after the basics.)
+        return head[:2] + props + head[2:]
+
     def _select(i: int, note: str = "", snap=None) -> None:
         snap = scene.active_model.current_snap if snap is None else snap
         halos, galaxies = _snap(snap)
@@ -450,8 +492,16 @@ def build_selection(server, scene) -> None:
         pos = _unwrap(galaxies, i, lead)
         cpos = _unwrap(galaxies, lead, lead)
         host = _host_halo(halos, cpos, snap)
+        cone = bool(scene.is_lightcone)
         sel.update(
-            gid=int(galaxies.galaxy_id[i]) if galaxies.galaxy_id[i] else None,
+            # (A lightcone repeats galaxies -- the same GalaxyIndex in
+            # several tiles -- and is one static catalogue: its rows are
+            # the identity.)
+            gid=(
+                int(galaxies.galaxy_id[i])
+                if galaxies.galaxy_id[i] and not cone
+                else None
+            ),
             idx=i,
             pos=pos,
             mem=mem,
@@ -464,8 +514,19 @@ def build_selection(server, scene) -> None:
         lm = np.log10(max(ms, 1.0))
         is_cen = galaxies.gal_type[i] == 0
         role = "central" if is_cen else "satellite"
-        mvir_host = float(halos.masses[host]) if host is not None else 0.0
-        kind = _classify(mvir_host, len(mem)) if len(mem) > 1 else "Isolated"
+        from visage.utils.group_info import (
+            classify_members,
+            galaxy_label,
+            group_summary,
+            host_mass,
+        )
+
+        mvir_host = (
+            float(halos.masses[host])
+            if host is not None
+            else host_mass(galaxies, mem, h)
+        )
+        kind = classify_members(galaxies, mem, host_mass(galaxies, mem, h))
         state.sel_has_halo = host is not None
         halo_ctx = state.sel_kind == "halo" and host is not None
         if state.sel_kind == "halo" and host is None:
@@ -476,10 +537,10 @@ def build_selection(server, scene) -> None:
             state.sel_sub = (
                 f"{kind}"
                 + (f" of {len(mem)}" if len(mem) > 1 else "")
-                + f" · central galaxy {lead}"
+                + f" · central galaxy {galaxy_label(galaxies, lead)}"
             )
         else:
-            state.sel_title = f"Galaxy {i}"
+            state.sel_title = f"Galaxy {galaxy_label(galaxies, i)}"
             state.sel_sub = f"{role} · log M* {lm:.2f} · {kind}" + (
                 f" of {len(mem)}" if len(mem) > 1 else ""
             )
@@ -503,23 +564,35 @@ def build_selection(server, scene) -> None:
         if not is_cen:
             d_kpc = np.linalg.norm(pos - cpos) * 1000.0 / h
             props.append(("From central", f"{d_kpc:.0f} kpc"))
-        if sel["gid"] is not None:
-            props.append(("GalaxyIndex", str(sel["gid"])))
+        if cone:
+            props = _cone_props(galaxies, i, props)
         state.sel_props = [{"label": a, "value": b} for a, b in props]
-        listed = mem[:MAX_LISTED]
+        state.sel_group_props = [
+            {"label": a, "value": b}
+            for a, b in (
+                group_summary(galaxies, mem, h) if len(mem) > 1 else []
+            )
+        ]
+        listed = mem
         state.sel_members = [
             {
                 "idx": int(k),
                 "text": (
                     f"{'★ central' if galaxies.gal_type[k] == 0 else 'sat.'}"
                     f" · log M* {np.log10(max(galaxies.stellar_mass[k], 1)):.1f}"
-                    f" · {int(k)}"
+                    f" · {galaxy_label(galaxies, int(k))}"
                 ),
                 "current": bool(k == i),
             }
             for k in listed
         ]
-        state.sel_more = int(max(len(mem) - MAX_LISTED, 0))
+        if (
+            not note
+            and cone
+            and galaxies.snap_nums is not None
+            and galaxies.snap_nums[i] > scene.active_model.current_snap
+        ):
+            note = "Hidden by the redshift slider's cut."
         state.sel_note = note
         state.sel_active = True  # (the card opens on Show info)
         if state.sel_info_open:
@@ -785,6 +858,11 @@ def build_selection(server, scene) -> None:
         gid = sel.get("gid")
         if snap_num is None or not state.sel_active:
             return
+        if scene.is_lightcone:
+            # The slider only cuts the (static) cone: the selection stays.
+            if sel.get("idx") is not None:
+                _select(sel["idx"])
+            return
         if gid is None:
             # No GalaxyIndex in the catalogue: rows mean nothing across
             # snapshots, so the selection ends here.
@@ -868,6 +946,11 @@ def build_selection(server, scene) -> None:
         if k is None or k < 0:
             return
         if kind == "galaxy":
+            # (Typed as SAGE's GalaxyIndex.)
+            k = _row_for_id(k)
+            if k is None:
+                state.sel_note = "No galaxy with that GalaxyIndex here."
+                return
             if _int(state.nav_gal_idx) == k:
                 _sel_refresh()
             state.nav_gal_idx = k
@@ -877,6 +960,17 @@ def build_selection(server, scene) -> None:
                 _on_halo(nav_halo_idx=k)
             state.nav_halo_idx = k
         state.flush()
+
+    def _row_for_id(gid):
+        from visage.utils.group_info import row_for_galaxy_index
+
+        _, galaxies = _snap()
+        return row_for_galaxy_index(galaxies, int(gid))
+
+    @ctrl.set("galaxy_row_for_id")
+    def _galaxy_row_for_id(gid):
+        """The loaded row of GalaxyIndex `gid` (None if not here)."""
+        return _row_for_id(gid)
 
     @ctrl.set("sel_select")
     def _sel_select(idx):

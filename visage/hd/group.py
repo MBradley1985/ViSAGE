@@ -36,12 +36,17 @@ M_REF = 3e10
 LUM_POWER = 0.35
 # Members by stellar-mass rank: the first N_TOP in full quality (all of a
 # group of up to N_FULL), then "group" quality up to N_GROUP, "lite" up to
-# N_HD; the rest of a big cluster as glows.  Quality over build time (a few
-# seconds is fine); GPU memory per full model (~150 MB) sets the limits.
+# N_HD; the rest of a big cluster as glows (each built on its own, as an
+# extra, when it is selected).  Quality over build time (a few seconds is
+# fine); textures (~100 / 40 / 24 MB per full / group / lite model) set the
+# limits: N_HD = 100 covers every Millennium cluster's members above the
+# resolution cut (57-91 at z = 0) in ~2.7 GB.
 N_FULL = 5
 N_TOP = 4
 N_GROUP = 16
-N_HD = 40
+N_HD = 100
+# Quality of a glow built on demand.
+EXTRA_QUALITY = "group"
 # Tidal features: neighbours closer than R_TIDAL (kpc) and at least
 # TIDAL_RATIO of the galaxy's mass.
 R_TIDAL = 100.0
@@ -367,6 +372,7 @@ class HDGroupLayer:
         self._near_tol = None
         self.center = np.zeros(3)
         self.picks = ([], np.zeros((0, 3)))
+        self.entries: list = []  # what show() was given (glows included)
 
     @property
     def active(self) -> bool:
@@ -387,38 +393,15 @@ class HDGroupLayer:
         lead = entries[0]
         k_lead = lead["prep"]["rc"].kind
         # Shared exposure, anchored on the central.
-        w_common = lead["prep"]["exposure"].base * display_luminosity(
+        self._w_common = lead["prep"]["exposure"].base * display_luminosity(
             lead["gal"], k_lead
         )
+        self._hubble_h = hubble_h
+        self._gas = bool(gas)
+        self.entries = entries
         for i, e in enumerate(entries):
-            if e["prep"] is None:
-                continue
-            lay = HDGalaxyLayer(self._pl)
-            member = e.get("role", "member") == "member"
-            lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
-            mag = (
-                magnification(e["gal"], e["prep"]["rc"], hubble_h)
-                if e.get("magnify", True)
-                else 1.0
-            )
-            lay.show(
-                e["gal"],
-                e["center"],
-                e["spin"],
-                hubble_h,
-                gas=gas and member,
-                prep=e["prep"],
-                white=w_common / lum,
-                halo=member,
-                icl=i == 0,
-                manage_fxaa=False,
-                magnify=mag,
-            )
-            if member:
-                self.members.append(lay)
-            else:
-                self.neighbours.append(lay)
-            e["layer"] = lay
+            if e["prep"] is not None:
+                self._show_entry(e, icl=i == 0)
         self.center = np.asarray(lead["center"], float)
         self.picks = (
             [e["idx"] for e in entries if e.get("idx") is not None],
@@ -431,6 +414,51 @@ class HDGroupLayer:
         )
         self._observer = ren.AddObserver("StartEvent", self._update_glows)
         self._update_glows()
+
+    def _show_entry(self, e, icl: bool = False) -> HDGalaxyLayer:
+        """Draw one built entry at the group's shared exposure."""
+        lay = HDGalaxyLayer(self._pl)
+        member = e.get("role", "member") == "member"
+        lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
+        mag = (
+            magnification(e["gal"], e["prep"]["rc"], self._hubble_h)
+            if e.get("magnify", True)
+            else 1.0
+        )
+        lay.show(
+            e["gal"],
+            e["center"],
+            e["spin"],
+            self._hubble_h,
+            gas=self._gas and member,
+            prep=e["prep"],
+            white=self._w_common / lum,
+            halo=member,
+            icl=icl,
+            manage_fxaa=False,
+            magnify=mag,
+        )
+        (self.members if member else self.neighbours).append(lay)
+        e["layer"] = lay
+        return lay
+
+    def glow_entry(self, idx: int):
+        """The entry of catalogue row `idx` if it is drawn as a glow."""
+        for e in getattr(self, "entries", []):
+            if e.get("idx") == idx and e.get("layer") is None:
+                return e
+        return None
+
+    def add_extra(self, e) -> HDGalaxyLayer:
+        """A glow, built on its own (`e["prep"]`), drawn as a model."""
+        lay = self._show_entry(e)
+        d = self._glow_data
+        if d is not None:
+            for k, x in enumerate(self.entries):
+                if x is e:
+                    d["hd"][k] = lay
+        self._update_glows()
+        return lay
 
     def _add_glows(self, entries, hubble_h, lum_lead):
         """Every member as a soft glow (size from the size-mass relation,
@@ -511,6 +539,7 @@ class HDGroupLayer:
             m.clear()
         self.members = []
         self.neighbours = []
+        self.entries = []
         if self._observer is not None:
             try:
                 self._pl.renderer.RemoveObserver(self._observer)

@@ -3840,75 +3840,179 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @state.change("nav_gal_idx")
     def _on_mock_centre(nav_gal_idx=None, **_):
-        state.mock_centre = (
-            f"Galaxy {int(nav_gal_idx)}"
-            if nav_gal_idx is not None
-            else "the brightest galaxy in the cone"
-        )
+        if nav_gal_idx is None:
+            state.mock_centre = "the brightest galaxy in the cone"
+            return
+        from visage.utils.group_info import galaxy_label
+
+        model = scene.active_model
+        _, gal = model.loader.get(model.current_snap)
+        state.mock_centre = f"Galaxy {galaxy_label(gal, int(nav_gal_idx))}"
 
     _on_mock_survey(state.mock_survey)
     _on_mock_centre(None)
 
-    @ctrl.set("create_mock_image")
-    async def on_create_mock_image():
-        survey = state.mock_survey
-        if state.mock_busy or survey not in _mock.SURVEYS:
-            return
+    # HD+mock: galaxies big enough on the sky drawn from their HD models
+    # (visage.hd.sky); optical surveys only.
+    state.mock_hd = False
+    _hd_surveys = [
+        k
+        for k in _mock.HD_SURVEYS
+        if k in _mock.available_surveys(_lc_present)
+    ]
+    state.mock_hd_ok = bool(_hd_surveys)
+
+    def _hd_mock_stamps(gal):
+        """The mock image's hd_stamps callback for loaded galaxies."""
+        from visage.hd.sky import stamps_for_rows
+
+        def fn(rows, pixel, d_a):
+            try:
+                from visage.hd.group import pool
+
+                ex = pool()
+            except Exception:
+                ex = None
+            return stamps_for_rows(
+                gal,
+                scene._snap_table,
+                float(scene._cfg.hubble_h),
+                float(scene._cfg.omega),
+                rows,
+                pixel,
+                d_a,
+                executor=ex,
+            )
+
+        return fn
+
+    def _hd_mock_field(gal, i, survey) -> float:
+        """Field (arcmin) framing galaxy i: three times its optical
+        diameter (four HD scale lengths, or effective radii, across)."""
+        import numpy as np
+
+        from visage.hd.adapter import sage_galaxy_from_snapshot
+        from visage.hd.model import display_sizes
+
+        h = float(scene._cfg.hubble_h)
+        g = sage_galaxy_from_snapshot(gal, i, h)
+        rd, r50e, _ = display_sizes(g)
+        r_kpc = 4 * rd if g.bt < 0.6 else 4 * r50e
+        z = float(gal.redshifts[i]) if gal.redshifts is not None else 0.0
+        dist = gal.extra.get("distance") if gal.extra else None
+        d_c = (
+            float(dist[i])
+            if dist is not None
+            else float(np.linalg.norm(gal.positions[i]))
+        )
+        d_a_kpc = d_c / h / (1 + z) * 1e3
+        arcmin = 3 * 2 * r_kpc / max(d_a_kpc, 1e-3) * 206264.8 / 60
+        top = max(_mock.field_sizes(survey) or [5.0])
+        return float(np.clip(arcmin, 0.25, top))
+
+    async def _make_mock(survey, field_am, hd: bool, label: str) -> None:
         model = scene.active_model
         path = getattr(model, "path", None)
-        if path is None:
+        if path is None or survey not in _mock.SURVEYS:
             return
+        _, gal = model.loader.get(model.current_snap)
         row = None
         if state.nav_gal_idx is not None:
-            _, gal = model.loader.get(model.current_snap)
             row = int(gal.sage_indices[int(state.nav_gal_idx)])
-        field_am = float(state.mock_field or 5)
-        noisy = bool(state.mock_noisy) and bool(state.mock_has_depth)
+        noisy = bool(state.mock_noisy) and bool(_mock.SURVEYS[survey].depth)
         state.mock_busy = True
         state.mock_note = ""
         state.flush()
         loop = asyncio.get_running_loop()
+        stamps = _hd_mock_stamps(gal) if hd else None
         try:
             img = await loop.run_in_executor(
                 None,
                 lambda: _mock.make_mock_image(
-                    path, survey, field_am, centre_row=row, noisy=noisy
+                    path,
+                    survey,
+                    field_am,
+                    centre_row=row,
+                    noisy=noisy,
+                    hd_stamps=stamps,
                 ),
             )
             import datetime
 
             sess = _get_session_dir()
-            stem = f"mock_{survey}_{datetime.datetime.now():%H%M%S}"
+            tag = "hdmock" if hd else "mock"
+            stem = f"{tag}_{survey}_{datetime.datetime.now():%H%M%S}"
             png = sess / f"{stem}.png"
             png.write_bytes(img.png_bytes())
             fits_ok = await loop.run_in_executor(
                 None, img.write_fits, sess / f"{stem}.fits"
             )
             sv = _mock.SURVEYS[survey]
+            from visage.utils.group_info import galaxy_label
+
             centre = (
-                f"Galaxy {int(state.nav_gal_idx)}"
+                f"Galaxy {galaxy_label(gal, int(state.nav_gal_idx))}"
                 if row is not None
                 else img.centre_label.split(" (")[0]
             )
             zmax = float(model._lc.redshift.max())
             state.mock_note = (
-                f"{sv.label}, {field_am:g}′ around {centre} "
+                f"{label}{sv.label}, {field_am:.2g}′ around {centre} "
                 f"({img.centre_label.split(' (', 1)[1]}; "
                 f"{sv.pixel:g}″ pixels, "
                 f"{'/'.join(dict.fromkeys(f'{x:g}' for x in sv.seeing))}″ "
                 "seeing, "
                 + (f"survey depth ({sv.ref})" if noisy else "noiseless")
-                + f". {img.n_galaxies} galaxies drawn; only this cone's "
-                f"galaxies (z < {zmax:.2f}) are in the sky. Saved {png.name}"
+                + f". {img.n_galaxies} galaxies drawn"
+                + (f", {img.n_hd} from their HD models" if hd else "")
+                + f"; only this cone's galaxies (z < {zmax:.2f}) are in "
+                f"the sky. Saved {png.name}"
                 + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
             )
             on_library_open(str(png))
             state.library_files = _scan_library()
         except Exception as exc:
             state.mock_note = f"Couldn't make the image: {exc!s}"
+            state.notice_text = state.mock_note
+            state.notice_color = "error"
+            state.notice_show = True
         finally:
             state.mock_busy = False
             state.flush()
+
+    @ctrl.set("create_mock_image")
+    async def on_create_mock_image():
+        survey = state.mock_survey
+        if state.mock_busy or survey not in _mock.SURVEYS:
+            return
+        hd = bool(state.mock_hd) and survey in _mock.HD_SURVEYS
+        await _make_mock(
+            survey, float(state.mock_field or 5), hd, "HD+mock: " if hd else ""
+        )
+
+    @ctrl.set("create_hd_mock")
+    async def on_create_hd_mock():
+        """The card's HD mock: the selected galaxy as a survey would
+        image it, framed on it, with its HD model (and those of resolved
+        neighbours in the field)."""
+        if state.mock_busy or not _hd_surveys:
+            return
+        if state.nav_gal_idx is None:
+            return
+        survey = (
+            state.mock_survey
+            if state.mock_survey in _hd_surveys
+            else _hd_surveys[0]
+        )
+        model = scene.active_model
+        _, gal = model.loader.get(model.current_snap)
+        field_am = _hd_mock_field(gal, int(state.nav_gal_idx), survey)
+        state.notice_text = (
+            f"Making an HD mock {_mock.SURVEYS[survey].label} image…"
+        )
+        state.notice_color = "info"
+        state.notice_show = True
+        await _make_mock(survey, field_am, True, "HD+mock: ")
 
     @ctrl.set("library_rename")
     def on_library_rename(path: str, new_name: str):
@@ -4490,7 +4594,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.camera._clear_member_indicators()
         cam = scene.plotter.camera
         dist = radius / np.tan(np.deg2rad(cam.view_angle) / 2.0) * 1.15
-        if keep_view:
+        if scene.is_lightcone:
+            # As the observer sees it: along the line of sight from the
+            # cone's apex (the inclination its photometry and dust used).
+            view = scene.active_model.offset - np.asarray(center, float)
+            view = view / max(np.linalg.norm(view), 1e-12)
+            up = R[:, 2] - np.dot(R[:, 2], view) * view
+            if np.linalg.norm(up) < 1e-3:
+                up = np.cross(view, [1.0, 0.0, 0.0])
+            up = up / np.linalg.norm(up)
+        elif keep_view:
             view = np.subtract(cam.position, cam.focal_point)
             view = view / max(np.linalg.norm(view), 1e-12)
             up = cam.up
@@ -4552,6 +4665,73 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # and (HD on) the same galaxy at the neighbouring snapshots.
     _HD_PREBUILD_DELAY = 0.7  # s after a selection settles
 
+    # Build progress: each model's share of the work by its expected build
+    # time (s, one worker; measured on an M-series Mac), the clock moving
+    # the bar between completions at the rate seen so far.
+    _HD_COST = {"full": 2.4, "group": 1.4, "lite": 0.6}
+
+    def _hd_progress(entries, todo, sat_ctx=None) -> dict:
+        """The work a build will do: each model, and (counted from the
+        start) the jellyfish tails expected to be rebuilt afterwards --
+        satellites with ram pressure (tail_gains settles which)."""
+        import time
+
+        costs = [_HD_COST.get(entries[k]["quality"], 1.0) for k in todo]
+        cost = dict(zip(todo, costs, strict=True))
+        tails = [k for k in todo if "ram" in (sat_ctx or {}).get(k, {})]
+        tail_cost = float(sum(cost[k] for k in tails))
+        return {
+            "t0": time.monotonic(),
+            "total": (float(sum(costs)) + tail_cost) or 1.0,
+            "cost": cost,
+            "done": 0.0,
+            "n_done": 0,
+            "n": len(todo) + len(tails),
+            "tails": (len(tails), tail_cost),
+        }
+
+    def _hd_progress_tails(prog, gains) -> None:
+        """The tail rebuilds tail_gains settled on, in place of the
+        expected ones."""
+        n0, c0 = prog.get("tails", (0, 0.0))
+        prog["total"] += sum(prog["cost"].get(k, 1.0) for k in gains) - c0
+        prog["n"] += len(gains) - n0
+        prog["tails"] = (len(gains), 0.0)
+
+    async def _hd_progress_ticker(prog, token, word) -> None:
+        """Move the build card's bar until the build ends: completed
+        models' share, and between completions the clock (at the rate so
+        far, or the expected one), never past 95% until it is done."""
+        import asyncio
+        import time
+
+        try:
+            from visage.hd.group import pool
+
+            workers = max(1, int(getattr(pool(), "_max_workers", 1)))
+        except Exception:
+            workers = 1
+        shown = 0.0
+        while _hd["build"] is token and bool(state.hd_building):
+            el = time.monotonic() - prog["t0"]
+            done = prog["done"] / prog["total"]
+            if prog["done"] > 0:
+                expect = el * prog["total"] / prog["done"]
+            else:
+                expect = max(
+                    prog["total"] / min(workers, max(prog["n"], 1)),
+                    max(prog["cost"].values(), default=1.0),
+                )
+            est = min(el / max(expect, 1e-3), 0.95)
+            shown = max(shown, done, est)
+            pct = int(100 * min(shown, 0.95))
+            text = f"Building HD {word}… {prog['n_done']}/{prog['n']}"
+            if pct != state.hd_percent or text != state.hd_progress:
+                state.hd_percent = pct
+                state.hd_progress = text
+                state.flush()
+            await asyncio.sleep(0.2)
+
     def _hd_prebuild_start(key, todo, args, entries, sat_ctx) -> None:
         import asyncio
 
@@ -4573,21 +4753,36 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ex = None
 
                 async def _prep(k):
-                    return await loop.run_in_executor(ex, *args(k))
+                    r = await loop.run_in_executor(ex, *args(k))
+                    prog["done"] += prog["cost"].get(k, 0.0)
+                    prog["n_done"] += 1
+                    return r
 
                 res = await asyncio.gather(*[_prep(k) for k in todo])
                 for k, r in zip(todo, res, strict=True):
                     entries[k]["prep"] = r
-                for k, gain in tail_gains(entries, sat_ctx).items():
+                # Jellyfish tails rebuilt brighter, in parallel (and
+                # counted in the work a waiting build card shows).
+                gains = tail_gains(entries, sat_ctx)
+                for k, gain in gains.items():
                     sat_ctx[k]["tail_gain"] = gain
-                    entries[k]["prep"] = await _prep(k)
+                _hd_progress_tails(prog, gains)
+                redo = list(gains)
+                res = await asyncio.gather(*[_prep(k) for k in redo])
+                for k, r in zip(redo, res, strict=True):
+                    entries[k]["prep"] = r
                 _hd_cache().put(key, [entries[k]["prep"] for k in todo])
             except asyncio.CancelledError:
                 raise
             except Exception:
                 pass  # a background build failing just means no head start
 
-        _hd["pre"] = {"key": key, "task": loop.create_task(run())}
+        prog = _hd_progress(entries, todo, sat_ctx)
+        _hd["pre"] = {
+            "key": key,
+            "task": loop.create_task(run()),
+            "prog": prog,
+        }
 
     def _hd_prebuild_selected() -> None:
         """Build the selected galaxy's HD in the background (not shown)."""
@@ -4735,10 +4930,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
             d = d - box * np.round(d / box)
         allpos = galaxies.positions[lead] + d + off
 
-        def entry(k, role, quality, magnify):
+        def entry(k, role, quality, magnify, gal=None):
             return {
                 "idx": int(k),
-                "gal": sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo),
+                "gal": (
+                    gal
+                    if gal is not None
+                    else sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo)
+                ),
                 "center": allpos[int(k)],
                 "spin": spin_vector(galaxies, int(k)),
                 "prep": None,
@@ -4747,16 +4946,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "magnify": magnify,
             }
 
-        group_q = plan(
-            [
-                sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo)
-                for k in idx
-            ]
-        )
+        gals = [
+            sage_galaxy_from_snapshot(galaxies, int(k), h, *cosmo) for k in idx
+        ]
+        group_q = plan(gals)
+        if focus is not None:
+            # The selected galaxy is always a model, however far down
+            # the group's mass ranking it is.
+            for j, k in enumerate(idx):
+                if int(k) == int(focus) and group_q[j] in (None, "lite"):
+                    group_q[j] = "group"
         many = len(idx) > 1  # a lone galaxy keeps its true size
         entries = [
-            entry(k, "member", q, many)
-            for k, q in zip(idx, group_q, strict=True)
+            entry(k, "member", q, many, g)
+            for k, q, g in zip(idx, group_q, gals, strict=True)
         ]
         partners = tidal_partners(entries, h)
         sat_ctx = satellite_context(entries, h)
@@ -4851,20 +5054,36 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         # A broken worker pool: build it here instead.
                         return await loop.run_in_executor(None, *args(k))
 
+                async def _to_gpu():
+                    """The last step, behind the card: textures to the
+                    GPU (its own message, so the bar doesn't sit at 95%)."""
+                    state.hd_progress = f"Drawing HD {word} on the GPU…"
+                    state.hd_percent = 97
+                    state.flush()
+                    await asyncio.sleep(0.05)
+
                 # Already being built in the background (selected a moment
-                # ago)?  Wait for that instead of starting again.
+                # ago)?  Wait for that instead of starting again (its
+                # progress so far carries on in the card).
                 pre = _hd.get("pre")
                 if pre and pre["key"] == key and not pre["task"].done():
+                    ticker = loop.create_task(
+                        _hd_progress_ticker(pre["prog"], token, word)
+                    )
                     try:
                         await asyncio.shield(pre["task"])
                     except Exception:
                         pass
+                    ticker.cancel()
                     if _hd["build"] is not token:
                         return
                     hit = _hd_cache().get(key)
                     if hit is not None:
                         for k, prep in zip(todo, hit, strict=True):
                             entries[k]["prep"] = prep
+                        await _to_gpu()
+                        if _hd["build"] is not token:
+                            return
                         _hd_show_group(entries, h, focus)
                         try:
                             scene.plotter.ren_win.Render()
@@ -4872,34 +5091,49 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             pass
                         _hd_prebuild_neighbours()
                         return
-                futs = {asyncio.ensure_future(_prep(k)): k for k in todo}
+                prog = _hd_progress(entries, todo, sat_ctx)
+                ticker = loop.create_task(
+                    _hd_progress_ticker(prog, token, word)
+                )
+
+                async def _counted(k):
+                    r = await _prep(k)
+                    prog["done"] += prog["cost"].get(k, 0.0)
+                    prog["n_done"] += 1
+                    return r
+
+                futs = {asyncio.ensure_future(_counted(k)): k for k in todo}
                 _hd["futs"] = list(futs)
-                done = 0
                 for fut in asyncio.as_completed(list(futs)):
                     try:
                         await fut
                     except asyncio.CancelledError:
+                        ticker.cancel()
                         return
                     if _hd["build"] is not token:
+                        ticker.cancel()
                         return  # cancelled
-                    done += 1
-                    state.hd_progress = f"Building HD {word}… {done}/{n}"
-                    state.hd_percent = int(100 * done / max(n, 1))
-                    state.flush()
                 for fut, k in futs.items():
                     entries[k]["prep"] = fut.result()
                 # Jellyfish tails the shared exposure dims: rebuilt
-                # brighter (one more build each, in parallel).
+                # brighter (one more build each, in parallel; added to the
+                # work the bar counts).
                 gains = tail_gains(entries, sat_ctx)
                 for k, gain in gains.items():
                     sat_ctx[k]["tail_gain"] = gain
-                redo = {k: asyncio.ensure_future(_prep(k)) for k in gains}
+                _hd_progress_tails(prog, gains)
+                redo = {k: asyncio.ensure_future(_counted(k)) for k in gains}
                 _hd["futs"] = list(redo.values())
                 for k, fut in redo.items():
                     entries[k]["prep"] = await fut
                     if _hd["build"] is not token:
+                        ticker.cancel()
                         return
+                ticker.cancel()
                 _hd_cache().put(key, [entries[k]["prep"] for k in todo])
+                await _to_gpu()
+                if _hd["build"] is not token:
+                    return
                 _hd_show_group(entries, h, focus)
                 # Upload the textures (and build their mipmaps) now, behind
                 # the build card, rather than on the first frame after it
@@ -4998,7 +5232,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
         center = _member_position(galaxies, gidx, int(_hd["lead"]))
         m = grp.member_at(center)
         if m is None:
-            return False
+            # A member drawn as a glow (past the group's N_HD): build it
+            # on its own and add it to the scene, then fly there.
+            e = grp.glow_entry(gidx)
+            if e is None:
+                return False
+            _hd_build_extra(e)
+            return True
+        _hd_fly_to(m, center)
+        return True
+
+    def _hd_fly_to(m, center) -> None:
+        """Fly to HD galaxy `m` at `center`, keeping the view direction."""
+        import numpy as np
+
         cam = scene.plotter.camera
         view = np.subtract(cam.position, cam.focal_point)
         view = view / max(np.linalg.norm(view), 1e-12)
@@ -5007,7 +5254,89 @@ def build_navigation_panel(server, scene: Scene) -> None:
         cam.position = tuple(float(v) for v in center + view * dist)
         scene.plotter.renderer.ResetCameraClippingRange()
         _push()
-        return True
+
+    def _hd_tags() -> None:
+        """The card's HD tag per member: a model, a glow or an extra."""
+        grp = _hd["group"]
+        tags = {}
+        if grp is not None and grp.active:
+            for e in grp.entries:
+                if e.get("idx") is None:
+                    continue
+                tags[int(e["idx"])] = (
+                    "glow"
+                    if e.get("layer") is None
+                    else "HD extra" if e.get("extra") else "HD"
+                )
+        state.hd_member_tags = tags
+
+    def _hd_build_extra(e) -> None:
+        """Build glow entry `e` as an HD model (EXTRA_QUALITY), add it to
+        the group on screen and fly to it."""
+        import asyncio
+
+        from visage.hd.group import EXTRA_QUALITY, pool, prepare_member
+
+        if bool(state.hd_building):
+            return
+        h = float(scene._cfg.hubble_h)
+        ctx = {"spin": e["spin"], "hubble_h": h, "magnify": e["magnify"]}
+
+        def show(prep):
+            grp = _hd["group"]
+            if grp is None or not grp.active or e not in grp.entries:
+                return
+            e.update(prep=prep, quality=EXTRA_QUALITY, extra=True)
+            lay = grp.add_extra(e)
+            _hd_tags()
+            _hd_fly_to(lay, np.asarray(e["center"], float))
+
+        import numpy as np
+
+        loop = _running_loop()
+        if loop is None:
+            show(prepare_member(e["gal"], EXTRA_QUALITY, ctx))
+            return
+        state.hd_building = True
+        state.hd_progress = "Building HD galaxy… 0/1"
+        state.hd_percent = 0
+        state.flush()
+        token = _hd["build"] = object()
+        prog = _hd_progress({0: {"quality": EXTRA_QUALITY}}, [0])
+
+        async def run():
+            ticker = loop.create_task(
+                _hd_progress_ticker(prog, token, "galaxy")
+            )
+            try:
+                try:
+                    ex = pool()
+                except Exception:
+                    ex = None
+                prep = await loop.run_in_executor(
+                    ex, prepare_member, e["gal"], EXTRA_QUALITY, ctx
+                )
+                ticker.cancel()
+                if _hd["build"] is token:
+                    state.hd_progress = "Drawing HD galaxy on the GPU…"
+                    state.hd_percent = 97
+                    state.flush()
+                    await asyncio.sleep(0.05)
+                    show(prep)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                state.notice_text = f"HD build failed: {exc}"
+                state.notice_color = "error"
+                state.notice_show = True
+            finally:
+                if _hd["build"] is token:
+                    _hd["build"] = None
+                    state.hd_building = False
+                    state.flush()
+                    _push()
+
+        loop.create_task(run())
 
     def _hd_show_group(entries, h, focus: int | None = None) -> None:
         """Draw the built HD scene and frame it on what's selected: in
@@ -5017,6 +5346,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.set_focus_indices(halo_indices=[], galaxy_indices=[])
         grp = _hd_group()
         grp.show(entries, h, gas=bool(state.hd_gas))
+        _hd_tags()
         _hd["mode"] = "halo"
         _hd["built_snap"] = _hd.get("build_snap", scene.current_snap)
         _hd["build_snap"] = None
@@ -5136,6 +5466,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if playing:
             _hd_drop()
             return
+        if scene.is_lightcone:
+            return  # the slider only cuts the (static) cone
         loop = _running_loop()
         if loop is None:
             _hd_follow(snap_num)
@@ -5856,6 +6188,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 v_model=("mock_noisy",),
                                 label="Survey depth (sky noise)",
                                 disabled=("!mock_has_depth",),
+                                color="#7FDBFF",
+                                hide_details=True,
+                                density="compact",
+                            )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VCheckbox(
+                                v_model=("mock_hd",),
+                                label="HD galaxies (resolved ones from "
+                                "their HD models; optical surveys)",
+                                disabled=("!mock_hd_ok",),
                                 color="#7FDBFF",
                                 hide_details=True,
                                 density="compact",
