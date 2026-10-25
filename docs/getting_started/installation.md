@@ -24,9 +24,14 @@ which are **not** installed by default:
 pip install "sage-viewer[sed]"      # or, from source:  pip install -e ".[sed]"
 ```
 
-`python-fsps` also requires its stellar-population data — set the `SPS_HOME`
-environment variable to point at it (see the python-fsps install docs). Nothing
-else in ViSAGE depends on FSPS; the viewer and every other flow run without it.
+`python-fsps` also requires its stellar-population data, found through the
+`SPS_HOME` environment variable (see the python-fsps install docs).
+
+**Launch Mode does all of this for you:** LightSAGE's **Install** button
+installs `fsps` and `astropy` into ViSAGE's Python and, when `SPS_HOME` isn't
+set, downloads the FSPS stellar libraries (about 1 GB) into `~/.visage/fsps`,
+which ViSAGE then uses without `SPS_HOME`. Nothing else in ViSAGE depends on
+FSPS; the viewer and every other flow run without it.
 
 ## Verifying the install
 
@@ -55,15 +60,16 @@ native viewer reads SAGE's output directly. One-time setup:
 
 1. In an **administrator** PowerShell, run `wsl --install`, then restart Windows.
 2. Open the new **Ubuntu** app once and create a Linux user name and password.
-3. Run `visage`, open any flow, and click **Install Linux build tools**. This
-   runs `apt-get` inside WSL (as root, so there is no password prompt) to
-   install the compilers and libraries all three flows need.
+3. Run `visage`; if Linux build tools are missing, the home page offers
+   **Install Linux build tools**. This runs `apt-get` inside WSL (as root, so
+   there is no password prompt) to install the compilers and libraries all
+   three tools need.
 
 Notes:
 
-- Clone the extensions from the wizard rather than with Git for Windows.
+- Clone the tools from Launch Mode rather than with Git for Windows.
   Git for Windows converts the bash scripts to Windows line endings, which
-  bash cannot run. The wizard warns you if it finds a checkout like that.
+  bash cannot run. Launch Mode warns you if it finds a checkout like that.
 - WSL gets half of the machine's RAM by default. For large SAGEswarm runs,
   raise it with a `memory=` line in `%UserProfile%\.wslconfig`.
 - Alternatively, install and run ViSAGE entirely inside WSL. It then behaves
@@ -161,6 +167,6 @@ ssh -L 8080:localhost:8080 user@cluster
 | numpy | Array operations |
 | scipy | KDE density computation, KDTree navigation |
 | joblib | Parallel halo file loading |
-| pywinpty | *Windows only* — real terminal for the wizard and Console |
+| pywinpty | *Windows only* — real terminal for Launch Mode and the Console |
 | imageio-ffmpeg | *Windows only* — bundled ffmpeg for MOV recording |
 | fsps, astropy | *Optional* (`[sed]`) — synthetic photometry / SED synthesis |

@@ -8,14 +8,14 @@
 visage --par /path/to/SAGE26/input/millennium.par
 ```
 
-**Launch Mode** (wizard) — configure and run SAGE26, calibrate with SAGEswarm, or extract a lightcone with LightSAGE. Run from your SAGE26 root so the wizard can find your `.par` files and executable automatically:
+**Launch Mode** — install, set up and run SAGE26, build a lightcone with LightSAGE, or calibrate with SAGEswarm. Run from your SAGE26 root (or the folder you want SAGE26 in) so ViSAGE finds your `.par` files and the tools automatically:
 
 ```bash
 cd /path/to/SAGE26
 visage
 ```
 
-**Lightcone Mode** — view a LightSAGE `cli_lightcone` HDF5 output (produced by the wizard's LightSAGE flow, or from a manual run):
+**Lightcone Mode** — view a LightSAGE `cli_lightcone` HDF5 output (built in Launch Mode's LightSAGE, or from a manual run):
 
 ```bash
 visage --lightcone /path/to/lightcone.h5
