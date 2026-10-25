@@ -1,192 +1,155 @@
-# Launch Mode (Wizard)
+# Launch Mode
 
-Launch Mode is a guided setup flow for configuring and running SAGE26 — and two
-companion tools, **SAGEswarm** and **LightSAGE** — accessible without leaving
-the viewer. All three flows share the same wizard shell (terminal + step chips
-+ parameter form) and you can switch between them at any time.
+Launch Mode sets up and runs SAGE26 and its two companion tools,
+[LightSAGE](https://github.com/sage-home/sage-lightcone) (lightcones) and
+[SAGEswarm](https://github.com/MBradley1985/SAGEswarm) (calibration), without
+leaving the viewer: big buttons for each choice, a progress page for each run,
+and the model opening straight in ViSAGE when it's done.
 
-## Entering Launch Mode
+## Opening Launch Mode
 
 ```bash
-cd /path/to/SAGE26
+cd /path/to/SAGE26      # or the folder you want SAGE26 to live in
 visage
 ```
 
-Then open the printed URL in your browser. The wizard launches directly into
-**SAGE26 setup**.
+Open the printed URL. From inside a model, the **Launch Mode** menu (the
+SAGE-logo button, top-left of the toolbar) lists **SAGE26**, **LightSAGE** and
+**SAGEswarm** (each opens that tool's page) and **Setup Wizard** (the home
+page), then the models opened this session.
 
-You can also enter Launch Mode from inside Explore Mode via the SAGE-logo
-dropdown (top-left of the toolbar) → **Setup Wizard**, or jump straight into
-one of the other two flows from the same dropdown (**SAGEswarm** /
-**LightSAGE**) or their dedicated toolbar buttons.
+## Home
 
-## The three flows
+Three picture cards, one per tool, each saying whether it's installed, and
+**Load a previous model**, which lists every SAGE26 model and lightcone ViSAGE
+can find (size, date, galaxies, `.par`). Click one to open it.
 
-| Flow | What it does | Wizard menu entry |
-|---|---|---|
-| **SAGE26 setup** | Clone, compile, configure, and run SAGE26 | Setup Wizard |
-| **SAGEswarm** | Clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run a PSO calibration against a compiled SAGE binary — with a live plot gallery | SAGEswarm |
-| **LightSAGE** | Clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build its `sage2kdtree` / `cli_lightcone` tools, and run the two-stage lightcone-extraction pipeline against existing SAGE26 output — optionally followed by a third stage that synthesizes broadband photometry (SED) for every lightcone galaxy | LightSAGE |
+## A tool's page
 
-Each flow's header shows its own 6-step progress chips. From any flow's first
-step you can switch to another (e.g. click "Back" from the SAGEswarm or
-LightSAGE scan step to return to SAGE26 setup) without closing the wizard.
+The tool's picture and status on the left; its actions on the right:
 
-## Where visage looks for things
+| Button | What it does |
+|---|---|
+| **Run** | Opens the tool's setup page (below) |
+| **Load existing** | SAGE26 models or LightSAGE lightcones as buttons; click one to open it |
+| **Install** | Gets the tool ready (below) |
+| **Check for update** | Compares the checkout with GitHub on the button itself; when it's behind, the button becomes **Update** |
+| **Clone / Re-clone** | A fresh copy from GitHub, then Install. An existing checkout is moved aside (never deleted); a first clone goes beside your other tools |
 
-The working directory you launch from is the anchor for the entire session:
+Install and Clone run **on their button**: it spins, shows the step it's on
+and the latest output line, then says how it went. If something fails, the
+button turns red; click it to see the full output.
+
+What **Install** does:
+
+- **SAGE26:** on a first install, `first_run.sh` (makes the folders, downloads
+  the mini-Millennium trees); then `make` on every core, falling back to a
+  serial build when there's no MPI compiler. On Debian/Ubuntu/WSL the build is
+  pointed at the system HDF5.
+- **LightSAGE:** the libraries its tools need (CMake, Boost and HDF5, through
+  Homebrew on macOS or apt inside WSL), the photometry packages (`fsps`,
+  `astropy`) and the FSPS stellar libraries they read (into `~/.visage/fsps`
+  when `SPS_HOME` isn't set; about 1 GB), then the two tools, `sage2kdtree` and
+  `cli_lightcone`. SAGE itself is never built from LightSAGE: ViSAGE feeds it
+  your SAGE26 output.
+- **SAGEswarm:** its Python packages (`requirements.txt`). It runs SAGE26, so
+  it says if SAGE26 still needs installing.
+
+## Setting up a run
+
+**Run** opens the tool's key choices as big buttons:
+
+- **SAGE26:** which simulation (one card per `.par`, with its box, snapshots
+  and tree type), the physics switches (described by the `.par`'s own
+  comments), and **Run on**: 1 process, or 2, 4, 8 … up to your cores under
+  MPI (`mpirun -np N`). MPI is offered when `mpirun` is installed and SAGE26 was
+  built with it; otherwise the row says why.
+- **LightSAGE:** which SAGE26 model to build from (models without saved
+  star-formation histories are greyed out: they can't have photometry), how
+  much sky and how deep (presets, or Custom), the surveys to observe it with,
+  and the light: photometry, dust, infrared glow, emission lines, disk & bulge.
+- **SAGEswarm:** the observations to match (each constraint, grouped), how hard
+  to search (particles × iterations, with the number of SAGE26 runs that
+  means), and the free parameters from its space file.
+
+**Name** is the run's name, and it *is* its output: SAGE26's `OutputDir` (and a
+`.par` of that name when you run), LightSAGE's `OUTDIR`/`OUTFILE`, SAGEswarm's
+`OUTPUT_PATH`. If the name already belongs to a model or lightcone, a warning
+says running would replace it.
+
+**All settings** shows every value in the file, grouped into sections, with a
+search box; on/off values are switches and each value shows its comment from
+the file. The setup page and All settings always agree: change something in
+either and the other shows it.
+
+## While it runs
+
+The run page shows:
+
+- the stages, an overall progress bar and a few numbers, read from the tool's
+  own output (SAGE26's percentage and time left, with a tree branch growing
+  as the trees are built; LightSAGE's stages and photometry steps; SAGEswarm's
+  rounds as a bar and its particles as circles that fill as each one runs, and
+  the best score so far);
+- the tool's terminal, with what the run is making beside it: a SAGE26 box
+  filling with galaxies, a lightcone filling outwards from the observer, or
+  SAGEswarm's newest plot of each constraint;
+- **Cancel**, and when it finishes **Open in Explore** / **Open in Lightcone
+  view**, or **Change settings** if it stopped.
+
+The terminal is never narrower than 140 columns (SAGE26 redraws its banner
+and progress bar in place, up to 138 columns wide); in a narrow window its
+font shrinks, and long lines are cut off at the edge rather than wrapped.
+
+## Opening a model
+
+Opening a model or lightcone, from any of these pages or from the Launch Mode
+menu, restarts ViSAGE on it: the page shows **Opening …** and reloads itself
+when it's ready.
+
+## Where ViSAGE looks for things
+
+The folder you launch from anchors the session:
 
 | What | Where |
 |---|---|
-| SAGE26 executable & source | Searched in CWD, parent of CWD, then home folder |
-| `.par` files | `<SAGE26>/input/` and `<CWD>/input/` |
-| Existing models | `<SAGE26>/output/`, `<CWD>/output/`, `<CWD>/sage_outputs/` |
-| Screenshots / recordings / exports | `<CWD>/sage_outputs/session_<timestamp>/` |
-| LightSAGE lightcone output | `<CWD>/sage_outputs/lightcone/` (editable in the run script's `OUTDIR`) |
-
-**First-time install (no SAGE26 yet):** run `visage` from the folder where you want SAGE26 to live, then use **Clone SAGE26** in the wizard. The wizard will ask which parent directory to clone into (defaulting to your home folder), and will use that cloned directory for the rest of the session.
-
-**Existing SAGE26:** run from the SAGE26 root and the wizard finds everything automatically.
+| SAGE26, LightSAGE, SAGEswarm checkouts | The launch folder, its parent, then your home folder |
+| `.par` files | `<SAGE26>/input/` and `<launch folder>/input/` |
+| Models | `<SAGE26>/output/`, `<launch folder>/output/`, `<launch folder>/sage_outputs/` |
+| Lightcones | `<launch folder>/sage_outputs/` (each build in its own folder) |
+| Screenshots, recordings, exports | `<launch folder>/sage_outputs/session_<timestamp>/` |
+| Build and run scripts | `~/.visage/` (never inside a tool's checkout) |
 
 ## On Windows
 
-The three flows build and run Unix programs, so on Windows every clone,
-build and run step executes inside **WSL** (Windows Subsystem for Linux).
-You don't need to do anything different; the wizard handles it:
+The three tools build and run Unix programs, so on Windows every install and
+run happens inside **WSL** (Windows Subsystem for Linux), automatically:
 
-- The scan step reports `Linux tools : WSL (Ubuntu)` and lists any missing
-  compilers or libraries. **Install Linux build tools** installs them inside
-  WSL with `apt-get`, as root, so there is no password prompt.
-- Checkouts stay on your Windows drive, and paths are translated both ways:
-  `.par` files and run scripts get `/mnt/c/...` paths for the tools, and
-  ViSAGE reads those paths back as `C:\...` to open the results.
-- Commands shown in the terminal are prefixed with `[WSL]`, and **Cancel**
-  (Ctrl+C) reaches the Linux processes as usual.
-- If WSL isn't installed, the scan step says how to install it
-  (`wsl --install` in an administrator PowerShell). Opening existing models
-  and lightcones works without it.
+- If Linux build tools are missing, the home page says so and offers
+  **Install Linux build tools** (apt inside WSL, as root, so no password).
+- Checkouts stay on your Windows drive; paths are translated both ways
+  (`C:\...` ↔ `/mnt/c/...`).
+- If WSL isn't installed, the home page says how (`wsl --install` in an
+  administrator PowerShell). Opening existing models and lightcones works
+  without it.
 
-See [Installation › Windows](../getting_started/installation.md#windows) for
-the one-time setup.
+See [Installation › Windows](../getting_started/installation.md#windows).
 
-## Step indicator
+## Fixes ViSAGE makes to the LightSAGE tools
 
-A row of chips in the header tracks progress through the wizard:
-
-| Chip colour | Meaning |
-|---|---|
-| Cyan / elevated | Current step |
-| Green | Completed step |
-| White / outlined | Pending step |
-
-## SAGE26 setup steps
-
-### 1 — Scan environment
-
-The wizard checks for a SAGE26 executable, locates any existing `.par` files under your SAGE root, and reports what it finds.
-
-When SAGE26 needs compiling (after **Clone SAGE26**, or via **Compile
-SAGE26**), the wizard runs `make -j<cores>` from a helper script in
-`~/.visage/build_sage26.sh`. If no MPI compiler (`mpicc`) is installed, it
-builds the serial version (`USE-MPI=`) instead of failing. On
-Debian/Ubuntu/WSL it also points the build at the system HDF5.
-
-### 2 — Choose action
-
-| Option | Description |
-|---|---|
-| **Use existing par file** | Select from the list of discovered `.par` files to edit and run |
-| **Create new config file** | Generates a new `.par` from the built-in millennium.par template; you choose the filename before writing |
-
-### 3 — Edit par file (when needed)
-
-The `.par` file opens as a [parameter form](#parameter-form) — one labelled box per option — side-by-side with the terminal output. Both panels are visible simultaneously.
-
-### 4 — Run SAGE26
-
-The wizard creates the `OutputDir` declared in the `.par` file (if it doesn't exist), then launches SAGE26 and streams all output into the terminal.
-
-**Back** at this step returns to the par-file selection step, not to the start of the wizard.
-
-## SAGEswarm steps
-
-1. **Scan** — reports whether an existing SAGEswarm checkout and a compiled SAGE binary were found.
-2. **Clone SAGEswarm** — choose a parent directory (defaults to home); clones `MBradley1985/SAGEswarm` into `SAGEswarm/` inside it.
-3. **Install deps** — runs `python3 -m pip install -r requirements.txt` in the checkout.
-4. **Configure** — `run_pso.sh` opens as a [parameter form](#parameter-form): PSO particle/iteration counts, constraints (`-x`), simulation settings, and paths to the compiled SAGE binary + `.par` file. Valid constraint names (read from the checkout's `src/constraints.py`) are listed above the form.
-5. **Run PSO** — saves your edits back into `run_pso.sh` and runs it; a live plot gallery (right-docked panel) shows diagnostic PNGs as SAGEswarm writes them, refreshing automatically.
-6. **View plots** — run again, or finish.
-
-## LightSAGE steps
-
-LightSAGE turns existing SAGE26 HDF5 output into a lightcone catalogue — see
-**[Lightcone Mode](lightcone.md)** for what you can do with the result.
-
-1. **Scan** — reports whether an existing LightSAGE checkout is found, and whether its `sage2kdtree` / `cli_lightcone` tools are built. Also offers **Load Existing Lightcone**, which lists any `cli_lightcone` `.h5` files already in `sage_outputs/lightcone/` (or the legacy `~/.visage/lightcone_output/`, or your recent session models) and opens the chosen one straight in [Lightcone Mode](lightcone.md) — no clone/build/run needed.
-2. **Clone** — choose a parent directory; clones the upstream repo (`sage-home/sage-lightcone`) into a `LightSAGE/` folder inside it.
-3. **Build** — builds *only* the two C++ tools (`sage2kdtree`, `cli_lightcone`) — SAGE itself is never rebuilt, since ViSAGE feeds in your existing SAGE26 output. On macOS, if the active Apple-clang toolchain can't parse the default SDK's libc++ headers, the build automatically falls back to a compatible installed SDK.
-4. **Configure** — `run_lightcone.sh` opens as a [parameter form](#parameter-form): the SAGE output directory / `.par` / scale-factor list feeding stage 1 (`sage2kdtree`), the sky/redshift bounds (`ra`, `dec`, `z`) and output path feeding stage 2 (`cli_lightcone`), and an optional stage 3 — check **SED_ENABLED** to synthesize broadband photometry (AB magnitudes, via FSPS) for every galaxy in the cone, pick a frame (`SED_FRAME`: rest, observed, or both), and uncheck any of the 14 filter bands (GALEX FUV/NUV, SDSS ugriz, 2MASS JHKs, WISE W1-4 — all checked by default) you don't want. Physics switches: **SED_METALLICITY_ENABLED** (on — uses each galaxy's own mass-weighted stellar metallicity; off forces solar), **SED_DUST_ENABLED** (on — dims and reddens the galaxies with dust), with **SED_DUST_MODEL** choosing how: `charlot_fall` (default) gives each galaxy its own dust from its cold gas, metals and H₂ (Dusty-SAGE physics), in birth clouds around young stars and a disk seen at the galaxy's inclination; `calzetti` applies one fixed screen of optical depth `SED_DUST2` to every galaxy. **SED_DUST_EMISSION_ENABLED** (off — with `calzetti` dust, re-emits the absorbed energy in the IR via Draine & Li, which makes the mid-IR WISE bands physical). How the magnitudes and dust are computed, with references, is in [Lightcone photometry](../physics/photometry.md). Requires `pip install "sage-viewer[sed]"`.
-5. **Run** — saves your edits and runs the pipeline stages in sequence, streamed to the terminal.
-6. **Done** — once a run succeeds, click **Visualize lightcone** to relaunch ViSAGE directly into [Lightcone Mode](lightcone.md) on the output file, or **Run again**.
-
-All generated build/run scripts (and the LightSAGE checkout itself) live outside the ViSAGE repository — the build/run scripts specifically under `~/.visage/` — so nothing is ever written into the third-party checkout. The lightcone output itself is written to `<cwd>/sage_outputs/lightcone/` (the `OUTDIR` variable in `run_lightcone.sh`), alongside ViSAGE's other exports.
-
-### Fixes ViSAGE makes to the LightSAGE tools
-
-ViSAGE builds LightSAGE's two tools itself and carries a few fixes to them as patches (in `visage/wizard/patches/lightsage/`). Each build applies the patches, builds, and takes them out again, so your LightSAGE checkout stays exactly as upstream has it and only the built tools carry the fixes. A patch LightSAGE already includes is skipped.
+ViSAGE builds LightSAGE's two tools itself and carries a few fixes to them as
+patches (in `visage/wizard/patches/lightsage/`). Each build applies the
+patches, builds, and takes them out again, so your LightSAGE checkout stays
+exactly as upstream has it and only the built tools carry the fixes. A patch
+LightSAGE already includes is skipped.
 
 | Patch | Fixes |
 |---|---|
 | Rotate spins with the box tiling | When a lightcone tiles copies of the box, each copy's axes are permuted. Positions and velocities were permuted but galaxy spins weren't, so each galaxy's orientation to the observer (its inclination) was wrong. Spins now get the same permutation, with the sign flip an axial vector takes when two axes swap (a mirror). |
 | Sort iterator for newer compilers | Newer C++ standard libraries (Xcode / Command Line Tools 27) sort through `it[n]`, which LightSAGE's sort iterator didn't support, so the tools no longer compiled. |
 
-## Parameter form
+## Closing
 
-Every editable config the wizard opens — the SAGE26 `.par`, SAGEswarm's
-`run_pso.sh`, or LightSAGE's `run_lightcone.sh` — is shown as a list of
-labelled boxes, one per option, pre-filled with its current value, instead of
-raw text. Hover a label to see its inline comment (e.g. units or valid
-values) as a tooltip. Edits are folded back into the underlying file when you
-click **Save & Run** — comments, quoting, and layout are all preserved; only
-the values you changed are different on disk afterwards.
-
-## Where visage looks for things
-
-The working directory you launch from is the anchor for the entire session:
-
-| What | Where |
-|---|---|
-| SAGE26 executable & source | Searched in CWD, parent of CWD, then home folder |
-| `.par` files | `<SAGE26>/input/` and `<CWD>/input/` |
-| Existing models | `<SAGE26>/output/`, `<CWD>/output/`, `<CWD>/sage_outputs/` |
-| Screenshots / recordings / exports | `<CWD>/sage_outputs/session_<timestamp>/` |
-| LightSAGE lightcone output | `<CWD>/sage_outputs/lightcone/` (editable in the run script's `OUTDIR`) |
-
-**First-time install (no SAGE26 yet):** run `visage` from the folder where you want SAGE26 to live, then use **Clone SAGE26** in the wizard. The wizard will ask which parent directory to clone into (defaulting to your home folder), and will use that cloned directory for the rest of the session.
-
-**Existing SAGE26:** run from the SAGE26 root and the wizard finds everything automatically.
-
-## Step indicator
-
-A row of chips in the header tracks progress through the wizard:
-
-| Chip colour | Meaning |
-|---|---|
-| Cyan / elevated | Current step |
-| Green | Completed step |
-| White / outlined | Pending step |
-
-## Rescan
-
-The **Rescan** button (top-right of the header) re-runs the environment scan from scratch at any point — useful if you've just compiled SAGE26 (or LightSAGE) or moved files.
-
-## Session models
-
-The Launch-Mode dropdown (SAGE-logo button) lists every box and lightcone
-opened so far this session under **Session Models** — click any entry to jump
-straight back to it. See [Lightcone Mode](lightcone.md#session-models) for
-details.
-
-## Closing the wizard
-
-The **×** button in the header closes the wizard and returns to Explore Mode. The wizard always resets cleanly when reopened.
+The **×** at the top right closes Launch Mode and returns to the model you
+had open. **Rescan** looks for the tools again (after installing one outside
+ViSAGE, say).

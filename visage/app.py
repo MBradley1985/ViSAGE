@@ -294,6 +294,29 @@ def create_app(
     # While frames flow, snapshot preloading waits rather than competing
     # with the renderer for the CPU.
     frame_delivery.on_frame.append(lambda: hold_background(0.3))
+
+    # A lightcone is framed to the window's shape, which is only known once
+    # the browser sends its first frame size: frame it again then (once).
+    if scene.is_lightcone:
+        _fit_size = [tuple(scene.plotter.ren_win.GetSize()[:2])]
+
+        def _refit_lightcone() -> None:
+            size = tuple(scene.plotter.ren_win.GetSize()[:2])
+            if _fit_size[0] is None or size == _fit_size[0]:
+                return
+            _fit_size[0] = None
+
+            def _go() -> None:
+                scene.camera.reset()
+                if hasattr(server.controller, "view_update"):
+                    server.controller.view_update()
+
+            try:
+                asyncio.get_running_loop().call_soon(_go)
+            except RuntimeError:
+                pass
+
+        frame_delivery.on_frame.append(_refit_lightcone)
     if perf:
         from visage.utils import perf as _perf
 
@@ -355,6 +378,9 @@ def create_app(
             "scripts": [
                 "https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js",
                 "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js",
+                # Canvas renderer: block characters (SAGE26's banner) fill
+                # their cells, as in a normal terminal.
+                "https://cdn.jsdelivr.net/npm/xterm-addon-canvas@0.5.0/lib/xterm-addon-canvas.js",
             ],
         }
     )
@@ -524,13 +550,23 @@ def create_app(
         for e in _sess_entries
     ]
 
+    server.state.relaunching = ""  # name of the model being opened
+
     @server.controller.set("open_recent_model")
-    def _open_recent_model(path, kind):
+    async def _open_recent_model(path, kind):
+        import asyncio as _asyncio
+
         argv = (
             ["--lightcone", str(path)]
             if kind == "lightcone"
             else ["--par", str(path)]
         ) + ["--port", str(port)]
+        # Show the switching card and have the page reload itself once
+        # the new ViSAGE is up (visage.js watches `relaunching`).
+        server.state.model_loading = True
+        server.state.relaunching = Path(str(path)).stem or "model"
+        server.state.flush()
+        await _asyncio.sleep(0.8)
         system.relaunch_visage(argv)
 
     server.state.active_box_name = scene.primary_name
@@ -839,6 +875,13 @@ def create_app(
         server.state.wiz_active = True
         server.state.flush()
 
+    # Each tool opens on its own first screen.
+    @server.controller.set("open_sage26_wizard")
+    def _open_sage26_wizard():
+        _wiz_ctrl.reset_and_start(flow="sage26")
+        server.state.wiz_active = True
+        server.state.flush()
+
     @server.controller.set("open_sageswarm_wizard")
     def _open_sageswarm_wizard():
         _wiz_ctrl.reset_and_start(flow="sageswarm")
@@ -998,9 +1041,16 @@ def create_app(
                         style="color:#06b6d4;font-size:0.65rem;",
                     )
                     v3.VListItem(
-                        title="Setup Wizard",
-                        prepend_icon="mdi-console",
-                        click=server.controller.open_wizard,
+                        title="SAGE26",
+                        prepend_icon="mdi-cube-outline",
+                        click=server.controller.open_sage26_wizard,
+                        color="cyan",
+                        density="compact",
+                    )
+                    v3.VListItem(
+                        title="LightSAGE",
+                        prepend_icon="mdi-telescope",
+                        click=server.controller.open_sagelightcone_wizard,
                         color="cyan",
                         density="compact",
                     )
@@ -1012,9 +1062,9 @@ def create_app(
                         density="compact",
                     )
                     v3.VListItem(
-                        title="LightSAGE",
-                        prepend_icon="mdi-telescope",
-                        click=server.controller.open_sagelightcone_wizard,
+                        title="Setup Wizard",
+                        prepend_icon="mdi-rocket-launch",
+                        click=server.controller.open_wizard,
                         color="cyan",
                         density="compact",
                     )
@@ -1179,7 +1229,7 @@ def create_app(
                 density="compact",
                 color="white",
                 title="SAGE26 Setup",
-                click=server.controller.open_wizard,
+                click=server.controller.open_sage26_wizard,
                 style="margin-left:2px;",
             )
 

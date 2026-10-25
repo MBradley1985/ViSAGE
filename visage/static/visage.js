@@ -423,10 +423,46 @@
     // Wizard terminal
     var _wizTerm         = null;
     var _wizFit          = null;
-    var _wizLastSeq      = -1;
+    // Wizard terminal output arrives tagged with its position in the
+    // stream; _wizOff is how far this terminal has written (-1: nothing
+    // yet). A gap means output was missed, so ask for it (never skip:
+    // programs that redraw in place scramble when bytes go missing).
+    var _wizOff          = -1;
+    var _wizRunWas       = false;  // a command was running at the last poll
+    var _wizNeedAt       = null;  // the position last asked for
+    var _wizNeedTime     = 0;
+    var _wizNeedSeq      = 0;
     var _wizListenerInstalled = false;
     var _wizPending      = false;
+    var _wizIniting      = false;  // a deferred start of the wizard xterm is queued
+    var _relaunchWatch   = false;  // watching for the server to restart with a model
     var _lastWizActive   = null;
+
+    // A card that covers the page while ViSAGE restarts on another model.
+    // Plain DOM on <body>, so it outlives the app's own "Connection closed"
+    // screen until the page reloads.
+    function _showRelaunchCard(name) {
+      if (document.getElementById('visage-relaunch')) return;
+      var d = document.createElement('div');
+      d.id = 'visage-relaunch';
+      d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;' +
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+        'gap:18px;font-family:system-ui,sans-serif;color:#e2e8f0;';
+      var sp = document.createElement('div');
+      sp.style.cssText = 'width:46px;height:46px;border-radius:50%;' +
+        'border:3px solid #1e293b;border-top-color:#22d3ee;' +
+        'animation:visage-spin 0.9s linear infinite;';
+      var t = document.createElement('div');
+      t.style.cssText = 'font-size:1.35rem;font-weight:700;';
+      t.textContent = 'Opening ' + name;
+      var sub = document.createElement('div');
+      sub.style.cssText = 'font-size:0.9rem;color:#94a3b8;';
+      sub.textContent = 'ViSAGE is restarting on it; this page reloads by itself.';
+      var st = document.createElement('style');
+      st.textContent = '@keyframes visage-spin{to{transform:rotate(360deg)}}';
+      d.appendChild(st); d.appendChild(sp); d.appendChild(t); d.appendChild(sub);
+      document.body.appendChild(d);
+    }
 
     function _getState(key) {
       try { return window.trame.state.get(key); } catch (e) { return undefined; }
@@ -562,9 +598,86 @@
     var _pendingPtyWrite  = false;
 
     // ── Wizard xterm ─────────────────────────────────────────────────────
+    // The wizard terminal lives in the run page's terminal box while a run
+    // shows, and in the full-page terminal otherwise (clone, install...).
+    function _wizTermContainer() {
+      var id = _getState('wiz_view') === 'run' ? 'wiz-run-pty' : 'sage-wiz-pty';
+      return document.getElementById(id);
+    }
+    var _wizRO = null;
+
+    // SAGE26 redraws its banner and progress bar in place (cursor up 7
+    // lines), and those lines are up to 138 columns wide: if they wrap,
+    // the redraw lands on the wrong rows and frames pile up. So the
+    // terminal is never narrower than WIZ_MIN_COLS: the font shrinks (to
+    // 9px at least) to fit that many, and in a box too narrow even then
+    // the ends of long lines are cut off at the edge instead of wrapping.
+    var WIZ_MIN_COLS = 140;
+    function _wizFontFor(box) {
+      var w = box ? box.clientWidth : 0;
+      if (!w) return 12;
+      return Math.max(9, Math.min(12, Math.floor(w / (WIZ_MIN_COLS * 0.6))));
+    }
+    function _wizFitMin() {
+      if (!_wizFit || !_wizTerm) return;
+      // Never resize under a running command: a program redrawing in place
+      // (SAGE26) loses its place when rows or columns change mid-run.
+      // It fits again once the command finishes.
+      if (_getState('wiz_run_active') && _wizTerm.cols >= WIZ_MIN_COLS) return;
+      try {
+        var d = _wizFit.proposeDimensions();
+        if (!d || !d.cols || !d.rows) return;
+        var cols = Math.max(d.cols, WIZ_MIN_COLS);
+        if (cols !== _wizTerm.cols || d.rows !== _wizTerm.rows) {
+          _wizTerm.resize(cols, d.rows);
+        }
+      } catch (e) {}
+    }
+    function _wizSetFont() {
+      if (!_wizTerm || !_wizTerm.element) return;
+      var fs = _wizFontFor(_wizTerm.element.parentElement);
+      if (_wizTerm.options.fontSize !== fs) {
+        try { _wizTerm.options.fontSize = fs; } catch (e) {}
+      }
+    }
+
+    // Tell the server the terminal's size, so commands run as wide as it.
+    var _wizSentSize = '';
+    function _sendWizSize() {
+      if (!_wizTerm) return;
+      var size = _wizTerm.cols + ',' + _wizTerm.rows;
+      if (size !== _wizSentSize) {
+        _wizSentSize = size;
+        _vueInput('wiz-term-size-relay', size);
+      }
+    }
+
+    function _wizFitSoon() {
+      requestAnimationFrame(function () {
+        _wizSetFont();
+        _wizFitMin();
+        _sendWizSize();
+      });
+    }
+
+    // Move the terminal into the box the current view shows (if it isn't
+    // already there) and fit it to that box.
+    function _placeWizTerm() {
+      if (!_wizTerm || !_wizTerm.element) return;
+      var target = _wizTermContainer();
+      if (!target || target.offsetWidth === 0) return;
+      if (_wizTerm.element.parentElement !== target) {
+        target.appendChild(_wizTerm.element);
+        try { _wizTerm.refresh(0, _wizTerm.rows - 1); } catch (e) {}
+        if (_wizRO) { try { _wizRO.observe(target); } catch (e) {} }
+        _wizFitSoon();
+        setTimeout(_wizFitSoon, 150);
+      }
+    }
+
     function _initWizTerm(attempt) {
       if (_wizTerm) return;
-      var container = document.getElementById('sage-wiz-pty');
+      var container = _wizTermContainer();
       // Wait until the container has BOTH a real width AND a real height.
       // The card is flex:1 inside a column — height resolves after width,
       // so checking only offsetWidth lets us proceed with a zero-height
@@ -588,7 +701,7 @@
           background: '#000000', foreground: '#ffffff',
           cursor: '#06b6d4', selectionBackground: 'rgba(6,182,212,0.25)',
         },
-        fontSize: 12,
+        fontSize: _wizFontFor(container),
         fontFamily: '"Menlo","Monaco","Consolas","DejaVu Sans Mono",monospace',
         scrollback: 10000, convertEol: false, allowTransparency: false,
         cursorBlink: false, disableStdin: true,
@@ -597,45 +710,83 @@
       var fitAddon = FitCtor ? new FitCtor() : null;
       if (fitAddon) term.loadAddon(fitAddon);
       term.open(container);
+      if (typeof CanvasAddon !== 'undefined') {
+        try { term.loadAddon(new CanvasAddon.CanvasAddon()); } catch (e) {}
+      }
       _wizTerm = term;
       _wizFit  = fitAddon;
+      window.visageWizTerm = term;  // for inspecting the terminal
       // The container height is now set by CSS grid (1fr row) so it always has
       // a real pixel height before open() is called.  Still defer the first
       // fit() to the next paint so xterm has measured its font metrics.
-      function _doFit() { if (_wizFit) { try { _wizFit.fit(); } catch (e) {} } }
+      function _doFit() {
+        _wizSetFont();
+        _wizFitMin();
+        _sendWizSize();
+      }
       requestAnimationFrame(function () {
         _doFit();
         setTimeout(_doFit, 200);
       });
-      // Re-fit whenever the container is resized (window resize, panel toggles, etc.)
+      // Re-fit whenever its box is resized (window resize, view changes).
       if (typeof ResizeObserver !== 'undefined' && fitAddon) {
-        var _wizRO = new ResizeObserver(function () { _doFit(); });
+        _wizRO = new ResizeObserver(function () { _doFit(); });
         _wizRO.observe(container);
       }
-      // Replay full session buffer so late-mounting xterm shows all prior output.
-      var buf = _getState('wiz_pty_buf');
-      if (buf) {
-        _writePtyData(term, buf);
-      }
-      // Mark the current seq as rendered so _writeWizNow doesn't double-write.
-      var seq = _getState('wiz_pty_seq');
-      if (seq !== undefined) _wizLastSeq = seq;
+      // Start from everything the server has kept.
+      _wizOff = -1;
+      _wizAsk(-1);
     }
 
     function _destroyWizTerm() {
+      if (_wizRO) { try { _wizRO.disconnect(); } catch (e) {} }
+      _wizRO = null;
       if (_wizTerm) { try { _wizTerm.dispose(); } catch (e) {} }
       _wizTerm    = null;
       _wizFit     = null;
-      _wizLastSeq = -1;
+      _wizOff     = -1;
+      _wizNeedAt  = null;
+    }
+
+    function _b64Bytes(b64) {
+      var raw = atob(b64 || '');
+      var bytes = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      return bytes;
+    }
+
+    // Ask the server for output from position `off` (-1: all it kept);
+    // asked again if no answer comes within a second.
+    function _wizAsk(off) {
+      var now = Date.now();
+      if (_wizNeedAt === off && now - _wizNeedTime < 1000) return;
+      _wizNeedAt = off;
+      _wizNeedTime = now;
+      _vueInput('wiz-pty-need-relay', off + ':' + (++_wizNeedSeq));
     }
 
     function _writeWizNow() {
-      var seq = _getState('wiz_pty_seq');
-      if (seq === undefined || seq === _wizLastSeq) return;
-      var b64 = _getState('wiz_pty_data');
-      if (!b64) return;
-      _wizLastSeq = seq;
-      if (_wizTerm) _writePtyData(_wizTerm, b64);
+      var ch = _getState('wiz_pty_chunk');
+      if (!ch || !_wizTerm) return;
+      var o = ch.o | 0;
+      var bytes;
+      try { bytes = _b64Bytes(ch.d); } catch (e) { return; }
+      if (ch.full) {
+        // Everything kept: start the terminal again from it.
+        if (_wizOff >= 0) { try { _wizTerm.reset(); } catch (e) {} }
+        _wizTerm.write(bytes);
+        _wizOff = o + bytes.length;
+        _wizNeedAt = null;
+        return;
+      }
+      if (_wizOff < 0) { _wizAsk(-1); return; }      // not started yet
+      if (o > _wizOff) { _wizAsk(_wizOff); return; } // missed some
+      var skip = _wizOff - o;                         // already written
+      if (skip < bytes.length) {
+        _wizTerm.write(skip ? bytes.subarray(skip) : bytes);
+        _wizOff = o + bytes.length;
+      }
+      if (_wizNeedAt !== null && _wizNeedAt <= o) _wizNeedAt = null;
     }
 
     function _installWizListener() {
@@ -647,7 +798,7 @@
         if (!ev || ev.type !== 'dirty-state') return;
         var keys = ev.keys || [];
         for (var i = 0; i < keys.length; i++) {
-          if (keys[i] === 'wiz_pty_seq' || keys[i] === 'wiz_pty_data') {
+          if (keys[i] === 'wiz_pty_chunk') {
             if (!_wizPending) {
               _wizPending = true;
               Promise.resolve().then(function () { _wizPending = false; _writeWizNow(); });
@@ -710,6 +861,32 @@
         } else {
           _destroyWizTerm();
         }
+      }
+
+      // Opening a model relaunches the server: reload the page once it has
+      // gone down and come back up.
+      if ((_getState('wiz_loading') || _getState('relaunching')) && !_relaunchWatch) {
+        _relaunchWatch = true;
+        _showRelaunchCard(_getState('wiz_loading') || _getState('relaunching'));
+        var _wentDown = false;
+        var _probe = setInterval(function () {
+          fetch(window.location.href, { cache: 'no-store' }).then(function (r) {
+            if (_wentDown && r.ok) { clearInterval(_probe); window.location.reload(); }
+          }).catch(function () { _wentDown = true; });
+        }, 1000);
+      }
+
+      // The wizard's terminal box is hidden behind the home and mode
+      // screens, so it may never have had a size to start in: start it
+      // once the terminal view shows.
+      var _wv = _getState('wiz_view');
+      var _ra = !!_getState('wiz_run_active');
+      if (_wizTerm && _wizRunWas && !_ra) _wizFitSoon();  // command finished
+      _wizRunWas = _ra;
+      if (_wizTerm && (_wv === 'term' || _wv === 'run')) _placeWizTerm();
+      if (!_wizTerm && !_wizIniting && (_wv === 'term' || _wv === 'run')) {
+        _wizIniting = true;
+        setTimeout(function () { _wizIniting = false; _initWizTerm(); }, 60);
       }
 
       // Detect terminal mode becoming active — mount or re-focus panel terminal.

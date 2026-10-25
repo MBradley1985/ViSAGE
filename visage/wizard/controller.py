@@ -9,6 +9,8 @@ from pathlib import Path
 from visage import system
 from visage.utils import terminal
 from visage.wizard import toolchain as _toolchain
+from visage.wizard.install import InstallMixin
+from visage.wizard.screens import SetupRunMixin
 
 _SAGE26_REPO = "https://github.com/MBradley1985/SAGE26.git"
 _SAGESWARM_REPO = "https://github.com/MBradley1985/SAGEswarm.git"
@@ -97,6 +99,81 @@ def _ansi_to_html(text: str) -> str:
         out.append("</span>")
     return "".join(out)
 
+
+def _wizard_image(name: str) -> str:
+    """A picture in visage/static/wizard/, tagged with its modification
+    time so a browser never shows a cached older version."""
+    f = Path(__file__).resolve().parent.parent / "static" / "wizard" / name
+    try:
+        return f"/sage_static/wizard/{name}?v={int(f.stat().st_mtime)}"
+    except OSError:
+        return f"/sage_static/wizard/{name}"
+
+
+# The three tools on the Launch Mode home screen, in order: card text,
+# background (visage/static/wizard/) and how it fills the card ("contain":
+# shown whole, on black; "cover": fills it), icon and accent colours.
+_MODE_META = {
+    "sage26": {
+        "title": "SAGE26",
+        "desc": "Run the semi-analytic model on dark-matter merger trees",
+        "bg": _wizard_image("sage26.jpg"),
+        # The logo, whole (its background is black): filling the card
+        # cropped and enlarged it.
+        "fit": "contain",
+        "icon": "mdi-orbit",
+        "accent": "#22d3ee",
+        "accent2": "#a78bfa",
+    },
+    "sagelightcone": {
+        "title": "LightSAGE",
+        "desc": "Build lightcones and see galaxies as a telescope would",
+        "bg": _wizard_image("lightsage.jpg"),
+        "fit": "cover",
+        "icon": "mdi-telescope",
+        "accent": "#60a5fa",
+        "accent2": "#f59e0b",
+    },
+    "sageswarm": {
+        "title": "SAGEswarm",
+        "desc": "Calibrate SAGE26 against observations with a particle swarm",
+        "bg": _wizard_image("sageswarm.jpg"),
+        "fit": "cover",
+        "icon": "mdi-chart-bubble",
+        "accent": "#2dd4bf",
+        "accent2": "#f59e0b",
+    },
+}
+
+# Each mode screen's buttons -> the flow step they start.
+_MODE_ACTIONS = {
+    "sage26": {
+        "run": "run_sage26",
+        "load": "load",
+        "install": "compile_sage26",
+        "update": "check_update",
+        "clone": "clone_sage26",
+    },
+    "sagelightcone": {
+        "run": "lc_configure",
+        "load": "lc_load",
+        "install": "lc_build",
+        "update": "check_update",
+        "clone": "lc_clone",
+    },
+    "sageswarm": {
+        "run": "sw_configure",
+        "install": "sw_install",
+        "update": "check_update",
+        "clone": "sw_clone",
+    },
+}
+
+_UPDATE_VALUE = {
+    "sage26": "update_sage26",
+    "sagelightcone": "lc_update",
+    "sageswarm": "sw_update",
+}
 
 _STEPS = [
     "Scan Environment",
@@ -658,7 +735,21 @@ _KIND_COLORS = {
 }
 
 
-class WizardController:
+def _latest_per_constraint(plots: list[dict]) -> list[dict]:
+    """SAGEswarm's newest figure of each constraint (its file names start
+    with the constraint, e.g. SMF_z0_iter3_all.png), for the run page."""
+    best: dict[str, dict] = {}
+    for it in plots:
+        stem = Path(it["name"]).stem
+        group = stem.split("_iter")[0].split("_all")[0] or stem
+        if group not in best or it.get("mtime", 0) >= best[group].get(
+            "mtime", 0
+        ):
+            best[group] = {**it, "group": group}
+    return [best[g] for g in sorted(best)]
+
+
+class WizardController(InstallMixin, SetupRunMixin):
     def __init__(
         self,
         server,
@@ -681,10 +772,11 @@ class WizardController:
         self._sage26_dir: Path | None = None
         self._par_path: Path | None = None
         self._models: list[dict] = []
-        self._wiz_seq: int = 0
-        self._wiz_buf: bytearray = (
-            bytearray()
-        )  # replay buffer for late-mounting xterm
+        # Terminal output: every byte has a position in the stream
+        # (_wiz_total counts them); _wiz_buf keeps the latest of them, so a
+        # browser that missed some, or a terminal starting late, catches up.
+        self._wiz_total: int = 0
+        self._wiz_buf: bytearray = bytearray()
         self._back: str = (
             "back_sage26_menu"  # Back target for par/compile steps
         )
@@ -699,6 +791,8 @@ class WizardController:
         self._plot_watch_stop = True
         self._plot_seen: dict[str, int] = {}  # plot name → last-seen mtime
         self._run_proc = None  # currently-running _run_cmd TerminalProcess
+        self._inline = None  # an Install / Clone running on its button
+        self._job_results: dict = {}  # mode -> (act, ok, text), last run
         # Where the SAGE tools run (native, or WSL on Windows) — detected on
         # the first scan; Rescan re-probes so a fresh WSL install is seen.
         self._tc: _toolchain.Toolchain | None = None
@@ -707,6 +801,29 @@ class WizardController:
 
         self._st.wiz_step = 0
         self._st.wiz_steps = list(_STEPS)  # header chip labels (per-flow)
+        # Which screen fills the main box: the home cards, a tool's mode
+        # screen, or the terminal while an action runs.
+        self._st.wiz_view = "home"  # "home" | "mode" | "term"
+        self._st.wiz_mode = ""
+        self._st.wiz_home_cards = []
+        self._st.wiz_home_load = {}
+        self._st.wiz_mode_info = {}
+        self._st.wiz_tools_note = ""
+        self._st.wiz_tools_missing = False
+        self._st.wiz_pick = {}  # model / lightcone picker screen
+        # Setup (essentials + All settings) and run screens (screens.py).
+        self._st.wiz_setup = {}
+        self._st.wiz_setup_name = ""
+        self._st.wiz_sections = []
+        self._st.wiz_section = ""
+        self._st.wiz_param_search = ""
+        self._st.wiz_run = {}
+        self._st.wiz_run_plots = []
+        self._setup_mode = "sage26"
+        self._run = None
+        self._last_rc = None
+        self._st.wiz_loading = ""  # name of the model being opened
+        self._status: dict = {}
         self._st.wiz_lines = []  # kept for compat; no longer populated
         self._st.wiz_choices = []
         self._st.wiz_busy = True
@@ -715,9 +832,13 @@ class WizardController:
         self._st.wiz_filename_show = False
         self._st.wiz_filename = "millennium"
         self._st.wiz_kind_colors = _KIND_COLORS
-        self._st.wiz_pty_data = ""  # base64 PTY chunk → xterm.js
-        self._st.wiz_pty_seq = 0  # monotonically increasing
-        self._st.wiz_pty_buf = ""  # base64 full replay buffer
+        # The latest output for the browser's terminal: its position in
+        # the stream ("o") and its bytes ("d", base64); "full" when it is
+        # the whole kept history (the terminal starts again from it).
+        self._st.wiz_pty_chunk = {"o": 0, "d": "", "full": False}
+        # The browser asks for output from a position ("offset:nonce"; -1 =
+        # everything kept) when it has missed some.
+        self._st.wiz_pty_need = ""
         self._st.wiz_clone_dir_show = False
         self._st.wiz_clone_dir = str(Path.home())
         # SAGEswarm config (run_pso.sh editor) + live plot gallery
@@ -743,22 +864,26 @@ class WizardController:
         server.controller.set("wiz_close")(self._on_close)
         server.controller.set("wiz_rescan")(self._on_rescan)
         server.controller.set("wiz_cancel_run")(self._on_cancel_run)
+        # The terminal's size in the browser (visage.js), so commands run in
+        # a terminal as wide as the one showing them.
+        self._term_size = (24, 220)
+        self._st.wiz_term_size = ""
+        change = getattr(server.state, "change", None)
+        if callable(change):
+            change("wiz_term_size")(self._on_term_size)
+            change("wiz_pty_need")(self._on_pty_need)
+            change("wiz_setup_name")(self._on_setup_name)
 
         if auto_start:
             asyncio.ensure_future(self._step_scan())
 
-    def reset_and_start(self, flow: str = "sage26") -> None:
+    def reset_and_start(self, flow: str | None = None) -> None:
         """Clear terminal and restart — used when (re-)opening the wizard.
 
-        ``flow`` selects the guided flow: ``"sage26"`` (default, the original
-        clone/compile/run-and-explore path) or ``"sageswarm"`` (clone / install
-        / configure / run the PSO calibration tool with a live plot gallery).
+        ``flow`` selects the tool (``"sage26"``, ``"sagelightcone"`` or
+        ``"sageswarm"``) whose screen opens; none opens the home screen.
         """
-        self._flow = (
-            flow
-            if flow in ("sage26", "sageswarm", "sagelightcone")
-            else "sage26"
-        )
+        self._flow = flow if flow in _MODE_META else "sage26"
         self._sage26_dir = None
         self._par_path = None
         self._models = []
@@ -782,7 +907,6 @@ class WizardController:
         self._st.wiz_par_text = ""
         self._st.wiz_filename_show = False
         self._st.wiz_filename = "millennium"
-        self._st.wiz_pty_buf = ""
         self._st.wiz_clone_dir_show = False
         self._st.wiz_clone_dir = str(Path.home())
         self._st.wiz_sw_config_show = False
@@ -793,17 +917,16 @@ class WizardController:
         self._st.wiz_params_target = ""
         self._init_param_pool()
         self._st.pso_plots = []
+        self._st.wiz_run_plots = []
         self._st.pso_gallery_show = False
         # Push a clear sequence as the first "chunk" so a late-mounting xterm
         # clears itself before replaying buffered output.
         self._push_bytes(b"\x1b[2J\x1b[H")
         self._st.flush()
-        if self._flow == "sageswarm":
-            asyncio.ensure_future(self._step_sw_scan())
-        elif self._flow == "sagelightcone":
-            asyncio.ensure_future(self._step_lc_scan())
+        if flow in _MODE_META:
+            asyncio.ensure_future(self._enter(flow))
         else:
-            asyncio.ensure_future(self._step_scan())
+            asyncio.ensure_future(self._go_home())
 
     def _on_close(self, **_) -> None:
         self._stop_plot_watch()
@@ -816,7 +939,22 @@ class WizardController:
 
     def _on_rescan(self, **_) -> None:
         self._tc_refresh = True
-        self.reset_and_start(flow=self._flow)
+        view, mode = self._st.wiz_view, self._st.wiz_mode
+        self.reset_and_start(flow=mode if view != "home" else None)
+
+    def _on_term_size(self, wiz_term_size="", **_) -> None:
+        try:
+            cols, rows = (int(v) for v in str(wiz_term_size).split(","))
+        except ValueError:
+            return
+        if cols < 20 or rows < 5:
+            return
+        self._term_size = (rows, cols)
+        if self._run_proc is not None:
+            try:
+                self._run_proc.resize(rows, cols)
+            except Exception:
+                pass
 
     def _on_cancel_run(self, **_) -> None:
         """Interrupt the running command — equivalent to pressing Ctrl+C.
@@ -839,19 +977,46 @@ class WizardController:
     _WIZ_BUF_CAP = 512 * 1024  # 512 KB replay buffer cap
 
     def _push_bytes(self, data: bytes) -> None:
-        """Push raw bytes to the wizard xterm.js terminal.
-
-        Maintains a rolling replay buffer (wiz_pty_buf) so a late-mounting
-        xterm can reconstruct the full session history on first paint.
-        """
+        """Send output to the wizard terminal, tagged with its position in
+        the stream so the browser can tell when it has missed some (and
+        ask for it: _on_pty_need). Programs that redraw in place (SAGE26's
+        banner and progress bar) scramble if any bytes are skipped."""
+        start = self._wiz_total
         self._wiz_buf.extend(data)
+        self._wiz_total += len(data)
         if len(self._wiz_buf) > self._WIZ_BUF_CAP:
-            # Keep the most recent half so the display stays coherent.
+            # Keep the most recent half.
             self._wiz_buf = self._wiz_buf[len(self._wiz_buf) // 2 :]
-        self._wiz_seq = (self._wiz_seq + 1) % 10**9
-        self._st.wiz_pty_data = _b64.b64encode(data).decode()
-        self._st.wiz_pty_seq = self._wiz_seq
-        self._st.wiz_pty_buf = _b64.b64encode(bytes(self._wiz_buf)).decode()
+        self._st.wiz_pty_chunk = {
+            "o": start,
+            "d": _b64.b64encode(data).decode(),
+            "full": False,
+        }
+        self._st.flush()
+
+    def _on_pty_need(self, wiz_pty_need="", **_) -> None:
+        """The browser missed output (or its terminal just started): send
+        everything from the position it asks for, or all that's kept."""
+        try:
+            want = int(str(wiz_pty_need).split(":", 1)[0])
+        except ValueError:
+            return
+        start = self._wiz_total - len(self._wiz_buf)
+        if start <= want <= self._wiz_total:
+            chunk = {
+                "o": want,
+                "d": _b64.b64encode(
+                    bytes(self._wiz_buf[want - start :])
+                ).decode(),
+                "full": False,
+            }
+        else:
+            chunk = {
+                "o": start,
+                "d": _b64.b64encode(bytes(self._wiz_buf)).decode(),
+                "full": True,
+            }
+        self._st.wiz_pty_chunk = chunk
         self._st.flush()
 
     def _emit(self, text: str, kind: str = "info") -> None:
@@ -897,6 +1062,7 @@ class WizardController:
             self._st[f"wiz_pv_{i}"] = ""
             self._st[f"wiz_ph_{i}"] = ""
             self._st[f"wiz_pcb_{i}"] = False
+            self._st[f"wiz_pg_{i}"] = ""
         self._st.wiz_param_count = 0
 
     def _show_params(self, text: str, kind: str, target: str) -> None:
@@ -1118,8 +1284,8 @@ class WizardController:
                 argv,
                 cwd=run_cwd,
                 env={**os.environ, **extra} if extra else None,
-                rows=24,
-                cols=220,
+                rows=self._term_size[0],
+                cols=self._term_size[1],
             )
         except Exception as exc:
             self._push_bytes(f"\x1b[1;31mError: {exc}\x1b[0m\r\n".encode())
@@ -1140,9 +1306,13 @@ class WizardController:
                 if not data:
                     break
                 self._push_bytes(data)
-            return await loop.run_in_executor(None, proc.wait) or 0
+                self._run_output(data)
+                self._inline_output(data)
+            self._last_rc = await loop.run_in_executor(None, proc.wait) or 0
+            return self._last_rc
         except Exception as exc:
             self._push_bytes(f"\x1b[1;31mError: {exc}\x1b[0m\r\n".encode())
+            self._last_rc = 1
             return 1
         finally:
             self._run_proc = None
@@ -1162,46 +1332,17 @@ class WizardController:
         """A path as the SAGE tools see it (/mnt/c/... under WSL)."""
         return self._toolchain.path(p)
 
-    async def _scan_toolchain(self, width: int) -> None:
-        """Report the machine and where the SAGE tools run.  Under WSL also
-        check the Linux build tools, remembering what is missing so the
-        flow can offer to install it."""
+    async def _detect_toolchain(self) -> None:
+        """Find where the SAGE tools run (natively, or in WSL on Windows)
+        and, under WSL, which Linux build tools are missing."""
         loop = asyncio.get_running_loop()
         refresh, self._tc_refresh = self._tc_refresh, False
         self._tc = await loop.run_in_executor(None, _toolchain.detect, refresh)
-        tc = self._tc
-        self._emit(f"  {'System':<{width}}: {system.system_summary()}", "out")
         self._missing_tools = []
-        if tc.kind == "wsl":
-            self._emit(f"  {'Linux tools':<{width}}: {tc.describe()}", "ok")
+        if self._tc.kind == "wsl":
             self._missing_tools = await loop.run_in_executor(
-                None, tc.missing_tools
+                None, self._tc.missing_tools
             )
-            if self._missing_tools:
-                self._emit(
-                    f"  {'Missing':<{width}}: "
-                    + ", ".join(self._missing_tools)
-                    + "  (use Install Linux build tools)",
-                    "warn",
-                )
-        elif tc.kind == "missing":
-            self._emit(f"  {'Linux tools':<{width}}: WSL not found", "warn")
-            self._emit("  " + _toolchain.WSL_INSTALL_HELP, "warn")
-            self._emit(
-                "  Existing models and lightcones can still be opened.", "info"
-            )
-
-    def _linux_tools_choices(self) -> list[dict]:
-        if not self._missing_tools:
-            return []
-        return [
-            {
-                "label": "Install Linux build tools",
-                "value": "install_linux_tools",
-                "icon": "mdi-penguin",
-                "disabled": False,
-            }
-        ]
 
     async def _step_install_linux_tools(self) -> None:
         """apt-get the compilers and libraries all three flows need, inside
@@ -1222,12 +1363,16 @@ class WizardController:
         else:
             self._emit("Linux build tools installed.", "ok")
         self._emit("", "info")
-        if self._flow == "sageswarm":
-            await self._step_sw_scan()
-        elif self._flow == "sagelightcone":
-            await self._step_lc_scan()
-        else:
-            await self._step_scan()
+        self._set_choices(
+            [
+                {
+                    "label": "Back to home",
+                    "value": "home",
+                    "icon": "mdi-arrow-left",
+                    "disabled": False,
+                }
+            ]
+        )
 
     @staticmethod
     def _read_text(path: Path) -> str:
@@ -1336,79 +1481,436 @@ class WizardController:
     # ── state machine ────────────────────────────────────────────────────────
 
     async def _step_scan(self) -> None:
-        self._st.wiz_step = 0
-        self._emit("ViSAGE  ::  Launch Mode", "title")
-        self._emit("=" * 52, "sep")
-        self._emit("Scanning environment...", "info")
-        self._emit("", "info")
-
-        await self._scan_toolchain(width=13)
-        self._sage26_dir = self._find_sage26()
-        if self._sage26_dir:
-            compiled, n_obj = self._sage26_compiled(self._sage26_dir)
-            self._emit(f"  SAGE26 found : {self._sage26_dir}", "ok")
-            if compiled:
-                self._emit(
-                    f"  Compiled     : Yes  ({n_obj} object files)", "ok"
-                )
-            else:
-                self._emit(
-                    "  Compiled     : No   (will compile when needed)", "warn"
-                )
-        else:
-            self._emit(
-                "  SAGE26       : Not found in common locations", "warn"
-            )
-
-        self._emit("  Scanning for models...", "info")
-        self._models = self._find_models(verbose=True)
-        if self._models:
-            self._emit(f"  Models found : {len(self._models)}", "ok")
-            for m in self._models:
-                self._emit(f"    - {m['name']}   ({m['hdf5'].parent})", "out")
-        else:
-            self._emit("  Models       : None found", "warn")
-
-        self._emit("", "info")
-        await self._step_main_choice()
+        await self._go_home()
 
     async def _step_main_choice(self) -> None:
-        self._st.wiz_step = 1
-        choices = self._linux_tools_choices()
-        if self._models:
-            choices.append(
+        await self._go_home()
+
+    # ── home and mode screens ────────────────────────────────────────────
+
+    async def _refresh_status(self) -> None:
+        """Quietly find each tool's checkout and what's built (no output)."""
+        await self._detect_toolchain()
+        self._sage26_dir = self._find_sage26()
+        self._models = self._find_models()
+        self._sw_dir = self._find_sageswarm()
+        self._sw_sage_bin = self._locate_sage_bin()
+        self._lc_dir = self._find_sagelightcone()
+        compiled = (
+            self._sage26_compiled(self._sage26_dir)[0]
+            if self._sage26_dir
+            else False
+        )
+        built = self._lc_built(self._lc_dir)[0] if self._lc_dir else False
+        self._status = {
+            "sage26": {
+                "dir": self._sage26_dir,
+                "ready": compiled,
+                "n": len(self._models),
+            },
+            "sagelightcone": {
+                "dir": self._lc_dir,
+                "ready": built,
+                "n": len(self._discover_lightcones()),
+            },
+            "sageswarm": {
+                "dir": self._sw_dir,
+                "ready": self._sw_sage_bin is not None,
+                "n": 0,
+            },
+        }
+        note = ""
+        if self._tc.kind == "missing":
+            note = (
+                "WSL not found: install it to build and run the SAGE tools "
+                "(existing models and lightcones still open)."
+            )
+        elif self._missing_tools:
+            note = "Missing Linux build tools: " + ", ".join(
+                self._missing_tools
+            )
+        self._st.wiz_tools_note = note
+        self._st.wiz_tools_missing = bool(self._missing_tools)
+
+    def _badge(self, mode: str) -> tuple[str, bool]:
+        st = self._status[mode]
+        if not st["dir"]:
+            return "Not installed", False
+        if mode == "sage26":
+            return (
+                ("Installed", True) if st["ready"] else ("Not compiled", False)
+            )
+        if mode == "sagelightcone":
+            return ("Installed", True) if st["ready"] else ("Not built", False)
+        return "Installed", True
+
+    def _show_home(self) -> None:
+        self._st.wiz_view = "home"
+        self._st.wiz_mode = ""
+        self._st.wiz_step = 0
+        self._st.wiz_steps = list(_STEPS)
+        cards = []
+        for mode, meta in _MODE_META.items():
+            badge, ok = self._badge(mode)
+            cards.append(
+                {**meta, "value": f"mode:{mode}", "badge": badge, "ok": ok}
+            )
+        self._st.wiz_home_cards = cards
+        n = len(self._models) + self._status.get("sagelightcone", {}).get(
+            "n", 0
+        )
+        self._st.wiz_home_load = {
+            "label": "Load a previous model",
+            "sub": f"{n} found" if n else "none found yet",
+            "disabled": n == 0,
+        }
+        self._set_choices([])
+
+    def _show_mode(self, mode: str) -> None:
+        meta, st = _MODE_META[mode], self._status[mode]
+        found = st["dir"] is not None
+        chips = []
+        badge, ok = self._badge(mode)
+        chips.append({"text": badge, "ok": ok})
+        if mode == "sage26":
+            chips.append({"text": f"{st['n']} models", "ok": st["n"] > 0})
+        elif mode == "sagelightcone":
+            chips.append({"text": f"{st['n']} lightcones", "ok": st["n"] > 0})
+        else:
+            chips.append(
                 {
-                    "label": "Load Existing Model",
-                    "value": "load",
-                    "icon": "mdi-folder-open",
-                    "disabled": False,
+                    "text": (
+                        "SAGE binary found"
+                        if st["ready"]
+                        else "No SAGE binary"
+                    ),
+                    "ok": st["ready"],
                 }
             )
-        choices.append(
-            {
-                "label": "SAGE26",
-                "value": "sage26",
-                "icon": "mdi-play-circle-outline",
-                "disabled": False,
-            }
+        subs = {
+            "sage26": {
+                "run": "Pick or create a parameter file, then run",
+                "load": "Open a model you have already run",
+                "install": "Download the Millennium trees and compile",
+            },
+            "sagelightcone": {
+                "run": "Configure and build a lightcone",
+                "load": "Open an existing lightcone",
+                "install": "Libraries, photometry (FSPS) and the two tools",
+            },
+            "sageswarm": {
+                "run": "Configure and run a calibration",
+                "install": "Install its Python packages",
+            },
+        }[mode]
+        labels = {
+            "run": ("Run", "mdi-play"),
+            "load": ("Load existing", "mdi-folder-open"),
+            "install": ("Install", "mdi-hammer-wrench"),
+            "update": ("Check for update", "mdi-update"),
+            "clone": ("Re-clone" if found else "Clone", "mdi-source-branch"),
+        }
+        subs["update"] = "Compare with GitHub"
+        subs["clone"] = (
+            "Fresh copy from GitHub, then Install; the old one is kept"
+            if found
+            else "Download it from GitHub, then Install"
         )
-        choices.append(
+        actions = []
+        for act in ("run", "load", "install", "update", "clone"):
+            if act not in _MODE_ACTIONS[mode]:
+                continue
+            label, icon = labels[act]
+            actions.append(
+                {
+                    "label": label,
+                    "sub": subs[act],
+                    "icon": icon,
+                    "value": f"act:{mode}:{act}",
+                    "primary": act == "run",
+                    "busy": False,
+                    "tone": "",
+                    "disabled": (
+                        act in ("run", "install", "update") and not found
+                    ),
+                }
+            )
+        self._st.wiz_mode_info = {
+            **meta,
+            "mode": mode,
+            "path": str(st["dir"]) if found else "Not installed",
+            "chips": chips,
+            "actions": actions,
+        }
+        self._st.wiz_view = "mode"
+        self._st.wiz_mode = mode
+        self._st.wiz_step = 1
+        self._set_choices([])
+        self._apply_job_result(mode)
+
+    def _set_flow(self, mode: str) -> None:
+        self._flow = mode
+        self._st.wiz_steps = list(
             {
-                "label": "SAGEswarm",
-                "value": "sageswarm",
-                "icon": "mdi-chart-scatter-plot",
-                "disabled": False,
-            }
+                "sageswarm": _STEPS_SAGESWARM,
+                "sagelightcone": _STEPS_SAGELIGHTCONE,
+            }.get(mode, _STEPS)
         )
-        choices.append(
-            {
-                "label": "LightSAGE",
-                "value": "sagelightcone",
-                "icon": "mdi-telescope",
-                "disabled": False,
-            }
+
+    def _close_panels(self) -> None:
+        self._stop_plot_watch()
+        self._st.pso_gallery_show = False
+        self._st.wiz_par_show = False
+        self._st.wiz_sw_config_show = False
+        self._st.wiz_lc_config_show = False
+        self._st.wiz_clone_dir_show = False
+        self._st.wiz_filename_show = False
+
+    async def _go_home(self) -> None:
+        self._close_panels()
+        await self._refresh_status()
+        self._show_home()
+
+    async def _enter(self, mode: str) -> None:
+        self._close_panels()
+        self._set_flow(mode)
+        await self._refresh_status()
+        self._show_mode(mode)
+
+    async def _menu_return(self, mode: str) -> None:
+        """A flow step finished: offer the way back to its mode screen,
+        leaving its output in view."""
+        if self._st.wiz_view != "term":
+            await self._enter(mode)
+            return
+        self._emit("", "info")
+        self._set_choices([self._mode_back_choice(mode)])
+
+    def _mode_back_choice(self, mode: str) -> dict:
+        return {
+            "label": f"Back to {_MODE_META[mode]['title']}",
+            "value": f"mode:{mode}",
+            "icon": "mdi-arrow-left",
+            "disabled": False,
+        }
+
+    # ── in-place update check, and the model / lightcone picker ──────────
+
+    def _set_action(self, mode: str, act: str, **fields) -> None:
+        """Change one button on the mode screen (a fresh dict, so the
+        browser sees the change)."""
+        info = dict(self._st.wiz_mode_info)
+        if info.get("mode") != mode:
+            return
+        info["actions"] = [
+            {**a, **fields} if a["value"].endswith(f":{act}") else a
+            for a in info["actions"]
+        ]
+        self._st.wiz_mode_info = info
+        self._st.wiz_busy = False
+        self._st.flush()
+
+    def _repo_of(self, mode: str) -> Path | None:
+        return {
+            "sage26": self._sage26_dir,
+            "sagelightcone": self._lc_dir,
+            "sageswarm": self._sw_dir,
+        }[mode]
+
+    async def _check_update_inline(self, mode: str) -> None:
+        """Check for update on the button itself: it spins while checking
+        GitHub, then says what it found (and becomes Update if behind)."""
+        self._set_action(mode, "update", busy=True, sub="Checking GitHub ...")
+        st = await self._git_status(self._repo_of(mode))
+        where = f"{st['branch']} @ {st['short']}" if st["short"] else ""
+        if not st["repo"]:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub="Not a git checkout",
+                tone="warn",
+            )
+        elif st["offline"]:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub="Could not reach GitHub",
+                tone="warn",
+            )
+        elif st["behind"]:
+            n = st["behind"]
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                label="Update",
+                icon="mdi-download",
+                sub=f"{n} new commit{'s' if n > 1 else ''} on GitHub "
+                f"({where}) — click to update",
+                tone="new",
+                value=f"act:{mode}:pull",
+            )
+        elif not st["upstream"]:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub=f"No upstream branch to compare ({where})",
+                tone="warn",
+            )
+        else:
+            self._set_action(
+                mode,
+                "update",
+                busy=False,
+                sub=f"Up to date ({where})",
+                tone="ok",
+            )
+
+    async def _pull_inline(self, mode: str) -> None:
+        repo = self._repo_of(mode)
+        self._set_action(
+            mode, "pull", busy=True, sub="Updating from GitHub ..."
         )
-        self._set_choices(choices)
+        rc, _ = await self._git_capture(
+            ["pull", "--ff-only", "--recurse-submodules"], repo
+        )
+        if rc != 0:
+            self._set_action(
+                mode,
+                "pull",
+                busy=False,
+                sub="Update blocked by local changes — commit, stash or "
+                "re-clone",
+                tone="warn",
+            )
+            return
+        _, short = await self._git_capture(
+            ["rev-parse", "--short", "HEAD"], repo
+        )
+        rebuild = {
+            "sage26": " — Install to recompile",
+            "sagelightcone": " — Install to rebuild",
+            "sageswarm": "",
+        }[mode]
+        self._set_action(
+            mode,
+            "pull",
+            busy=False,
+            label="Check for update",
+            icon="mdi-update",
+            sub=f"Updated to {short}{rebuild}",
+            tone="ok",
+            value=f"act:{mode}:update",
+        )
+
+    @staticmethod
+    def _file_meta(paths: list[Path]) -> list[str]:
+        import datetime as _dt
+
+        paths = [q for q in paths if q.exists()]
+        if not paths:
+            return []
+        size = sum(q.stat().st_size for q in paths)
+        when = max(q.stat().st_mtime for q in paths)
+        units = (("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("KB", 1e3))
+        unit, div = next(((u, d) for u, d in units if size >= d), ("B", 1))
+        return [
+            f"{size / div:.1f} {unit}",
+            _dt.datetime.fromtimestamp(when).strftime("%d %b %Y"),
+        ]
+
+    def _model_items(self) -> list[dict]:
+        self._models = self._find_models()
+        items = []
+        for m in self._models:
+            out = Path(m["hdf5"]).parent
+            files = sorted(out.glob("model_*.hdf5")) or [Path(m["hdf5"])]
+            chips = self._file_meta(files)
+            if len(files) > 1:
+                chips.insert(0, f"{len(files)} files")
+            items.append(
+                {
+                    "label": m["name"],
+                    "sub": str(out),
+                    "chips": chips + [Path(m["par"]).name],
+                    "value": f"model:{m['name']}",
+                    "icon": "mdi-database",
+                }
+            )
+        return items
+
+    def _lightcone_items(self) -> list[dict]:
+        items = []
+        for f in self._discover_lightcones():
+            chips = self._file_meta([f])
+            try:
+                import h5py
+
+                with h5py.File(f, "r") as h:
+                    key = "ra" if "ra" in h else "Posx"
+                    chips.insert(0, f"{h[key].shape[0]:,} galaxies")
+            except Exception:
+                pass
+            items.append(
+                {
+                    "label": f.parent.name,
+                    "sub": str(f),
+                    "chips": chips,
+                    "value": f"lc_open:{f}",
+                    "icon": "mdi-telescope",
+                }
+            )
+        return items
+
+    async def _show_pick(self, mode: str) -> None:
+        """Big buttons for each model (SAGE26), lightcone (LightSAGE), or
+        both ("all": the home screen's Load a previous model)."""
+        if mode == "sage26":
+            items = self._model_items()
+            title, empty = "Load a model", (
+                "No SAGE26 models found yet. Run SAGE26 first."
+            )
+        elif mode == "sagelightcone":
+            items = self._lightcone_items()
+            title, empty = "Load a lightcone", (
+                "No lightcones found yet. Run LightSAGE first."
+            )
+        else:
+            items = self._model_items() + self._lightcone_items()
+            title, empty = "Load a previous model", (
+                "No models or lightcones found yet."
+            )
+        meta = _MODE_META.get(mode, _MODE_META["sage26"])
+        back = "home" if mode == "all" else f"mode:{mode}"
+        self._st.wiz_pick = {
+            "title": title,
+            "empty": empty,
+            "accent": meta["accent"],
+            "back": back,
+            "back_label": "Home" if back == "home" else meta["title"],
+            "items": items,
+        }
+        self._st.wiz_loading = ""
+        self._st.wiz_view = "pick"
+        self._st.wiz_mode = "" if mode == "all" else mode
+        self._set_choices([])
+
+    async def _start_action(self, mode: str, act: str) -> None:
+        """A mode-screen button: open the terminal and start that step."""
+        value = _MODE_ACTIONS.get(mode, {}).get(act)
+        if value is None:
+            return
+        self._set_flow(mode)
+        self._st.wiz_view = "term"
+        self._st.wiz_mode = mode
+        self._wiz_buf = bytearray()
+        self._push_bytes(b"\x1b[2J\x1b[3J\x1b[H")
+        self._emit(f"ViSAGE  ::  {_MODE_META[mode]['title']}", "title")
+        self._emit("=" * 52, "sep")
+        await self._handle_choice(value)
 
     def _on_choice(self, value: str, **_) -> None:
         asyncio.ensure_future(self._handle_choice(value))
@@ -1416,11 +1918,65 @@ class WizardController:
     async def _handle_choice(self, value: str) -> None:
         self._busy()
 
+        # Screen navigation (home / mode screens) and mode-screen buttons.
+        back_to_mode = {
+            "back_sage26_menu": "sage26",
+            "sw_back_scan": "sageswarm",
+            "sw_done": "sageswarm",
+            "lc_back_scan": "sagelightcone",
+            "lc_done": "sagelightcone",
+        }
+        if value.startswith("mode:"):
+            await self._enter(value[len("mode:") :])
+            return
+        if value.startswith("act:"):
+            _, mode, act = value.split(":", 2)
+            if act == "update":
+                await self._check_update_inline(mode)
+            elif act == "pull":
+                await self._pull_inline(mode)
+            elif act == "load":
+                await self._show_pick(mode)
+            elif act == "run":
+                await self._show_setup(mode)
+            elif act == "install":
+                await self._install_inline(mode)
+            elif act == "clone":
+                await self._clone_inline(mode)
+            elif act == "log":
+                self._show_log(mode)
+            else:
+                await self._start_action(mode, act)
+            return
+        if value.startswith("model:") or value.startswith("lc_open:"):
+            self._st.wiz_loading = (
+                value[len("model:") :]
+                if value.startswith("model:")
+                else Path(value[len("lc_open:") :]).parent.name
+            )
+            self._st.flush()
+            await asyncio.sleep(0.8)  # let "Opening ..." show before relaunch
+        if value in ("home", "back_main", "back_sage26"):
+            await self._go_home()
+            return
+        if value in back_to_mode:
+            await self._enter(back_to_mode[value])
+            return
+        if value == "su:reopen":
+            await self._show_setup(self._setup_mode)
+            return
+        if value.startswith("su:"):
+            await self._setup_choose(value[len("su:") :])
+            return
+        if value == "tools":
+            self._st.wiz_view = "term"
+            self._wiz_buf = bytearray()
+            self._push_bytes(b"\x1b[2J\x1b[3J\x1b[H")
+            await self._step_install_linux_tools()
+            return
+
         if value == "load":
             await self._step_select_model()
-
-        elif value == "sage26":
-            await self._step_sage26_menu()
 
         elif value == "run_sage26":
             await self._step_run_sage26_existing()
@@ -1453,18 +2009,6 @@ class WizardController:
         elif value == "save_run_sage26":
             await self._step_run_sage26()
 
-        elif value == "back_main":
-            self._emit("", "info")
-            await self._step_main_choice()
-
-        elif value == "back_sage26_menu":
-            self._emit("", "info")
-            await self._step_sage26_menu()
-
-        # ── SAGEswarm (PSO calibration) flow ──────────────────────────────
-        elif value == "sageswarm":
-            await self._step_sw_scan()
-
         elif value == "update_sage26":
             await self._git_update("SAGE26", self._sage26_dir)
             await self._step_sage26_menu()
@@ -1492,20 +2036,6 @@ class WizardController:
         elif value == "sw_run":
             await self._step_sw_run()
 
-        elif value == "sw_back_scan":
-            self._emit("", "info")
-            await self._step_sw_scan()
-
-        elif value == "sw_done":
-            self._stop_plot_watch()
-            self._st.pso_gallery_show = False
-            self._st.flush()
-            await self._step_sw_scan()
-
-        # ── LightSAGE (lightcone extraction) flow ────────────────────
-        elif value == "sagelightcone":
-            await self._step_lc_scan()
-
         elif value == "lc_clone":
             await self._step_lc_clone()
 
@@ -1530,21 +2060,8 @@ class WizardController:
         elif value.startswith("lc_open:"):
             await self._launch_lightcone_viewer(value[len("lc_open:") :])
 
-        elif value == "lc_back_scan":
-            self._emit("", "info")
-            await self._step_lc_scan()
-
-        elif value == "lc_done":
-            await self._step_lc_scan()
-
         elif value == "install_linux_tools":
             await self._step_install_linux_tools()
-
-        elif value == "back_sage26":
-            self._flow = "sage26"
-            self._st.wiz_steps = list(_STEPS)
-            self._st.flush()
-            await self._step_scan()
 
     async def _step_run_sage26_existing(self) -> None:
         """Run SAGE26 with the existing local installation — no clone step."""
@@ -1621,87 +2138,7 @@ class WizardController:
         self._set_choices(choices)
 
     async def _step_sage26_menu(self) -> None:
-        """SAGE26 sub-menu — run the local checkout, or (re-)clone it.
-
-        Mirrors the SAGEswarm / LightSAGE menus: what you can do with the
-        local checkout first, the clone/re-clone at the bottom.
-        """
-        self._back = "back_sage26_menu"
-        self._st.wiz_step = 2
-        choices: list[dict] = []
-
-        if self._sage26_dir:
-            self._emit(f"SAGE26 found at {self._sage26_dir}", "ok")
-            git = await self._report_git_status("SAGE26", self._sage26_dir)
-            compiled, _ = self._sage26_compiled(self._sage26_dir)
-            if compiled:
-                choices.append(
-                    {
-                        "label": "Run SAGE26",
-                        "value": "run_sage26",
-                        "icon": "mdi-play",
-                        "disabled": False,
-                    }
-                )
-            else:
-                self._emit("Not yet compiled — compile it first.", "warn")
-                choices.append(
-                    {
-                        "label": "Compile SAGE26",
-                        "value": "compile_sage26",
-                        "icon": "mdi-cog",
-                        "disabled": False,
-                    }
-                )
-                choices.append(
-                    {
-                        "label": "Run SAGE26 (after compile)",
-                        "value": "run_sage26",
-                        "icon": "mdi-play",
-                        "disabled": True,
-                    }
-                )
-            if git.get("repo"):
-                choices.append(
-                    {
-                        "label": (
-                            f"Update SAGE26 ({git['behind']} behind)"
-                            if git.get("behind")
-                            else "Update SAGE26"
-                        ),
-                        "value": "update_sage26",
-                        "icon": "mdi-download",
-                        "disabled": not git.get("behind"),
-                    }
-                )
-            choices.append(
-                {
-                    "label": "Re-clone SAGE26",
-                    "value": "clone_sage26",
-                    "icon": "mdi-git",
-                    "disabled": False,
-                }
-            )
-        else:
-            self._emit("SAGE26 not found locally — clone it first.", "info")
-            choices.append(
-                {
-                    "label": "Clone SAGE26",
-                    "value": "clone_sage26",
-                    "icon": "mdi-git",
-                    "disabled": False,
-                }
-            )
-
-        choices.append(
-            {
-                "label": "Back",
-                "value": "back_main",
-                "icon": "mdi-arrow-left",
-                "disabled": False,
-            }
-        )
-        self._set_choices(choices)
+        await self._menu_return("sage26")
 
     async def _step_clone(self) -> None:
         self._st.wiz_step = 2
@@ -2050,7 +2487,8 @@ class WizardController:
         self._emit("This may take a while for large simulations.", "info")
         self._emit("", "info")
         rc = await self._run_cmd(
-            [sage_bin, self._par_path], cwd=self._sage26_dir
+            self._sage26_command(sage_bin, self._par_path),
+            cwd=self._sage26_dir,
         )
         if rc != 0:
             self._emit(
@@ -2070,6 +2508,8 @@ class WizardController:
 
         self._emit("", "info")
         self._emit("SAGE26 run complete!", "ok")
+        if self._st.wiz_view in ("run", "term") and self._run is not None:
+            return
         self._models = self._find_models()
         if not self._models:
             self._emit(
@@ -2184,97 +2624,7 @@ class WizardController:
         return _re.findall(r"['\"]([A-Za-z0-9_]+)['\"]\s*:", m.group(1))
 
     async def _step_sw_scan(self) -> None:
-        self._flow = "sageswarm"
-        self._st.wiz_steps = list(_STEPS_SAGESWARM)
-        self._st.wiz_step = 0
-        self._emit("ViSAGE  ::  SAGEswarm — PSO Calibration", "title")
-        self._emit("=" * 52, "sep")
-        self._emit(
-            "Scanning for SAGEswarm and a compiled SAGE binary...", "info"
-        )
-        self._emit("", "info")
-
-        await self._scan_toolchain(width=16)
-
-        self._sw_dir = self._find_sageswarm()
-        sw_git: dict = {}
-        if self._sw_dir:
-            self._emit(f"  SAGEswarm found : {self._sw_dir}", "ok")
-            sw_git = await self._report_git_status("SAGEswarm", self._sw_dir)
-        else:
-            self._emit(
-                "  SAGEswarm       : Not found — clone it to begin", "warn"
-            )
-
-        self._sage26_dir = self._sage26_dir or self._find_sage26()
-        self._sw_sage_bin = self._locate_sage_bin()
-        if self._sw_sage_bin:
-            self._emit(f"  SAGE binary     : {self._sw_sage_bin}", "ok")
-        else:
-            self._emit(
-                "  SAGE binary     : Not found — build SAGE26 first "
-                "(Launch Mode)",
-                "warn",
-            )
-        self._emit("", "info")
-
-        choices: list[dict] = self._linux_tools_choices()
-        if self._sw_dir:
-            choices.append(
-                {
-                    "label": "Install requirements",
-                    "value": "sw_install",
-                    "icon": "mdi-package-down",
-                    "disabled": False,
-                }
-            )
-            choices.append(
-                {
-                    "label": "Configure & Run SAGEswarm",
-                    "value": "sw_configure",
-                    "icon": "mdi-play",
-                    "disabled": False,
-                }
-            )
-            if sw_git.get("repo"):
-                choices.append(
-                    {
-                        "label": (
-                            f"Update SAGEswarm ({sw_git['behind']} behind)"
-                            if sw_git.get("behind")
-                            else "Update SAGEswarm"
-                        ),
-                        "value": "sw_update",
-                        "icon": "mdi-download",
-                        "disabled": not sw_git.get("behind"),
-                    }
-                )
-            choices.append(
-                {
-                    "label": "Re-clone SAGEswarm",
-                    "value": "sw_clone",
-                    "icon": "mdi-git",
-                    "disabled": False,
-                }
-            )
-        else:
-            choices.append(
-                {
-                    "label": "Clone SAGEswarm",
-                    "value": "sw_clone",
-                    "icon": "mdi-git",
-                    "disabled": False,
-                }
-            )
-        choices.append(
-            {
-                "label": "Back",
-                "value": "back_sage26",
-                "icon": "mdi-arrow-left",
-                "disabled": False,
-            }
-        )
-        self._set_choices(choices)
+        await self._menu_return("sageswarm")
 
     async def _step_sw_clone(self) -> None:
         self._st.wiz_step = 1
@@ -2530,7 +2880,8 @@ class WizardController:
         self._stop_plot_watch()
         self._plot_seen = {}
         self._st.pso_plots = []
-        self._st.pso_gallery_show = True
+        self._st.wiz_run_plots = []
+        self._st.pso_gallery_show = self._st.wiz_view != "run"
         self._st.flush()
         if main_dir is None:
             return
@@ -2603,6 +2954,7 @@ class WizardController:
                 self._emit(f"  [gallery] + {rel}", "ok")
         if changed:
             self._st.pso_plots = [by_name[k] for k in sorted(by_name)]
+            self._st.wiz_run_plots = _latest_per_constraint(self._st.pso_plots)
             self._st.flush()
 
     # ── LightSAGE (lightcone extraction) flow ────────────────────────────────
@@ -2682,6 +3034,18 @@ class WizardController:
                 seen.add(rp)
                 out.append(rp)
 
+        def _is_cone(f: Path) -> bool:
+            # A lightcone, not the KD-tree index LightSAGE builds beside it.
+            if "kdtree" in f.name:
+                return False
+            try:
+                import h5py
+
+                with h5py.File(f, "r") as h:
+                    return "ra" in h or "Posx" in h
+            except Exception:
+                return False
+
         for d in (
             Path.cwd() / "sage_outputs" / "lightcone",
             Path.home() / ".visage" / "lightcone_output",
@@ -2689,6 +3053,19 @@ class WizardController:
             if d.is_dir():
                 for f in sorted(d.glob("*.h5")):
                     _add(f)
+        # Other runs' output folders (sage_outputs/<name>/), and wherever
+        # the run script currently writes.
+        outs = Path.cwd() / "sage_outputs"
+        if outs.is_dir():
+            for f in sorted(outs.glob("*/*.h5")):
+                if _is_cone(f):
+                    _add(f)
+        try:
+            cur = self._lc_output_file()
+            if cur is not None and _is_cone(cur):
+                _add(cur)
+        except Exception:
+            pass
         try:
             from visage.utils import recent_models
 
@@ -2751,9 +3128,9 @@ class WizardController:
             return
         self._emit("", "info")
         self._emit(f"Opening lightcone in ViSAGE: {out}", "title")
-        self._emit(
-            "Starting the viewer — refresh your browser when ready.", "info"
-        )
+        # The page shows "Opening ..." and reloads itself once the new
+        # ViSAGE is up (visage.js watches wiz_loading).
+        self._st.wiz_loading = self._st.wiz_loading or out.parent.name
         self._st.flush()
         await asyncio.sleep(1.0)
 
@@ -2896,125 +3273,7 @@ class WizardController:
         return _apply_params(fresh, params, "sh")
 
     async def _step_lc_scan(self) -> None:
-        self._flow = "sagelightcone"
-        self._st.wiz_steps = list(_STEPS_SAGELIGHTCONE)
-        self._st.wiz_step = 0
-        self._emit("ViSAGE  ::  LightSAGE — Lightcone Extraction", "title")
-        self._emit("=" * 52, "sep")
-        self._emit("Scanning for the LightSAGE package...", "info")
-        self._emit("", "info")
-
-        await self._scan_toolchain(width=16)
-
-        self._lc_dir = self._find_sagelightcone()
-        built = False
-        lc_git: dict = {}
-        if self._lc_dir:
-            self._emit(f"  LightSAGE found : {self._lc_dir}", "ok")
-            lc_git = await self._report_git_status("LightSAGE", self._lc_dir)
-            built, tools = self._lc_built(self._lc_dir)
-            if built:
-                self._emit(
-                    f"  Built           : Yes  ({', '.join(tools)})", "ok"
-                )
-            else:
-                self._emit(
-                    "  Built           : No   (build it before running)",
-                    "warn",
-                )
-        else:
-            self._emit(
-                "  LightSAGE       : Not found — clone it to begin",
-                "warn",
-            )
-
-        # SAGE26 is the usual source of the HDF5 output the pipeline consumes;
-        # note whether we can find it so we can pre-fill the run script paths.
-        self._sage26_dir = self._sage26_dir or self._find_sage26()
-        if self._sage26_dir:
-            self._emit(f"  SAGE26 source   : {self._sage26_dir}", "ok")
-        else:
-            self._emit(
-                "  SAGE26 source   : Not found — set paths in the "
-                "run script manually",
-                "warn",
-            )
-        self._emit("", "info")
-
-        choices: list[dict] = self._linux_tools_choices()
-        if self._lc_dir:
-            choices.append(
-                {
-                    "label": "Build LightSAGE",
-                    "value": "lc_build",
-                    "icon": "mdi-hammer-wrench",
-                    "disabled": False,
-                }
-            )
-            choices.append(
-                {
-                    "label": "Configure & Run Lightcone",
-                    "value": "lc_configure",
-                    "icon": "mdi-play",
-                    "disabled": False,
-                }
-            )
-            if lc_git.get("repo"):
-                choices.append(
-                    {
-                        "label": (
-                            f"Update LightSAGE ({lc_git['behind']} behind)"
-                            if lc_git.get("behind")
-                            else "Update LightSAGE"
-                        ),
-                        "value": "lc_update",
-                        "icon": "mdi-download",
-                        "disabled": not lc_git.get("behind"),
-                    }
-                )
-            choices.append(
-                {
-                    "label": "Re-clone LightSAGE",
-                    "value": "lc_clone",
-                    "icon": "mdi-git",
-                    "disabled": False,
-                }
-            )
-        else:
-            choices.append(
-                {
-                    "label": "Clone LightSAGE",
-                    "value": "lc_clone",
-                    "icon": "mdi-git",
-                    "disabled": False,
-                }
-            )
-        # Viewing an already-built lightcone needs no checkout/tools, so this
-        # is always offered. Note how many are lying around ready to open.
-        _existing = self._discover_lightcones()
-        if _existing:
-            self._emit(
-                f"  Existing cones  : {len(_existing)} ready to open "
-                "(Load Existing Lightcone)",
-                "ok",
-            )
-        choices.append(
-            {
-                "label": "Load Existing Lightcone",
-                "value": "lc_load",
-                "icon": "mdi-folder-open",
-                "disabled": False,
-            }
-        )
-        choices.append(
-            {
-                "label": "Back",
-                "value": "back_sage26",
-                "icon": "mdi-arrow-left",
-                "disabled": False,
-            }
-        )
-        self._set_choices(choices)
+        await self._menu_return("sagelightcone")
 
     async def _step_lc_clone(self) -> None:
         self._st.wiz_step = 1
@@ -3073,7 +3332,8 @@ class WizardController:
                 return
             self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning LightSAGE into {target} ...", "info")
-        # --recurse-submodules per the LightSAGE README (it vendors SAGE).
+        # --recurse-submodules as the LightSAGE README says (it has no
+        # submodules now; ViSAGE never builds SAGE from it).
         rc = await self._run_cmd(
             [
                 "git",
@@ -3345,9 +3605,9 @@ class WizardController:
         self._st.wiz_step = 5
         self._emit("", "info")
         self._emit(f"Loading model: {name}", "title")
-        self._emit(
-            "Starting Explore Mode — refresh your browser when ready.", "info"
-        )
+        # The page shows "Opening ..." and reloads itself once the new
+        # ViSAGE is up (visage.js watches wiz_loading).
+        self._st.wiz_loading = self._st.wiz_loading or name
         self._st.flush()
         await asyncio.sleep(1.0)
 

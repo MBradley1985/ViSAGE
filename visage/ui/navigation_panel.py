@@ -309,18 +309,21 @@ def _sed_split_key(key: str) -> tuple[str, str]:
     return "?", key
 
 
-def _sed_short_label(filt: str) -> str:
-    """ "sdss_g" -> "g", "2mass_j" -> "j", "galex_fuv" -> "fuv"."""
-    for prefix in ("sdss_", "2mass_", "galex_", "wise_"):
-        if filt.startswith(prefix):
-            return filt[len(prefix) :]
-    return filt.replace("_", " ")
-
-
 def _sed_band_title(key: str) -> str:
-    """ "mag_rest_sdss_g" -> "g (rest)", "mag_obs_2mass_j" -> "j (observed)"."""
+    """ "mag_rest_sdss_g" -> "SDSS g (rest)", "mag_obs_2mass_j" -> "2MASS J
+    (observed)"."""
+    from visage.sed.filters import band_label
+
     frame, filt = _sed_split_key(key)
-    return f"{_sed_short_label(filt)} ({frame})"
+    return f"{band_label(filt)} ({frame})"
+
+
+def _sed_band_order(key: str) -> tuple:
+    """Observed bands first, each frame blue to red."""
+    from visage.sed.filters import wavelength_order
+
+    frame, filt = _sed_split_key(key)
+    return (frame != "observed", wavelength_order(filt))
 
 
 def build_navigation_panel(server, scene: Scene) -> None:
@@ -591,8 +594,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # stack (multi-select). Items are raw filter bands (brightness) plus,
         # for rest-frame bands with a known solar magnitude, a mass-to-light
         # entry — all stackable together in any combination.
-        from visage.sed.filters import SOLAR_ABSMAG_AB
+        from visage.sed.filters import SOLAR_ABSMAG_AB, band_label
 
+        sed_bands = sorted(sed_bands, key=_sed_band_order)
         sed_modes = [
             {"title": _sed_band_title(k), "value": k} for k in sed_bands
         ]
@@ -601,7 +605,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if frame == "rest" and filt in SOLAR_ABSMAG_AB:
                 sed_modes.append(
                     {
-                        "title": f"M*/L ({_sed_short_label(filt)}, rest)",
+                        "title": f"M*/L ({band_label(filt)}, rest)",
                         "value": f"ml:{k}",
                     }
                 )
@@ -652,7 +656,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # LightconeModel with visible=False), so this doesn't change the initial
     # view — the galaxies keep their normal colouring.
     if state.has_sed_data and state.sed_color_modes:
-        state.sed_galaxy_bands = [state.sed_color_modes[0]["value"]]
+        # SDSS r when the cone has it, else the bluest band.
+        _vals = [m["value"] for m in state.sed_color_modes]
+        state.sed_galaxy_bands = [
+            "mag_obs_sdss_r" if "mag_obs_sdss_r" in _vals else _vals[0]
+        ]
         state.sed_legend = _sed_legend(state.sed_galaxy_bands)
 
     def _push():
@@ -2900,6 +2908,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
         import threading
 
         snap = dict(_record_state)  # copy current state before thread starts
+        # State pushed from the worker thread never reaches the browser
+        # (it would stay on "Encoding…"): hand the result back to the loop.
+        loop = asyncio.get_running_loop()
+
+        def _publish(result):
+            state.last_movie = result
+            state.flush()
 
         def _do_finalize():
             try:
@@ -2914,8 +2929,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
             except Exception as exc:
                 result = f"ERROR (finalize): {exc!s}"
-            state.last_movie = result
-            state.flush()
+            loop.call_soon_threadsafe(_publish, result)
 
         threading.Thread(target=_do_finalize, daemon=True).start()
 
@@ -3788,6 +3802,113 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 pass
         state.library_files = _scan_library()
         state.flush()
+
+    # ── Mock survey image (Photometry tab, lightcones with photometry) ──
+    from visage.sed import mock_image as _mock
+
+    _lc_present = set(
+        getattr(getattr(scene.active_model, "_lc", None), "present_fields", ())
+        or ()
+    )
+    state.mock_surveys = [
+        {"title": _mock.SURVEYS[k].label, "value": k}
+        for k in _mock.available_surveys(_lc_present)
+    ]
+    state.mock_survey = (
+        state.mock_surveys[0]["value"] if state.mock_surveys else None
+    )
+    state.mock_fields = []
+    state.mock_field = None
+    state.mock_noisy = True
+    state.mock_has_depth = True
+    state.mock_busy = False
+    state.mock_note = ""
+    state.mock_centre = ""
+
+    @state.change("mock_survey")
+    def _on_mock_survey(mock_survey=None, **_):
+        if not mock_survey or mock_survey not in _mock.SURVEYS:
+            state.mock_fields = []
+            return
+        sizes = _mock.field_sizes(mock_survey)
+        state.mock_fields = [
+            {"title": f"{f:g}′ × {f:g}′", "value": f} for f in sizes
+        ]
+        if state.mock_field not in sizes:
+            state.mock_field = 5 if 5 in sizes else sizes[len(sizes) // 2]
+        state.mock_has_depth = bool(_mock.SURVEYS[mock_survey].depth)
+
+    @state.change("nav_gal_idx")
+    def _on_mock_centre(nav_gal_idx=None, **_):
+        state.mock_centre = (
+            f"Galaxy {int(nav_gal_idx)}"
+            if nav_gal_idx is not None
+            else "the brightest galaxy in the cone"
+        )
+
+    _on_mock_survey(state.mock_survey)
+    _on_mock_centre(None)
+
+    @ctrl.set("create_mock_image")
+    async def on_create_mock_image():
+        survey = state.mock_survey
+        if state.mock_busy or survey not in _mock.SURVEYS:
+            return
+        model = scene.active_model
+        path = getattr(model, "path", None)
+        if path is None:
+            return
+        row = None
+        if state.nav_gal_idx is not None:
+            _, gal = model.loader.get(model.current_snap)
+            row = int(gal.sage_indices[int(state.nav_gal_idx)])
+        field_am = float(state.mock_field or 5)
+        noisy = bool(state.mock_noisy) and bool(state.mock_has_depth)
+        state.mock_busy = True
+        state.mock_note = ""
+        state.flush()
+        loop = asyncio.get_running_loop()
+        try:
+            img = await loop.run_in_executor(
+                None,
+                lambda: _mock.make_mock_image(
+                    path, survey, field_am, centre_row=row, noisy=noisy
+                ),
+            )
+            import datetime
+
+            sess = _get_session_dir()
+            stem = f"mock_{survey}_{datetime.datetime.now():%H%M%S}"
+            png = sess / f"{stem}.png"
+            png.write_bytes(img.png_bytes())
+            fits_ok = await loop.run_in_executor(
+                None, img.write_fits, sess / f"{stem}.fits"
+            )
+            sv = _mock.SURVEYS[survey]
+            centre = (
+                f"Galaxy {int(state.nav_gal_idx)}"
+                if row is not None
+                else img.centre_label.split(" (")[0]
+            )
+            zmax = float(model._lc.redshift.max())
+            state.mock_note = (
+                f"{sv.label}, {field_am:g}′ around {centre} "
+                f"({img.centre_label.split(' (', 1)[1]}; "
+                f"{sv.pixel:g}″ pixels, "
+                f"{'/'.join(dict.fromkeys(f'{x:g}' for x in sv.seeing))}″ "
+                "seeing, "
+                + (f"survey depth ({sv.ref})" if noisy else "noiseless")
+                + f". {img.n_galaxies} galaxies drawn; only this cone's "
+                f"galaxies (z < {zmax:.2f}) are in the sky. Saved {png.name}"
+                + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
+            )
+            on_library_open(str(png))
+            state.library_files = _scan_library()
+        except Exception as exc:
+            state.mock_note = f"Couldn't make the image: {exc!s}"
+        finally:
+            state.mock_busy = False
+            state.flush()
 
     @ctrl.set("library_rename")
     def on_library_rename(path: str, new_name: str):
@@ -5685,6 +5806,79 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 "{{ s.title }}",
                                 style="font-size:0.62rem;color:#a3adbb;white-space:nowrap;",
                             )
+
+                    # Mock survey image: the cone as a telescope would see
+                    # it (visage.sed.mock_image).
+                    v3.VDivider(style="margin:14px 0 8px;")
+                    v3.VLabel(
+                        "MOCK IMAGE",
+                        style=(
+                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                        ),
+                    )
+                    html.Div(
+                        "A survey image of the sky around a galaxy: each "
+                        "galaxy's disk and bulge at its own size, "
+                        "inclination and colours, blurred by the survey's "
+                        "seeing, with its sky noise.",
+                        style="font-size:0.66rem;color:#8b98a5;padding:0 0 8px;line-height:1.35;",
+                    )
+                    html.Div(
+                        "This cone has none of the survey filters a mock "
+                        "image needs (e.g. SDSS gri, 2MASS, WISE, GALEX).",
+                        v_show=("!mock_surveys.length",),
+                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
+                    )
+                    with html.Div(v_show=("mock_surveys.length",)):
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("mock_survey",),
+                                items=("mock_surveys",),
+                                label="Survey",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("mock_field",),
+                                items=("mock_fields",),
+                                label="Field",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VCheckbox(
+                                v_model=("mock_noisy",),
+                                label="Survey depth (sky noise)",
+                                disabled=("!mock_has_depth",),
+                                color="#7FDBFF",
+                                hide_details=True,
+                                density="compact",
+                            )
+                        html.Div(
+                            "Centred on {{ mock_centre }}.",
+                            style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
+                        )
+                        v3.VBtn(
+                            "Create mock image",
+                            prepend_icon="mdi-telescope",
+                            block=True,
+                            color="#7FDBFF",
+                            variant="tonal",
+                            loading=("mock_busy",),
+                            click=ctrl.create_mock_image,
+                            id="btn-mock-image",
+                        )
+                        html.Div(
+                            "{{ mock_note }}",
+                            v_show=("mock_note",),
+                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
+                        )
 
             # ── CONSOLE tab — multi-session REPL ────────────────────
             # Layout: heading + tab strip pinned to the top, history

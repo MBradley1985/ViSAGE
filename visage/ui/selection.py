@@ -703,7 +703,15 @@ def build_selection(server, scene) -> None:
         )
         res = find(galaxies, preset, box=box)
         state.find_results = res
-        state.find_note = "" if res else "None in this snapshot."
+        state.find_note = (
+            ""
+            if res
+            else (
+                "None in this lightcone."
+                if scene.is_lightcone
+                else "None in this snapshot."
+            )
+        )
 
     @state.change("find_preset")
     def _on_find_preset(find_preset=None, **_):

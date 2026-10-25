@@ -174,12 +174,17 @@ class LightconeModel(Model):
         self.halo_layer.update(lc.halos)
 
         # Configure the photometry layer to match the galaxy layer's sizing,
-        # default it to a false-colour stack of the first available band, and
+        # default it to SDSS r (or the first available band), and
         # keep it hidden until the user turns photometry on.
         self.sed_layer.set_radius_scale(1.0)
         self.sed_layer.set_show_inner_layers(True)
         if self.sed_bands_available:
-            self.sed_layer.set_sed_bands([self.sed_bands_available[0]])
+            first = (
+                "mag_obs_sdss_r"
+                if "mag_obs_sdss_r" in self.sed_bands_available
+                else self.sed_bands_available[0]
+            )
+            self.sed_layer.set_sed_bands([first])
             self.sed_layer.color_mode = "sedstack"
         self.sed_layer.visible = False
         self.sed_layer.update(lc.galaxies)

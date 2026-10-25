@@ -547,16 +547,22 @@ def relaunch_visage(argv: list[str]):
     quoting its arguments, which breaks any path with a space in it — so
     start the child properly and exit; the server port is released as this
     process ends, well before the child finishes importing.
+
+    The new process runs this same copy of ViSAGE (not whichever `visage`
+    is first on the PATH, which can be another install).
     """
     argv = [*argv, *SESSION_ARGS]
+    cmd = [sys.executable, "-m", "visage.cli", *argv]
+    env = dict(os.environ)
+    here = str(Path(__file__).resolve().parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [here, *filter(None, [env.get("PYTHONPATH")])]
+    )
     if IS_WINDOWS:
         import subprocess
 
-        subprocess.Popen([sys.executable, "-m", "visage.cli", *argv])
+        subprocess.Popen(cmd, env=env)
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(0)
-    exe = shutil.which("visage")
-    if exe:
-        os.execv(exe, [exe, *argv])
-    os.execv(sys.executable, [sys.executable, "-m", "visage.cli", *argv])
+    os.execve(sys.executable, cmd, env)

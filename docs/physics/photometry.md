@@ -61,6 +61,38 @@ The lines pass through the birth cloud and the diffuse ISM. The FSPS spectra use
 
 **AGN.** SAGE26's black holes accrete in quasar mode (`QuasarModeBHaccretionMass` over the snapshot step `dT`) and radio mode (`Heating` = η*Ṁc*², η = 0.1). Their luminosity is η*Ṁc*² above 1 % of Eddington and falls as *ṁ*² below it, where the flow becomes radiatively inefficient (Narayan & Yi 1995; Merloni & Heinz 2008). The narrow-line region uses the photoionisation models of Feltre, Charlot & Gutkin (2016), coupled to each galaxy as Hirschmann et al. (2017) do: an ionising spectrum *S*<sub>ν</sub> ∝ ν<sup>−1.7</sup>, gas clumps of *n*<sub>H</sub> = 10³ cm⁻³, dust-to-metal ratio 0.3, the cold gas's metallicity, and the ionisation parameter at the Strömgren radius from the AGN's ionising photons and the filling factor of the cold gas within 1 kpc. The lines pass through half the disk's dust, as a screen. `LAGN`, `EddingtonRatio`, `LogU_HII` and `LogU_AGN` are written too.
 
+## Mock images
+
+Lightcone Mode's **Create mock image** (`visage/sed/mock_image.py`) draws the
+sky around a galaxy as a survey would record it. Each galaxy is an exponential
+disk (`DiskRadius` as its scale length) plus a de Vaucouleurs bulge
+(`BulgeRadius` as its half-light radius), at its angular size (radius over the
+angular-diameter distance). The disk is flattened by its inclination, with
+axis ratio *q* = (cos² *i* + *q*₀² sin² *i*)<sup>½</sup>, *q*₀ = 0.2 (Hubble
+1926; Holmberg 1958), and turned to the position angle of its spin on the sky.
+Disk and bulge fluxes come from their observed-frame magnitudes (or the total,
+shared by bulge-to-total stellar mass, when a cone has no disk/bulge
+photometry). The image is blurred by a Gaussian of the survey's median seeing
+on its pixel grid; at survey depth, sky noise is added so that a point source
+at the quoted limit has the quoted signal-to-noise. Colour images are asinh
+composites (Lupton et al. 2004).
+
+| Survey | Bands | Pixel | Seeing (FWHM) | Depth | Source |
+|---|---|---|---|---|---|
+| SDSS | g, r, i | 0.396″ | 1.4″ | 95 % completeness for point sources: g 22.2, r 22.2, i 21.3 (taken as 5σ) | Gunn et al. 2006; Abazajian et al. 2009 |
+| DES DR2 (DECam) | g, r, z | 0.263″ | 1.11″, 0.95″, 0.83″ | 10σ in a 1.95″ aperture: g 24.7, r 24.4, z 23.1 | Abbott et al. 2021 |
+| Pan-STARRS1 3π | g, r, i | 0.25″ | 1.31″, 1.19″, 1.11″ | 5σ point source: g 23.3, r 23.2, i 23.1 | Chambers et al. 2016 |
+| Rubin LSST, 10 years | g, r, i | 0.2″ | 0.7″ | 5σ point source: g 27.4, r 27.5, i 26.8 | Ivezić et al. 2019 |
+| 2MASS | J, H, Ks | 1″ (Atlas) | 2.5″ | 10σ point source: J 15.8, H 15.1, Ks 14.3 Vega (+0.91, +1.39, +1.85 to AB) | Skrutskie et al. 2006; Blanton & Roweis 2007 |
+| WISE | W1, W2, W3 | 1.375″ (Atlas) | 6.1″, 6.4″, 6.5″ | 5σ point source: 0.08, 0.11, 1 mJy | Wright et al. 2010 |
+| GALEX AIS | FUV, NUV | 1.5″ | 4.2″, 5.3″ | 5σ: FUV 19.9, NUV 20.8 | Morrissey et al. 2007 |
+| JWST NIRCam | F115W, F200W, F444W | 0.031″ | 0.040″, 0.066″, 0.145″ | noiseless (depth depends on the programme) | JWST User Documentation |
+
+The PNG is the colour composite (north up, east left); the FITS file holds one
+extension per band in nanomaggies, with a TAN WCS centred on the chosen
+galaxy. Only the cone's own galaxies are drawn: there are no stars, and no
+galaxies beyond the cone's redshift range.
+
 ## Not included (yet)
 
 - IGM absorption (irrelevant below *z* ≈ 2).
@@ -69,25 +101,37 @@ The lines pass through the birth cloud and the diffuse ISM. The FSPS spectra use
 
 ## References
 
+- Abazajian K. N. et al. 2009, *ApJS* 182, 543
+- Abbott T. M. C. et al. 2021, *ApJS* 255, 20
 - Asano R. S. et al. 2013, *Earth, Planets and Space* 65, 213
 - Asplund M. et al. 2009, *ARA&A* 47, 481
+- Blanton M. R., Roweis S. 2007, *AJ* 133, 734
 - Bohlin R. C., Savage B. D., Drake J. F. 1978, *ApJ* 224, 132
 - Byler N. et al. 2017, *ApJ* 840, 44
 - Chabrier G. 2003, *PASP* 115, 763
+- Chambers K. C. et al. 2016, arXiv:1612.05560
 - Charlot S., Fall S. M. 2000, *ApJ* 539, 718
-- da Cunha E., Charlot S., Elbaz D. 2008, *MNRAS* 388, 1595
 - Conroy C., Gunn J. E., White M. 2009, *ApJ* 699, 486; Conroy C., Gunn J. E. 2010, *ApJ* 712, 833
+- da Cunha E., Charlot S., Elbaz D. 2008, *MNRAS* 388, 1595
 - Davis T. M. et al. 2011, *ApJ* 741, 67
 - Draine B. T., Li A. 2007, *ApJ* 657, 810
 - Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354
+- Gunn J. E. et al. 2006, *AJ* 131, 2332
 - Gutkin J., Charlot S., Bruzual G. 2016, *MNRAS* 462, 1757
 - Hirschmann M. et al. 2017, *MNRAS* 472, 2468
+- Holmberg E. 1958, *Medd. Lunds Astron. Obs. Ser. II* 136, 1
+- Hubble E. P. 1926, *ApJ* 64, 321
+- Ivezić Ž. et al. 2019, *ApJ* 873, 111
 - Kashino D., Inoue A. K. 2019, *MNRAS* 486, 1053
 - Leroy A. K. et al. 2008, *AJ* 136, 2782
+- Lupton R. et al. 2004, *PASP* 116, 133
 - Merloni A., Heinz S. 2008, *MNRAS* 388, 1011
+- Morrissey P. et al. 2007, *ApJS* 173, 682
 - Narayan R., Yi I. 1995, *ApJ* 452, 710
 - Popping G., Somerville R. S., Galametz M. 2017, *MNRAS* 471, 3152
 - Shamshiri S. et al. 2015, *MNRAS* 451, 2681
+- Skrutskie M. F. et al. 2006, *AJ* 131, 1163
 - Triani D. P. et al. 2020, *MNRAS* 493, 2490
 - Tsai J. C., Mathews W. G. 1995, *ApJ* 448, 84
 - Wang J. et al. 2016, *MNRAS* 460, 2143
+- Wright E. L. et al. 2010, *AJ* 140, 1868

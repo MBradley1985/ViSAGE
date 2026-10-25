@@ -2,7 +2,7 @@
 
 Lightcone Mode opens a [LightSAGE](https://github.com/sage-home/sage-lightcone) `cli_lightcone` HDF5 output — a flat catalogue of galaxies spanning a range of redshifts along an observer's line of sight — in the **exact same Explore UI** as a SAGE box: same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering.
 
-See [Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps) for how to produce a lightcone file from existing SAGE26 output.
+See [Launch Mode → Setting up a run](launch_mode.md#setting-up-a-run) for how to build a lightcone from a SAGE26 model.
 
 ## Opening a lightcone
 
@@ -10,7 +10,7 @@ See [Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps) for how to
 visage --lightcone /path/to/lightcone.h5
 ```
 
-Or, from inside the wizard's LightSAGE flow, click **Visualize lightcone** after a successful run to relaunch straight into it. Or pick it from the **Session Models** list (see below) if you've opened it before.
+Or, in Launch Mode, click **Open in Lightcone view** when a build finishes, or pick it under LightSAGE's **Load existing** or the home page's **Load a previous model**. Or pick it from the **Session Models** list (see below) if you've opened it before. The page shows **Opening …** and reloads itself when ViSAGE is ready.
 
 ## What gets loaded
 
@@ -30,8 +30,8 @@ Drag it inward from the maximum to peel away the near side of the cone and see w
 
 ## Synthetic photometry (SED)
 
-If the lightcone was run through the LightSAGE flow's optional SED stage (see
-[Launch Mode → LightSAGE steps](launch_mode.md#lightsage-steps)), Lightcone Mode
+If the lightcone was built with photometry (see
+[Launch Mode → Setting up a run](launch_mode.md#setting-up-a-run)), Lightcone Mode
 replaces the **Box** tab (a periodic box has no meaning for a cone) with a
 **Photometry** tab — a false-colour **image builder**.
 
@@ -44,7 +44,9 @@ tab) to overlay both, or keep them off for the photometry image on its own.
 Galaxies with no flux in the stacked filters are simply not drawn.
 
 When shown, it draws the galaxies as Rvir-sized gaussian splats painted from a
-**stack** of the filters you tick in the **Filters** dropdown. Each filter is
+**stack** of the filters you tick in the **Filters** dropdown. Filters are
+named by survey ("SDSS g", "2MASS Ks", "IRAC 3.6 µm") and listed blue to red,
+observed frame first; SDSS r is the default. Each filter is
 tinted a representative colour — UV/`u` violet, `g` green, `r`/`i`/`z` and the
 near-/mid-IR bands (J, H, K, WISE) deepening reds — and scaled by the galaxy's
 brightness in that band; the ticked filters are summed into an additive
@@ -55,11 +57,27 @@ stacked the same way. A colour-swatch legend shows the current stack.
 The Photometry tab only appears for lightcones that actually carry SED data
 (otherwise it shows a short note explaining how to produce it).
 
+### Mock images
+
+**Create mock image** (in the Photometry tab) makes a survey image of the sky
+around the selected galaxy, or the cone's brightest galaxy if none is
+selected: what SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam
+would record. Only surveys whose filters the cone has are offered. Choose the
+field (½′ to 30′, kept under 2400 pixels a side) and whether to add the
+survey's sky noise. Each galaxy is drawn as its disk and bulge at its own size,
+inclination and colours, blurred by the survey's seeing on its pixel grid. The
+image opens in a Library card and is saved in the session folder as a PNG and
+a FITS file (one band per extension, in nanomaggies, with a WCS). Only the
+cone's own galaxies are on the sky, so a shallow cone looks sparser than the
+real sky. The method and survey numbers are in
+[Lightcone photometry → Mock images](../physics/photometry.md#mock-images).
+
 ## Camera
 
 Resetting the camera frames the cone **horizontally, centred and zoomed in**,
 showing it end to end (rather than the cubic-box framing used for a SAGE box) —
-this is also the initial view on load.
+this is also the initial view on load, framed to your window once the page
+has opened.
 
 The **go-to-centre** button (▶ centre icon) doesn't use a box centre in
 Lightcone Mode — instead it stands you at the **observer** (the coordinate

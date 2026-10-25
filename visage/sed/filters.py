@@ -167,7 +167,116 @@ EFFECTIVE_WAVELENGTH_A = {
     "wise_w2": 46293.0,
     "wise_w3": 123321.6,
     "wise_w4": 222532.7,
+    "des_g": 4821.9,
+    "des_r": 6378.9,
+    "des_i": 7763.6,
+    "des_z": 9164.1,
+    "des_y": 9909.2,
+    "ps1_g": 4866.5,
+    "ps1_r": 6214.6,
+    "ps1_i": 7544.6,
+    "ps1_z": 8679.5,
+    "ps1_y": 9633.6,
+    "lsst_u": 3684.8,
+    "lsst_g": 4802.0,
+    "lsst_r": 6231.2,
+    "lsst_i": 7541.7,
+    "lsst_z": 8690.5,
+    "lsst_y": 9736.4,
+    "euclid_vis": 7180.9,
+    "euclid_y": 10858.9,
+    "euclid_j": 13685.5,
+    "euclid_h": 17739.1,
+    "roman_f062": 6358.6,
+    "roman_f087": 8702.3,
+    "roman_f106": 10588.6,
+    "roman_f129": 12925.4,
+    "roman_f158": 15797.7,
+    "roman_f184": 18429.2,
+    "jwst_f070w": 7055.8,
+    "jwst_f090w": 9042.3,
+    "jwst_f115w": 11570.0,
+    "jwst_f150w": 15039.9,
+    "jwst_f200w": 19933.9,
+    "jwst_f277w": 27693.4,
+    "jwst_f356w": 35768.0,
+    "jwst_f444w": 44158.6,
+    "wfc_acs_f435w": 4327.3,
+    "wfc_acs_f606w": 5956.3,
+    "wfc_acs_f814w": 8087.4,
+    "wfc3_ir_f125w": 12516.3,
+    "wfc3_ir_f160w": 15391.1,
+    "vista_y": 10214.2,
+    "vista_j": 12534.7,
+    "vista_h": 16453.4,
+    "vista_k": 21539.9,
+    "wfcam_z": 8830.4,
+    "wfcam_y": 10316.4,
+    "wfcam_j": 12510.2,
+    "wfcam_h": 16381.0,
+    "wfcam_k": 22086.1,
+    "irac_1": 35634.3,
+    "irac_2": 45110.1,
+    "irac_3": 57593.4,
+    "irac_4": 79594.9,
+    "mips_24": 236747.5,
+    "pacs_70": 711516.1,
+    "pacs_100": 1013910.6,
+    "pacs_160": 1635895.6,
+    "spire_250": 2493448.0,
+    "spire_350": 3498628.8,
+    "spire_500": 5037591.6,
 }
+
+# Instrument names for the filter prefixes, for labels ("SDSS g").
+_INSTRUMENT = (
+    ("galex_", "GALEX"),
+    ("sdss_", "SDSS"),
+    ("2mass_", "2MASS"),
+    ("wise_", "WISE"),
+    ("des_", "DECam"),
+    ("ps1_", "PS1"),
+    ("lsst_", "LSST"),
+    ("euclid_", "Euclid"),
+    ("roman_", "Roman"),
+    ("jwst_", "NIRCam"),
+    ("wfc_acs_", "ACS"),
+    ("wfc3_ir_", "WFC3"),
+    ("vista_", "VISTA"),
+    ("wfcam_", "WFCAM"),
+    ("irac_", "IRAC"),
+    ("mips_", "MIPS"),
+    ("pacs_", "PACS"),
+    ("spire_", "SPIRE"),
+)
+
+
+def band_label(name: str) -> str:
+    """A readable name for a filter: "sdss_g" -> "SDSS g", "2mass_ks" ->
+    "2MASS Ks", "irac_1" -> "IRAC 3.6 µm", "jwst_f200w" -> "NIRCam F200W"."""
+    for pre, inst in _INSTRUMENT:
+        if not name.startswith(pre):
+            continue
+        b = name[len(pre) :]
+        if inst == "IRAC":  # channels by their nominal wavelengths
+            b = {"1": "3.6", "2": "4.5", "3": "5.8", "4": "8.0"}.get(b, b)
+            b += " µm"
+        elif inst in ("MIPS", "PACS", "SPIRE"):
+            b += " µm"
+        elif inst in ("GALEX", "WISE") or b.startswith("f"):
+            b = b.upper()
+        elif b in ("ks", "vis"):
+            b = {"ks": "Ks", "vis": "VIS"}[b]
+        elif inst != "SDSS" and inst != "LSST" and len(b) == 1:
+            b = b.upper() if b in "jhky" else b
+        return f"{inst} {b}"
+    return name.replace("_", " ")
+
+
+def wavelength_order(name: str) -> float:
+    """Sort key: effective wavelength, unknown bands last."""
+    return EFFECTIVE_WAVELENGTH_A.get(name, 1e12)
+
 
 # AB absolute magnitude of the Sun, per band — converts a rest-frame absolute
 # magnitude into a luminosity (Lsun) for the mass-to-light dropdown entries.

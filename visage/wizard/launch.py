@@ -20,10 +20,17 @@ def create_launch_app(port: int):
     _sage_static_dir = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "static"
     )
+    # Tag visage.js with its modification time, as Explore does: without
+    # it the browser keeps running a cached old copy after an update (no
+    # automatic reload, no terminal on the run page).
+    try:
+        _v = int(os.path.getmtime(os.path.join(_sage_static_dir, "visage.js")))
+    except OSError:
+        _v = 0
     server.enable_module(
         {
             "serve": {"sage_static": _sage_static_dir},
-            "scripts": ["sage_static/visage.js"],
+            "scripts": [f"sage_static/visage.js?v={_v}"],
         }
     )
 
@@ -36,6 +43,9 @@ def create_launch_app(port: int):
             "scripts": [
                 "https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js",
                 "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js",
+                # Canvas renderer: block characters (SAGE26's banner) fill
+                # their cells, as in a normal terminal.
+                "https://cdn.jsdelivr.net/npm/xterm-addon-canvas@0.5.0/lib/xterm-addon-canvas.js",
             ],
         }
     )
@@ -76,6 +86,12 @@ def create_launch_app(port: int):
         with layout.toolbar as tb:
             tb.style = "display:none;"
 
+        # The hidden toolbar and footer still reserve their space, which
+        # pushed the wizard 64px down (a blue band at the top, its bottom
+        # off-screen): give it the whole page, and exactly the window's
+        # height, so its pages (and the terminal fitting itself to its
+        # box) size to the window instead of growing with their content.
+        layout.content.style = "padding:0;height:100vh;overflow:hidden;"
         with layout.content:
             build_wizard_ui(server, ctrl)
             build_pso_gallery(server)

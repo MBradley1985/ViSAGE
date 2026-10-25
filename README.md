@@ -81,30 +81,27 @@ Renders dark matter haloes and SAGE galaxies together in a browser-based interac
 - Portable stories: symbolic snapshot references (`"first"`, `"last"`, `"40%"`, `"z=1.5"`) resolve against whatever model is loaded
 - Stories load from `sage_stories/` in your launch directory; a bundled **Presentation Template** provides a full talk skeleton to copy and fill in — see the [Story Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/story_mode/)
 
-### Launch Mode wizard
-- Guided setup flow, accessible standalone (`visage` with no `--par`/`--lightcone`) or from the Launch-Mode dropdown (SAGE-logo button, top-left of the toolbar)
-- Three guided flows share the same wizard shell, switchable at any time ("Back" / dedicated toolbar buttons):
-  - **SAGE26 setup** — clone, compile, configure, and run SAGE26
-  - **SAGEswarm** — clone [SAGEswarm](https://github.com/MBradley1985/SAGEswarm), install its Python requirements, configure `run_pso.sh`, and run the PSO calibration with a live plot gallery
-  - **LightSAGE** — clone [LightSAGE](https://github.com/sage-home/sage-lightcone) (upstream repo `sage-home/sage-lightcone`), build *only* the `sage2kdtree` / `cli_lightcone` tools (SAGE itself is never rebuilt — ViSAGE feeds it your existing SAGE26 output), configure and run the two-stage pipeline, then jump straight into **Lightcone Mode** on the result — with an optional third stage that synthesizes broadband photometry (SED) via FSPS (`pip install "sage-viewer[sed]"`)
-- Step chips in the header track progress per flow (cyan = current step, green = done, white = pending)
-- **Rescan** button re-runs the environment scan from scratch at any point
-- **Clone SAGE26** option clones the SAGE26 repository from GitHub — prompts for the parent directory (defaults to home folder) before cloning
-- **Create config file** option generates a new `.par` from a template pre-filled with paths for your SAGE26 directory; choose a custom filename before writing
-- Every editable config (`.par`, `run_pso.sh`, `run_lightcone.sh`) is shown as a **parameter form** — one labelled box per option, pre-filled with its default — instead of raw text; edits fold back into the file on Save & Run, preserving comments and layout
-- The LightSAGE build auto-detects a macOS Apple-clang/SDK mismatch and falls back to a compatible SDK; the generated build/run scripts live in `~/.visage/`, never inside the third-party checkout
-- SAGE26 compiles on every CPU core, and falls back to a serial build when no MPI compiler is installed
-- **Windows:** all three flows run their Linux tools inside WSL automatically, with a one-click **Install Linux build tools** step — see [Windows](#windows)
-- Screenshots, recordings, catalogue exports, and LightSAGE lightcone output all save to `sage_outputs/` in the directory you launched from
-- Wizard always resets cleanly when reopened
+### Launch Mode
+- Set up and run SAGE26, LightSAGE (lightcones) and SAGEswarm (calibration) without leaving the viewer: `visage` with no `--par`/`--lightcone`, or the Launch Mode menu (SAGE-logo button, top-left of the toolbar), which opens **SAGE26**, **LightSAGE** or **SAGEswarm** directly, or the home page
+- **Home:** a picture card per tool, showing whether it's installed, and **Load a previous model**, listing every SAGE26 model and lightcone found
+- **Each tool's page:** Run, Load existing, Install, Check for update (turns into Update when behind) and Clone / Re-clone. Install and Clone run on their button, showing the step and latest output, then the result:
+  - **SAGE26:** downloads the mini-Millennium trees on a first install, then `make` on every core (serial when there's no MPI compiler)
+  - **LightSAGE:** CMake, Boost and HDF5 (Homebrew / apt in WSL), the photometry packages and FSPS stellar libraries, then *only* its `sage2kdtree` / `cli_lightcone` tools; SAGE itself is never rebuilt, since ViSAGE feeds it your SAGE26 output
+  - **SAGEswarm:** its Python packages
+- **Setting up a run:** the key choices as big buttons (SAGE26: simulation, physics switches, and **Run on** 1 process or several under MPI; LightSAGE: source model, sky-and-depth presets, surveys, dust/IR/lines/disk-bulge; SAGEswarm: observations to match, search effort, free parameters), a **Name** that sets the run's output (with a warning when it would replace an existing model), and **All settings**: every value of the file in sections, with a search. The two always agree
+- **While it runs:** the stages, a progress bar and numbers read from the tool's output (a growing tree branch for SAGE26; rounds and particle circles for SAGEswarm), and the tool's terminal beside what it's making: a SAGE26 box filling with galaxies, a lightcone filling outwards, or SAGEswarm's latest plots. Then **Open in Explore** / **Open in Lightcone view**
+- Opening any model or lightcone shows **Opening …** and reloads the page by itself when ViSAGE is ready
+- **Windows:** all three tools run inside WSL automatically, with a one-click **Install Linux build tools** — see [Windows](#windows)
+- Screenshots, recordings, catalogue exports and lightcones save to `sage_outputs/` in the directory you launched from; build and run scripts live in `~/.visage/`, never inside a tool's checkout
 
 ### Lightcone Mode
 - `visage --lightcone FILE` opens a `cli_lightcone` HDF5 output in the **exact same Explore UI** as a SAGE box — same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering
 - Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
 - The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
 - **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
-- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
-- Reach it from the Launch-Mode wizard's "Visualize lightcone" step after a run, the wizard's **Load Existing Lightcone** button, the **Session Models** list (see below), or directly via `--lightcone`
+- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (named by survey, blue to red; each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
+- **Mock images** — **Create mock image** in the Photometry tab draws the sky around a galaxy as SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would record it (each galaxy's disk and bulge at its size, inclination and colours; the survey's pixels, seeing and, optionally, its sky noise), saved as PNG and FITS (with WCS)
+- Reach it from Launch Mode (**Open in Lightcone view** after a build, LightSAGE's **Load existing**, or **Load a previous model**), the **Session Models** list (see below), or directly via `--lightcone`
 
 ![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone.png)
 
@@ -144,7 +141,7 @@ pip install sage-viewer
 visage --par /path/to/SAGE26/input/millennium.par
 ```
 
-**Launch Mode** — configure and run SAGE26 via the guided wizard. Run from your SAGE26 root so the wizard can find your `.par` files and executable automatically:
+**Launch Mode** — install, set up and run SAGE26, LightSAGE and SAGEswarm. Run from your SAGE26 root (or the folder you want SAGE26 in) so ViSAGE finds your `.par` files and the tools automatically:
 
 ```bash
 cd /path/to/SAGE26
@@ -165,7 +162,7 @@ ssh -L 8080:localhost:8080 user@cluster
 ## Command-line options
 
 ```text
---par FILE              Path to a SAGE .par file — omit (with --lightcone) to launch in Launch Mode (wizard)
+--par FILE              Path to a SAGE .par file — omit (with --lightcone) to start in Launch Mode
 --lightcone FILE        Path to a cli_lightcone HDF5 output file — opens the
                         full Explore UI on the lightcone instead of a SAGE box
 --par-dir DIR           Directory to scan for additional .par files
