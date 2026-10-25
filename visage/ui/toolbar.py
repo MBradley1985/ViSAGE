@@ -392,7 +392,7 @@ def build_toolbar(server, scene: Scene) -> None:
                 try:
                     await asyncio.wait_for(stop_evt.wait(), timeout=interval)
                     break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
                 if idx == n - 1:

@@ -221,7 +221,7 @@ then `visage --par input/millennium.par` discovers all three models automaticall
 pip install sage-viewer
 ```
 
-Requires Python ≥ 3.10. After install, `visage` is available as a command. If your shell can't find it, add the user bin directory to your PATH:
+Requires Python ≥ 3.11. After install, `visage` is available as a command. If your shell can't find it, add the user bin directory to your PATH:
 
 ```bash
 # macOS (Python 3.12 user install)

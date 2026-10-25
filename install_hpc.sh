@@ -36,8 +36,8 @@ PY_MAJOR=$("$PYTHON" -c "import sys; print(sys.version_info.major)")
 PY_MINOR=$("$PYTHON" -c "import sys; print(sys.version_info.minor)")
 PY_VER="${PY_MAJOR}.${PY_MINOR}"
 
-if [[ "$PY_MAJOR" -lt 3 || ( "$PY_MAJOR" -eq 3 && "$PY_MINOR" -lt 10 ) ]]; then
-    echo "ERROR: Python >= 3.10 required (found $PY_VER)."
+if [[ "$PY_MAJOR" -lt 3 || ( "$PY_MAJOR" -eq 3 && "$PY_MINOR" -lt 11 ) ]]; then
+    echo "ERROR: Python >= 3.11 required (found $PY_VER)."
     exit 1
 fi
 
