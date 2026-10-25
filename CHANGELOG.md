@@ -6,6 +6,30 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.12.1] — 2026-10-25
+
+### Fixed
+
+- **AGN luminosities in lightcone photometry** were too high by 1/h
+  (×1.37 Millennium, ×1.48 microUchuu): SAGE26's time step `dT` is in
+  h⁻¹ Myr, not Myr. Re-run photometry on existing cones to update
+  `LAGN`, `EddingtonRatio` and the AGN lines.
+- **HD bulge colours** in older SAGE26 outputs, whose bulge
+  star-formation history missed the stars mergers and disk instabilities
+  moved into the bulge: the history is topped up to BulgeMass, as the
+  photometry does (fixed SAGE26 outputs are unchanged).
+- HD no longer draws a quasar nucleus for a black hole that has just
+  formed with a tiny mass (under 10⁴ M☉ accreted in a step).
+
+### Added
+
+- Radio-mode AGN power from SAGE26's new `RadioModeBHaccretionMass`
+  (`Heating` is still used for older outputs).
+- The card marks an Eddington ratio "black hole born this step", which
+  only reflects the step's length.
+
+---
+
 ## [2.12.0] — 2026-10-25
 
 ### Changed
