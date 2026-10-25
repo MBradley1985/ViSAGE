@@ -191,7 +191,7 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                 with v3.VCard(
                     style=(
                         "`flex:1;min-width:0;"
-                        "background:#000000;border:2px solid #06b6d4;"
+                        "background:#000000;border-radius:14px;"
                         "display:grid;grid-template-rows:1fr auto;"
                         "overflow:hidden;position:relative;`",
                     ),
@@ -265,42 +265,47 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                             v_show=("wiz_run_active",),
                             style="display:flex;align-items:center;gap:8px;",
                         ):
-                            v3.VBtn(
-                                "Cancel (Ctrl+C)",
-                                v_show=("wiz_run_active",),
-                                prepend_icon="mdi-close-octagon",
-                                color="#ef4444",
-                                variant="outlined",
-                                size="small",
+                            with html.Button(
+                                type="button",
+                                classes="wiz-big",
                                 click=server.controller.wiz_cancel_run,
-                                style="text-transform:none;",
-                            )
+                                style=(
+                                    "height:42px;padding:0 18px;"
+                                    "border-radius:12px;border:1px solid #ef4444;"
+                                    "background:transparent;color:#fca5a5;"
+                                    "font-size:0.95rem;"
+                                ),
+                            ):
+                                html.Span("Cancel")
                         with html.Div(
                             v_show=("!wiz_busy && wiz_choices.length > 0",),
                             style=(
-                                "display:flex;flex-wrap:wrap;gap:8px;"
+                                "display:flex;flex-wrap:wrap;gap:10px;"
+                                "justify-content:center;"
                                 "max-height:120px;overflow-y:auto;"
                             ),
                         ):
-                            with html.Div(
+                            with html.Button(
                                 v_for="(ch, ci) in wiz_choices",
                                 key="ci",
+                                type="button",
+                                classes="wiz-big",
+                                disabled=("ch.disabled",),
+                                click=(
+                                    server.controller.wiz_choose,
+                                    "[ch.value]",
+                                ),
+                                style=(
+                                    "height:42px;padding:0 18px;border-radius:12px;"
+                                    "border:1px solid #334155;background:#0b1120;"
+                                    "color:#e2e8f0;font-size:0.95rem;display:flex;"
+                                    "align-items:center;gap:8px;"
+                                ),
                             ):
-                                v3.VBtn(
-                                    "{{ ch.label }}",
-                                    prepend_icon=("ch.icon",),
-                                    color="#06b6d4",
-                                    variant="outlined",
-                                    size=(
-                                        "wiz_choices.length > 5 ? 'x-small' : 'small'",
-                                    ),
-                                    disabled=("ch.disabled",),
-                                    click=(
-                                        server.controller.wiz_choose,
-                                        "[ch.value]",
-                                    ),
-                                    style="text-transform:none;",
+                                v3.VIcon(
+                                    icon=("ch.icon",), color="#94a3b8", size=20
                                 )
+                                html.Span("{{ ch.label }}")
 
                 # ── Right: editor card — SAGE26 .par / SAGEswarm run_pso.sh /
                 #    LightSAGE run_lightcone.sh ─────────────────────────
@@ -409,17 +414,6 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
                             style="flex:0 0 100%;color:#9ca3af;font-size:0.8rem;",
                         )
 
-        # SAGE logo — pinned to bottom-right corner of the wizard screen
-        html.Img(
-            v_show=("wiz_view === 'term'",),
-            src="/sage_static/SAGElogo.jpg",
-            style=(
-                "position:absolute;bottom:16px;right:16px;"
-                "width:90px;"
-                "pointer-events:none;"
-            ),
-        )
-
 
 def _home_view(server) -> None:
     """Three big cards (SAGE26, LightSAGE, SAGEswarm) and a smaller Load
@@ -452,7 +446,9 @@ def _home_view(server) -> None:
                     "justifyContent:'flex-end',alignItems:'flex-start',"
                     "gap:'10px',textAlign:'left',color:'#fff',"
                     "overflow:'hidden',backgroundColor:'#000',"
-                    "backgroundSize:'cover',backgroundPosition:'center',"
+                    "backgroundRepeat:'no-repeat',"
+                    "backgroundSize: c.fit === 'contain' ? 'contain' : 'cover',"
+                    "backgroundPosition: c.fit === 'contain' ? 'center 30%' : 'center',"
                     "backgroundImage:'linear-gradient(180deg, rgba(0,0,0,0) "
                     "0%, rgba(0,0,0,0.2) 45%, rgba(0,0,0,0.93) 100%), url(' "
                     "+ c.bg + ')'}",
@@ -517,16 +513,20 @@ def _home_view(server) -> None:
         ):
             v3.VIcon("mdi-alert-outline", color="#f59e0b", size=20)
             html.Span("{{ wiz_tools_note }}")
-            v3.VBtn(
-                "Install Linux build tools",
+            with html.Button(
                 v_if=("wiz_tools_missing",),
-                prepend_icon="mdi-penguin",
-                color="#f59e0b",
-                variant="outlined",
-                size="small",
+                type="button",
+                classes="wiz-big",
                 click=(choose, "['tools']"),
-                style="text-transform:none;",
-            )
+                style=(
+                    "height:38px;padding:0 16px;border-radius:12px;"
+                    "border:1px solid #f59e0b;background:transparent;"
+                    "color:#fcd34d;font-size:0.9rem;display:flex;"
+                    "align-items:center;gap:8px;"
+                ),
+            ):
+                v3.VIcon("mdi-penguin", color="#f59e0b", size=18)
+                html.Span("Install Linux build tools")
 
 
 def _mode_view(server) -> None:
@@ -544,8 +544,11 @@ def _mode_view(server) -> None:
                 "borderRadius:'18px',padding:'28px',display:'flex',"
                 "flexDirection:'column',justifyContent:'space-between',"
                 "border:'1px solid ' + wiz_mode_info.accent + '66',"
-                "backgroundColor:'#000',backgroundSize:'cover',"
-                "backgroundPosition:'center',"
+                "backgroundColor:'#000',backgroundRepeat:'no-repeat',"
+                "backgroundSize: wiz_mode_info.fit === 'contain' "
+                "? 'contain' : 'cover',"
+                "backgroundPosition: wiz_mode_info.fit === 'contain' "
+                "? 'center 35%' : 'center',"
                 "backgroundImage:'linear-gradient(180deg, rgba(0,0,0,0.05) "
                 "0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.95) 100%), url(' "
                 "+ wiz_mode_info.bg + ')'}",

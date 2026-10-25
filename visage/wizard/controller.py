@@ -100,13 +100,27 @@ def _ansi_to_html(text: str) -> str:
     return "".join(out)
 
 
+def _wizard_image(name: str) -> str:
+    """A picture in visage/static/wizard/, tagged with its modification
+    time so a browser never shows a cached older version."""
+    f = Path(__file__).resolve().parent.parent / "static" / "wizard" / name
+    try:
+        return f"/sage_static/wizard/{name}?v={int(f.stat().st_mtime)}"
+    except OSError:
+        return f"/sage_static/wizard/{name}"
+
+
 # The three tools on the Launch Mode home screen, in order: card text,
-# background (visage/static/wizard/), icon and accent colours.
+# background (visage/static/wizard/) and how it fills the card ("contain":
+# shown whole, on black; "cover": fills it), icon and accent colours.
 _MODE_META = {
     "sage26": {
         "title": "SAGE26",
         "desc": "Run the semi-analytic model on dark-matter merger trees",
-        "bg": "/sage_static/wizard/sage26.jpg",
+        "bg": _wizard_image("sage26.jpg"),
+        # The logo, whole (its background is black): filling the card
+        # cropped and enlarged it.
+        "fit": "contain",
         "icon": "mdi-orbit",
         "accent": "#22d3ee",
         "accent2": "#a78bfa",
@@ -114,7 +128,8 @@ _MODE_META = {
     "sagelightcone": {
         "title": "LightSAGE",
         "desc": "Build lightcones and see galaxies as a telescope would",
-        "bg": "/sage_static/wizard/lightsage.jpg",
+        "bg": _wizard_image("lightsage.jpg"),
+        "fit": "cover",
         "icon": "mdi-telescope",
         "accent": "#60a5fa",
         "accent2": "#f59e0b",
@@ -122,7 +137,8 @@ _MODE_META = {
     "sageswarm": {
         "title": "SAGEswarm",
         "desc": "Calibrate SAGE26 against observations with a particle swarm",
-        "bg": "/sage_static/wizard/sageswarm.jpg",
+        "bg": _wizard_image("sageswarm.jpg"),
+        "fit": "cover",
         "icon": "mdi-chart-bubble",
         "accent": "#2dd4bf",
         "accent2": "#f59e0b",

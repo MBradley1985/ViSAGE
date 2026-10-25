@@ -74,6 +74,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   (running replaces its output).
 - Load a previous model (home screen) lists lightcones as well as SAGE26
   models.
+- The SAGE26 picture (home card, SAGE26 screen) is the whole logo at full
+  resolution, no longer cropped and enlarged; the pictures are
+  version-tagged so a browser doesn't keep an old one.
+- The full-page terminal (a failed install's output, Windows' Linux
+  build tools) is in the new style, without the old outline and corner
+  logo.
 - Explore's Launch menu starts with SAGE26, LightSAGE and SAGEswarm, each
   opening on its own screen, then Setup Wizard (the home screen).
 - Model and lightcone pickers are big buttons (size, date, galaxies);
