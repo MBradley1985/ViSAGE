@@ -42,7 +42,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   observer, in step with the run (frames drawn once from a Millennium
   run and the microUchuu lightcone), or SAGEswarm's newest plot of each
   constraint, sized to share the space. The terminal runs commands at
-  its own width (its font shrinks so SAGE26's banner fits). When it
+  its own width (its font shrinks to fit ~100 columns, so SAGE26's
+  in-place banner and progress bar never wrap). When it
   finishes: Open in Explore / Open in Lightcone view.
 - Every Launch Mode page past the home screen is centred, with black
   space around it and no outline, sized to the window (no scrolling),

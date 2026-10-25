@@ -598,13 +598,13 @@
     }
     var _wizRO = null;
 
-    // SAGE26's banner is 138 columns wide and redraws itself in place, so
-    // a narrower terminal scrambles it: shrink the font (to 9px at least)
-    // until ~140 columns fit the box.
+    // SAGE26 redraws its banner and progress bar in place (cursor up 7
+    // lines), so a line that wraps scrambles it; its widest is 85 columns.
+    // Shrink the font (to 9px at least) until ~100 columns fit the box.
     function _wizFontFor(box) {
       var w = box ? box.clientWidth : 0;
       if (!w) return 12;
-      return Math.max(9, Math.min(12, Math.floor(w / (140 * 0.6))));
+      return Math.max(9, Math.min(12, Math.floor(w / (100 * 0.6))));
     }
     function _wizSetFont() {
       if (!_wizTerm || !_wizTerm.element) return;
