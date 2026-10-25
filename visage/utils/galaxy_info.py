@@ -186,7 +186,9 @@ def _dust_row(galaxies, i: int) -> str | None:
     return None
 
 
-def cone_details(galaxies: GalaxySnapshot, i: int) -> dict:
+def cone_details(
+    galaxies: GalaxySnapshot, i: int, hubble_h: float = 0.7
+) -> dict:
     """Every lightcone-only property of galaxy i, for "All properties":
     sky position, dust, AGN, emission lines and every magnitude."""
     info: dict = {}
@@ -236,6 +238,14 @@ def cone_details(galaxies: GalaxySnapshot, i: int) -> dict:
         v = _x(galaxies, key, i) if on else None
         if v is not None and v > 0:
             info[label] = fmt.format(v)
+    if "Eddington ratio" in info:
+        # SAGE26's black holes start at zero: one born this step "accreted"
+        # all of its mass at once, and its Eddington ratio only reflects the
+        # step's length.
+        q = _x(galaxies, "QuasarModeBHaccretionMass", i)
+        bh = float(galaxies.bh_mass[i])
+        if q is not None and bh > 0 and q * 1e10 / hubble_h >= 0.99 * bh:
+            info["Eddington ratio"] += " (black hole born this step)"
     path = getattr(galaxies, "source_path", "") if lines else ""
     raw = (
         int(galaxies.sage_indices[i])
@@ -436,6 +446,6 @@ def build_galaxy_info(
         info["Approx Age"] = f"{age:.2f} Gyr" if age > 0 else "—"
 
     if getattr(galaxies, "is_cone", False):
-        info.update(cone_details(galaxies, idx))
+        info.update(cone_details(galaxies, idx, hubble_h))
 
     return info

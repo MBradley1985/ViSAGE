@@ -139,6 +139,25 @@ def _sfh_bins(snap, i, snap_table, hubble_h, omega_m):
     return _SFH_CACHE.get((snap.source_path, int(snap.snap_num)), {}).get(raw)
 
 
+def _bulge_history(sfh, bulge_raw: float):
+    """SFH bins (2, n: disk, bulge; raw units) with the bulge's history
+    made up to its mass.  Older SAGE26 outputs kept the stars mergers and
+    disk instabilities moved into the bulge in the disk's history (fixed in
+    SAGE26 since): the share of the disk's history that brings the bulge's
+    total to BulgeMass moves over, those stars taken to have the disk's age
+    mix -- as the lightcone photometry does.  A history already summing to
+    BulgeMass is unchanged."""
+    sfh = np.asarray(sfh, float)
+    disk, bulge = sfh[0], sfh[1]
+    sd = float(disk.sum())
+    if sd <= 0 or bulge_raw <= 0:
+        return sfh
+    f = float(np.clip((bulge_raw - bulge.sum()) / sd, 0.0, 1.0))
+    if f <= 0:
+        return sfh
+    return np.stack([disk * (1 - f), bulge + f * disk])
+
+
 def _field(snap, name, i, default=0.0):
     arr = getattr(snap, name, None)
     if arr is None or i >= len(arr):
@@ -197,6 +216,8 @@ def sage_galaxy_from_snapshot(
     if zs is not None and i < len(zs):
         z = float(zs[i])  # its own redshift on the cone
     sfh = _sfh_bins(snap, i, snap_table, hubble_h, omega_m)
+    if sfh is not None:
+        sfh = _bulge_history(sfh, _field(snap, "bulge_mass", i) / mass)
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
         stellar_mass=_field(snap, "stellar_mass", i),

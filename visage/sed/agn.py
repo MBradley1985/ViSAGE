@@ -4,9 +4,12 @@ SAGE26 grows black holes in two ways, both recorded in the lightcone:
 
   quasar mode  cold gas accreted in mergers (and disk instabilities),
                ``QuasarModeBHaccretionMass`` per snapshot, spread over the
-               snapshot's time step ``dT``
-  radio mode   hot-halo accretion; ``Heating`` is its power
-               eta Mdot c^2 (log10 erg/s, eta = 0.1), averaged over the step
+               snapshot's time step ``dT`` (in h^-1 Myr, SAGE26's internal
+               time unit)
+  radio mode   hot-halo accretion, ``RadioModeBHaccretionMass`` per
+               snapshot (newer SAGE26) over the same step; in older
+               outputs only its power, ``Heating`` (eta Mdot c^2, log10
+               erg/s, eta = 0.1, averaged over the step)
 
 The accretion rate gives the luminosity: L = eta Mdot c^2 above 1 per cent
 of Eddington (a thin disc), falling as Mdot^2 below it, where the flow
@@ -88,18 +91,28 @@ def ionising_photons_per_erg(alpha: float = -1.7) -> float:
     return q / lum
 
 
-def luminosity(bh_mass, mdot_quasar, heating_log):
+def luminosity(bh_mass, mdot_quasar, heating_log, mdot_radio=None):
     """AGN luminosity (erg/s) and Eddington ratio.
 
     bh_mass       Msun
     mdot_quasar   Msun/yr, quasar-mode accretion rate
     heating_log   SAGE26 ``Heating``: log10 of radio-mode eta Mdot c^2
                   (erg/s), 0 when there was none
+    mdot_radio    Msun/yr, radio-mode accretion rate (from
+                  ``RadioModeBHaccretionMass``); used instead of
+                  ``heating_log`` when given
     """
     bh_mass = np.asarray(bh_mass, float)
-    heating = np.where(
-        np.asarray(heating_log, float) > 0, 10.0 ** np.asarray(heating_log), 0
-    )
+    if mdot_radio is not None:
+        heating = (
+            ETA * np.asarray(mdot_radio, float) * MSUN_G / YR_S * C_CM_S**2
+        )
+    else:
+        heating = np.where(
+            np.asarray(heating_log, float) > 0,
+            10.0 ** np.asarray(heating_log),
+            0,
+        )
     p_acc = ETA * np.asarray(mdot_quasar, float) * MSUN_G / YR_S * C_CM_S**2
     p_acc = p_acc + heating  # eta Mdot c^2, erg/s
     l_edd = L_EDD_PER_MSUN * bh_mass
