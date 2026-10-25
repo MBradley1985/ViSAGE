@@ -32,8 +32,10 @@ Drag it inward from the maximum to peel away the near side of the cone and see w
 
 If the lightcone was built with photometry (see
 [Launch Mode → Setting up a run](launch_mode.md#setting-up-a-run)), Lightcone Mode
-replaces the **Box** tab (a periodic box has no meaning for a cone) with a
-**Photometry** tab — a false-colour **image builder**.
+replaces the **Box** tab with a **Photometry** tab (the box and slice controls
+move to the top of the **Coords** tab: X/Y/Z bounds, **Draw Box**, **Use
+Current View**, **Zoom**; a thin box makes a slice, and the bounds start at the
+cone's own extent) — a false-colour **image builder**.
 
 Photometry is its **own independent layer**, separate from the galaxies, with
 its own **Visible** checkbox and **Opacity** slider. It's hidden by default;
@@ -72,14 +74,12 @@ cone's own galaxies are on the sky, so a shallow cone looks sparser than the
 real sky. The method and survey numbers are in
 [Lightcone photometry → Mock images](../physics/photometry.md#mock-images).
 
-**HD galaxies** (a checkbox under the field size), or **HD mock** on the
-selection card, draws galaxies big enough on the sky to show structure from
+**HD galaxies** (a checkbox under the field size) draws galaxies big enough on the sky to show structure from
 their [HD models](hd_mode.md#in-a-lightcone) instead of smooth profiles: the
 selected galaxy and up to 12 more, the brightest at least a PSF across. Each is
 seen from the observer at its angular size, with HD's three colour channels
 scaled to the galaxy's own magnitude in each of the survey's three bands, then
-blurred and given noise as the rest. HD mock frames the selected galaxy (three
-times its optical diameter) in the Photometry tab's survey. Optical surveys
+blurred and given noise as the rest. Optical surveys
 only (SDSS, DES, Pan-STARRS1, LSST): HD's colours are optical. HD sizes follow
 the observed size–mass relation (Shen et al. 2003), so an HD galaxy can look
 smaller than the same galaxy's profile, which uses SAGE's disk radius.

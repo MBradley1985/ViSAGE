@@ -58,9 +58,6 @@ def _init_state(state) -> None:
         "find_note": "",
         "hd_available": True,
         "hd_unavailable": "",
-        "is_lightcone": False,
-        "mock_hd_ok": False,
-        "mock_busy": False,
     }.items():
         if not state.has(k):
             state[k] = v
@@ -184,21 +181,6 @@ def selection_card(server) -> None:
                 color="#a3e635",
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
-            )
-            v3.VBtn(
-                "HD mock",
-                v_show=("is_lightcone && mock_hd_ok",),
-                size="small",
-                variant="outlined",
-                color="#7FDBFF",
-                loading=("mock_busy",),
-                click=ctrl.create_hd_mock,
-                title=(
-                    "A survey image of this galaxy from its HD model: its "
-                    "photometry, dust and colours, the survey's pixels, "
-                    "seeing and noise (Photometry tab's survey)"
-                ),
-                style="min-width:0;padding:0 8px;",
             )
 
         # Moving on: history, the group's members, its central, the nearest
