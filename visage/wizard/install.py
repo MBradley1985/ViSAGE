@@ -343,7 +343,7 @@ class InstallMixin:
                 self._emit(f"Existing checkout moved to {moved}", "warn")
             self._inline_step(f"Cloning into {target}")
             cmd = ["git", "clone", repo, target]
-            if mode == "sagelightcone":  # it vendors SAGE as a submodule
+            if mode == "sagelightcone":  # as its README says
                 cmd.insert(2, "--recurse-submodules")
             if await self._run_cmd(cmd, cwd=target.parent) != 0:
                 await self._inline_end(False, "Cloning failed")

@@ -3314,7 +3314,8 @@ class WizardController(InstallMixin, SetupRunMixin):
                 return
             self._emit(f"Existing checkout moved to {backup}", "warn")
         self._emit(f"Cloning LightSAGE into {target} ...", "info")
-        # --recurse-submodules per the LightSAGE README (it vendors SAGE).
+        # --recurse-submodules as the LightSAGE README says (it has no
+        # submodules now; ViSAGE never builds SAGE from it).
         rc = await self._run_cmd(
             [
                 "git",
