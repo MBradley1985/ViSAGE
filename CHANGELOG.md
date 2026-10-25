@@ -24,6 +24,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   Box, Use Current View, Zoom) above the sphere, starting from the
   cone's own extent.
 
+### Removed
+
+- The selection card's **HD mock** button (HD+mock images stay in the
+  Photometry tab: its mock image's "HD galaxies" option).
+
 ---
 
 ## [2.11.0] — 2026-10-25

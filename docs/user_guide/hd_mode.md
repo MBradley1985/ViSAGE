@@ -58,7 +58,7 @@ HD works in Lightcone Mode with each galaxy as an observer sees it:
 
 The card shows its redshift, distance, apparent and absolute r magnitude, rest-frame g − r and A_V at its inclination; **All properties** adds the sky position, dust mass, dust-to-gas ratio, face-on optical depth, emission-line fluxes, AGN and dust luminosities and every magnitude. Galaxies are named by SAGE's GalaxyIndex.
 
-**HD mock** on the card makes a survey image of the selected galaxy from its HD model (see [Lightcone Mode → Mock images](lightcone.md#mock-images)).
+The Photometry tab's mock images can draw galaxies from their HD models (see [Lightcone Mode → Mock images](lightcone.md#mock-images)).
 
 ## Components
 
