@@ -209,6 +209,7 @@ class SnapshotLoader:
         max_halos: int | None = None,
         max_galaxies: int | None = None,
         cache_bytes: int | None = None,
+        min_particles: int | None = None,
     ) -> None:
         self._cfg = config
         self._snap_table = snap_table
@@ -220,6 +221,14 @@ class SnapshotLoader:
         self._min_stellar_mass = min_stellar_mass
         self._max_halos = max_halos
         self._max_galaxies = max_galaxies
+        # Resolution (visage.utils.resolution): haloes of at least this
+        # many particles, galaxies from the stellar mass that resolves
+        # them in each snapshot; None keeps the fixed mass cuts.
+        self._min_particles = min_particles
+        if min_particles:
+            self._min_halo_mass = (
+                min_particles * config.part_mass * 1.0e10 / config.hubble_h
+            )
 
         self._executor = ThreadPoolExecutor(
             max_workers=max(2, prefetch_radius * 2)
@@ -264,6 +273,8 @@ class SnapshotLoader:
             scale_factors=self._snap_table.scale_factors,
             omega_m=self._cfg.omega,
             omega_l=self._cfg.omega_lambda,
+            min_particles=self._min_particles,
+            particle_mass=self._cfg.part_mass,
         )
         # Build the spatial index while still on the background thread so
         # snap navigation never blocks on KDTree construction (~50 ms / snap).

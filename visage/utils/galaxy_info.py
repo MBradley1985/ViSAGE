@@ -26,19 +26,6 @@ def _age_lcdm(
     )
 
 
-def _classify_environment(host_mvir_msun: float, n_members: int) -> str:
-    """Loose categorical label for the FOF environment of this galaxy."""
-    if n_members <= 1:
-        return "Isolated"
-    if n_members == 2:
-        return "Pair"
-    if host_mvir_msun >= 1e14:
-        return "Cluster"
-    if host_mvir_msun >= 1e13:
-        return "Group"
-    return "Small group"
-
-
 def _ffb_label(flag: int) -> str:
     return "FFB" if int(flag) != 0 else "Non-FFB"
 
@@ -95,6 +82,228 @@ def _sfh_age_gyr(
     return float(np.sum(sfh[:n] * lookback) / total)
 
 
+# -- lightcones: where a galaxy is on the sky, how it looks, its dust ----
+
+# The bands the card quotes, first available: (rest-frame colour pair,
+# apparent magnitude band).
+_CARD_BANDS = (
+    ("sdss_g", "sdss_r"),
+    ("des_g", "des_r"),
+    ("lsst_g", "lsst_r"),
+    ("ps1_g", "ps1_r"),
+)
+# Emission lines in the order the card lists them.
+_LINES = (
+    ("Halpha", "Hα"),
+    ("Hbeta", "Hβ"),
+    ("OIII5007", "[OIII] 5007"),
+    ("NII6584", "[NII] 6584"),
+    ("OII3727", "[OII] 3727"),
+    ("SII6716_6731", "[SII] 6716+31"),
+)
+
+
+def _x(galaxies, name: str, i: int) -> float | None:
+    col = galaxies.extra.get(name) if galaxies.extra else None
+    if col is None or i >= len(col):
+        return None
+    v = float(col[i])
+    return v if np.isfinite(v) else None
+
+
+def attenuation_v(tau_v: float, cos_i: float) -> float:
+    """A_V (mag) of the diffuse ISM at inclination i: dust mixed with the
+    stars in a slab, as the photometry has it (visage.sed.dust,
+    Charlot & Fall 2000)."""
+    t = max(tau_v, 0.0) / max(cos_i, 0.05)
+    if t <= 1e-6:
+        return 0.0
+    return float(-2.5 * np.log10(-np.expm1(-t) / t))
+
+
+def cone_summary(galaxies: GalaxySnapshot, i: int) -> list:
+    """(label, value) rows for a lightcone galaxy's card: redshift and
+    distance, then (with synthetic photometry) its brightness, colour and
+    dust."""
+    out = []
+    z_obs = _x(galaxies, "redshift_observed", i)
+    z_cos = (
+        float(galaxies.redshifts[i])
+        if galaxies.redshifts is not None
+        else None
+    )
+    if z_obs is not None or z_cos is not None:
+        out.append(
+            ("Redshift", f"{z_obs if z_obs is not None else z_cos:.4f}")
+        )
+    d = _x(galaxies, "distance", i)
+    if d is None:
+        d = float(np.linalg.norm(galaxies.positions[i]))
+    out.append(("Distance", f"{d:.1f} Mpc/h"))
+    mags = galaxies.sed_mags or {}
+    for blue, red in _CARD_BANDS:
+        obs, rest = f"mag_obs_{red}", f"mag_rest_{red}"
+        rest_b = f"mag_rest_{blue}"
+        if obs not in mags and rest not in mags:
+            continue
+        from visage.sed.filters import band_label
+
+        name = band_label(red).split()[-1]
+        if obs in mags and np.isfinite(mags[obs][i]):
+            out.append((f"{name} (apparent)", f"{mags[obs][i]:.2f} AB"))
+        if rest in mags and np.isfinite(mags[rest][i]):
+            out.append((f"M_{name}", f"{mags[rest][i]:.2f} AB"))
+            if rest_b in mags and np.isfinite(mags[rest_b][i]):
+                gb = band_label(blue).split()[-1]
+                out.append(
+                    (
+                        f"{gb} − {name} (rest)",
+                        f"{mags[rest_b][i] - mags[rest][i]:.2f}",
+                    )
+                )
+        break
+    av = _dust_row(galaxies, i)
+    if av is not None:
+        out.append(("A_V (dust)", av))
+    return out
+
+
+def _dust_row(galaxies, i: int) -> str | None:
+    """The card's dust line, as the photometry made it (None without
+    photometry, or without the values it needs)."""
+    how, tau_screen = galaxies.sed_dust()
+    if how == "charlot_fall":
+        tau = _x(galaxies, "TauV_ISM", i)
+        ci = _x(galaxies, "CosInclination", i)
+        if tau is None or ci is None:
+            return None
+        inc = np.degrees(np.arccos(np.clip(ci, 0.0, 1.0)))
+        return f"{attenuation_v(tau, ci):.2f} mag at i={inc:.0f}°"
+    if how == "calzetti":
+        return f"{1.086 * tau_screen:.2f} mag (one screen, all galaxies)"
+    if how == "none":
+        return "none (photometry made without dust)"
+    return None
+
+
+def cone_details(galaxies: GalaxySnapshot, i: int) -> dict:
+    """Every lightcone-only property of galaxy i, for "All properties":
+    sky position, dust, AGN, emission lines and every magnitude."""
+    info: dict = {}
+    ra, dec = _x(galaxies, "ra", i), _x(galaxies, "dec", i)
+    if ra is not None and dec is not None:
+        info["RA, Dec"] = f"{ra:.4f}°, {dec:+.4f}°"
+    z_obs = _x(galaxies, "redshift_observed", i)
+    if z_obs is not None:
+        info["Redshift (observed)"] = f"{z_obs:.5f}"
+    if galaxies.redshifts is not None:
+        info["Redshift (cosmological)"] = f"{galaxies.redshifts[i]:.5f}"
+    if galaxies.snap_nums is not None:
+        info["Snapshot"] = str(int(galaxies.snap_nums[i]))
+    d = _x(galaxies, "distance", i)
+    if d is not None:
+        info["Comoving distance"] = f"{d:.2f} Mpc/h"
+    how = galaxies.sed_dust()[0]
+    if how == "charlot_fall":
+        # (Columns of an older run with another dust setting are left
+        # in the file: only this one's are shown.)
+        for key, label, fmt in (
+            ("DustMassCold", "Dust mass (cold ISM)", "{:.2e} Msun"),
+            ("DustToGas", "Dust-to-gas", "{:.2e}"),
+            ("TauV_ISM", "τ_V face-on (ISM)", "{:.3f}"),
+        ):
+            v = _x(galaxies, key, i)
+            if v is not None:
+                info[label] = fmt.format(v)
+        tau = _x(galaxies, "TauV_ISM", i)
+        ci = _x(galaxies, "CosInclination", i)
+        if ci is not None:
+            info["Inclination"] = (
+                f"{np.degrees(np.arccos(np.clip(ci, 0.0, 1.0))):.1f}°"
+            )
+            if tau is not None:
+                info["A_V (ISM, at i)"] = f"{attenuation_v(tau, ci):.3f} mag"
+    elif how is not None:
+        info["Dust"] = _dust_row(galaxies, i)
+    phot = galaxies.photometry or {}
+    dust_ir = "re-emitted" in str(phot.get("Dust", ""))
+    lines = str(phot.get("NebularEmission", "none")).lower() != "none"
+    for key, label, fmt, on in (
+        ("LDust", "Dust luminosity (IR)", "{:.2e} Lsun", dust_ir),
+        ("LAGN", "AGN luminosity", "{:.2e} erg/s", lines),
+        ("EddingtonRatio", "Eddington ratio", "{:.2e}", lines),
+    ):
+        v = _x(galaxies, key, i) if on else None
+        if v is not None and v > 0:
+            info[label] = fmt.format(v)
+    path = getattr(galaxies, "source_path", "") if lines else ""
+    raw = (
+        int(galaxies.sage_indices[i])
+        if galaxies.sage_indices is not None
+        else i
+    )
+    if path:
+        try:
+            from visage.io.lightcone_reader import _open_ro
+
+            with _open_ro(Path(path)) as f:
+                for key, label in _LINES:
+                    if f"LineFlux_{key}" in f:
+                        v = float(f[f"LineFlux_{key}"][raw])
+                        if np.isfinite(v) and v > 0:
+                            info[f"{label} flux"] = f"{v:.2e} erg/s/cm²"
+        except Exception:
+            pass
+    mags = galaxies.sed_mags or {}
+    if mags:
+        from visage.sed.filters import band_label, wavelength_order
+
+        for frame, word in (("obs", "apparent"), ("rest", "absolute")):
+            keys = sorted(
+                (k for k in mags if k.startswith(f"mag_{frame}_")),
+                key=lambda k: wavelength_order(k.split("_", 2)[2]),
+            )
+            for k in keys:
+                v = float(mags[k][i])
+                if np.isfinite(v):
+                    band = band_label(k.split("_", 2)[2])
+                    info[f"{band} ({word})"] = f"{v:.2f} AB"
+    return info
+
+
+def cone_age_gyr(galaxies: GalaxySnapshot, i: int, snap_table, h: float):
+    """Mass-weighted stellar age (Gyr) of a lightcone galaxy from its SFH
+    (as _sfh_age_gyr, at its own snapshot); None without one."""
+    if not getattr(galaxies, "has_sfh", False) or snap_table is None:
+        return None
+    from visage.io.galaxy_reader import find_sfh_datasets
+    from visage.io.lightcone_reader import _open_ro
+
+    raw = (
+        int(galaxies.sage_indices[i])
+        if galaxies.sage_indices is not None
+        else i
+    )
+    try:
+        with _open_ro(Path(galaxies.source_path)) as f:
+            disk, bulge = find_sfh_datasets(f)
+            if disk is None or bulge is None:
+                return None
+            sfh = np.asarray(f[disk][raw, :], float) + np.asarray(
+                f[bulge][raw, :], float
+            )
+    except Exception:
+        return None
+    total = sfh.sum()
+    if total <= 0:
+        return None
+    n = min(sfh.size, snap_table.count)
+    age_bin = _age_lcdm(snap_table.scale_factors[:n], h=h)
+    age_now = _age_lcdm(snap_table.snap_to_a(galaxies.snap_of(i)), h=h)
+    lookback = np.maximum(age_now - age_bin, 0.0)
+    return float(np.sum(sfh[:n] * lookback) / total)
+
+
 def build_galaxy_info(
     galaxies: GalaxySnapshot,
     fields_available: dict[str, bool],
@@ -137,7 +346,7 @@ def build_galaxy_info(
         bt_label += "  (bulge-dom.)"
 
     info: dict = {
-        "GalaxyID": "—",
+        "GalaxyIndex": "—",
         "Type": gal_type_str,
         "Halo Mvir": f"{mvir:.2e} Msun",
         "Stellar Mass": f"{sm:.2e} Msun",
@@ -147,7 +356,7 @@ def build_galaxy_info(
     }
 
     if fields_available.get("galaxy_id", False):
-        info["GalaxyID"] = str(int(galaxies.galaxy_id[idx]))
+        info["GalaxyIndex"] = str(int(galaxies.galaxy_id[idx]))
 
     if fields_available.get("bh_mass", False):
         bh = float(galaxies.bh_mass[idx])
@@ -185,15 +394,17 @@ def build_galaxy_info(
 
     # Group / environment classification
     if fields_available.get("central_id", False):
-        cid = int(galaxies.central_id[idx])
-        n_members = int(np.sum(galaxies.central_id == cid))
-        # central_mvir is already in Msun (converted by the reader)
-        host_mvir = (
-            float(galaxies.central_mvir[idx])
-            if fields_available.get("central_mvir", False)
-            else mvir
+        from visage.utils.group_info import (
+            classify_members,
+            host_mass,
+            member_indices,
         )
-        env = _classify_environment(host_mvir, n_members)
+
+        members = member_indices(galaxies, idx)
+        n_members = len(members)
+        env = classify_members(
+            galaxies, members, host_mass(galaxies, members, hubble_h)
+        )
         if n_members == 1:
             members_str = f"{env}"
         else:
@@ -213,11 +424,18 @@ def build_galaxy_info(
     age = (
         float(galaxies.mean_age[idx]) if galaxies.mean_age.size > idx else 0.0
     )
-    if not fields_available.get("mean_age", False):
+    if getattr(galaxies, "is_cone", False) and galaxies.has_sfh:
+        # (A lightcone's ages aren't precomputed: from its SFH, now.)
+        a = cone_age_gyr(galaxies, idx, snap_table, hubble_h)
+        info["Approx Age"] = f"{a:.2f} Gyr" if a else "—"
+    elif not fields_available.get("mean_age", False):
         # The catalogue has no star-formation histories (SAGE's
         # SaveFullSFH off), which the age is computed from.
         info["Approx Age"] = "Needs full SFH"
     else:
         info["Approx Age"] = f"{age:.2f} Gyr" if age > 0 else "—"
+
+    if getattr(galaxies, "is_cone", False):
+        info.update(cone_details(galaxies, idx))
 
     return info

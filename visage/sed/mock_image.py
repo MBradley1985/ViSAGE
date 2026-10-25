@@ -153,6 +153,14 @@ SURVEYS: dict[str, Survey] = {
     ),
 }
 
+# Surveys whose three optical bands HD's I, V, B channels can stand in for
+# (HD+mock images).
+HD_SURVEYS = ("sdss", "des", "ps1", "lsst")
+# Galaxies drawn from HD models in an HD+mock image: the centre galaxy and
+# up to this many more, the brightest whose disk or bulge is at least a
+# PSF across (smaller ones show no structure a model would add).
+HD_MAX = 12
+
 # Field sizes offered (arcmin), kept to those under MAX_PIXELS.
 FIELDS_ARCMIN = (0.5, 1, 2, 5, 10, 20, 30)
 
@@ -239,6 +247,7 @@ class MockImage:
     n_galaxies: int
     centre_label: str
     noisy: bool
+    n_hd: int = 0  # galaxies drawn from HD models (HD+mock)
 
     def png_bytes(self) -> bytes:
         from PIL import Image
@@ -340,10 +349,17 @@ def make_mock_image(
     centre_row: int | None = None,
     noisy: bool = True,
     seed: int = 0,
+    hd_stamps=None,
 ) -> MockImage:
     """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
     in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
-    away from the cone's edges, if None)."""
+    away from the cone's edges, if None).
+
+    `hd_stamps(rows, pixel_arcsec, d_a_kpc)` (an HD+mock image, optical
+    surveys only): {row: (n, n, 3) image} of those HDF5 rows' HD models on
+    the survey's pixels (visage.hd.sky); they replace the disk and bulge
+    profiles of the centre galaxy and the brightest resolved ones, each
+    band scaled to the galaxy's own flux in it."""
     s = SURVEYS[survey]
     path = Path(path)
     if not s.depth:
@@ -413,7 +429,17 @@ def make_mock_image(
 
     images = {b: np.zeros((npx, npx)) for b in s.bands}
     drawn = 0
+    hd = {}
+    if hd_stamps is not None and survey in HD_SURVEYS:
+        hd = _hd_stamps(
+            hd_stamps, s, near, centre_row, d, rd_pix, rb_pix, d_a, dx, dy, npx
+        )
+    n_hd = 0
     for k in range(len(near)):
+        if k in hd:
+            n_hd += _place_hd(images, s, hd[k], d, k, dx[k], dy[k], npx)
+            drawn += 1
+            continue
         hit = False
         for comp, n_s, re, q in (
             ("disk", 1.0, 1.678 * rd_pix[k], q_disk[k]),
@@ -482,4 +508,53 @@ def make_mock_image(
         n_galaxies=drawn,
         centre_label=centre_label,
         noisy=noisy,
+        n_hd=n_hd,
     )
+
+
+def _hd_stamps(fn, s, near, centre_row, d, rd_pix, rb_pix, d_a, dx, dy, npx):
+    """{index into `near`: HD stamp} for the centre galaxy and the
+    brightest others (HD_MAX) at least a PSF across, inside the field."""
+    fwhm = min(s.seeing) / s.pixel
+    size = np.maximum(1.678 * rd_pix, rb_pix)
+    red = d[f"disk_{s.bands[0]}"] + d[f"bulge_{s.bands[0]}"]
+    inside = (dx > 0) & (dx < npx) & (dy > 0) & (dy < npx)
+    cand = np.flatnonzero(inside & (size >= fwhm) & (red > 0))
+    cand = list(cand[np.argsort(-red[cand])][:HD_MAX])
+    centre = np.flatnonzero(near == centre_row)
+    if len(centre) and int(centre[0]) not in cand:
+        cand.insert(0, int(centre[0]))
+    if not cand:
+        return {}
+    rows = [int(near[k]) for k in cand]
+    got = fn(rows, s.pixel, [float(d_a[k]) * 1e3 for k in cand]) or {}
+    return {
+        k: got[r]
+        for k, r in zip(cand, rows, strict=True)
+        if got.get(r) is not None and np.sum(got[r]) > 0
+    }
+
+
+def _place_hd(images, s, stamp, d, k, x, y, npx) -> int:
+    """Add HD stamp (n, n, 3) of galaxy k to the band images at (x, y),
+    each band's channel (reddest first) scaled to its flux; 1 if drawn."""
+    from scipy.ndimage import shift
+
+    n = stamp.shape[0]
+    cx, cy = int(np.floor(x)), int(np.floor(y))
+    sub = shift(stamp, (y - cy - 0.5, x - cx - 0.5, 0), order=1)
+    x0, y0 = cx - n // 2, cy - n // 2
+    xs, ys = max(x0, 0), max(y0, 0)
+    xe, ye = min(x0 + n, npx), min(y0 + n, npx)
+    if xs >= xe or ys >= ye:
+        return 0
+    for i, b in enumerate(s.bands):
+        ch = sub[..., min(i, 2)]
+        tot = float(ch.sum())
+        if tot <= 0:
+            continue
+        flux = float(d[f"disk_{b}"][k] + d[f"bulge_{b}"][k])
+        images[b][ys:ye, xs:xe] += (
+            flux / tot * ch[ys - y0 : ye - y0, xs - x0 : xe - x0]
+        )
+    return 1

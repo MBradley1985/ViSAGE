@@ -16,7 +16,6 @@ from scipy.ndimage import gaussian_filter
 
 from visage.hd.model import (
     BULGE_RGB,
-    DUST_K,
     OLD_RGB,
     YOUNG_RGB,
     GalaxyRecipe,
@@ -144,6 +143,7 @@ def render(
     bar_ax = rc.bar_len
     old_rgb = np.array(rc.old_rgb)
     bulge_rgb = np.array(rc.bulge_rgb)
+    DUST_K = np.asarray(rc.dust_k, float)  # noqa: N806
 
     def march(k0, k1):
         """Front-to-back over slabs [k0, k1) with this chunk's own dust only.
@@ -342,6 +342,7 @@ def agn_image(rc, npix, pix, tau):
     """Quasar-mode nucleus.  'point' is a faint unresolved source; 'glow'
     adds a bright core and a soft scattered-light halo; 'spikes' adds
     Hubble-style diffraction spikes on top."""
+    DUST_K = np.asarray(rc.dust_k, float)  # noqa: N806
     c = npix // 2
     lum = rc.agn * (1 if rc.agn_style == "point" else 8)
     base = np.zeros((npix, npix, 3), np.float32)

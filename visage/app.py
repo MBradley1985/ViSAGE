@@ -175,6 +175,7 @@ def create_app(
     port: int = 8080,
     lightcone_path: str | Path | None = None,
     perf: bool = False,
+    min_particles: int | None = None,
 ):
     scene = Scene(
         primary_par_path=par_path,
@@ -189,6 +190,7 @@ def create_app(
             int(cache_gb * 1024**3) if cache_gb is not None else None
         ),
         lightcone_path=lightcone_path,
+        min_particles=min_particles,
     )
 
     server = get_server(client_type="vue3")

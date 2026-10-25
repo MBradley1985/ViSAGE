@@ -72,6 +72,18 @@ cone's own galaxies are on the sky, so a shallow cone looks sparser than the
 real sky. The method and survey numbers are in
 [Lightcone photometry → Mock images](../physics/photometry.md#mock-images).
 
+**HD galaxies** (a checkbox under the field size), or **HD mock** on the
+selection card, draws galaxies big enough on the sky to show structure from
+their [HD models](hd_mode.md#in-a-lightcone) instead of smooth profiles: the
+selected galaxy and up to 12 more, the brightest at least a PSF across. Each is
+seen from the observer at its angular size, with HD's three colour channels
+scaled to the galaxy's own magnitude in each of the survey's three bands, then
+blurred and given noise as the rest. HD mock frames the selected galaxy (three
+times its optical diameter) in the Photometry tab's survey. Optical surveys
+only (SDSS, DES, Pan-STARRS1, LSST): HD's colours are optical. HD sizes follow
+the observed size–mass relation (Shen et al. 2003), so an HD galaxy can look
+smaller than the same galaxy's profile, which uses SAGE's disk radius.
+
 ## Camera
 
 Resetting the camera frames the cone **horizontally, centred and zoomed in**,

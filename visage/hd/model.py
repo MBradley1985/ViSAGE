@@ -155,6 +155,16 @@ def population(bins) -> tuple[np.ndarray, float, float] | None:
 
 # Extinction relative to the "V" (green) channel: dust reddens what it dims.
 DUST_K = np.array([0.72, 1.00, 1.35])
+# A lightcone galaxy with synthetic photometry is drawn with that dust
+# (visage.sed.dust): its face-on V-band optical depth, and the Charlot &
+# Fall (2000) diffuse-ISM curve tau ~ lambda^-0.7 at the channels'
+# wavelengths (B 4350, V 5500, I 8140 A), relative to V.
+SED_DUST_K = np.array([(8140 / 5500) ** -0.7, 1.0, (4350 / 5500) ** -0.7])
+# TauV_ISM is the mean face-on optical depth inside the stellar half-light
+# radius (1.68 Rd); an exponential disk's mean there is this share of its
+# central value (2 [1 - (1 + x) e^-x] / x^2 at x = 1.68).
+_X = 1.68
+SED_TAU_MEAN = 2.0 * (1.0 - (1.0 + _X) * np.exp(-_X)) / _X**2
 
 
 @dataclass
@@ -229,6 +239,15 @@ class SageGalaxy:
     # per neighbour, unit directions in the simulation frame, weight
     # Mvir / d^2 relative to the strongest.
     web: tuple = ()
+    # Face-on V-band optical depth of its diffuse ISM from the lightcone's
+    # synthetic photometry (TauV_ISM); <0: none, HD estimates its own.
+    tau_v_ism: float = -1.0
+    # Its observed-frame flux ratios in the bands standing in for HD's
+    # I and B channels, relative to V (f_I / f_V, f_B / f_V), from the
+    # lightcone's synthetic photometry; () = none.
+    sed_ratio: tuple = ()
+    # Unit vector from the galaxy to the observer (world frame); () = none.
+    los: tuple = ()
 
     @property
     def bt(self) -> float:
@@ -284,6 +303,11 @@ class GalaxyRecipe:
     l_nucleus: float = 0.0
     nucleus_sigma: float = 0.02
     tau0: float = 1.0  # face-on V-band optical depth scale of the dust
+    dust_k: tuple = tuple(DUST_K)  # extinction per channel, relative to V
+    # Per-channel gain on the galaxy's light (I, V, B channels) matching
+    # its integrated colour to its synthetic photometry (lightcone); 1 =
+    # HD's own colours.
+    col_gain: tuple = (1.0, 1.0, 1.0)
     lane: float = 1.0  # darkness of the arm dust lanes (dust column, log)
     hii_group: int = 4  # HII regions per star-forming complex (up to)
     hii_spread: float = 0.06  # a complex's size, Rd
@@ -605,6 +629,8 @@ def recipe_from_sage(
         core_frac = float(0.5 - 0.2 * mfac)
         n_gc = int(np.clip(30 * (g.stellar_mass / 1e10) ** 1.2, 20, 4000))
         dust = np.clip(np.log10(max(g.h2_gas, 1.0)) - 7.5, 0.0, 2.0) / 2.0
+        if g.tau_v_ism == 0:
+            dust = 0.0  # its photometry's dust: none
         notes.append(
             f"envelope a={env_a:.2f}, core {core_frac:.2f}, b/a={b:.2f}, {n_gc} globulars"
         )
@@ -798,9 +824,21 @@ def recipe_from_sage(
     # Arm dust lanes from the same dust column, unclipped and on a log
     # scale, so they keep varying where tau0 saturates.
     column = 0.015 * (sigma_h2 + 0.4 * sigma_hi) * zfac
+    dust_k = tuple(DUST_K)
+    if np.isfinite(g.tau_v_ism) and g.tau_v_ism >= 0:
+        # The photometry's own dust (lightcone): the same optical depth
+        # in front of the stars, so HD dims and reddens the galaxy as its
+        # magnitudes do, and with the same attenuation curve.
+        tau0 = column = float(g.tau_v_ism / SED_TAU_MEAN)
+        dust_k = tuple(SED_DUST_K)
+        notes.append(
+            f"photometry: tau_V(ISM)={g.tau_v_ism:.2f} -> tau0={tau0:.2f}"
+        )
     lane = float(
         np.clip(1.0 + 1.5 * np.log10(max(column, 1e-4) / 2.0), 0.15, 2.5)
     )
+    if g.tau_v_ism == 0:
+        lane = 0.0  # its photometry's dust: none
     # Star-forming complexes: richer where star formation is denser
     # (SFR surface density), bigger in gas-richer disks (larger Jeans
     # mass: cold-gas fraction).
@@ -936,6 +974,7 @@ def recipe_from_sage(
         l_nucleus=l_nuc,
         nucleus_sigma=nuc_sig,
         tau0=tau0,
+        dust_k=dust_k,
         lane=lane,
         hii_group=hii_group,
         hii_spread=hii_spread,
@@ -1299,6 +1338,9 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         # the cut; the old disk carries on, redder for it.
         cut = 1 / (1 + np.exp((r - rc.trunc_r) / 0.2))
         young, dust, h2, hi = young * cut, dust * cut, h2 * cut, hi * cut
+    if rc.tau0 <= 0:
+        # No dust at all (a lightcone galaxy whose photometry has none).
+        dust = np.zeros_like(dust)
     return PlaneMaps(
         half=half,
         old=old.astype(np.float32),

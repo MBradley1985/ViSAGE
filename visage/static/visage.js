@@ -455,12 +455,9 @@
       var t = document.createElement('div');
       t.style.cssText = 'font-size:1.35rem;font-weight:700;';
       t.textContent = 'Opening ' + name;
-      var sub = document.createElement('div');
-      sub.style.cssText = 'font-size:0.9rem;color:#94a3b8;';
-      sub.textContent = 'ViSAGE is restarting on it; this page reloads by itself.';
       var st = document.createElement('style');
       st.textContent = '@keyframes visage-spin{to{transform:rotate(360deg)}}';
-      d.appendChild(st); d.appendChild(sp); d.appendChild(t); d.appendChild(sub);
+      d.appendChild(st); d.appendChild(sp); d.appendChild(t);
       document.body.appendChild(d);
     }
 

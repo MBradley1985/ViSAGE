@@ -39,7 +39,7 @@ Haloes: 79,890 loaded (halo mass from Group_M_Crit200)
 
 ## Mass floor
 
-The default mass floor is `1e10 Msun`. This removes very low-mass substructure that would otherwise dominate point count without contributing visible structure. Adjust with `--min-halo-mass`.
+Haloes are kept from 20 particle masses up (50 or 100 with **Resolved haloes** on the setup screens, or `--min-particles`): smaller ones aren't resolved by the simulation. A fixed floor can be set with `--min-halo-mass`.
 
 ## lhalo_binary file format
 

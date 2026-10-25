@@ -36,6 +36,10 @@ class LightconeSnapshot:
     a_list_path: str | None  # SAGE scale-factor list, if resolvable on disk
     header: dict
     source_path: str
+    # Every snapshot's redshift and Omega_m, from the copied SAGE header
+    # (None if it has none).
+    snap_redshifts: np.ndarray | None = None
+    omega_m: float | None = None
 
     @property
     def count(self) -> int:
@@ -109,12 +113,107 @@ def _resolve_a_list(f: h5py.File) -> str | None:
 
 VERBOSE = True
 
+# Per-galaxy fields HD and the selection card use beyond GalaxySnapshot's
+# own, read into `GalaxySnapshot.extra` (whole columns, on first use).
+EXTRA_FIELDS = (
+    "Spinx",
+    "Spiny",
+    "Spinz",
+    "Velx",
+    "Vely",
+    "Velz",
+    "VelDisp",
+    "TimeOfLastMajorMerger",
+    "TimeOfLastMinorMerger",
+    "QuasarModeBHaccretionMass",
+    "mdot_stream",
+    "RcoolToRvir",
+    "infallMvir",
+    "infallStellarMass",
+    "mergeType",
+    "ICS_disrupt",
+    "ICS_accrete",
+    "r_heat",
+    "tcool",
+    "tff",
+    "mdot_cool",
+    # Where it is on the sky.
+    "ra",
+    "dec",
+    "distance",
+    "redshift_observed",
+    # Dust and AGN from the photometry (visage.sed).
+    "TauV_ISM",
+    "CosInclination",
+    "DustMassCold",
+    "DustToGas",
+    "LDust",
+    "LAGN",
+    "EddingtonRatio",
+)
+
+
+class LazyColumns(dict):
+    """`GalaxySnapshot.extra` for a lightcone: each field is read from the
+    file (the kept rows) the first time it is asked for, so a cone of
+    millions of galaxies doesn't hold columns nothing looks at."""
+
+    def __init__(self, path, rows: np.ndarray, names) -> None:
+        super().__init__()
+        self._path = Path(path)
+        self._rows = rows
+        self._names = {n.lower(): n for n in names}
+
+    def _load(self, name):
+        if dict.__contains__(self, name):
+            return dict.__getitem__(self, name)
+        actual = self._names.get(str(name).lower())
+        if actual is None:
+            return None
+        try:
+            with _open_ro(self._path) as f:
+                col = np.asarray(f[actual][:])[self._rows]
+        except Exception:
+            return None
+        if col.ndim != 1:
+            return None
+        if col.dtype.kind == "f":
+            col = col.astype(np.float32)
+        dict.__setitem__(self, name, col)
+        return col
+
+    def get(self, name, default=None):
+        col = self._load(name)
+        return default if col is None else col
+
+    def __getitem__(self, name):
+        col = self._load(name)
+        if col is None:
+            raise KeyError(name)
+        return col
+
+    def __contains__(self, name) -> bool:
+        return str(name).lower() in self._names
+
+    def keys(self):
+        return list(self._names.values())
+
+    def items(self):
+        return [(k, self[k]) for k in self.keys()]
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def __len__(self) -> int:
+        return len(self._names)
+
 
 def load_lightcone_snapshot(
     path: str | Path,
     min_stellar_mass: float = 0.0,
     min_halo_mass: float = 1.0e10,
     max_galaxies: int | None = None,
+    min_particles: int | None = None,
 ) -> LightconeSnapshot:
     """Read a flat ``cli_lightcone`` HDF5 file into galaxies + haloes."""
     path = Path(path)
@@ -134,6 +233,14 @@ def load_lightcone_snapshot(
             )
         n_all = len(posx)
         hubble_h = _read_hubble_h(f)
+        snap_z, omega_m = _read_snap_redshifts(f)
+        part_mass = _read_particle_mass(f)
+        phot = {}
+        if "PhotometryHeader" in f:
+            for k, v in f["PhotometryHeader"].attrs.items():
+                if isinstance(v, (bytes, np.bytes_)):
+                    v = v.decode(errors="replace")
+                phot[k] = v.item() if hasattr(v, "item") else v
         a_list_path = _resolve_a_list(f)
         mfac = 1.0e10 / max(hubble_h, 1e-6)
 
@@ -168,6 +275,25 @@ def load_lightcone_snapshot(
 
     # ── Select galaxies: stellar-mass floor, then downsample for speed ──
     keep = stellar_mass_all >= float(min_stellar_mass)
+    if min_particles and part_mass and cols.get("Mvir") is not None:
+        # Resolution (visage.utils.resolution): haloes of at least
+        # min_particles particles, galaxies from the stellar mass that
+        # resolves them in each snapshot shell.
+        cut = _resolved_cuts(
+            stellar_mass_all,
+            cols["Mvir"] / part_mass,
+            cols.get("Type"),
+            cols.get("SnapNum"),
+            min_particles,
+        )
+        keep &= stellar_mass_all >= cut
+        min_halo_mass = min_particles * part_mass * mfac
+        if VERBOSE:
+            print(
+                f"  Lightcone: resolved haloes >= {min_particles} particles "
+                f"(>= {min_halo_mass:.2e} Msun); galaxies from M* = "
+                f"{np.nanmin(cut):.2e}-{np.nanmax(cut):.2e} Msun by shell"
+            )
     idx = np.where(keep)[0]
     # max_galaxies=None → keep every galaxy (no downsample).
     if max_galaxies is not None and len(idx) > max_galaxies:
@@ -248,6 +374,11 @@ def load_lightcone_snapshot(
         metals_cgm_gas=col("MetalsCGMgas", np.float32, mass=True),
         sage_indices=idx.astype(np.int64),
         snap_num=0,
+        source_path=str(path),
+        has_sfh=bool({"SFHMassDisk", "SFHMassBulge"} <= present),
+        extra=LazyColumns(
+            path, idx, [n for n in present if n.lower() in _EXTRA_LOWER]
+        ),
         sed_mags={
             name: values[idx].astype(np.float32)
             for name, values in sed_cols.items()
@@ -265,9 +396,12 @@ def load_lightcone_snapshot(
         if redshift is not None
         else np.zeros(n)
     )
+    galaxies.snap_nums = snapnum
+    galaxies.photometry = phot
+    galaxies.redshifts = redshift
 
     # ── Host haloes from the Type==0 centrals ──────────────────────────
-    halos, central_idx = _build_halos(galaxies, min_halo_mass)
+    halos, central_idx = _build_halos(galaxies, min_halo_mass, hubble_h)
     halo_snapnum = snapnum[central_idx].astype(np.int32)
 
     if n:
@@ -298,11 +432,73 @@ def load_lightcone_snapshot(
         a_list_path=a_list_path,
         header=header,
         source_path=str(path),
+        snap_redshifts=snap_z,
+        omega_m=omega_m,
     )
 
 
+def _read_particle_mass(f: h5py.File) -> float | None:
+    """The simulation's particle mass (10^10 Msun/h) from the SAGE header
+    the cone carries, or None."""
+    sim = f.get("SageOutputHeader/Simulation")
+    if sim is None:
+        return None
+    for key in sim.attrs:
+        if key.lower() in ("particle_mass", "partmass"):
+            try:
+                v = float(np.asarray(sim.attrs[key]))
+            except (TypeError, ValueError):
+                return None
+            return v if v > 0 else None
+    return None
+
+
+def _resolved_cuts(stellar_mass, halo_particles, gtype, snapnum, n):
+    """Per galaxy, the stellar mass its snapshot shell is resolved from
+    (visage.utils.resolution); a shell with too few centrals to tell
+    takes the whole cone's value."""
+    from visage.utils.resolution import resolved_stellar_mass
+
+    sm = np.asarray(stellar_mass, float)
+    cen = (
+        np.asarray(gtype) == 0 if gtype is not None else np.ones(len(sm), bool)
+    )
+    whole = resolved_stellar_mass(sm, halo_particles, cen, n) or 0.0
+    out = np.full(len(sm), whole)
+    if snapnum is None:
+        return out
+    snapnum = np.asarray(snapnum).astype(int)
+    for s in np.unique(snapnum):
+        m = snapnum == s
+        v = resolved_stellar_mass(sm[m], halo_particles[m], cen[m], n)
+        if v is not None:
+            out[m] = v
+    return out
+
+
+def _read_snap_redshifts(f: h5py.File):
+    """(redshift of every snapshot, Omega_m) from the SAGE header the cone
+    carries, each None if missing."""
+    z = om = None
+    hdr = f.get("SageOutputHeader")
+    if hdr is None:
+        return z, om
+    ds = hdr.get("snapshot_redshifts")
+    if isinstance(ds, h5py.Dataset) and ds.ndim == 1 and len(ds):
+        z = np.asarray(ds[:], np.float64)
+    sim = hdr.get("Simulation")
+    if sim is not None:
+        for key in sim.attrs:
+            if key.lower() in ("omega_matter", "omega_m", "omega"):
+                try:
+                    om = float(np.asarray(sim.attrs[key]))
+                except (TypeError, ValueError):
+                    pass
+    return z, om
+
+
 def _build_halos(
-    gal: GalaxySnapshot, min_halo_mass: float
+    gal: GalaxySnapshot, min_halo_mass: float, hubble_h: float = 0.73
 ) -> tuple[HaloSnapshot, np.ndarray]:
     """Build a HaloSnapshot from the central (Type==0) galaxies — mirroring
     Explore's halo layer, sourced from the lightcone's inlined halo properties.
@@ -311,7 +507,7 @@ def _build_halos(
     if gal.count == 0:
         return HaloSnapshot.empty(0), np.empty(0, dtype=np.int64)
 
-    h = 0.73  # only used for the mass floor comparison scale; masses already Msun
+    h = hubble_h
     central = gal.gal_type == 0
     cen_mass = gal.mvir.astype(np.float64) * 1.0e10 / h  # raw→Msun for the cut
     keep = central & (cen_mass >= float(min_halo_mass))
@@ -339,6 +535,8 @@ def _build_halos(
     )
     return halos, ci
 
+
+_EXTRA_LOWER = {n.lower() for n in EXTRA_FIELDS}
 
 # Raw HDF5 field names we read (used for presence detection + bulk read).
 _RAW_FIELDS = (

@@ -89,17 +89,32 @@ def prefetch_sfh(snap, rows, snap_table, hubble_h, omega_m) -> None:
     need = sorted({r for r in raw if r not in have})
     if not need:
         return
-    from visage.io.galaxy_reader import sfh_bins_for
+    from visage.io.galaxy_reader import lightcone_sfh_bins, sfh_bins_for
 
     try:
-        out = sfh_bins_for(
-            snap.source_path,
-            int(snap.snap_num),
-            need,
-            snap_table.scale_factors,
-            hubble_h,
-            omega_m,
-        )
+        if getattr(snap, "snap_nums", None) is not None:
+            # A lightcone: one file, each galaxy from its own snapshot.
+            at = {
+                r: int(snap.snap_nums[i])
+                for r, i in zip(raw, rows, strict=True)
+            }
+            out = lightcone_sfh_bins(
+                snap.source_path,
+                need,
+                [at[r] for r in need],
+                snap_table.scale_factors,
+                hubble_h,
+                omega_m,
+            )
+        else:
+            out = sfh_bins_for(
+                snap.source_path,
+                int(snap.snap_num),
+                need,
+                snap_table.scale_factors,
+                hubble_h,
+                omega_m,
+            )
     except Exception:
         return
     if out is None:
@@ -163,7 +178,12 @@ def sage_galaxy_from_snapshot(
     # writes TimeOfInfall as the snapshot it became a satellite.
     z, t_inf = 0.0, -1.0
     if snap_table is not None:
-        sn = int(getattr(snap, "snap_num", -1))
+        # (A lightcone's galaxies are each from their own snapshot.)
+        sn = (
+            snap.snap_of(i)
+            if hasattr(snap, "snap_of")
+            else int(getattr(snap, "snap_num", -1))
+        )
         if 0 <= sn < snap_table.count:
             z = float(snap_table.snap_to_z(sn))
             s_in = int(_field(snap, "time_of_infall", i))
@@ -173,6 +193,9 @@ def sage_galaxy_from_snapshot(
                 ) - cosmic_time_gyr(
                     snap_table.snap_to_a(s_in), hubble_h, omega_m
                 )
+    zs = getattr(snap, "redshifts", None)
+    if zs is not None and i < len(zs):
+        z = float(zs[i])  # its own redshift on the cone
     sfh = _sfh_bins(snap, i, snap_table, hubble_h, omega_m)
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
@@ -233,11 +256,60 @@ def sage_galaxy_from_snapshot(
         tff_gyr=_extra(snap, "tff", i),
         mdot_cool=_extra(snap, "mdot_cool", i),
         web=web_neighbours(snap, i),
+        tau_v_ism=_sed_tau(snap, i),
+        sed_ratio=_sed_ratio(snap, i),
+        los=_los(snap, i),
         sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
         sfh_bulge=(
             () if sfh is None else tuple(float(v) * mass for v in sfh[1])
         ),
     )
+
+
+# Observed-frame bands standing in for HD's B, V and I channels, first
+# set the lightcone has.
+SED_BANDS = (
+    ("sdss_g", "sdss_r", "sdss_i"),
+    ("des_g", "des_r", "des_i"),
+    ("lsst_g", "lsst_r", "lsst_i"),
+    ("ps1_g", "ps1_r", "ps1_i"),
+)
+
+
+def _sed_ratio(snap, i: int) -> tuple:
+    """(f_I / f_V, f_B / f_V) from a lightcone galaxy's observed
+    magnitudes; () without them."""
+    mags = getattr(snap, "sed_mags", None) or {}
+    for b, v, ir in SED_BANDS:
+        keys = [f"mag_obs_{x}" for x in (b, v, ir)]
+        if all(k in mags for k in keys):
+            mb, mv, mi = (float(mags[k][i]) for k in keys)
+            if not np.all(np.isfinite([mb, mv, mi])):
+                return ()
+            return (10 ** (-0.4 * (mi - mv)), 10 ** (-0.4 * (mb - mv)))
+    return ()
+
+
+def _sed_tau(snap, i: int) -> float:
+    """Face-on optical depth HD draws a lightcone galaxy's dust with: its
+    photometry's own (Charlot & Fall), else -1 (HD's own estimate: no
+    photometry, one screen for every galaxy, or photometry made without
+    dust)."""
+    how = snap.sed_dust()[0] if hasattr(snap, "sed_dust") else None
+    if how == "charlot_fall":
+        tau = _extra(snap, "TauV_ISM", i, -1.0)
+        return tau if np.isfinite(tau) else -1.0
+    return -1.0
+
+
+def _los(snap, i: int) -> tuple:
+    """Unit vector from a lightcone galaxy to the observer at the cone's
+    apex (the origin); () in a box."""
+    if getattr(snap, "snap_nums", None) is None:
+        return ()
+    p = np.asarray(snap.positions[i], float)
+    n = float(np.linalg.norm(p))
+    return tuple(float(v) for v in -p / n) if n > 0 else ()
 
 
 def spin_vector(snap, i: int) -> np.ndarray | None:

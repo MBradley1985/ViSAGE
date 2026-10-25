@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from visage.utils.group_info import galaxy_label
+
 # key -> label, in the order the menu lists them.
 PRESETS = {
     "massive": "Most massive galaxies",
@@ -121,8 +123,8 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
         out.append(
             {
                 "idx": k,
-                "text": f"{k} · {role} · log M* {lm[k]:.1f}"
-                + (f" · {extra}" if extra else ""),
+                "text": f"{galaxy_label(galaxies, k)} · {role} · "
+                f"log M* {lm[k]:.1f}" + (f" · {extra}" if extra else ""),
             }
         )
     return out
