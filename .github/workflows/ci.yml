@@ -28,7 +28,9 @@ jobs:
       matrix:
         # macOS only for now (Linux and Windows to come back later).
         os: [macos-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        # The newest Python only, to keep CI quick (Python 3.11+ is
+        # supported; see requires-python).
+        python-version: ["3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,14 +43,15 @@ jobs:
       # build, which the macOS/Windows runners lack; its tests skip cleanly.
       - name: Install package and test deps (no FSPS)
         if: runner.os != 'Linux'
-        run: pip install -e . pytest pytest-cov
+        run: pip install -e . pytest pytest-cov pytest-xdist
       # OpenGL for headless VTK on every runner (Xvfb on Linux, Mesa on
       # Windows; macOS has it built in).
       - uses: pyvista/setup-headless-display-action@v4
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=visage --cov-report=xml
+        # In parallel across the runner's cores.
+        run: pytest tests/ -n auto --tb=short --cov=visage --cov-report=xml
       - name: Upload coverage
         uses: codecov/codecov-action@v4
-        if: matrix.os == 'macos-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'macos-latest' && matrix.python-version == '3.14'
         with:
           file: coverage.xml

@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python >= 3.10, on macOS, Linux or Windows
+- Python >= 3.11, on macOS, Linux or Windows
 - A SAGE26 or SAGEswarm output directory (HDF5 format) and merger trees (lhalo_binary or lhalo_hdf5), **or** a LightSAGE `cli_lightcone` HDF5 lightcone output
 
 ## From source (recommended until PyPI release)
