@@ -854,15 +854,11 @@ class WizardController(InstallMixin, SetupRunMixin):
         if auto_start:
             asyncio.ensure_future(self._step_scan())
 
-    def reset_and_start(
-        self, flow: str | None = None, setup: bool = False
-    ) -> None:
+    def reset_and_start(self, flow: str | None = None) -> None:
         """Clear terminal and restart — used when (re-)opening the wizard.
 
         ``flow`` selects the tool (``"sage26"``, ``"sagelightcone"`` or
         ``"sageswarm"``) whose screen opens; none opens the home screen.
-        ``setup`` opens straight on that tool's setup screen when the tool
-        is ready to run (its own screen otherwise).
         """
         self._flow = flow if flow in _MODE_META else "sage26"
         self._sage26_dir = None
@@ -906,7 +902,7 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._push_bytes(b"\x1b[2J\x1b[H")
         self._st.flush()
         if flow in _MODE_META:
-            asyncio.ensure_future(self._enter(flow, setup=setup))
+            asyncio.ensure_future(self._enter(flow))
         else:
             asyncio.ensure_future(self._go_home())
 
@@ -1626,13 +1622,10 @@ class WizardController(InstallMixin, SetupRunMixin):
         await self._refresh_status()
         self._show_home()
 
-    async def _enter(self, mode: str, setup: bool = False) -> None:
+    async def _enter(self, mode: str) -> None:
         self._close_panels()
         self._set_flow(mode)
         await self._refresh_status()
-        if setup and self._status.get(mode, {}).get("ready"):
-            await self._show_setup(mode)
-            return
         self._show_mode(mode)
 
     async def _menu_return(self, mode: str) -> None:
@@ -3085,9 +3078,9 @@ class WizardController(InstallMixin, SetupRunMixin):
             return
         self._emit("", "info")
         self._emit(f"Opening lightcone in ViSAGE: {out}", "title")
-        self._emit(
-            "Starting the viewer — refresh your browser when ready.", "info"
-        )
+        # The page shows "Opening ..." and reloads itself once the new
+        # ViSAGE is up (visage.js watches wiz_loading).
+        self._st.wiz_loading = self._st.wiz_loading or out.parent.name
         self._st.flush()
         await asyncio.sleep(1.0)
 
@@ -3561,9 +3554,9 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._st.wiz_step = 5
         self._emit("", "info")
         self._emit(f"Loading model: {name}", "title")
-        self._emit(
-            "Starting Explore Mode — refresh your browser when ready.", "info"
-        )
+        # The page shows "Opening ..." and reloads itself once the new
+        # ViSAGE is up (visage.js watches wiz_loading).
+        self._st.wiz_loading = self._st.wiz_loading or name
         self._st.flush()
         await asyncio.sleep(1.0)
 

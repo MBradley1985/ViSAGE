@@ -36,18 +36,19 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   All settings, grouped into sections with a search. The run name sets
   the output (SAGE26: a .par and output folder of that name).
 - **Runs show their progress:** the stages, a progress bar and time left
-  read from each tool's own output, and Cancel; below them the terminal
-  itself (2/3) beside what the run is making (1/3): a SAGE26 box
+  read from each tool's own output, and Cancel; below them one black
+  panel: the terminal itself (2/3) beside what the run is making (1/3): a SAGE26 box
   filling with galaxies, or a lightcone filling outwards from the
   observer, in step with the run (frames drawn once from a Millennium
   run and the microUchuu lightcone), or SAGEswarm's newest plot of each
   constraint, sized to share the space. The terminal runs commands at
   its own width (its font shrinks so SAGE26's banner fits). When it
   finishes: Open in Explore / Open in Lightcone view.
-- Every Launch Mode page past the home screen is a bordered panel,
-  centred with black space around it and sized to the window (no
-  scrolling), in one font, Space Grotesk, which now ships with ViSAGE
-  (SIL Open Font License).
+- Every Launch Mode page past the home screen is centred, with black
+  space around it and no outline, sized to the window (no scrolling),
+  its titles, cards and buttons centred, in one font, Space Grotesk,
+  which now ships with ViSAGE (SIL Open Font License). The home
+  screen's three cards are bigger.
 - **Install and Clone run on their buttons:** the button shows the step
   and the latest output line, then the result (a failed one opens the
   output). Install: SAGE26 downloads the Millennium trees on a first
@@ -57,14 +58,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   $SPS_HOME isn't set), then builds its tools; SAGEswarm installs its
   Python packages. Clone fetches a fresh copy (the old one moved aside)
   and installs it.
-- Run pages: SAGE26's progress has a merger tree filling from its tips to
-  its root; SAGEswarm's iterations are a bar of rounds and its particles
-  one circle each, filling as they run.
+- Run pages: SAGE26's progress has a bare tree branch across its tile,
+  growing from its base to its tips; SAGEswarm's iterations are a bar
+  of rounds and its particles one circle each, filling as they run.
+- Setup warns when the run's name is already a model or lightcone
+  (running replaces its output).
 - Load a previous model (home screen) lists lightcones as well as SAGE26
   models.
 - Explore's Launch menu starts with SAGE26, LightSAGE and SAGEswarm, each
-  opening straight on its setup page, then Setup Wizard (the home
-  screen); the toolbar's SAGE26 button opens SAGE26's setup too.
+  opening on its own screen, then Setup Wizard (the home screen).
 - Model and lightcone pickers are big buttons (size, date, galaxies);
   lightcones in any `sage_outputs/` folder are found. Check for update
   works on its button and turns into Update when behind.
@@ -74,6 +76,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - The standalone Launch Mode page sat 64px down (a blue band at the top,
   its bottom off-screen).
 - Open in Lightcone view after a build shows Opening and reloads the page
@@ -111,6 +118,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **LightSAGE lightcones: galaxy spins** are now rotated with the box
   tiling, as positions and velocities are, so each galaxy's inclination
   to the observer is right (a ViSAGE patch to the LightSAGE tools, applied
@@ -247,6 +259,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **No more lag after you stop dragging.** Mouse drags no longer queue
   frames: while more than two are still on their way to the browser, a
   drag skips its frame and the next one shows the latest view. On a
@@ -435,6 +452,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - Closing a browser tab while the view was moving no longer prints a
   `ConnectionResetError` traceback.
 
@@ -442,6 +464,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **SAGE26 runs made with MPI now load every galaxy.** An MPI run writes one
   file per rank (`model_0.hdf5` … `model_<N-1>.hdf5`), and ViSAGE read only
   `model_0`. A 4-rank run therefore showed about a quarter of its galaxies,
@@ -466,6 +493,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Sluggish view on Windows.** Windows wakes sleeping threads on a
   ~15.6 ms tick, so every short wait in the frame scheduler and playback
   loops was rounded up to a whole tick. Windows 11 also throttles processes
@@ -512,6 +544,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Wizard commands failed on Windows.** The terminal and Cancel button
   relied on Unix-only system calls.
 - **Scripts the wizard saved on Windows had Windows line endings**, which bash
@@ -528,6 +565,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Massive, quenched galaxies no longer render blue in Structure mode.** The
   bulge used `RdBu`, whose top end is blue, so a high bulge-to-total galaxy
   had a blue core. It is now amber.
@@ -570,6 +612,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - A spurious `divide by zero encountered in matmul` warning from Apple's
   Accelerate BLAS, fired on every camera move while isolating.
 
@@ -577,6 +624,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Halo opacity jumped whenever the view narrowed.** The crowding scale that
   fades a dense box was measured on the haloes left after masking rather than
   on the snapshot, so a focus, isolate or filter took microUchuu from 386,585
@@ -624,6 +676,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **A galaxy with both CGM and hot gas now shows both.** The halo-gas shells
   were chosen by the `Regime` flag — CGM *or* hot, never both — so a galaxy
   carrying both components only ever showed one, and a model with no `Regime`
@@ -711,6 +768,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Haloes were missing for runs configured with consistent-trees ASCII.**
   TreeName points at the ASCII file itself, which matches none of the
   `TreeName.n` patterns, so the tree search came back empty and only the
@@ -764,6 +826,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **FITS catalogue export failed on the units note.** The exported metadata
   carries a note that contained an em dash, and FITS headers only accept
   printable ASCII, so every FITS export aborted with `FITS header values must
@@ -796,6 +863,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Haloes came back empty on tree files that don't carry the mass in `Mvir`.**
   Tree sets disagree on which column holds the halo mass, so ViSAGE now tries
   several and takes the first that is actually populated — `Mvir`, `M_TopHat`,
@@ -826,6 +898,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Haloes came back empty on tree files that don't carry the mass in `Mvir`.**
   The lhalo_binary struct has three mass columns (`Mvir`, `M_TopHat`,
   `M_Mean200`) and tree sets from different simulations / converters populate
@@ -841,6 +918,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **SED synthesis failed on lightcones whose scale-factor list is a relative
   path** (e.g. microUchuu's `input/microuchuu/trees/Uchuu100_scalefactor.txt`).
   The stage read `FileWithSnapList` from the lightcone header, which SAGE
@@ -916,6 +998,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Lightcone galaxies popped in and out when rotating/panning from the
   observer view.** The go-to-observer camera parked its focal point ~1 Mpc
   from the eye, so VTK's clipping-range heuristic (which scales with the
@@ -937,6 +1024,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Session Models could show entries pointing at files that no longer
   exist**, with no way to tell why or where they came from — every launch
   ever recorded a path into `~/.visage/session_models.json` and nothing
@@ -947,6 +1039,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **SED Structure-panel section was showing colour indices/mass-to-light as
   dropdown options that silently did nothing, and the "Colour by band"
   picker displayed the general dropdown's current mode (e.g. "structure")
@@ -981,6 +1078,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - **Stale `LIGHTCONE_DIR` in a saved `run_lightcone.sh`.** A previously-saved
   run script could reference a LightSAGE checkout that no longer exists —
   moved, deleted, or cloned under an older ViSAGE version's folder-naming
@@ -1234,6 +1336,11 @@ you switch to, and the settings apply to that model:
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 #### Console commands — environment / type filters now do what they say
 
 - **"show only clusters" (or any single class) now turns every other class off**,
@@ -1435,6 +1542,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - GIF recordings no longer show visible contour lines around gaussian splat points — switched from `imageio` (no dithering) to PIL's native GIF writer with Floyd-Steinberg dithering, which distributes colour quantisation error across neighbouring pixels and produces smooth gradients instead of hard bands
 
 ---
@@ -1448,6 +1560,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - Screenshots taken while **not** in playback no longer use a stale pre-rendered JPEG from a previous playback session; they always capture the live VTK render window
 
 ---
@@ -1456,6 +1573,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - Library tab now scans `sage_library/` and `sage_outputs/` relative to the **working directory** instead of the package install location — items are found correctly when installed via `pip`
 - `sage_library/` folder is created in the working directory on startup (alongside `sage_outputs/`)
 - `./sage-viewer` launcher now finds whichever Python version has `trame` installed, instead of assuming the shell's default `python3` — fixes failures on macOS where multiple Python versions coexist
@@ -1466,6 +1588,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - Screenshots, recordings, GIFs, and catalogue exports now save to a `sage_outputs/` folder in the **current working directory** rather than inside the Python package installation (a `site-packages` subfolder), which made them inaccessible when installed via `pip`
 - `.par` template no longer contains hardcoded personal paths — `OutputDir`, `SimulationDir`, and `FileWithSnapList` are now filled in dynamically from the detected or cloned SAGE26 directory
 - README: replaced 47 MB and 13 MB embedded GIFs (which overran PyPI's image proxy) with text links to the animated demos on GitHub
@@ -1480,6 +1607,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - Launch Mode: clicking **×** to close now properly stops the server (`asyncio.ensure_future` instead of bare `await` in sync handler, which caused a `RuntimeWarning: coroutine was never awaited` and left the process running)
 
 ---
@@ -1488,6 +1620,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - Launch Mode: **×** button now calls `server.stop()` to shut down the process when running standalone; previously it only hid the wizard UI without terminating the server
 
 ---
@@ -1496,6 +1633,11 @@ from frame 0 exactly when the card becomes visible to the user.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 - GIF frames resized to canonical resolution when a mixed native/supersampled frame arrives mid-recording — prevents dimension mismatch crash
 - `scipy` added to declared package dependencies (was used but omitted from `pyproject.toml`, breaking `pip install` environments)
 - CI: `libgl1-mesa-glx` → `libgl1` (package renamed in Ubuntu 22+)
@@ -1569,6 +1711,11 @@ First public release on PyPI.
 
 ### Fixed
 
+- Launch Mode on its own page could grow taller than the window (the
+  run page's terminal fitting itself to a box that grew with it), which
+  pushed the terminal and the box off the page.
+- Every way of opening a model shows Opening and reloads the page by
+  itself.
 #### Launch Mode wizard
 - **Back navigation**: clicking Back from any downstream step (run SAGE26, par edit, compile failure) now correctly returns to the main menu instead of the Start Fresh submenu
 - UI text: "Edit the file below" → "Edit the file to the right" (par editor is side-by-side); "Running SAGE26 — output streams below" → "Running SAGE26 — output follows"

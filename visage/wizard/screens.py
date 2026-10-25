@@ -258,45 +258,61 @@ def _swarm_stats(run: dict, status: str) -> list[dict]:
     ]
 
 
-def _tree_lines(x, y, length, angle, depth, out):
-    """A merger tree drawn upwards from its root: each halo splits into
-    two progenitors, the main branch carrying on."""
-    import math
+def _limb(p0, c, p1, w0, w1, out, n=10):
+    """A tapering curved limb (quadratic through control point c), as
+    short segments narrowing from w0 to w1."""
+    pts = []
+    for i in range(n + 1):
+        t = i / n
+        x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * c[0] + t**2 * p1[0]
+        y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c[1] + t**2 * p1[1]
+        pts.append((x, y))
+    for i in range(n):
+        w = w0 + (w1 - w0) * (i + 0.5) / n
+        out.append((*pts[i], *pts[i + 1], w))
+    return pts
 
-    x2 = x + length * math.sin(angle)
-    y2 = y - length * math.cos(angle)
-    out.append((x, y, x2, y2, depth))
-    if depth == 0:
-        return
-    _tree_lines(x2, y2, length * 0.78, angle - 0.42, depth - 1, out)
-    _tree_lines(x2, y2, length * 0.66, angle + 0.5, depth - 1, out)
+
+def _twig(pts, t, dx, dy, w, out, fork=None):
+    """A twig leaving a limb at fraction t, ending (dx, dy) away, nearly
+    straight; `fork` adds a smaller twig off it (same form)."""
+    x0, y0 = pts[round(t * (len(pts) - 1))]
+    end = (x0 + dx, y0 + dy)
+    ctrl = (x0 + dx * 0.5, y0 + dy * 0.5 - 2.5)  # nearly straight
+    tw = _limb((x0, y0), ctrl, end, w, 0.6, out, n=6)
+    if fork:
+        _twig(tw, *fork, out)
 
 
 def tree_svg(pct: float, accent: str) -> str:
-    """A small merger tree that fills from its leaves (early times) down
-    to its root as SAGE26 builds the trees, as an SVG data URL."""
+    """A bare tree branch, thick where it leaves the text and tapering to
+    forked twigs, that grows (fills) from its base to its tips as SAGE26
+    builds the trees, as an SVG data URL; it stretches to its space."""
     import base64
 
-    lines = []
-    _tree_lines(40, 60, 15, 0.0, 4, lines)
-    xs = [v for a, b, c, d, _ in lines for v in (a, c)]
-    ys = [v for a, b, c, d, _ in lines for v in (b, d)]
-    x0, x1, y0, y1 = min(xs) - 3, max(xs) + 3, min(ys) - 3, max(ys) + 3
-    # Filled from the tips (top) down to the root over the tree's height.
-    fill = (y1 - y0) * max(0.0, min(100.0, pct)) / 100
-    segs = "".join(
+    segs: list = []
+    main = _limb((4, 46), (150, 30), (292, 38), 7.0, 1.2, segs, n=24)
+    _twig(main, 0.12, 26, 18, 3.4, segs)
+    _twig(main, 0.24, 48, -36, 3.0, segs, (0.5, 20, -18, 1.6))
+    _twig(main, 0.42, 40, 22, 2.4, segs, (0.6, 14, 10, 1.2))
+    _twig(main, 0.55, 42, -34, 2.2, segs, (0.45, 16, -16, 1.2))
+    _twig(main, 0.7, 28, 18, 1.7, segs)
+    _twig(main, 0.8, 30, -26, 1.5, segs, (0.6, 10, -10, 0.9))
+    _twig(main, 0.93, 18, -16, 1.0, segs)
+    fill = 300 * max(0.0, min(100.0, pct)) / 100
+    lines = "".join(
         f'<line x1="{a:.1f}" y1="{b:.1f}" x2="{c:.1f}" y2="{d:.1f}" '
-        f'stroke-width="{0.9 + 0.55 * k:.2f}"/>'
-        for a, b, c, d, k in lines
+        f'stroke-width="{w:.2f}" vector-effect="non-scaling-stroke"/>'
+        for a, b, c, d, w in segs
     )
     svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="{x0:.1f} {y0:.1f} {x1 - x0:.1f} {y1 - y0:.1f}">'
-        f'<defs><clipPath id="f"><rect x="{x0:.1f}" y="{y0:.1f}" '
-        f'width="{x1 - x0:.1f}" height="{fill:.1f}"/></clipPath></defs>'
-        f'<g stroke="#334155" stroke-linecap="round">{segs}</g>'
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 72" '
+        'preserveAspectRatio="none">'
+        '<defs><clipPath id="f"><rect x="0" y="0" '
+        f'width="{fill:.1f}" height="72"/></clipPath></defs>'
+        f'<g stroke="#334155" stroke-linecap="round">{lines}</g>'
         f'<g stroke="{accent}" stroke-linecap="round" clip-path="url(#f)">'
-        f"{segs}</g></svg>"
+        f"{lines}</g></svg>"
     )
     return (
         "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
@@ -622,8 +638,17 @@ class SetupRunMixin:
             "groups": groups,
             "run_label": run_label,
             "note": note,
+            # Names already used: running under one replaces its output.
+            "taken": self._taken_names(mode),
         }
         self._st.flush()
+
+    def _taken_names(self, mode: str) -> list[str]:
+        if mode == "sage26":
+            return [m["name"] for m in self._find_models()]
+        if mode == "sagelightcone":
+            return [f.stem for f in self._discover_lightcones()]
+        return []
 
     def _has_sfh(self, hdf5: Path) -> bool:
         try:

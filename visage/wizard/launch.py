@@ -78,8 +78,10 @@ def create_launch_app(port: int):
 
         # The hidden toolbar and footer still reserve their space, which
         # pushed the wizard 64px down (a blue band at the top, its bottom
-        # off-screen): give it the whole page.
-        layout.content.style = "padding:0;"
+        # off-screen): give it the whole page, and exactly the window's
+        # height, so its pages (and the terminal fitting itself to its
+        # box) size to the window instead of growing with their content.
+        layout.content.style = "padding:0;height:100vh;overflow:hidden;"
         with layout.content:
             build_wizard_ui(server, ctrl)
             build_pso_gallery(server)

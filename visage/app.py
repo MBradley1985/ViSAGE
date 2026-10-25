@@ -872,23 +872,22 @@ def create_app(
         server.state.wiz_active = True
         server.state.flush()
 
-    # Each tool opens straight on its setup screen (its own screen if it
-    # isn't installed yet).
+    # Each tool opens on its own first screen.
     @server.controller.set("open_sage26_wizard")
     def _open_sage26_wizard():
-        _wiz_ctrl.reset_and_start(flow="sage26", setup=True)
+        _wiz_ctrl.reset_and_start(flow="sage26")
         server.state.wiz_active = True
         server.state.flush()
 
     @server.controller.set("open_sageswarm_wizard")
     def _open_sageswarm_wizard():
-        _wiz_ctrl.reset_and_start(flow="sageswarm", setup=True)
+        _wiz_ctrl.reset_and_start(flow="sageswarm")
         server.state.wiz_active = True
         server.state.flush()
 
     @server.controller.set("open_sagelightcone_wizard")
     def _open_sagelightcone_wizard():
-        _wiz_ctrl.reset_and_start(flow="sagelightcone", setup=True)
+        _wiz_ctrl.reset_and_start(flow="sagelightcone")
         server.state.wiz_active = True
         server.state.flush()
 

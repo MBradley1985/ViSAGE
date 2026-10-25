@@ -419,8 +419,8 @@ def _home_view(server) -> None:
         v_if=("wiz_view === 'home'",),
         classes="wiz-sans",
         style=(
-            "width:100%;max-width:1180px;display:flex;flex-direction:column;"
-            "gap:22px;"
+            "width:100%;max-width:1360px;display:flex;flex-direction:column;"
+            "gap:24px;"
         ),
     ):
         with html.Div(
@@ -436,7 +436,7 @@ def _home_view(server) -> None:
                 classes="wiz-big",
                 click=(choose, "[c.value]"),
                 style=(
-                    "{height:'min(58vh, 460px)',borderRadius:'18px',"
+                    "{height:'min(66vh, 560px)',borderRadius:'20px',"
                     "border:'1px solid rgba(255,255,255,0.16)',"
                     "padding:'28px',display:'flex',flexDirection:'column',"
                     "justifyContent:'flex-end',alignItems:'flex-start',"
@@ -459,7 +459,7 @@ def _home_view(server) -> None:
                     v3.VIcon(icon=("c.icon",), color=("c.accent",), size=30)
                 html.Span(
                     "{{ c.title }}",
-                    style="font-size:2.1rem;font-weight:700;line-height:1.1;",
+                    style="font-size:2.4rem;font-weight:700;line-height:1.1;",
                 )
                 html.Span(
                     "{{ c.desc }}",
@@ -555,7 +555,10 @@ def _mode_view(server) -> None:
                 v3.VIcon("mdi-chevron-left", color="#fff", size=20)
                 html.Span("Home")
             with html.Div(
-                style="display:flex;flex-direction:column;gap:10px;",
+                style=(
+                    "display:flex;flex-direction:column;gap:10px;"
+                    "align-items:center;text-align:center;"
+                ),
             ):
                 html.H1(
                     "{{ wiz_mode_info.title }}",
@@ -569,7 +572,10 @@ def _mode_view(server) -> None:
                     style="margin:0;font-size:0.95rem;color:#cbd5e1;",
                 )
                 with html.Div(
-                    style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;",
+                    style=(
+                        "display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;"
+                        "justify-content:center;"
+                    ),
                 ):
                     html.Span(
                         "{{ ch.text }}",
@@ -603,7 +609,8 @@ def _mode_view(server) -> None:
                 style=(
                     "{flex: a.primary ? '1.5 1 0' : '1 1 0',minHeight:0,"
                     "borderRadius:'16px',display:'flex',alignItems:'center',"
-                    "gap:'18px',padding:'0 24px',textAlign:'left',"
+                    "justifyContent:'center',"
+                    "gap:'16px',padding:'0 24px',textAlign:'center',"
                     "border: a.primary ? 'none' "
                     ": '1px solid rgba(148,163,184,0.3)',"
                     "background: a.primary ? 'linear-gradient(90deg, ' "
@@ -619,7 +626,10 @@ def _mode_view(server) -> None:
                     color=("a.primary ? '#0b1020' : wiz_mode_info.accent",),
                 )
                 with html.Span(
-                    style="display:flex;flex-direction:column;gap:2px;",
+                    style=(
+                        "display:flex;flex-direction:column;gap:2px;"
+                        "align-items:center;"
+                    ),
                 ):
                     html.Span(
                         "{{ a.label }}",
@@ -654,12 +664,13 @@ def _pick_view(server) -> None:
             "position:relative;" + _PANEL
         ),
     ):
-        with html.Div(style="display:flex;align-items:center;gap:18px;"):
+        with html.Div(style=_HEADER):
             with html.Button(
                 type="button",
                 classes="wiz-big",
                 click=(choose, "[wiz_pick.back]"),
                 style=(
+                    "justify-self:start;"
                     "height:40px;padding:0 16px 0 10px;border-radius:999px;"
                     "border:1px solid rgba(255,255,255,0.45);"
                     "background:rgba(255,255,255,0.04);color:#fff;"
@@ -668,24 +679,28 @@ def _pick_view(server) -> None:
             ):
                 v3.VIcon("mdi-chevron-left", color="#fff", size=20)
                 html.Span("{{ wiz_pick.back_label }}")
-            html.H1(
-                "{{ wiz_pick.title }}",
-                style="margin:0;font-size:1.6rem;font-weight:700;",
-            )
-            html.Span(
-                "{{ (wiz_pick.items || []).length }} found",
-                style="font-size:0.9rem;color:#94a3b8;",
-            )
+            with html.Div(
+                style="display:flex;align-items:baseline;gap:12px;",
+            ):
+                html.H1(
+                    "{{ wiz_pick.title }}",
+                    style="margin:0;font-size:1.6rem;font-weight:700;",
+                )
+                html.Span(
+                    "{{ (wiz_pick.items || []).length }} found",
+                    style="font-size:0.9rem;color:#94a3b8;",
+                )
         html.Div(
             "{{ wiz_pick.empty }}",
             v_if=("!(wiz_pick.items || []).length",),
-            style="color:#94a3b8;font-size:1rem;padding:40px 0;",
+            style="color:#94a3b8;font-size:1rem;padding:40px 0;text-align:center;",
         )
         with html.Div(
+            # Three to a row; a part-filled last row sits in the middle.
             style=(
-                "flex:1;min-height:0;overflow-y:auto;display:grid;"
-                "grid-template-columns:repeat(3,minmax(0,1fr));"
-                "grid-auto-rows:min-content;gap:16px;padding:4px;"
+                "flex:1;min-height:0;overflow-y:auto;display:flex;"
+                "flex-wrap:wrap;justify-content:center;align-content:flex-start;"
+                "gap:16px;padding:4px;"
             ),
         ):
             with html.Button(
@@ -696,12 +711,13 @@ def _pick_view(server) -> None:
                 disabled=("!!wiz_loading",),
                 click=(choose, "[it.value]"),
                 style=(
-                    "{minHeight:'124px',borderRadius:'16px',"
+                    "{flex:'0 1 calc(33.333% - 11px)',minHeight:'124px',"
+                    "borderRadius:'16px',"
                     "border:'1px solid rgba(148,163,184,0.3)',"
                     "background:'linear-gradient(145deg, #0f172a, #020617)',"
                     "color:'#e2e8f0',display:'flex',flexDirection:'column',"
-                    "alignItems:'flex-start',gap:'10px',padding:'20px 22px',"
-                    "textAlign:'left'}",
+                    "alignItems:'center',gap:'10px',padding:'20px 22px',"
+                    "textAlign:'center'}",
                 ),
             ):
                 with html.Span(
@@ -729,7 +745,7 @@ def _pick_view(server) -> None:
                         ),
                     )
                 with html.Span(
-                    style="display:flex;flex-wrap:wrap;gap:6px;",
+                    style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;",
                 ):
                     html.Span(
                         "{{ ch }}",
@@ -770,12 +786,17 @@ def _pick_view(server) -> None:
             )
 
 
-# Every page past the home screen: a bordered panel, centred, with black
-# space around it.
+# Every page past the home screen: centred, with black space around it
+# (no outline: there's no "main box").
 _PANEL = (
-    "max-width:1240px;margin:0 auto;box-sizing:border-box;"
-    "border:1px solid #1e293b;border-radius:22px;padding:22px 26px;"
-    "background:#000;"
+    "max-width:1240px;margin:0 auto;box-sizing:border-box;padding:6px 20px;"
+)
+
+# A page header: back button on the left, the title centred, and room on
+# the right for the page's own buttons.
+_HEADER = (
+    "display:grid;grid-template-columns:1fr auto 1fr;align-items:center;"
+    "gap:16px;"
 )
 
 _BTN_PILL = (
@@ -797,12 +818,12 @@ def _setup_view(server) -> None:
             "flex-direction:column;gap:12px;color:#e2e8f0;" + _PANEL
         ),
     ):
-        with html.Div(style="display:flex;align-items:center;gap:16px;"):
+        with html.Div(style=_HEADER):
             with html.Button(
                 type="button",
                 classes="wiz-big",
                 click=(choose, "['mode:' + wiz_setup.mode]"),
-                style=_BTN_PILL,
+                style=_BTN_PILL + "justify-self:start;",
             ):
                 v3.VIcon("mdi-chevron-left", color="#fff", size=20)
                 html.Span("{{ wiz_setup.back_label }}")
@@ -813,7 +834,7 @@ def _setup_view(server) -> None:
             html.Span(
                 "{{ wiz_setup.note }}",
                 v_if=("wiz_setup.note",),
-                style="color:#fcd34d;font-size:0.9rem;",
+                style="color:#fcd34d;font-size:0.9rem;justify-self:end;",
             )
         with html.Div(
             style=(
@@ -830,6 +851,7 @@ def _setup_view(server) -> None:
                     "{{ g.title }}",
                     style=(
                         "{fontSize: g.small ? '0.72rem' : '0.78rem',"
+                        "textAlign:'center',"
                         "letterSpacing:'0.12em',textTransform:'uppercase',"
                         "color: g.small ? '#475569' : '#64748b',"
                         "marginTop: g.small ? '0' : '6px'}",
@@ -839,8 +861,8 @@ def _setup_view(server) -> None:
                 with html.Div(
                     v_if=("g.kind === 'cards' || g.kind === 'toggles'",),
                     style=(
-                        "display:grid;gap:10px;"
-                        "grid-template-columns:repeat(auto-fill,minmax(220px,1fr));"
+                        "display:flex;flex-wrap:wrap;gap:10px;"
+                        "justify-content:center;"
                     ),
                 ):
                     with html.Button(
@@ -850,9 +872,11 @@ def _setup_view(server) -> None:
                         classes="wiz-big",
                         click=(choose, "[it.value]"),
                         style=(
-                            "{borderRadius:'14px',padding:'10px 14px',"
+                            "{flex:'0 1 228px',"
+                            "borderRadius:'14px',padding:'10px 14px',"
                             "display:'flex',flexDirection:'column',gap:'3px',"
-                            "textAlign:'left',color:'#e2e8f0',"
+                            "alignItems:'center',"
+                            "textAlign:'center',color:'#e2e8f0',"
                             "opacity: it.dim ? 0.55 : 1,"
                             "border: it.on ? '2px solid ' + wiz_setup.accent "
                             ": '1px solid #1e293b',"
@@ -894,7 +918,7 @@ def _setup_view(server) -> None:
                 # Chips (several on).
                 with html.Div(
                     v_if=("g.kind === 'chips'",),
-                    style="display:flex;flex-wrap:wrap;gap:6px;",
+                    style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;",
                 ):
                     with html.Button(
                         v_for="(it, ii) in g.items",
@@ -915,7 +939,12 @@ def _setup_view(server) -> None:
                         ),
                     ):
                         html.Span("{{ it.label }}")
-        with html.Div(style="display:flex;align-items:center;gap:14px;"):
+        with html.Div(
+            style=(
+                "display:flex;align-items:center;justify-content:center;"
+                "gap:14px;padding-top:4px;"
+            ),
+        ):
             html.Span("Name", style="color:#94a3b8;")
             html.Input(
                 id="wiz-setup-name",
@@ -940,7 +969,6 @@ def _setup_view(server) -> None:
             ):
                 v3.VIcon("mdi-tune-variant", color="#94a3b8", size=20)
                 html.Span("All settings")
-            v3.VSpacer()
             with html.Button(
                 type="button",
                 classes="wiz-big",
@@ -955,6 +983,15 @@ def _setup_view(server) -> None:
             ):
                 v3.VIcon("mdi-play", color="#0b1020", size=28)
                 html.Span("{{ wiz_setup.run_label }}")
+        html.Div(
+            "{{ wiz_setup_name }} already exists: running replaces its "
+            "output. Give this run a new name to keep it.",
+            v_if=(
+                "(wiz_setup.taken || []).includes("
+                "(wiz_setup_name || '').trim().replace(/[^\\w.-]+/g, '_'))",
+            ),
+            style="text-align:center;color:#fcd34d;font-size:0.85rem;",
+        )
 
 
 def _all_settings_view(server) -> None:
@@ -968,12 +1005,12 @@ def _all_settings_view(server) -> None:
             "flex-direction:column;gap:12px;color:#e2e8f0;" + _PANEL
         ),
     ):
-        with html.Div(style="display:flex;align-items:center;gap:14px;"):
+        with html.Div(style=_HEADER):
             with html.Button(
                 type="button",
                 classes="wiz-big",
                 click=(choose, "['su:back']"),
-                style=_BTN_PILL,
+                style=_BTN_PILL + "justify-self:start;",
             ):
                 v3.VIcon("mdi-chevron-left", color="#fff", size=20)
                 html.Span("{{ wiz_setup.title }}")
@@ -981,32 +1018,36 @@ def _all_settings_view(server) -> None:
                 "All settings",
                 style="margin:0;font-size:1.6rem;font-weight:700;",
             )
-            v3.VSpacer()
-            v3.VTextField(
-                v_model=("wiz_param_search",),
-                placeholder="Find a setting",
-                prepend_inner_icon="mdi-magnify",
-                variant="outlined",
-                density="compact",
-                hide_details=True,
-                clearable=True,
-                bg_color="#020617",
-                style="max-width:280px;",
-            )
-            with html.Button(
-                type="button",
-                classes="wiz-big",
-                click=(choose, "['su:run']"),
+            with html.Div(
                 style=(
-                    "{height:'46px',padding:'0 22px',borderRadius:'12px',"
-                    "border:'none',color:'#0b1020',fontSize:'1rem',"
-                    "fontWeight:700,display:'flex',alignItems:'center',"
-                    "gap:'8px',background:'linear-gradient(90deg, ' + "
-                    "wiz_setup.accent + ', ' + wiz_setup.accent2 + ')'}",
+                    "justify-self:end;display:flex;align-items:center;gap:12px;"
                 ),
             ):
-                v3.VIcon("mdi-play", color="#0b1020", size=22)
-                html.Span("{{ wiz_setup.run_label }}")
+                v3.VTextField(
+                    v_model=("wiz_param_search",),
+                    placeholder="Find a setting",
+                    prepend_inner_icon="mdi-magnify",
+                    variant="outlined",
+                    density="compact",
+                    hide_details=True,
+                    clearable=True,
+                    bg_color="#020617",
+                    style="width:260px;flex:0 0 260px;",
+                )
+                with html.Button(
+                    type="button",
+                    classes="wiz-big",
+                    click=(choose, "['su:run']"),
+                    style=(
+                        "{height:'46px',padding:'0 22px',borderRadius:'12px',"
+                        "border:'none',color:'#0b1020',fontSize:'1rem',"
+                        "fontWeight:700,display:'flex',alignItems:'center',"
+                        "gap:'8px',background:'linear-gradient(90deg, ' + "
+                        "wiz_setup.accent + ', ' + wiz_setup.accent2 + ')'}",
+                    ),
+                ):
+                    v3.VIcon("mdi-play", color="#0b1020", size=22)
+                    html.Span("{{ wiz_setup.run_label }}")
         with html.Div(style="flex:1;min-height:0;display:flex;gap:20px;"):
             with html.Nav(
                 style=(
@@ -1109,26 +1150,29 @@ def _run_view(server) -> None:
             "color:#e2e8f0;min-height:0;" + _PANEL
         ),
     ):
-        with html.Div(style="display:flex;align-items:center;gap:16px;"):
-            html.H1(
-                "{{ wiz_run.status === 'done' ? 'Finished' : "
-                "(wiz_run.status === 'failed' ? 'Stopped' : wiz_run.title) }}",
-                style="margin:0;font-size:1.6rem;font-weight:700;",
-            )
-            html.Span(
-                "{{ wiz_run.sub }}",
-                style="font-size:0.9rem;color:#94a3b8;",
-            )
-            v3.VSpacer()
+        with html.Div(style=_HEADER):
+            html.Span()
+            with html.Div(
+                style="display:flex;align-items:baseline;gap:12px;",
+            ):
+                html.H1(
+                    "{{ wiz_run.status === 'done' ? 'Finished' : "
+                    "(wiz_run.status === 'failed' ? 'Stopped' : wiz_run.title) }}",
+                    style="margin:0;font-size:1.6rem;font-weight:700;",
+                )
+                html.Span(
+                    "{{ wiz_run.sub }}",
+                    style="font-size:0.9rem;color:#94a3b8;",
+                )
             with html.Button(
                 v_if=("wiz_run.status === 'running'",),
                 type="button",
                 classes="wiz-big",
                 click=server.controller.wiz_cancel_run,
                 style=(
-                    "height:42px;padding:0 18px;border-radius:12px;"
-                    "border:1px solid #ef4444;background:transparent;"
-                    "color:#fca5a5;font-size:0.95rem;"
+                    "justify-self:end;height:42px;padding:0 18px;"
+                    "border-radius:12px;border:1px solid #ef4444;"
+                    "background:transparent;color:#fca5a5;font-size:0.95rem;"
                 ),
             ):
                 html.Span("Cancel run")
@@ -1139,6 +1183,7 @@ def _run_view(server) -> None:
                 key="si",
                 style=(
                     "{flex:1,display:'flex',alignItems:'center',gap:'10px',"
+                    "justifyContent:'center',"
                     "padding:'9px 14px',borderRadius:'14px',fontSize:'0.88rem',"
                     "border: st.state === 'now' ? '2px solid ' + wiz_run.accent "
                     ": (st.state === 'failed' ? '2px solid #ef4444' "
@@ -1215,13 +1260,16 @@ def _run_view(server) -> None:
                 style=(
                     "border-radius:14px;border:1px solid #1e293b;"
                     "background:#0b1120;padding:9px 16px;display:flex;"
-                    "align-items:center;gap:12px;min-width:0;"
+                    "align-items:center;justify-content:center;gap:14px;"
+                    "min-width:0;"
                 ),
             ):
                 with html.Div(
                     style=(
-                        "flex:1;min-width:0;display:flex;flex-direction:column;"
-                        "gap:3px;"
+                        "{flex: s.kind === 'tree' ? '0 0 auto' : '1',minWidth:0,"
+                        "display:'flex',flexDirection:'column',gap:'3px',"
+                        "alignItems: s.kind === 'tree' ? 'flex-start' : 'center',"
+                        "textAlign: s.kind === 'tree' ? 'left' : 'center'}",
                     ),
                 ):
                     html.Span(
@@ -1241,7 +1289,7 @@ def _run_view(server) -> None:
                     # SAGEswarm: one segment per round, filling.
                     with html.Div(
                         v_if=("s.kind === 'iters'",),
-                        style="display:flex;gap:3px;margin-top:3px;",
+                        style="display:flex;gap:3px;margin-top:3px;width:100%;",
                     ):
                         with html.Div(
                             v_for="(f, fi) in s.segs",
@@ -1262,7 +1310,10 @@ def _run_view(server) -> None:
                     # SAGEswarm: one circle per particle, filled once run.
                     with html.Div(
                         v_if=("s.kind === 'particles'",),
-                        style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;",
+                        style=(
+                            "display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;"
+                            "justify-content:center;"
+                        ),
                     ):
                         html.Span(
                             v_for="(d, di) in s.dots",
@@ -1273,58 +1324,34 @@ def _run_view(server) -> None:
                                 "borderColor: d ? wiz_run.accent : '#475569'}",
                             ),
                         )
-                # SAGE26: a merger tree filling from its tips to its root.
+                # SAGE26: a merger-tree branch across the rest of the tile,
+                # filling from its early-time tips to its root.
                 html.Img(
                     v_if=("s.kind === 'tree'",),
                     src=("s.img",),
                     alt="",
-                    style="height:46px;flex-shrink:0;",
+                    style="flex:1;min-width:60px;height:40px;",
                 )
-        # Terminal (2/3) and what the run is making (1/3)
-        with html.Div(style="flex:1;min-height:0;display:flex;gap:14px;"):
+        # Terminal (2/3) and what the run is making (1/3): one black
+        # panel.
+        with html.Div(
+            style=(
+                "flex:1;min-height:0;display:flex;background:#000;"
+                "border-radius:14px;overflow:hidden;"
+            ),
+        ):
+            # The wizard's xterm moves in here (visage.js) while the run
+            # page shows.
+            html.Div(
+                id="wiz-run-pty",
+                style="flex:2;min-width:0;min-height:0;overflow:hidden;padding:6px 8px;",
+            )
             with html.Section(
                 style=(
-                    "flex:2;min-width:0;border-radius:14px;border:1px solid "
-                    "#1e293b;background:#000;display:flex;flex-direction:column;"
-                    "overflow:hidden;"
-                ),
-            ):
-                html.Div(
-                    "Terminal",
-                    style=(
-                        "padding:7px 14px;border-bottom:1px solid #1e293b;"
-                        "font-size:0.8rem;color:#94a3b8;"
-                    ),
-                )
-                # The wizard's xterm moves in here (visage.js) while the
-                # run page shows.
-                html.Div(
-                    id="wiz-run-pty",
-                    style="flex:1;min-height:0;overflow:hidden;padding:4px 6px;",
-                )
-            with html.Section(
-                style=(
-                    "flex:1;min-width:0;border-radius:14px;border:1px solid "
-                    "#1e293b;background:#050a14;display:flex;"
+                    "flex:1;min-width:0;background:#000;display:flex;"
                     "flex-direction:column;overflow:hidden;"
                 ),
             ):
-                with html.Div(
-                    style=(
-                        "display:flex;align-items:center;gap:8px;"
-                        "padding:7px 14px;border-bottom:1px solid #1e293b;"
-                        "font-size:0.8rem;color:#cbd5e1;"
-                    ),
-                ):
-                    html.Span(
-                        v_if=("wiz_run.status === 'running'",),
-                        style=(
-                            "width:8px;height:8px;border-radius:50%;"
-                            "background:#ef4444;box-shadow:0 0 8px #ef4444;"
-                            "flex-shrink:0;"
-                        ),
-                    )
-                    html.Span("{{ wiz_run.live_note }}")
                 with html.Div(
                     style=(
                         "flex:1;min-height:0;display:flex;align-items:center;"
@@ -1404,7 +1431,7 @@ def _run_view(server) -> None:
         # When it's finished (or stopped)
         with html.Div(
             v_if=("wiz_run.actions && wiz_run.actions.length",),
-            style="display:flex;gap:12px;justify-content:flex-end;",
+            style="display:flex;gap:12px;justify-content:center;",
         ):
             with html.Button(
                 v_for="(a, ai) in wiz_run.actions",

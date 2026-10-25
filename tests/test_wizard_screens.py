@@ -222,7 +222,7 @@ def test_swarm_tiles_bar_and_particles():
     assert set(it["segs"]) == {1.0} and parts["dots"] == [1] * 5
 
 
-def test_tree_fills_from_tips_to_root():
+def test_branch_grows_from_left_to_right():
     import base64
     import re
 
@@ -230,23 +230,11 @@ def test_tree_fills_from_tips_to_root():
 
     def fill(pct):
         svg = base64.b64decode(tree_svg(pct, "#fff").split(",")[1]).decode()
-        h = float(
-            re.search(r'viewBox="[\d.-]+ [\d.-]+ [\d.-]+ ([\d.]+)"', svg)[1]
-        )
-        return (
-            float(
-                re.search(
-                    r'clipPath id="f"><rect [^>]*height="([\d.]+)"', svg
-                )[1]
-            )
-            / h
+        return float(
+            re.search(r'clipPath id="f"><rect [^>]*width="([\d.]+)"', svg)[1]
         )
 
-    assert (
-        fill(0) == 0
-        and abs(fill(50) - 0.5) < 0.01
-        and abs(fill(100) - 1) < 0.01
-    )
+    assert fill(0) == 0 and fill(50) == 150 and fill(100) == 300
 
 
 def test_clone_goes_over_the_old_copy_or_beside_the_others(tmp_path):
