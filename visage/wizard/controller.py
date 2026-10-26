@@ -971,6 +971,16 @@ class WizardController(InstallMixin, SetupRunMixin):
             self._emit("^C  — interrupt sent to the running process", "warn")
         except (ProcessLookupError, OSError) as exc:
             self._emit(f"Could not interrupt process: {exc}", "err")
+        # A program that ignores Ctrl+C is stopped anyway (with all it
+        # started) if it's still running 10 s later.
+        loop = asyncio.get_running_loop()
+
+        def _force():
+            if self._run_proc is proc and proc.poll() is None:
+                self._emit("Still running: stopping it.", "warn")
+                loop.run_in_executor(None, proc.close)
+
+        loop.call_later(10.0, _force)
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -1318,7 +1328,9 @@ class WizardController(InstallMixin, SetupRunMixin):
             self._run_proc = None
             self._st.wiz_run_active = False
             self._st.flush()
-            proc.close()
+            # Stops anything the command left running (up to a few
+            # seconds' grace), off the event loop.
+            await loop.run_in_executor(None, proc.close)
 
     # ── platform helpers ─────────────────────────────────────────────────────
 

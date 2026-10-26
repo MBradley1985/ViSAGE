@@ -2894,9 +2894,25 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 str(out_path),
             ]
             try:
-                proc = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=300
+                from visage import procs
+
+                # Tracked: stopped with ViSAGE if it closes mid-encode.
+                proc = procs.track(
+                    subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        start_new_session=not procs.IS_WINDOWS,
+                    )
                 )
+                try:
+                    _, err = proc.communicate(timeout=300)
+                except subprocess.TimeoutExpired:
+                    procs.stop_group(proc)
+                    raise
+                procs.untrack(proc)
+                proc.stderr = err
                 if proc.returncode != 0:
                     return f"ERROR (mov): ffmpeg returned {proc.returncode}: {proc.stderr[-300:]}"
                 _remove_dir(frames_dir)
@@ -3466,7 +3482,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     _active_console = [1]
     _console_id_counter = [1]
 
-    import atexit as _atexit
+    from visage import procs as _procs
 
     def _kill_all_ptys() -> None:
         for d in _consoles_data.values():
@@ -3474,7 +3490,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if pty_sess:
                 pty_sess.close()
 
-    _atexit.register(_kill_all_ptys)
+    _procs.add_cleanup(_kill_all_ptys)
 
     def _truncate(text: str, n: int = 4000) -> str:
         if len(text) <= n:
@@ -3981,6 +3997,169 @@ def build_navigation_panel(server, scene: Scene) -> None:
         await _make_mock(
             survey, float(state.mock_field or 5), hd, "HD+mock: " if hd else ""
         )
+
+    # ── Spectrum of the selected galaxy (Photometry tab) ──
+    # Made as the cone's photometry was (visage.sed.spectrum); the plot
+    # and its table go to sage_library/spectra/.
+    state.spec_ok = "SFHMassDisk" in _lc_present
+    state.spec_busy = False
+    state.spec_note = ""
+    # The build card: what is happening and how far.
+    state.spec_title = ""
+    state.spec_progress = ""
+    state.spec_percent = 0
+    # Spectra are made in their own process (visage.sed.spectrum.
+    # SpectrumWorker): FSPS holds the GIL for ~45 s per grid, which would
+    # freeze this server and drop the browser's connection.
+    # Seconds a metallicity's FSPS grid takes to build: the first in a
+    # fresh worker also loads FSPS's libraries (both measured as they go).
+    _spec_run = {"worker": None, "job": None, "first_s": 70.0, "build_s": 25.0}
+
+    def _stop_spec_worker() -> None:
+        if _spec_run["worker"] is not None:
+            _spec_run["worker"].stop()
+
+    _procs.add_cleanup(_stop_spec_worker)
+
+    @ctrl.set("create_spectrum")
+    def on_create_spectrum():
+        # A task of its own: trame handles a browser's next message only
+        # once an awaited handler returns, so Cancel would wait for the
+        # whole build.
+        asyncio.ensure_future(_create_spectrum())
+
+    async def _create_spectrum():
+        import datetime
+        import time
+
+        model = scene.active_model
+        path = getattr(model, "path", None)
+        if state.spec_busy or path is None or state.nav_gal_idx is None:
+            return
+        from visage.sed import spectrum as _spec
+        from visage.utils.group_info import galaxy_label
+
+        _, gal = model.loader.get(model.current_snap)
+        idx = int(state.nav_gal_idx)
+        row = int(gal.sage_indices[idx])
+        label = galaxy_label(gal, idx)
+        out = _LIBRARY_DIR / "spectra"
+        out.mkdir(parents=True, exist_ok=True)
+        stem = (
+            f"spectrum_{_safe_label(label)}_"
+            f"{datetime.datetime.now():%Y%m%d_%H%M%S}"
+        )
+        png, csv = out / f"{stem}.png", out / f"{stem}.csv"
+        worker = _spec_run["worker"]
+        if worker is None:
+            worker = _spec_run["worker"] = _spec.SpectrumWorker()
+        fresh = not worker.alive()
+        cold = fresh  # no FSPS grid built in this worker yet
+        jid = worker.submit(path, row, label, png, csv)
+        _spec_run["job"] = jid
+        state.spec_busy = True
+        state.spec_note = ""
+        state.spec_title = f"Building spectrum of Galaxy {label}"
+        state.spec_progress = (
+            "Starting the spectrum worker…" if fresh else "Reading the galaxy…"
+        )
+        state.spec_percent = 0
+        state.flush()
+
+        # The bar: 0-5% reading, 5-90% the metallicity nodes (each by the
+        # clock against the time a grid takes to build, until it reports
+        # done -- at once when already built), 90-100% drawing.
+        t0 = time.monotonic()
+        t_node = None
+        nodes_done, nodes_total = 0, 2
+        stage = "start"
+        shown = 0.0
+        result = error = None
+        try:
+            while True:
+                if _spec_run["job"] != jid:
+                    return  # cancelled
+                for msg in worker.poll():
+                    if msg[1] != jid:
+                        continue
+                    kind = msg[0]
+                    if kind == "stage":
+                        stage = msg[2]
+                        if stage == "synthesis":
+                            t_node = time.monotonic()
+                    elif kind == "node":
+                        nodes_done, nodes_total, took = msg[2], msg[3], msg[4]
+                        if took > 5.0:  # (a grid was built, not reused)
+                            _spec_run["first_s" if cold else "build_s"] = took
+                            cold = False
+                        t_node = time.monotonic()
+                    elif kind == "done":
+                        result = msg[2]
+                    elif kind == "error":
+                        error = msg[2]
+                if result is not None or error is not None:
+                    break
+                if not worker.alive():
+                    error = "the spectrum worker stopped unexpectedly"
+                    break
+                if stage == "start":
+                    frac = 0.05 * min((time.monotonic() - t0) / 8.0, 0.9)
+                elif stage == "synthesis":
+                    expect = _spec_run["first_s" if cold else "build_s"]
+                    within = min(
+                        (time.monotonic() - (t_node or t0)) / expect, 0.95
+                    )
+                    frac = 0.05 + 0.85 * (
+                        (nodes_done + within) / max(nodes_total, 1)
+                    )
+                    k = min(nodes_done + 1, nodes_total)
+                    state.spec_progress = (
+                        "Building its stellar populations (FSPS): "
+                        f"metallicity {k} of {nodes_total}"
+                        if nodes_done < nodes_total
+                        else "Adding its dust and emission lines…"
+                    )
+                else:
+                    frac = 0.92
+                    state.spec_progress = "Drawing the spectrum…"
+                shown = max(shown, min(frac, 0.97))
+                state.spec_percent = int(100 * shown)
+                state.flush()
+                await asyncio.sleep(0.25)
+            if error is not None:
+                raise RuntimeError(error)
+            state.spec_percent = 100
+            state.spec_note = (
+                f"Galaxy {label} at z = {result['z_obs']:.4f}, observed "
+                "frame, with the cone's own photometry marked on it. Saved "
+                f"{png.name} and its table (.csv) in sage_library/spectra."
+            )
+            on_library_open(str(png))
+            state.library_files = _scan_library()
+        except Exception as exc:
+            state.spec_note = f"Couldn't make the spectrum: {exc!s}"
+            state.notice_text = state.spec_note
+            state.notice_color = "error"
+            state.notice_show = True
+        finally:
+            if _spec_run["job"] == jid:
+                _spec_run["job"] = None
+                state.spec_busy = False
+                state.flush()
+
+    # (a trigger: its card's button, in app.py, is built before this)
+    @server.trigger("spectrum_cancel")
+    @ctrl.set("spectrum_cancel")
+    def on_spectrum_cancel():
+        """Stop the build (the worker goes, and the grids it built)."""
+        if _spec_run["job"] is None:
+            return
+        _spec_run["job"] = None
+        if _spec_run["worker"] is not None:
+            _spec_run["worker"].stop()
+        state.spec_busy = False
+        state.spec_note = "Spectrum cancelled."
+        state.flush()
 
     @ctrl.set("library_rename")
     def on_library_rename(path: str, new_name: str):
@@ -5136,6 +5315,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         loop.create_task(_build())
 
+    # (a trigger: its card's button, in app.py, is built before this)
+    @server.trigger("hd_cancel")
     @ctrl.set("hd_cancel")
     def _hd_cancel():
         """Cancel button on the build card: stop waiting for the build
@@ -6063,13 +6244,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style="font-size:0.72rem;color:#9ca3af;line-height:1.4;",
                 )
                 with html.Div(v_show=("has_sed_data",)):
-                    html.Div(
-                        "A false-colour image built from the filters you tick "
-                        "— each tinted its own colour, stacked. A completely "
-                        "separate layer from the galaxies: show it with the "
-                        "galaxies on, off, or on its own.",
-                        style="font-size:0.66rem;color:#8b98a5;padding:0 0 8px;line-height:1.35;",
-                    )
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VCheckbox(
                             v_model=("photometry_visible",),
@@ -6137,13 +6311,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                     )
                     html.Div(
-                        "A survey image of the sky around a galaxy: each "
-                        "galaxy's disk and bulge at its own size, "
-                        "inclination and colours, blurred by the survey's "
-                        "seeing, with its sky noise.",
-                        style="font-size:0.66rem;color:#8b98a5;padding:0 0 8px;line-height:1.35;",
-                    )
-                    html.Div(
                         "This cone has none of the survey filters a mock "
                         "image needs (e.g. SDSS gri, 2MASS, WISE, GALEX).",
                         v_show=("!mock_surveys.length",),
@@ -6206,6 +6373,44 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         html.Div(
                             "{{ mock_note }}",
                             v_show=("mock_note",),
+                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
+                        )
+
+                    # Spectrum of the selected galaxy (visage.sed.spectrum).
+                    v3.VDivider(style="margin:14px 0 8px;")
+                    v3.VLabel(
+                        "SPECTRUM",
+                        style=(
+                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                        ),
+                    )
+                    html.Div(
+                        "This cone has no star-formation histories "
+                        "(SFHMassDisk/SFHMassBulge), which a spectrum needs.",
+                        v_show=("!spec_ok",),
+                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
+                    )
+                    with html.Div(v_show=("spec_ok",)):
+                        html.Div(
+                            "{{ nav_gal_idx === null ? 'Select a galaxy "
+                            "first.' : 'For ' + mock_centre + '.' }}",
+                            style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
+                        )
+                        v3.VBtn(
+                            "Make spectrum",
+                            prepend_icon="mdi-chart-bell-curve",
+                            block=True,
+                            color="#7FDBFF",
+                            variant="tonal",
+                            loading=("spec_busy",),
+                            disabled=("nav_gal_idx === null",),
+                            click=ctrl.create_spectrum,
+                            id="btn-spectrum",
+                        )
+                        html.Div(
+                            "{{ spec_note }}",
+                            v_show=("spec_note",),
                             style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                         )
 

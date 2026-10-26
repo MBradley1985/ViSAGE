@@ -84,6 +84,27 @@ only (SDSS, DES, Pan-STARRS1, LSST): HD's colours are optical. HD sizes follow
 the observed size–mass relation (Shen et al. 2003), so an HD galaxy can look
 smaller than the same galaxy's profile, which uses SAGE's disk radius.
 
+### Spectra
+
+**Make spectrum** (in the Photometry tab, under the mock image) makes the
+selected galaxy's spectrum as it would be observed: f<sub>ν</sub> in µJy
+against observed wavelength, with rest wavelength along the top. It is made
+the way the cone's photometry was, with the same settings recorded in the
+file (IMF, recycling, metallicity, dust and its infrared glow, emission
+lines), so the catalogue's own magnitudes, marked as circles, sit on it. The
+stars' light without dust and the disk and bulge (when the cone has them) are
+drawn too. No intergalactic absorption is modelled, so the spectrum starts at
+the rest-frame Lyman limit. The plot opens in a Library card and is saved in
+`sage_library/spectra/` as a PNG and a CSV table (rest and observed
+wavelength, the flux of each part, and the rest-frame L<sub>ν</sub>). A card
+shows what is being done and how far it has got, with a Cancel button. The
+first spectrum at each stellar metallicity takes about a minute while FSPS
+builds its stellar populations; later ones in the same session are
+immediate. Spectra are made in a separate worker process, so the viewer stays
+responsive while one builds. The cone needs its
+star-formation histories (`SFHMassDisk`/`SFHMassBulge`) and the run's
+scale-factor list on disk.
+
 ## Camera
 
 Resetting the camera frames the cone **horizontally, centred and zoomed in**,

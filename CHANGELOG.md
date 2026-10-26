@@ -6,6 +6,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.13.0] — 2026-10-27
+
+### Added
+
+- **Spectra in LightSAGE mode**: *Make spectrum* in the Photometry tab
+  makes the selected galaxy's observed-frame spectrum with the cone's own
+  photometry settings, its catalogue magnitudes marked on it. It opens in
+  a Library card and is saved in `sage_library/spectra/` (PNG + CSV),
+  with a progress card (and Cancel) while it builds.
+
+### Fixed
+
+- **Nothing is left running after ViSAGE stops**, however it stops (the
+  close button, Ctrl+C, closing its terminal, `kill`, even a crash or
+  `kill -9`): HD and spectrum workers, wizard builds and runs, Console
+  shells, ffmpeg and pip, each with everything it started. Cancelling a
+  wizard run stops it outright if it ignores the interrupt for 10 s.
+- **The HD build card's Cancel button** did nothing (only Esc worked).
+
 ## [2.12.1] — 2026-10-25
 
 ### Fixed

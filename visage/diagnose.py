@@ -211,7 +211,14 @@ def _pool(log) -> None:
     from visage.hd.group import _warm_worker
 
     t = time.perf_counter()
-    with ProcessPoolExecutor(1, mp_context=mp.get_context("spawn")) as ex:
+    from visage import procs
+
+    with ProcessPoolExecutor(
+        1,
+        mp_context=mp.get_context("spawn"),
+        initializer=procs.watch_parent,
+        initargs=(os.getpid(),),
+    ) as ex:
         ex.submit(_warm_worker).result()
     log(
         f"   start a worker + import the HD code: "
@@ -518,6 +525,8 @@ def _browser_in_child(log, par: str, port: int) -> None:
     already started this process's (single) web server."""
     import subprocess
 
+    from visage import procs
+
     cmd = [sys.executable, "-u", "-m", "visage.diagnose", par, str(port)]
     with subprocess.Popen(
         cmd,
@@ -526,13 +535,16 @@ def _browser_in_child(log, par: str, port: int) -> None:
         text=True,
         encoding="utf-8",
         errors="replace",
+        start_new_session=not procs.IS_WINDOWS,
     ) as proc:
+        procs.track(proc)
         for line in proc.stdout:
             line = line.rstrip("\n")
             if line.startswith(_LOG_MARK):
                 log(line[len(_LOG_MARK) :])
             else:
                 print(line, flush=True)
+    procs.untrack(proc)
     if proc.returncode:
         raise RuntimeError(
             f"the browser test exited with code {proc.returncode}"

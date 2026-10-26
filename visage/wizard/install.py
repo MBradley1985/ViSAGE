@@ -300,8 +300,15 @@ class InstallMixin:
                 *map(str, cmd),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=os.name != "nt",
             )
-            return await proc.wait()
+            from visage import procs
+
+            procs.track(proc)
+            try:
+                return await proc.wait()
+            finally:
+                procs.untrack(proc)
         except OSError:
             return 127
 

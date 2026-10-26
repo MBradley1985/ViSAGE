@@ -37,6 +37,7 @@ recorded in the file's `PhotometryHeader` attributes.
 from __future__ import annotations
 
 import argparse
+import functools
 import sys
 from pathlib import Path
 from collections.abc import Callable
@@ -135,6 +136,20 @@ class _FilterProjector:
         # alarming noise on every run.
         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
             return spectra @ weights / self._denom
+
+
+@functools.lru_cache(maxsize=8)
+def _ssp_grid(logzsol, dust, dust2, dust_emission, imf_type, nebular):
+    """An SSPGrid, kept: each costs FSPS ~15-20 s to build, and the
+    viewer's one-galaxy spectra (visage/sed/spectrum.py) reuse them."""
+    return SSPGrid(
+        logzsol,
+        dust=dust,
+        dust2=dust2,
+        dust_emission=dust_emission,
+        imf_type=imf_type,
+        nebular=nebular,
+    )
 
 
 def _mag_from_fnu(f_nu: np.ndarray) -> np.ndarray:
@@ -466,13 +481,13 @@ def compute_photometry(
         )
         if not use_metallicity:
             w_node = np.ones(n)
-        grid = SSPGrid(
-            nodes[zi],
-            dust=dust,
-            dust2=dust2,
-            dust_emission=dust_emission,
-            imf_type=imf_type,
-            nebular=lines,
+        grid = _ssp_grid(
+            float(nodes[zi]),
+            bool(dust),
+            float(dust2),
+            bool(dust_emission),
+            int(imf_type),
+            bool(lines),
         )
         libraries = grid.libraries
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}

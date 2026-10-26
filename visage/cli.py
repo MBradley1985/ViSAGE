@@ -198,17 +198,24 @@ def main(argv: list[str] | None = None) -> None:
     if tuned:
         print(f"Tuning   : {', '.join(tuned)}")
 
-    if args.diagnose:
-        from visage.diagnose import run
+    from visage import procs
 
-        run(par=args.par, browser=not args.no_browser, port=args.port)
-        return
-    if args.lightcone is not None:
-        _lightcone_mode(args)
-    elif args.par is None:
-        _launch_mode(args)
-    else:
-        _explore_mode(args)
+    # Whatever ViSAGE starts stops with it (close, Ctrl+C, SIGTERM/HUP).
+    procs.install()
+    try:
+        if args.diagnose:
+            from visage.diagnose import run
+
+            run(par=args.par, browser=not args.no_browser, port=args.port)
+            return
+        if args.lightcone is not None:
+            _lightcone_mode(args)
+        elif args.par is None:
+            _launch_mode(args)
+        else:
+            _explore_mode(args)
+    finally:
+        procs.cleanup()
 
 
 def _launch_mode(args) -> None:

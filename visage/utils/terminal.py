@@ -12,6 +12,9 @@ Backends, picked automatically:
 * ``winpty`` — Windows: a ConPTY via the pywinpty package.
 * ``pipe``   — fallback anywhere: plain pipes.  No colours or prompts, but
   output still streams and the process can still be interrupted.
+
+Every child is registered with visage.procs: closing its terminal, or
+ViSAGE stopping however it does, stops it and everything it started.
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ import subprocess
 import sys
 import threading
 import time
+
+from visage import procs
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -136,6 +141,7 @@ class _PosixPty(TerminalProcess):
             os.close(slave)
             raise
         os.close(slave)
+        procs.track(self._proc)
         self._fd = master
         self._closed = False
 
@@ -194,11 +200,8 @@ class _PosixPty(TerminalProcess):
                 os.close(self._fd)
             except OSError:
                 pass
-        if self._proc.poll() is None:
-            try:
-                self._proc.kill()
-            except OSError:
-                pass
+        # The whole job: what the command started may outlive it.
+        procs.stop_group(self._proc)
 
 
 # ── Windows ConPTY (pywinpty) ─────────────────────────────────────────────
@@ -212,6 +215,8 @@ class _WinPty(TerminalProcess):
         self._p = PtyProcess.spawn(
             argv, cwd=cwd, env=env, dimensions=(rows, cols)
         )
+        self.pid = self._p.pid
+        procs.track(self)
         self._eof = False
 
     def read(self, timeout: float = 1.0) -> bytes | None:
@@ -276,6 +281,7 @@ class _WinPty(TerminalProcess):
 
     def close(self) -> None:
         self._eof = True
+        procs.stop_group(self)  # taskkill /T: the process tree
         try:
             self._p.close(force=True)
         except Exception:
@@ -312,6 +318,7 @@ class _PipeProcess(TerminalProcess):
             bufsize=0,
             **kwargs,
         )
+        procs.track(self._proc)
         self._q: queue.Queue[bytes] = queue.Queue()
         self._eof = False
         threading.Thread(target=self._pump, daemon=True).start()
@@ -367,11 +374,7 @@ class _PipeProcess(TerminalProcess):
 
     def close(self) -> None:
         self._eof = True
-        if self._proc.poll() is None:
-            try:
-                self._proc.kill()
-            except OSError:
-                pass
+        procs.stop_group(self._proc)
         for f in (self._proc.stdin, self._proc.stdout):
             try:
                 f.close()

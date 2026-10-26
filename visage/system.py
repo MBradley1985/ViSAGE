@@ -551,6 +551,10 @@ def relaunch_visage(argv: list[str]):
     The new process runs this same copy of ViSAGE (not whichever `visage`
     is first on the PATH, which can be another install).
     """
+    from visage import procs
+
+    # This process's workers and runs don't carry over to the new one.
+    procs.cleanup()
     argv = [*argv, *SESSION_ARGS]
     cmd = [sys.executable, "-m", "visage.cli", *argv]
     env = dict(os.environ)

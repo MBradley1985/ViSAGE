@@ -277,11 +277,27 @@ def pool():
         import multiprocessing as mp
         from concurrent.futures import ProcessPoolExecutor
 
+        from visage import procs
+
         n = max(2, min(8, (os.cpu_count() or 4) - 1))
+        # Workers end with ViSAGE: stopped when it closes, and exiting
+        # themselves if it's killed outright.
         _POOL["pool"] = ProcessPoolExecutor(
-            max_workers=n, mp_context=mp.get_context("spawn")
+            max_workers=n,
+            mp_context=mp.get_context("spawn"),
+            initializer=procs.watch_parent,
+            initargs=(os.getpid(),),
         )
+        procs.add_cleanup(stop_pool)
     return _POOL["pool"]
+
+
+def stop_pool() -> None:
+    """End the pool's workers now (ViSAGE is closing)."""
+    from visage import procs
+
+    pool_, _POOL["pool"] = _POOL["pool"], None
+    procs.stop_pool(pool_)
 
 
 def _warm_worker() -> int:

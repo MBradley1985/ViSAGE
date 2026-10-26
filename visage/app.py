@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from pathlib import Path
 
@@ -973,8 +974,15 @@ def create_app(
                 "sage-viewer",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=os.name != "nt",
             )
-            _, stderr = await proc.communicate()
+            from visage import procs
+
+            procs.track(proc)  # stopped if ViSAGE closes mid-install
+            try:
+                _, stderr = await proc.communicate()
+            finally:
+                procs.untrack(proc)
             if proc.returncode == 0:
                 server.state.notice_text = (
                     f"Updated to {latest}. Restart ViSAGE to apply."
@@ -1564,11 +1572,71 @@ def create_app(
                                     size="small",
                                     variant="outlined",
                                     color="#9ca3af",
-                                    click=server.controller.hd_cancel,
+                                    click="trigger('hd_cancel')",
                                     title="Stop building (Esc)",
                                 )
                                 html.Div(
                                     "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
+                                    style=(
+                                        "flex:1;font-size:1.1rem;"
+                                        "color:#67e8f9;text-align:right;"
+                                    ),
+                                )
+
+                    # Spectrum build message (Photometry tab's Make
+                    # spectrum): what is happening and how far.
+                    with html.Div(
+                        v_show=("spec_busy",),
+                        style=(
+                            "position:absolute;inset:0;z-index:7;"
+                            "display:flex;align-items:center;"
+                            "justify-content:center;pointer-events:none;"
+                        ),
+                    ):
+                        with v3.VCard(
+                            style=(
+                                "padding:22px 30px;min-width:420px;"
+                                "background:rgba(10,10,26,0.88);"
+                                "border:1px solid #06b6d4;"
+                                "pointer-events:auto;"
+                            ),
+                        ):
+                            html.Div(
+                                "{{ spec_title }}",
+                                style=(
+                                    "font-size:1.5rem;font-weight:600;"
+                                    "color:#e2e8f0;margin-bottom:4px;"
+                                ),
+                            )
+                            html.Div(
+                                "{{ spec_progress }}",
+                                style=(
+                                    "font-size:0.95rem;color:#a3adbb;"
+                                    "margin-bottom:12px;"
+                                ),
+                            )
+                            v3.VProgressLinear(
+                                model_value=("spec_percent",),
+                                color="cyan",
+                                height=10,
+                                rounded=True,
+                            )
+                            with html.Div(
+                                style=(
+                                    "display:flex;align-items:center;"
+                                    "margin-top:8px;"
+                                ),
+                            ):
+                                v3.VBtn(
+                                    "Cancel",
+                                    size="small",
+                                    variant="outlined",
+                                    color="#9ca3af",
+                                    click="trigger('spectrum_cancel')",
+                                    title="Stop making the spectrum",
+                                )
+                                html.Div(
+                                    "{{ spec_percent }}%",
                                     style=(
                                         "flex:1;font-size:1.1rem;"
                                         "color:#67e8f9;text-align:right;"
