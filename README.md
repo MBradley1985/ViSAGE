@@ -299,6 +299,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - Reach it from Launch Mode (**Open in Lightcone view** after a build, LightSAGE's **Load existing**, or **Load a previous model**), the **Session Models** list (see below), or directly via `--lightcone`
 
 ![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone.png)
+![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone_spectra.png)
 
 ### Session models
 - The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
