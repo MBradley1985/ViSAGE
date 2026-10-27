@@ -4,128 +4,6 @@ An interactive 3D visualization package for [SAGE26](https://github.com/MBradley
 
 Renders dark matter haloes and SAGE galaxies together in a browser-based interactive viewer powered by [PyVista](https://pyvista.org) and [Trame](https://kitware.github.io/trame/).
 
-![ViSAGE](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/launch.png)
-![ViSAGE](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/hero.png)
-
-## Features
-
-### Rendering
-- World-space gaussian splat rendering of haloes and galaxies — splats scale with camera distance and stay physically meaningful at any zoom
-- **Structure** render mode: each galaxy drawn as a layered composition — cold-gas envelope (blue, sized by ColdGas) + outer envelope (green for CGM-regime sized by CGMgas, red for Hot-regime sized by HotGas)
-- 27 selectable matplotlib colormaps, identical lists for halo and galaxy layers
-- Live colormap, colour-by mode, opacity and visibility controls per layer
-- Colour-by dropdowns are model-aware — only modes whose underlying field is present in the loaded model appear in the list; they update automatically on model switch
-- Full still-quality rendering at all times — no resolution drop during camera drag or playback
-
-![Structure mode](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/structure_mode.png)
-
-### Playback & camera
-- Play / Pause / Stop / Reverse / Repeat transport at 0.1× – 5× speeds
-- Continuous camera rotation (CW / CCW at 15° / 30° / 60° per second)
-- Reset / Centre / Focus buttons
-- Fly to halo, galaxy, coordinates, or sub-box (with focus mode that masks everything outside)
-- **Draw Sphere** (Coords tab): place a live two-handle sphere in the viewport — drag the centre ball to translate, drag the edge ball to resize; **Lock Sphere** commits it as the active focus region
-- **Draw Box** (Box tab): place a live resizable box widget — drag any face or corner handle; **Lock Box** commits it; **Clear** on both tabs cancels the widget without navigating
-- Switching models always lands at z=0 of the new model; slider and snap chip update immediately
-- Camera bookmarks (save, restore, delete)
-
-### Selection & inspection
-- **Double-click a galaxy** (any tab, and inside HD) to select it: a cyan ring on it and smaller rings on the rest of its FOF group (merged where they would pile up). The selection follows the galaxy through snapshots by its GalaxyIndex.
-- **Selection card** (the **i** button beside Focus, or **Show info** in the Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
-- **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
-- **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it and fly there
-- **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
-- **Enter to run** in every input field — Coords X/Y/Z, Box bounds, Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Zoom / Run / Take Screenshot button
-
-![Filters in action](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/filters.gif)
-
-### Filtering
-- Halo filters: Mvir (log10), Rvir (Mpc/h), Vvir (km/s)
-- Galaxy filters: stellar mass, sSFR, B/T, age, BH mass, ICS mass, type (centrals / satellites), FFB regime, CGM / Hot regime, environment class (Field / Isolated / Pairs / Groups / Clusters, via the Environment filter in the Structure tab)
-- Filters are **active-only** — a slider sitting at its full-range endpoints has no effect; move it inward to filter. Every galaxy with detectable mass is visible at startup.
-- Filters auto-disable when the loaded model doesn't contain the underlying field
-- Reset Filters button restores defaults
-- **Playback respects all scene state** — the pre-render frame cache is keyed on filter values, focus region, layer visibility/opacity/color-mode, and highlight indicator state; changing any of these and pressing Play again always produces fresh frames
-
-### Side-by-side multi-box comparison
-- Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the hamburger menu
-- Each box is fully independent: its own snapshot, filters, colormaps, opacity, and visibility settings
-- A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Coords, Console, …) then controls that box
-- Active box label is **green**; idle boxes are **white**
-- Play, step, and the snapshot slider advance only the active box's snapshot
-- Rotation is disabled in multi-box mode (all boxes share one camera; independent rotation is not supported)
-- Halo Mvir colour mode is always locked to Viridis; the colormap selector is greyed out when Mvir is selected
-- CLR button in the box strip resets that box to its defaults without affecting others
-
-### Multi-model (overlays)
-- Auto-scans `<sage_root>/output/` for SAGE model subfolders
-- Switch the primary model from the hamburger menu (any box size)
-- Overlay a second compatible model on top (same box size + snap count)
-- Loading spinner during model swaps; warning snackbar for incompatible overlays
-
-### Output
-- Screenshots in PNG / JPG / TIFF
-- Movie recording in GIF / MOV (H.264, via ffmpeg) / PNG sequence
-- Configurable FPS (1 – 60) and resolution (Native / 2× / 4× supersampled)
-- Optional user-typed label per capture; everything saves into `sage_outputs/session_<timestamp>/` in your current working directory
-- **Overlay compositing** — Galaxy Info, Group Info, console pop-out, and open Library cards are all composited into screenshots and recordings exactly as they appear on screen
-- Catalogue export (CSV, HDF5, FITS, TXT) for the current filter selection, target, or box region — or, in Lightcone Mode, the whole cone (including any synthetic-photometry columns) — saves to `sage_outputs/catalogues/`
-
-### Story Mode
-- Play JSON-defined **stories** — ordered scenes of captured viewer state (snapshot, camera, layers, filters, focus) with text/media overlays — as full presentations over the live 3D view
-- Scenes carry titles, headings, body text, citations, LaTeX equations (vendored KaTeX, offline), images, videos, audio, and a clickable scene-menu grid
-- Camera motions per scene: orbit, snapshot sweeps through cosmic time (with pre-rendering for instant playback), and fly-throughs with optional snapshot rewind to a target redshift
-- Portable stories: symbolic snapshot references (`"first"`, `"last"`, `"40%"`, `"z=1.5"`) resolve against whatever model is loaded
-- Stories load from `sage_stories/` in your launch directory; a bundled **Presentation Template** provides a full talk skeleton to copy and fill in — see the [Story Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/story_mode/)
-
-### Launch Mode
-- Set up and run SAGE26, LightSAGE (lightcones) and SAGEswarm (calibration) without leaving the viewer: `visage` with no `--par`/`--lightcone`, or the Launch Mode menu (SAGE-logo button, top-left of the toolbar), which opens **SAGE26**, **LightSAGE** or **SAGEswarm** directly, or the home page
-- **Home:** a picture card per tool, showing whether it's installed, and **Load a previous model**, listing every SAGE26 model and lightcone found
-- **Each tool's page:** Run, Load existing, Install, Check for update (turns into Update when behind) and Clone / Re-clone. Install and Clone run on their button, showing the step and latest output, then the result:
-  - **SAGE26:** downloads the mini-Millennium trees on a first install, then `make` on every core (serial when there's no MPI compiler)
-  - **LightSAGE:** CMake, Boost and HDF5 (Homebrew / apt in WSL), the photometry packages and FSPS stellar libraries, then *only* its `sage2kdtree` / `cli_lightcone` tools; SAGE itself is never rebuilt, since ViSAGE feeds it your SAGE26 output
-  - **SAGEswarm:** its Python packages
-- **Setting up a run:** the key choices as big buttons (SAGE26: simulation, physics switches, and **Run on** 1 process or several under MPI; LightSAGE: source model, sky-and-depth presets, surveys, dust/IR/lines/disk-bulge; SAGEswarm: observations to match, search effort, free parameters), a **Name** that sets the run's output (with a warning when it would replace an existing model), and **All settings**: every value of the file in sections, with a search. The two always agree
-- **While it runs:** the stages, a progress bar and numbers read from the tool's output (a growing tree branch for SAGE26; rounds and particle circles for SAGEswarm), and the tool's terminal beside what it's making: a SAGE26 box filling with galaxies, a lightcone filling outwards, or SAGEswarm's latest plots. Then **Open in Explore** / **Open in Lightcone view**
-- Opening any model or lightcone shows **Opening …** and reloads the page by itself when ViSAGE is ready
-- **Windows:** all three tools run inside WSL automatically, with a one-click **Install Linux build tools** — see [Windows](#windows)
-- Screenshots, recordings, catalogue exports and lightcones save to `sage_outputs/` in the directory you launched from; build and run scripts live in `~/.visage/`, never inside a tool's checkout
-
-### Lightcone Mode
-- `visage --lightcone FILE` opens a `cli_lightcone` HDF5 output in the **exact same Explore UI** as a SAGE box — same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering
-- Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
-- The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
-- **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
-- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (named by survey, blue to red; each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
-- **Mock images** — **Create mock image** in the Photometry tab draws the sky around a galaxy as SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would record it (each galaxy's disk and bulge at its size, inclination and colours; the survey's pixels, seeing and, optionally, its sky noise), saved as PNG and FITS (with WCS)
-- Reach it from Launch Mode (**Open in Lightcone view** after a build, LightSAGE's **Load existing**, or **Load a previous model**), the **Session Models** list (see below), or directly via `--lightcone`
-
-![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone.png)
-
-### Session models
-- The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
-- Click any entry to jump straight back to it (a quick relaunch on the same port) — so loading a box after a lightcone (or vice versa) never loses track of what you had open
-- Persisted in `~/.visage/session_models.json` across relaunches
-
-### Embedded console (Console tab)
-- **Terminal mode** — a live xterm.js terminal backed by a real PTY (`$SHELL -l` on macOS/Linux, PowerShell on Windows); full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`) all work
-- **SAGE command mode** — natural-language SAGE commands (`show only clusters`, `go to halo 42`, `snap 30`, `screenshot`, …); switch via the **SAGE Cmds** button, `terminal` returns to the shell
-- **Multiple sessions** with a `+` button — each console has its own PTY process and command history
-- **Pop-out** floats a movable / resizable console card over the viewport so you can keep typing while watching the render
-
-### Self-contained metadata
-- Cosmology (h, Ω_m, Ω_Λ), box size, and snapshot redshifts are read directly from `model_0.hdf5`'s `Header/Simulation`
-- The `.par` file is now only needed for tree-file paths
-
-## Supported simulations
-
-| Simulation | Box size | Snapshots | Tree format |
-|---|---|---|---|
-| miniMillennium | 62.5 Mpc/h | 64 | lhalo_binary |
-| microUchuu | 96 Mpc/h | 50 | lhalo_binary |
-
-Both supported automatically — point at the `.par` file and ViSAGE figures out the rest from the HDF5.
-
 ## Quick start
 
 ```bash
@@ -310,9 +188,141 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
 | Library    | Browse stored screenshots / movies; double-click a row to open as a movable, resizable floating card over the viewport (multiple items open simultaneously); per-row delete button removes the file from disk immediately |
 
+The **Focus button** (top of the right panel) is tab-aware: it focuses on the selection (galaxy, or halo and group), the coords point, or the box region.
+
+![Launch](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/launch.png)
+
+### Launch Mode
+- Set up and run SAGE26, LightSAGE (lightcones) and SAGEswarm (calibration) without leaving the viewer: `visage` with no `--par`/`--lightcone`, or the Launch Mode menu (SAGE-logo button, top-left of the toolbar), which opens **SAGE26**, **LightSAGE** or **SAGEswarm** directly, or the home page
+- **Home:** a picture card per tool, showing whether it's installed, and **Load a previous model**, listing every SAGE26 model and lightcone found
+- **Each tool's page:** Run, Load existing, Install, Check for update (turns into Update when behind) and Clone / Re-clone. Install and Clone run on their button, showing the step and latest output, then the result:
+  - **SAGE26:** downloads the mini-Millennium trees on a first install, then `make` on every core (serial when there's no MPI compiler)
+  - **LightSAGE:** CMake, Boost and HDF5 (Homebrew / apt in WSL), the photometry packages and FSPS stellar libraries, then *only* its `sage2kdtree` / `cli_lightcone` tools; SAGE itself is never rebuilt, since ViSAGE feeds it your SAGE26 output
+  - **SAGEswarm:** its Python packages
+- **Setting up a run:** the key choices as big buttons (SAGE26: simulation, physics switches, and **Run on** 1 process or several under MPI; LightSAGE: source model, sky-and-depth presets, surveys, dust/IR/lines/disk-bulge; SAGEswarm: observations to match, search effort, free parameters), a **Name** that sets the run's output (with a warning when it would replace an existing model), and **All settings**: every value of the file in sections, with a search. The two always agree
+- **While it runs:** the stages, a progress bar and numbers read from the tool's output (a growing tree branch for SAGE26; rounds and particle circles for SAGEswarm), and the tool's terminal beside what it's making: a SAGE26 box filling with galaxies, a lightcone filling outwards, or SAGEswarm's latest plots. Then **Open in Explore** / **Open in Lightcone view**
+- Opening any model or lightcone shows **Opening …** and reloads the page by itself when ViSAGE is ready
+- **Windows:** all three tools run inside WSL automatically, with a one-click **Install Linux build tools** — see [Windows](#windows)
+- Screenshots, recordings, catalogue exports and lightcones save to `sage_outputs/` in the directory you launched from; build and run scripts live in `~/.visage/`, never inside a tool's checkout
+
+![ViSAGE](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/hero.png)
+
+## Features
+
+### Rendering
+- World-space gaussian splat rendering of haloes and galaxies — splats scale with camera distance and stay physically meaningful at any zoom
+- **Structure** render mode: each galaxy drawn as a layered composition — cold-gas envelope (blue, sized by ColdGas) + outer envelope (green for CGM-regime sized by CGMgas, red for Hot-regime sized by HotGas)
+- 27 selectable matplotlib colormaps, identical lists for halo and galaxy layers
+- Live colormap, colour-by mode, opacity and visibility controls per layer
+- Colour-by dropdowns are model-aware — only modes whose underlying field is present in the loaded model appear in the list; they update automatically on model switch
+- Full still-quality rendering at all times — no resolution drop during camera drag or playback
+
+![Structure mode](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/structure_mode.png)
+
+### Playback & camera
+- Play / Pause / Stop / Reverse / Repeat transport at 0.1× – 5× speeds
+- Continuous camera rotation (CW / CCW at 15° / 30° / 60° per second)
+- Reset / Centre / Focus buttons
+- Fly to halo, galaxy, coordinates, or sub-box (with focus mode that masks everything outside)
+- **Draw Sphere** (Coords tab): place a live two-handle sphere in the viewport — drag the centre ball to translate, drag the edge ball to resize; **Lock Sphere** commits it as the active focus region
+- **Draw Box** (Box tab): place a live resizable box widget — drag any face or corner handle; **Lock Box** commits it; **Clear** on both tabs cancels the widget without navigating
+- Switching models always lands at z=0 of the new model; slider and snap chip update immediately
+- Camera bookmarks (save, restore, delete)
+
+### Selection & inspection
+- **Double-click a galaxy** (any tab, and inside HD) to select it: a cyan ring on it and smaller rings on the rest of its FOF group (merged where they would pile up). The selection follows the galaxy through snapshots by its GalaxyIndex.
+- **Selection card** (the **i** button beside Focus, or **Show info** in the Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
+- **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
+- **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it and fly there
+- **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
+- **Enter to run** in every input field — Coords X/Y/Z, Box bounds, Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Zoom / Run / Take Screenshot button
+
+![Filters in action](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/filters.gif)
+
+### Filtering
+- Halo filters: Mvir (log10), Rvir (Mpc/h), Vvir (km/s)
+- Galaxy filters: stellar mass, sSFR, B/T, age, BH mass, ICS mass, type (centrals / satellites), FFB regime, CGM / Hot regime, environment class (Field / Isolated / Pairs / Groups / Clusters, via the Environment filter in the Structure tab)
+- Filters are **active-only** — a slider sitting at its full-range endpoints has no effect; move it inward to filter. Every galaxy with detectable mass is visible at startup.
+- Filters auto-disable when the loaded model doesn't contain the underlying field
+- Reset Filters button restores defaults
+- **Playback respects all scene state** — the pre-render frame cache is keyed on filter values, focus region, layer visibility/opacity/color-mode, and highlight indicator state; changing any of these and pressing Play again always produces fresh frames
+
 ![Draw Sphere](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/draw_sphere.gif)
 
-The **Focus button** (top of the right panel) is tab-aware: it focuses on the selection (galaxy, or halo and group), the coords point, or the box region.
+### Side-by-side multi-box comparison
+- Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the hamburger menu
+- Each box is fully independent: its own snapshot, filters, colormaps, opacity, and visibility settings
+- A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Coords, Console, …) then controls that box
+- Active box label is **green**; idle boxes are **white**
+- Play, step, and the snapshot slider advance only the active box's snapshot
+- Rotation is disabled in multi-box mode (all boxes share one camera; independent rotation is not supported)
+- Halo Mvir colour mode is always locked to Viridis; the colormap selector is greyed out when Mvir is selected
+- CLR button in the box strip resets that box to its defaults without affecting others
+
+### Multi-model (overlays)
+- Auto-scans `<sage_root>/output/` for SAGE model subfolders
+- Switch the primary model from the hamburger menu (any box size)
+- Overlay a second compatible model on top (same box size + snap count)
+- Loading spinner during model swaps; warning snackbar for incompatible overlays
+
+![Multi-box](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/multibox.png)
+
+### Output
+- Screenshots in PNG / JPG / TIFF
+- Movie recording in GIF / MOV (H.264, via ffmpeg) / PNG sequence
+- Configurable FPS (1 – 60) and resolution (Native / 2× / 4× supersampled)
+- Optional user-typed label per capture; everything saves into `sage_outputs/session_<timestamp>/` in your current working directory
+- **Overlay compositing** — Galaxy Info, Group Info, console pop-out, and open Library cards are all composited into screenshots and recordings exactly as they appear on screen
+- Catalogue export (CSV, HDF5, FITS, TXT) for the current filter selection, target, or box region — or, in Lightcone Mode, the whole cone (including any synthetic-photometry columns) — saves to `sage_outputs/catalogues/`
+
+### Story Mode
+- Play JSON-defined **stories** — ordered scenes of captured viewer state (snapshot, camera, layers, filters, focus) with text/media overlays — as full presentations over the live 3D view
+- Scenes carry titles, headings, body text, citations, LaTeX equations (vendored KaTeX, offline), images, videos, audio, and a clickable scene-menu grid
+- Camera motions per scene: orbit, snapshot sweeps through cosmic time (with pre-rendering for instant playback), and fly-throughs with optional snapshot rewind to a target redshift
+- Portable stories: symbolic snapshot references (`"first"`, `"last"`, `"40%"`, `"z=1.5"`) resolve against whatever model is loaded
+- Stories load from `sage_stories/` in your launch directory; a bundled **Presentation Template** provides a full talk skeleton to copy and fill in — see the [Story Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/story_mode/)
+
+### HD Mode
+- Using the galactic properties from the SAGE26 run, selecting this allows for a HD depiction of what the selected galaxies could/should/would appear.
+- Within LightSAGE mode the galaxy is modified based on the photometry and dust properties calculated.
+- The more galaxies selected, the more CPU and GPU usage, be warned.
+
+![HD Mode](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/HD_mode.png)
+
+### Lightcone Mode
+- `visage --lightcone FILE` opens a `cli_lightcone` HDF5 output in the **exact same Explore UI** as a SAGE box — same toolbar, navigation panel (every colour-by mode), info panel, and gaussian-splat rendering
+- Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
+- The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
+- **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
+- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (named by survey, blue to red; each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
+- **Mock images** — **Create mock image** in the Photometry tab draws the sky around a galaxy as SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would record it (each galaxy's disk and bulge at its size, inclination and colours; the survey's pixels, seeing and, optionally, its sky noise), saved as PNG and FITS (with WCS)
+- Reach it from Launch Mode (**Open in Lightcone view** after a build, LightSAGE's **Load existing**, or **Load a previous model**), the **Session Models** list (see below), or directly via `--lightcone`
+
+![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone.png)
+
+### Session models
+- The Launch-Mode dropdown lists every box and lightcone opened so far this session under **Session Models**, with a box or telescope icon per kind and the active one marked
+- Click any entry to jump straight back to it (a quick relaunch on the same port) — so loading a box after a lightcone (or vice versa) never loses track of what you had open
+- Persisted in `~/.visage/session_models.json` across relaunches
+
+### Embedded console (Console tab)
+- **Terminal mode** — a live xterm.js terminal backed by a real PTY (`$SHELL -l` on macOS/Linux, PowerShell on Windows); full ANSI colour, cursor control, and interactive programs (`vim`, `top`, `htop`, `less`) all work
+- **SAGE command mode** — natural-language SAGE commands (`show only clusters`, `go to halo 42`, `snap 30`, `screenshot`, …); switch via the **SAGE Cmds** button, `terminal` returns to the shell
+- **Multiple sessions** with a `+` button — each console has its own PTY process and command history
+- **Pop-out** floats a movable / resizable console card over the viewport so you can keep typing while watching the render
+
+### Self-contained metadata
+- Cosmology (h, Ω_m, Ω_Λ), box size, and snapshot redshifts are read directly from `model_0.hdf5`'s `Header/Simulation`
+- The `.par` file is now only needed for tree-file paths
+
+## Supported simulations
+
+| Simulation | Box size | Snapshots | Tree format |
+|---|---|---|---|
+| miniMillennium | 62.5 Mpc/h | 64 | lhalo_binary |
+| microUchuu | 96 Mpc/h | 50 | lhalo_binary |
+
+Both supported automatically — point at the `.par` file and ViSAGE figures out the rest from the HDF5.
 
 ## License
 
