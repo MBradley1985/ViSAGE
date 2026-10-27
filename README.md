@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/SAGElogo.jpg" alt="ViSAGE logo" width="220"/>
-</p>
-
 # ViSAGE
 
 An interactive 3D visualization package for [SAGE26](https://github.com/MBradley1985/SAGE26) semi-analytic galaxy formation outputs.
