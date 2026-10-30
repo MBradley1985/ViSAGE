@@ -53,6 +53,8 @@ from scipy.ndimage import gaussian_filter
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
+STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
+BLACK_SIGMA = 0.6  # black point above the mean sky, same units
 KNEE = 0.8  # display level above which bright cores roll off smoothly
 
 
@@ -243,9 +245,10 @@ def electrons_per_nmgy(survey: Survey, i: int) -> float:
     return sky / noise_sigma(survey, i) ** 2
 
 
-def lupton_rgb(chans, stretch, q=8.0):
+def lupton_rgb(chans, stretch, q=8.0, black=0.0):
     """asinh colour composite (Lupton et al. 2004) of up to three images
-    (R, G, B); fewer than three are spread across the channels."""
+    (R, G, B); fewer than three are spread across the channels. `black` is
+    taken off their mean, not each channel, so colours are kept."""
     if len(chans) == 1:
         chans = [chans[0]] * 3
     elif len(chans) == 2:
@@ -254,7 +257,8 @@ def lupton_rgb(chans, stretch, q=8.0):
     i = (r + g + b) / 3
     # Faint (sky) pixels keep their brightness, not an amplified colour.
     i_safe = np.maximum(i, 1e-3 * stretch)
-    f = np.arcsinh(q * i_safe / stretch) / q / i_safe
+    i_b = np.maximum(i_safe - black, 0.0)
+    f = np.arcsinh(q * i_b / stretch) / q / i_safe
     rgb = np.stack([r * f, g * f, b * f], -1)
     # Bright cores roll off towards 1, not clip to a flat plateau.
     peak = rgb.max(-1, keepdims=True)
@@ -501,21 +505,24 @@ def make_mock_image(
                 )
             images[b] = images[b] + rng.normal(0, np.sqrt(var))
 
-    # Stretch: as SDSS's own colour images, whose sky noise is about 1% of
-    # full scale. The same stretch with and without noise, so that switching
-    # noise on doesn't change how bright a galaxy looks.
+    # Stretch and black point: calibrated on SDSS's own colour images, where
+    # summing galaxies' pixels through the asinh stretch recovers their
+    # catalogue fluxes at 0.38 nanomaggies, ~8 sigma of its sky noise. The
+    # black point sets the sky to the images' ~1% of full scale.
     nb = len(s.bands)
+    black = 0.0
     if s.depth:
         sig = np.array([noise_sigma(s, i) for i in range(nb)])
-        stretch = 30 * float(sig.mean())
+        stretch = STRETCH_SIGMA * float(sig.mean())
+        if noisy:
+            black = BLACK_SIGMA * float(sig.mean())
         w = s.weights or tuple(sig.mean() / sig)
     else:
         tot = sum(images.values())
         stretch = 0.02 * float(np.percentile(tot, 99.9) or 1.0)
         w = s.weights or (1.0,) * nb
-    rgb = lupton_rgb(
-        [images[b] * wi for b, wi in zip(s.bands, w, strict=True)], stretch
-    )
+    chans = [images[b] * wi for b, wi in zip(s.bands, w, strict=True)]
+    rgb = lupton_rgb(chans, stretch, black=black)
     return MockImage(
         survey=survey,
         field_arcmin=field_arcmin,

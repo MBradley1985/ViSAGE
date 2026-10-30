@@ -176,3 +176,12 @@ def test_bright_galaxy_has_more_noise_than_sky(tmp_path):
     core = a > 0.5 * a.max()
     assert core.sum() > 5
     assert (b - a)[core].std() > 2 * mi.noise_sigma(mi.SURVEYS["sdss"], 1)
+
+
+def test_black_point_keeps_a_galaxys_colour():
+    r = np.full((1, 1), 4.0)
+    b = np.full((1, 1), 2.0)
+    plain = mi.lupton_rgb([r, 0.5 * (r + b), b], 1.0)
+    cut = mi.lupton_rgb([r, 0.5 * (r + b), b], 1.0, black=1.0)
+    assert cut[0, 0, 1] < plain[0, 0, 1]
+    assert cut[0, 0, 0] / cut[0, 0, 2] == pytest.approx(2.0)
