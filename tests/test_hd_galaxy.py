@@ -667,6 +667,10 @@ def test_sfh_bins_date_each_step_and_the_last_is_current():
     out = _sfh_age_bins(sfh, sfh, np.array([0]), 63, a, 0.73, 0.25, 0.75)
     assert out.shape == (1, 2, len(SFH_AGE_EDGES) - 1)
     assert out[0, 0, 0] == 1.0 and out[0, 0, -1] == 2.0
+    # SAGE26 since its snapshot-lag fix: the last step at the snapshot's bin.
+    sfh[0, 62], sfh[0, 63] = 0.0, 1.0
+    out = _sfh_age_bins(sfh, sfh, np.array([0]), 63, a, 0.73, 0.25, 0.75)
+    assert out[0, 0, 0] == 1.0 and out[0, 0, -1] == 2.0
 
 
 def test_galaxy_context_hd_draws_only_the_galaxy(hd_panel):

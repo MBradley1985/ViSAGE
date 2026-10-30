@@ -19,6 +19,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Star-formation histories from current SAGE26:** since its snapshot-lag
+  fix, bin k holds the stars formed up to snapshot k. Photometry, spectra
+  and HD galaxies read it as the step after, so the newest stars were
+  taken to be 0.1 Myr old, far too bright and with huge emission lines.
+  Both layouts are now read correctly. Cones from such runs need their
+  photometry re-run.
 - **Dust in the most HI-rich disks:** above log M_HI ≈ 10.3 the HI disk's
   size jumped, dropping τ_V about fourfold. Cones need their photometry
   re-run for this.

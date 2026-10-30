@@ -8,8 +8,9 @@ inverse fitting of observed data.
 
 How each galaxy's light is built (references in docs/physics/photometry.md):
   - Star-formation history: SAGE26 files the stars formed between
-    snapshots k and k+1 in bin k, as the mass that survives recycling
-    ((1 - R) of what formed). Each bin is turned back into mass formed
+    snapshots k-1 and k in bin k (older outputs, k and k+1), as the mass
+    that survives recycling ((1 - R) of what formed). Each bin is turned
+    back into mass formed
     (/ (1 - R), R = the run's RecycleFraction) and spread at a constant
     rate over its own time span, integrating the SSPs over age (as TAO:
     Shamshiri et al. 2015, MNRAS 451, 2681). The youngest stars (< 100 Myr)
@@ -47,6 +48,7 @@ from collections.abc import Callable
 import h5py
 import numpy as np
 
+from visage.io.galaxy_reader import sfh_step_offset
 from visage.system import native_path
 from visage.sed.cosmology import (
     MPC_TO_CM,
@@ -311,6 +313,13 @@ def compute_photometry(
             spin = np.column_stack([get(f"Spin{c}") for c in "xyz"])
             pos = np.column_stack([get(f"Pos{c}") for c in "xyz"])
 
+        # From the file, not `rows`: a quiescent galaxy alone can't tell.
+        first = slice(0, 20_000)
+        sfh_shift = sfh_step_offset(
+            f["SFHMassDisk"][first] + f["SFHMassBulge"][first],
+            f["SnapNum"][first],
+        )
+
         if (
             "SageOutputHeader" not in f
             or "Simulation" not in f["SageOutputHeader"]
@@ -509,17 +518,17 @@ def compute_photometry(
                 continue
             s = int(snap)
             t_now = t_snap[min(s, len(t_snap) - 1)]
-            # Bin k holds stars formed between snapshots k and k+1: ages
-            # t_now - t[k+1] .. t_now - t[k] (empty for k >= s).
-            k = np.arange(n_bins)
-            t_lo = t_snap[np.minimum(k, len(t_snap) - 1)]
-            t_hi = t_snap[np.minimum(k + 1, len(t_snap) - 1)]
+            # Ages of the stars in each bin (see sfh_step_offset); empty
+            # after the galaxy's own snapshot.
+            k = np.arange(n_bins) - sfh_shift
+            t_lo = t_snap[np.clip(k, 0, len(t_snap) - 1)]
+            t_hi = t_snap[np.clip(k + 1, 0, len(t_snap) - 1)]
             age_lo = np.clip(t_now - t_hi, 0.0, None)
             age_hi = np.clip(t_now - t_lo, 0.0, None)
             bin_spec = grid.mean_spectra(age_lo, age_hi)  # (n_bins, n_wave)
             # The last bin, split: its youngest YOUNG_GYR from the current
             # SFR, the rest spread over the remainder.
-            last = s - 1
+            last = s - 1 + sfh_shift
             width = age_hi[last] - age_lo[last] if 0 <= last < n_bins else 0.0
             dt_y = min(YOUNG_GYR, width)
             young_spec = grid.mean_spectrum(0.0, dt_y)

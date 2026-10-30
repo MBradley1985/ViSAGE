@@ -275,18 +275,25 @@ def test_zero_spin_orientation_does_not_depend_on_rows():
     assert np.all((full >= 0) & (full <= 1))
 
 
-def test_igm_matches_fsps():
+@pytest.mark.parametrize("z", [3.0, 6.0])
+def test_igm_matches_fsps(z):
     fsps = pytest.importorskip("fsps")
     from visage.sed import igm
 
-    z = 4.0
     kw = dict(zcontinuous=1, sfh=1, tau=1.0, imf_type=1, dust_type=0)
     on = fsps.StellarPopulation(add_igm_absorption=True, zred=z, **kw)
     off = fsps.StellarPopulation(add_igm_absorption=False, zred=z, **kw)
-    w, a = on.get_spectrum(tage=1.0)
-    _, b = off.get_spectrum(tage=1.0)
-    m = (w > 950) & (w < 1200)
-    ratio = np.mean(a[m]) / np.mean(b[m])
-    ours = np.mean(igm.transmission(w[m], z))
-    assert ours == pytest.approx(ratio, abs=0.05)
+    w, a = on.get_spectrum(tage=0.5)
+    _, b = off.get_spectrum(tage=0.5)
+    m = (w > 600) & (w < 1300)
+    assert igm.transmission(w, z)[m] == pytest.approx((a / b)[m], abs=1e-3)
     assert igm.transmission(np.array([1300.0]), z)[0] == 1.0
+
+
+def test_sfh_step_offset_reads_either_layout():
+    from visage.io.galaxy_reader import sfh_step_offset
+
+    old, new = np.zeros((2, 6)), np.zeros((2, 6))
+    old[:, 2], new[:, 3] = 1.0, 1.0  # the last step of galaxies at snap 3
+    assert sfh_step_offset(old, [3, 3]) == 0
+    assert sfh_step_offset(new, [3, 3]) == 1
