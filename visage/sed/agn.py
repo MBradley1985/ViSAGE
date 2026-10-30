@@ -54,6 +54,7 @@ N_H = 1.0e3  # cm^-3, narrow-line-region clumps (Hirschmann et al. 2017)
 X_H = 0.74  # hydrogen mass fraction
 R_CENTRAL_KPC = 1.0
 L_GRID = 1.0e45  # erg/s, the luminosity the grid is computed for
+LINE_SIGMA_KMS = 170.0  # a narrow line of FWHM ~ 400 km/s
 
 _GRID_FILE = Path(__file__).with_name("data") / "feltre16_nlr.npz"
 
@@ -159,3 +160,24 @@ def line_luminosities(l_agn, z_gas, logu):
         np.asarray(logu, float),
     )
     return 10.0**per * (np.asarray(l_agn, float) / L_GRID)[:, None]
+
+
+def line_spectrum(wave, lum) -> np.ndarray:
+    """L_nu on `wave` (Angstrom, in the units of `lum` per Hz) of the
+    narrow lines of luminosities `lum`, in nebular.LINES order, as
+    Gaussians; a doublet's luminosity is shared evenly."""
+    from visage.sed.nebular import LINES
+
+    nu = C_CM_S * 1e8 / np.asarray(wave, float)
+    out = np.zeros_like(nu)
+    for (waves, _), total in zip(LINES.values(), lum, strict=True):
+        for w0 in waves:
+            nu0 = C_CM_S * 1e8 / w0
+            sig = nu0 * LINE_SIGMA_KMS * 1e5 / C_CM_S
+            out += (
+                total
+                / len(waves)
+                * np.exp(-0.5 * ((nu - nu0) / sig) ** 2)
+                / (np.sqrt(2 * np.pi) * sig)
+            )
+    return out

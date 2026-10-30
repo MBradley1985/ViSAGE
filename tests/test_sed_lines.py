@@ -4,6 +4,7 @@ the HII-region ionisation parameter and the AGN narrow-line region."""
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from visage.sed import agn
 from visage.sed import nebular as nb
@@ -104,3 +105,14 @@ def test_agn_lines_scale():
         np.array([1e45]), np.array([0.02]), np.array([-2.0])
     )[0]
     assert seyfert[names.index("OIII5007")] / seyfert[names.index("Hbeta")] > 5
+
+
+def test_agn_line_spectrum_keeps_the_luminosity():
+    from visage.sed import agn, nebular
+
+    wave = np.linspace(3000.0, 8000.0, 40000)
+    lum = np.arange(1.0, len(nebular.LINES) + 1)
+    spec = agn.line_spectrum(wave, lum)
+    nu = 2.99792458e18 / wave
+    total = np.trapezoid(spec[::-1], nu[::-1])
+    assert total == pytest.approx(lum.sum(), rel=1e-3)

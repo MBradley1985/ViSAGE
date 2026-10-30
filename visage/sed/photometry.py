@@ -231,8 +231,9 @@ def compute_photometry(
     ``disk_bulge`` also gives the disk's and the bulge's own magnitudes
     (``disk_mag_*`` / ``bulge_mag_*``; the totals are their sum).
     With "charlot_fall" dust, ``dust_emission`` re-emits each galaxy's
-    absorbed light in the infrared (Draine & Li 2007, energy balance),
-    and ``LDust`` (L_sun) is each galaxy's dust luminosity.
+    absorbed light in the infrared (Draine & Li 2007, energy balance, at
+    the U_min of its L_dust / M_dust), ``LDust`` (L_sun) is each galaxy's
+    dust luminosity and ``DustUmin`` that U_min.
     ``lines``: nebular emission (lines and continuum) in the spectra, and
     each galaxy's emission lines from its HII regions (visage/sed/
     nebular.py) and AGN (visage/sed/agn.py) as ``LineLum_<line>`` (erg/s,
@@ -241,8 +242,8 @@ def compute_photometry(
     (erg/s/cm^2, observed).
     ``spectra_out``: a dict to fill with rest-frame spectra (L_sun/Hz) of
     every galaxy -- "wave" (Angstrom), "observed" (through the dust, with
-    its emission), "intrinsic" (the stars alone) and, with ``disk_bulge``,
-    "disk" and "bulge" -- for a few ``rows`` only (n x 6000 floats each).
+    its emission and any AGN's lines), "intrinsic" (the stars alone), with
+    ``disk_bulge`` "disk" and "bulge", and with ``lines`` "agn" -- for a few ``rows`` only (n x 6000 floats each).
     ``dust_model``: "none", "calzetti" (the ``dust``/``dust2`` screen) or
     "charlot_fall": each galaxy's own dust (Dusty-SAGE equilibrium) in
     birth clouds and a diffuse ISM slab at its inclination (see
@@ -397,6 +398,7 @@ def compute_photometry(
             recycle=recycle_fraction,
             yield_=yield_,
         )
+        dust_mass = delta * cold_m
         tau_v = dm.tau_v_ism(
             h1.astype(np.float64) * mfac,
             h2.astype(np.float64) * mfac,
@@ -406,7 +408,7 @@ def compute_photometry(
         )
         cos_i = dm.cos_inclination(spin, pos)
         dust_info = {
-            "DustMassCold": (delta * cold_m).astype(np.float32),
+            "DustMassCold": dust_mass.astype(np.float32),
             "DustToGas": delta.astype(np.float32),
             "TauV_ISM": tau_v.astype(np.float32),
             "CosInclination": cos_i.astype(np.float32),
@@ -462,6 +464,7 @@ def compute_photometry(
                 flux[f"{pre}mag_obs_{band}"] = np.zeros(n)
     re_emit = cf and dust_emission
     l_dust = np.zeros(n)
+    dust_umin = np.zeros(n)
     if lines:
         from visage.sed import nebular as nb
 
@@ -505,10 +508,7 @@ def compute_photometry(
         )
         libraries = grid.libraries
         projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
-        nu_w = ir_template = None
-        if re_emit:
-            nu_w = dm.frequency_weights(grid.wave)
-            ir_template = dm.emission_template(grid.wave)
+        nu_w = dm.frequency_weights(grid.wave) if re_emit else None
 
         for snap in unique_snaps:
             group = has_light & (snapnum == snap) & (w_node > 0)
@@ -572,12 +572,11 @@ def compute_photometry(
                 bc_frac=bc_frac,
                 y2_spec=y2_spec,
                 bc_spec=bc_spec,
-                nu_w=nu_w,
-                ir_template=ir_template,
             ):
                 """Rest-frame spectra (chunk, n_wave, L_sun/Hz) of stars
                 formed as `wts_in` (Msun per bin), the youngest from the
-                current SFR `sfr_c`, through the dust if any."""
+                current SFR `sfr_c`, through the dust if any, and what
+                the dust took out of them (None without dust)."""
                 wts = wts_in.copy()
                 m_young = np.zeros(len(wts))
                 m_rest = np.zeros(len(wts))
@@ -594,7 +593,7 @@ def compute_photometry(
                             wts @ bin_spec
                             + m_young[:, None] * young_spec
                             + m_rest[:, None] * rest_spec
-                        )
+                        ), None
                     older = (
                         wts @ bin_spec
                         + (m_young * (1 - bc_frac))[:, None] * y2_spec
@@ -602,10 +601,7 @@ def compute_photometry(
                     )
                     young = (m_young * bc_frac)[:, None] * bc_spec
                     seen = t_ism * (older + young * t_bc)
-                    if re_emit and nu_w is not None:
-                        absorbed = (older + young - seen) @ nu_w
-                        seen = seen + absorbed[:, None] * ir_template
-                    return seen
+                    return seen, older + young - seen
 
             for start in range(0, len(idx), step):
                 ci = idx[start : start + step]
@@ -616,7 +612,7 @@ def compute_photometry(
                     )
                     t_bc = dm.bc_transmission(grid.wave, tau_v[ci])
                 if disk_bulge:
-                    spectra = {
+                    parts = {
                         "disk_": build(
                             sfh_disk_f[ci],
                             sfr_parts["SfrDisk"][ci],
@@ -630,13 +626,31 @@ def compute_photometry(
                             t_bc,
                         ),
                     }
-                    spectra[""] = spectra["disk_"] + spectra["bulge_"]
                 else:
-                    spectra = {
+                    parts = {
                         "": build(sfh_formed[ci], sfr_now[ci], t_ism, t_bc)
                     }
+                spectra = {pre: seen for pre, (seen, _) in parts.items()}
                 wn = w_node[ci]
                 zg = z_obs[ci]
+                if re_emit:
+                    # All of a galaxy's dust shares one radiation field.
+                    with np.errstate(
+                        over="ignore", invalid="ignore", divide="ignore"
+                    ):
+                        absorbed = {
+                            pre: lost @ nu_w
+                            for pre, (_, lost) in parts.items()
+                        }
+                    total = sum(absorbed.values())
+                    u_min = dm.umin_from_luminosity(total, dust_mass[ci])
+                    l_dust[ci] += wn * total
+                    dust_umin[ci] += wn * u_min
+                    ir = dm.emission_spectra(grid.wave, u_min)
+                    for pre, lum in absorbed.items():
+                        spectra[pre] = spectra[pre] + lum[:, None] * ir
+                if disk_bulge:
+                    spectra[""] = spectra["disk_"] + spectra["bulge_"]
                 if lines and 0 <= last < n_bins and width > 0:
                     # Lines from the young stars (current SFR), in each
                     # galaxy's own gas, through its birth cloud and ISM.
@@ -657,32 +671,6 @@ def compute_photometry(
                         )
                     line_intr[ci] += wn[:, None] * intr
                     line_seen[ci] += wn[:, None] * seen
-                if re_emit:
-                    # Dust luminosity: what the re-emission adds.
-                    # Built the same way as the spectra (per component
-                    # when split), so the difference is only the dust.
-                    if disk_bulge:
-                        no_ir = build(
-                            sfh_disk_f[ci],
-                            sfr_parts["SfrDisk"][ci],
-                            t_ism,
-                            t_bc,
-                            nu_w=None,
-                        ) + build(
-                            sfh_bulge_f[ci],
-                            sfr_parts["SfrBulge"][ci],
-                            t_ism,
-                            t_bc,
-                            nu_w=None,
-                        )
-                    else:
-                        no_ir = build(
-                            sfh_formed[ci], sfr_now[ci], t_ism, t_bc, nu_w=None
-                        )
-                    with np.errstate(
-                        over="ignore", invalid="ignore", divide="ignore"
-                    ):
-                        l_dust[ci] += wn * ((spectra[""] - no_ir) @ nu_w)
                 if spectra_out is not None:
                     _keep_spectra(
                         spectra_out,
@@ -696,8 +684,7 @@ def compute_photometry(
                                 sfr_now[ci],
                                 np.ones_like(t_ism),
                                 np.ones_like(t_bc),
-                                nu_w=None,
-                            )
+                            )[0]
                             if cf
                             else spectra[""]
                         ),
@@ -753,6 +740,7 @@ def compute_photometry(
     out.update(dust_info)
     if re_emit:
         out["LDust"] = l_dust.astype(np.float32)
+        out["DustUmin"] = dust_umin.astype(np.float32)
     if lines:
         # The AGN's narrow-line region (visage/sed/agn.py), through the
         # diffuse ISM's dust (not the birth clouds).
@@ -797,6 +785,12 @@ def compute_photometry(
             )
         line_intr += agn_intr
         line_seen += agn_seen
+        if spectra_out is not None and "wave" in spectra_out:
+            agn_spec = np.stack(
+                [ag.line_spectrum(spectra_out["wave"], x) for x in agn_seen]
+            )
+            spectra_out["agn"] = agn_spec
+            spectra_out["observed"] = spectra_out["observed"] + agn_spec
         out["LAGN"] = l_agn
         out["EddingtonRatio"] = edd.astype(np.float32)
         out["LogU_HII"] = gas_logu.astype(np.float32)
@@ -832,7 +826,8 @@ def compute_photometry(
             "Charlot & Fall 2000 birth clouds + ISM slab at each galaxy's "
             "inclination; cold dust from Dusty-SAGE (Triani+20) equilibrium"
             + (
-                "; re-emitted in the IR (Draine & Li 2007, energy balance)"
+                "; re-emitted in the IR (Draine & Li 2007, energy balance, "
+                "U_min from L_dust/M_dust)"
                 if re_emit
                 else ""
             )
@@ -884,6 +879,7 @@ _DUST_FIELDS = {
         "Dust luminosity (absorbed starlight re-emitted in the IR)",
         "Lsun",
     ),
+    "DustUmin": ("Draine & Li (2007) U_min, from LDust / DustMassCold", ""),
 }
 
 

@@ -193,12 +193,18 @@ def galaxy_spectrum(
             "sfr": one("SfrDisk", 0) + one("SfrBulge", 0),
             "bt": one("BulgeMass", 0) / max(one("StellarMass", 0), 1e-12),
         }
-    for k in ("TauV_ISM", "CosInclination", "LDust", "LineFlux_Halpha"):
+    for k in (
+        "TauV_ISM",
+        "CosInclination",
+        "LDust",
+        "DustUmin",
+        "LineFlux_Halpha",
+    ):
         if k in res:
             info[k] = float(res[k][0])
     lnu = {
         k: np.asarray(spec[k][0], dtype=np.float64)
-        for k in ("observed", "intrinsic", "disk", "bulge")
+        for k in ("observed", "intrinsic", "disk", "bulge", "agn")
         if k in spec
     }
     return GalaxySpectrum(
@@ -252,15 +258,19 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
                 label="stars, no dust",
                 zorder=2,
             )
-    for key, col in (("disk", "#1f77b4"), ("bulge", "#d62728")):
-        if key in s.lnu:
+    for key, col in (
+        ("disk", "#1f77b4"),
+        ("bulge", "#d62728"),
+        ("agn", "#2ca02c"),
+    ):
+        if key in s.lnu and np.any(s.lnu[key] > 0):
             ax.loglog(
                 x,
                 s.fnu_ujy(key)[keep],
                 color=col,
                 lw=0.7,
                 alpha=0.75,
-                label=key,
+                label="AGN lines" if key == "agn" else key,
                 zorder=2,
             )
     good = y_obs[np.isfinite(y_obs) & (y_obs > 0)]
@@ -298,7 +308,7 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
     )
     sec.set_xlabel("rest wavelength [µm]")
     ax.grid(True, which="major", color="0.9", lw=0.6)
-    ax.legend(fontsize=8, loc="lower center", ncol=5, frameon=False)
+    ax.legend(fontsize=8, loc="lower center", ncol=6, frameon=False)
     i = s.info
     ssfr = i["sfr"] / max(10 ** i["log_mstar"], 1.0)
     ax.set_title(
@@ -314,6 +324,8 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
         notes.append(f"|cos i| {i['CosInclination']:.2f}")
     if i.get("LDust", 0) > 0:
         notes.append(f"L$_{{dust}}$ {i['LDust']:.2e} L☉")
+    if "DustUmin" in i:
+        notes.append(f"U$_{{min}}$ {i['DustUmin']:.2g}")
     if np.isfinite(i.get("LineFlux_Halpha", np.nan)):
         notes.append(f"Hα {i['LineFlux_Halpha']:.2e} erg/s/cm²")
     if notes:

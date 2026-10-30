@@ -153,3 +153,26 @@ def test_bright_core_keeps_a_gradient():
     assert rgb.max() <= 1
     assert np.all(np.diff(rgb[0, :, 0]) >= 0)
     assert np.sum(rgb[0, :, 0] >= 0.999) < 10
+
+
+def test_shot_noise_grows_with_the_source():
+    s = mi.SURVEYS["sdss"]
+    g = mi.electrons_per_nmgy(s, 1)
+    # r sky of 20.84 is 0.7245 nmgy/pixel, over a 0.05 nmgy noise.
+    assert g == pytest.approx(0.7245 / mi.noise_sigma(s, 1) ** 2, rel=0.01)
+    assert not mi.SURVEYS["wise"].sky
+
+
+def test_bright_galaxy_has_more_noise_than_sky(tmp_path):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    with h5py.File(p, "a") as f:
+        f["mag_obs_sdss_r"][0] = 10.0
+        f["disk_mag_obs_sdss_r"][0] = 10.4
+        f["bulge_mag_obs_sdss_r"][0] = 11.3
+    clean = mi.make_mock_image(p, "sdss", 2, centre_row=0, noisy=False)
+    noisy = mi.make_mock_image(p, "sdss", 2, centre_row=0, seed=1)
+    a, b = clean.images["sdss_r"], noisy.images["sdss_r"]
+    core = a > 0.5 * a.max()
+    assert core.sum() > 5
+    assert (b - a)[core].std() > 2 * mi.noise_sigma(mi.SURVEYS["sdss"], 1)

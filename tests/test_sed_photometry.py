@@ -297,3 +297,26 @@ def test_sfh_step_offset_reads_either_layout():
     old[:, 2], new[:, 3] = 1.0, 1.0  # the last step of galaxies at snap 3
     assert sfh_step_offset(old, [3, 3]) == 0
     assert sfh_step_offset(new, [3, 3]) == 1
+
+
+def test_umin_follows_the_light_per_dust_mass():
+    from visage.sed import dust as dm
+
+    u = dm.umin_from_luminosity(
+        np.array([1.0, 141.25, 1e6]), np.array([1.0, 1.0, 1.0])
+    )
+    assert u[0] == dm.U_MIN_NODES[0] and u[2] == dm.U_MIN_NODES[-1]
+    assert u[1] == pytest.approx(1.0, rel=1e-3)
+
+
+def test_warmer_dust_peaks_at_shorter_wavelengths():
+    pytest.importorskip("fsps")
+    from visage.sed import dust as dm
+
+    wave = np.logspace(3, 7.5, 3000)
+    cold, warm = dm.emission_spectra(wave, np.array([0.2, 20.0]))
+    w = dm.frequency_weights(wave)
+    assert cold @ w == pytest.approx(1.0, rel=1e-3)
+    assert warm @ w == pytest.approx(1.0, rel=1e-3)
+    fir = wave > 3e5
+    assert wave[fir][np.argmax(warm[fir])] < wave[fir][np.argmax(cold[fir])]

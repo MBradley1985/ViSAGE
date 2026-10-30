@@ -11,8 +11,10 @@ disk_mag_obs_* and bulge_mag_obs_* magnitudes (total magnitudes split by
 bulge-to-total stellar mass when a cone has no disk/bulge photometry).
 The image is blurred by a Gaussian PSF of the survey's median seeing on
 its pixel grid. "Survey depth" adds sky noise so that a point source at
-the survey's quoted limit has that signal-to-noise. Colour images are
-asinh composites (Lupton et al. 2004, PASP 116, 133).
+the survey's quoted limit has that signal-to-noise, and the galaxies' own
+shot noise where the survey's sky brightness is known: the sky's mean over
+its noise gives the electrons per nanomaggy. Colour images are asinh
+composites (Lupton et al. 2004, PASP 116, 133).
 
 Survey numbers (pixel scale, median seeing, depth):
 
@@ -67,6 +69,8 @@ class Survey:
     # Colour balance per band; empty = each band scaled by its own noise
     # (for surveys whose bands differ a lot in depth, like WISE).
     weights: tuple[float, ...] = field(default=())
+    # Median sky per band, AB mag/arcsec^2; empty = no source shot noise.
+    sky: tuple[float, ...] = ()
 
 
 def _ab_from_mjy(mjy: float) -> float:
@@ -82,6 +86,7 @@ SURVEYS: dict[str, Survey] = {
         ((21.3, 5, None), (22.2, 5, None), (22.2, 5, None)),
         "Abazajian et al. 2009",
         (1.0, 1.1, 1.4),
+        (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -109,6 +114,7 @@ SURVEYS: dict[str, Survey] = {
         ((26.8, 5, None), (27.5, 5, None), (27.4, 5, None)),
         "Ivezić et al. 2019",
         (1.0, 1.1, 1.4),
+        (20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
     ),
     "2mass": Survey(
         "2MASS (JHKs)",
@@ -236,6 +242,13 @@ def noise_sigma(survey: Survey, i: int) -> float:
     else:
         n_pix = np.pi * (ap / 2 / survey.pixel) ** 2
     return flux / snr / np.sqrt(n_pix)
+
+
+def electrons_per_nmgy(survey: Survey, i: int) -> float:
+    """Electrons per nanomaggy for band i: sky-limited noise means the
+    sky's variance in nanomaggies is its mean over this."""
+    sky = float(nmgy(survey.sky[i])) * survey.pixel**2  # nmgy / pixel
+    return sky / noise_sigma(survey, i) ** 2
 
 
 def lupton_rgb(chans, stretch, q=8.0):
@@ -507,9 +520,12 @@ def make_mock_image(
     for i, b in enumerate(s.bands):
         images[b] = gaussian_filter(images[b], s.seeing[i] / 2.3548 / s.pixel)
         if noisy:
-            images[b] = images[b] + rng.normal(
-                0, noise_sigma(s, i), images[b].shape
-            )
+            var = noise_sigma(s, i) ** 2
+            if s.sky:
+                var = var + np.clip(images[b], 0, None) / electrons_per_nmgy(
+                    s, i
+                )
+            images[b] = images[b] + rng.normal(0, np.sqrt(var))
 
     # Stretch: sky noise at survey depth a faint grain (1 sigma ~ 15%
     # grey). A noiseless image is stretched 5x less, so the faint outer

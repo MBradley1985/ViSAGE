@@ -41,7 +41,7 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 - **Diffuse ISM:** dust mixed with the stars in a slab seen at the galaxy's inclination (its spin against the line of sight), τ<sub>λ</sub> ∝ λ<sup>−0.7</sup>.
 - **Birth clouds:** stars younger than 10 Myr are also behind their birth cloud, of optical depth τ<sub>ISM</sub>(1 − μ<sub>CF</sub>)/μ<sub>CF</sub> with μ<sub>CF</sub> = 0.3, τ<sub>λ</sub> ∝ λ<sup>−1.3</sup> (da Cunha, Charlot & Elbaz 2008; Charlot & Fall used λ<sup>−0.7</sup> for both).
 
-**Where the absorbed light goes** (`--dust-emission`). Each galaxy re-emits exactly the starlight its dust absorbed (energy balance, as in da Cunha et al. 2008), with the Draine & Li (2007) dust-emission spectrum FSPS uses (its default *U*<sub>min</sub> = 1, γ = 0.01, *q*<sub>PAH</sub> = 3.5 %). `LDust` is the total.
+**Where the absorbed light goes** (`--dust-emission`). Each galaxy re-emits exactly the starlight its dust absorbed (energy balance, as in da Cunha et al. 2008), with the Draine & Li (2007) dust-emission spectrum FSPS uses (γ = 0.01, *q*<sub>PAH</sub> = 3.5 %). Its *U*<sub>min</sub> comes from the galaxy's own light per unit dust mass, *L*<sub>dust</sub> = *P*<sub>0</sub> ⟨*U*⟩ *M*<sub>dust</sub> with *P*<sub>0</sub> ≈ 125 L☉ M☉⁻¹ (Magdis et al. 2012), within the models' 0.1–25, so more light on less dust is warmer. `LDust` is the total and `DustUmin` the *U*<sub>min</sub>.
 
 ## Disk and bulge (`--disk-bulge`)
 
@@ -83,7 +83,7 @@ Disk and bulge fluxes come from their observed-frame magnitudes (or the total,
 shared by bulge-to-total stellar mass, when a cone has no disk/bulge
 photometry). The image is blurred by a Gaussian of the survey's median seeing
 on its pixel grid, with profile centres integrated finely so a cusp doesn't depend on where it falls in a pixel; at survey depth, sky noise is added so that a point source
-at the quoted limit has the quoted signal-to-noise. Colour images are asinh
+at the quoted limit has the quoted signal-to-noise. For SDSS and LSST, whose median sky brightness is given below, the galaxies' own shot noise is added too: the sky's mean over its variance gives the electrons per nanomaggy. Colour images are asinh
 composites (Lupton et al. 2004).
 
 | Survey | Bands | Pixel | Seeing (FWHM) | Depth | Source |
@@ -97,6 +97,8 @@ composites (Lupton et al. 2004).
 | GALEX AIS | FUV, NUV | 1.5″ | 4.2″, 5.3″ | 5σ: FUV 19.9, NUV 20.8 | Morrissey et al. 2007 |
 | JWST NIRCam | F115W, F200W, F444W | 0.031″ | 0.040″, 0.066″, 0.145″ | noiseless (depth depends on the programme) | JWST User Documentation |
 
+Sky brightness (AB mag arcsec⁻²): SDSS *g* 21.84, *r* 20.84, *i* 20.16 (SDSS DR15 imaging data quality); LSST *g* 22.26, *r* 21.20, *i* 20.48 (Ivezić et al. 2019). The other surveys have sky noise only.
+
 The PNG is the colour composite (north up, east left); the FITS file holds one
 extension per band in nanomaggies, with a TAN WCS centred on the chosen
 galaxy. Only the cone's own galaxies are drawn: there are no stars, and no
@@ -104,7 +106,7 @@ galaxies beyond the cone's redshift range.
 
 ## Not included (yet)
 
-- The AGN's own continuum in the magnitudes (its lines aren't in the broad bands either).
+- The AGN's own continuum, in the magnitudes or spectra. Its lines are in spectra, but not in the broad bands.
 - Line emission from old (post-AGB) stars, which powers many LINER-like spectra in quiescent galaxies.
 
 ## References
@@ -134,6 +136,7 @@ galaxies beyond the cone's redshift range.
 - Leroy A. K. et al. 2008, *AJ* 136, 2782
 - Lupton R. et al. 2004, *PASP* 116, 133
 - Madau P. 1995, *ApJ* 441, 18
+- Magdis G. E. et al. 2012, *ApJ* 760, 6
 - Merloni A., Heinz S. 2008, *MNRAS* 388, 1011
 - Morrissey P. et al. 2007, *ApJS* 173, 682
 - Narayan R., Yi I. 1995, *ApJ* 452, 710

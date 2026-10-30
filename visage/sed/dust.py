@@ -72,6 +72,11 @@ DTG_MW = 0.010  # Draine & Li 2007: dust per hydrogen mass
 MU_ISM = 0.3  # da Cunha et al. 2008 (Charlot & Fall 2000 model)
 BC_AGE_GYR = 0.01  # birth clouds disperse after 10 Myr (Charlot & Fall)
 N_ISM, N_BC = 0.7, 1.3  # Charlot & Fall 2000; da Cunha et al. 2008
+P0_LSUN_MSUN = 125.0  # L_dust / M_dust at U = 1 (Magdis et al. 2012)
+U_MIN_NODES = np.array([0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0])  # DL07
+# <U> / U_min for the Draine & Li (2007) U_min..1e6 power law, gamma = 0.01
+# (nearly constant across their range).
+MEAN_U_PER_UMIN = 1.13
 DISK_A = 1.68  # gas disk half-mass radius / scale length (De Lucia & Blaizot)
 M_P = 1.6726e-24  # g
 MSUN = 1.989e33  # g
@@ -224,27 +229,51 @@ def bc_transmission(wave, tau_v) -> np.ndarray:
 _EMISSION: dict = {}
 
 
-def emission_template(wave: np.ndarray) -> np.ndarray:
-    """Dust emission per unit absorbed luminosity (L_nu per L_sun, on
-    `wave`): the Draine & Li (2007) model as FSPS has it (U_min = 1,
-    q_PAH = 3.5%, gamma = 0.01), normalised to integrate to 1 over
-    frequency. Energy balance (da Cunha, Charlot & Elbaz 2008, MNRAS 388,
-    1595): each galaxy re-emits exactly what its dust absorbed."""
+def umin_from_luminosity(l_dust, m_dust) -> np.ndarray:
+    """Draine & Li (2007) U_min of dust of mass `m_dust` (Msun) re-emitting
+    `l_dust` (Lsun): L_dust = P0 <U> M_dust (Magdis et al. 2012, ApJ 760, 6),
+    within the models' range."""
+    m_dust = np.maximum(np.asarray(m_dust, float), 1e-30)
+    u = np.asarray(l_dust, float) / (P0_LSUN_MSUN * m_dust * MEAN_U_PER_UMIN)
+    return np.clip(u, U_MIN_NODES[0], U_MIN_NODES[-1])
+
+
+def emission_templates(wave: np.ndarray) -> np.ndarray:
+    """(n_U, n_wave) dust emission per unit absorbed luminosity (L_nu per
+    L_sun, on `wave`) at each of U_MIN_NODES: the Draine & Li (2007) model
+    as FSPS has it (q_PAH = 3.5%, gamma = 0.01), each normalised to
+    integrate to 1 over frequency. Energy balance (da Cunha, Charlot &
+    Elbaz 2008, MNRAS 388, 1595): each galaxy re-emits exactly what its
+    dust absorbed."""
     key = len(wave)
     if key not in _EMISSION:
         import fsps
 
         kw = dict(zcontinuous=1, sfh=0, imf_type=1, dust_type=2, dust2=1.0)
-        w, with_em = fsps.StellarPopulation(
-            add_dust_emission=True, **kw
-        ).get_spectrum(tage=0.1)
+        sp = fsps.StellarPopulation(add_dust_emission=True, **kw)
         _, without = fsps.StellarPopulation(
             add_dust_emission=False, **kw
         ).get_spectrum(tage=0.1)
-        em = np.clip(np.asarray(with_em) - np.asarray(without), 0.0, None)
-        em = np.interp(wave, np.asarray(w), em)
-        _EMISSION[key] = em / np.dot(em, frequency_weights(wave))
+        out = []
+        for u in U_MIN_NODES:
+            sp.params["duste_umin"] = float(u)
+            w, with_em = sp.get_spectrum(tage=0.1)
+            em = np.clip(np.asarray(with_em) - np.asarray(without), 0.0, None)
+            em = np.interp(wave, np.asarray(w), em)
+            out.append(em / np.dot(em, frequency_weights(wave)))
+        _EMISSION[key] = np.stack(out)
     return _EMISSION[key]
+
+
+def emission_spectra(wave: np.ndarray, u_min) -> np.ndarray:
+    """(n, n_wave) emission_templates at each galaxy's `u_min`, linear in
+    log U."""
+    t = emission_templates(wave)
+    lx = np.log(U_MIN_NODES)
+    lu = np.log(np.asarray(u_min, float))
+    j = np.clip(np.searchsorted(lx, lu) - 1, 0, len(lx) - 2)
+    f = ((lu - lx[j]) / (lx[j + 1] - lx[j]))[:, None]
+    return (1 - f) * t[j] + f * t[j + 1]
 
 
 def frequency_weights(wave: np.ndarray) -> np.ndarray:
