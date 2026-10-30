@@ -3884,41 +3884,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     _on_mock_survey(state.mock_survey)
     _on_mock_centre(None)
 
-    # HD+mock: galaxies big enough on the sky drawn from their HD models
-    # (visage.hd.sky); optical surveys only.
-    state.mock_hd = False
-    _hd_surveys = [
-        k
-        for k in _mock.HD_SURVEYS
-        if k in _mock.available_surveys(_lc_present)
-    ]
-    state.mock_hd_ok = bool(_hd_surveys)
-
-    def _hd_mock_stamps(gal):
-        """The mock image's hd_stamps callback for loaded galaxies."""
-        from visage.hd.sky import stamps_for_rows
-
-        def fn(rows, pixel, d_a):
-            try:
-                from visage.hd.group import pool
-
-                ex = pool()
-            except Exception:
-                ex = None
-            return stamps_for_rows(
-                gal,
-                scene._snap_table,
-                float(scene._cfg.hubble_h),
-                float(scene._cfg.omega),
-                rows,
-                pixel,
-                d_a,
-                executor=ex,
-            )
-
-        return fn
-
-    async def _make_mock(survey, field_am, hd: bool, label: str) -> None:
+    async def _make_mock(survey, field_am) -> None:
         model = scene.active_model
         path = getattr(model, "path", None)
         if path is None or survey not in _mock.SURVEYS:
@@ -3932,7 +3898,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.mock_note = ""
         state.flush()
         loop = asyncio.get_running_loop()
-        stamps = _hd_mock_stamps(gal) if hd else None
         try:
             img = await loop.run_in_executor(
                 None,
@@ -3942,14 +3907,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     field_am,
                     centre_row=row,
                     noisy=noisy,
-                    hd_stamps=stamps,
                 ),
             )
             import datetime
 
             sess = _get_session_dir()
-            tag = "hdmock" if hd else "mock"
-            stem = f"{tag}_{survey}_{datetime.datetime.now():%H%M%S}"
+            stem = f"mock_{survey}_{datetime.datetime.now():%H%M%S}"
             png = sess / f"{stem}.png"
             png.write_bytes(img.png_bytes())
             fits_ok = await loop.run_in_executor(
@@ -3965,14 +3928,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
             )
             zmax = float(model._lc.redshift.max())
             state.mock_note = (
-                f"{label}{sv.label}, {field_am:.2g}′ around {centre} "
+                f"{sv.label}, {field_am:.2g}′ around {centre} "
                 f"({img.centre_label.split(' (', 1)[1]}; "
                 f"{sv.pixel:g}″ pixels, "
                 f"{'/'.join(dict.fromkeys(f'{x:g}' for x in sv.seeing))}″ "
                 "seeing, "
                 + (f"survey depth ({sv.ref})" if noisy else "noiseless")
                 + f". {img.n_galaxies} galaxies drawn"
-                + (f", {img.n_hd} from their HD models" if hd else "")
                 + f"; only this cone's galaxies (z < {zmax:.2f}) are in "
                 f"the sky. Saved {png.name}"
                 + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
@@ -3993,10 +3955,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         survey = state.mock_survey
         if state.mock_busy or survey not in _mock.SURVEYS:
             return
-        hd = bool(state.mock_hd) and survey in _mock.HD_SURVEYS
-        await _make_mock(
-            survey, float(state.mock_field or 5), hd, "HD+mock: " if hd else ""
-        )
+        await _make_mock(survey, float(state.mock_field or 5))
 
     # ── Spectrum of the selected galaxy (Photometry tab) ──
     # Made as the cone's photometry was (visage.sed.spectrum); the plot
@@ -6342,16 +6301,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 v_model=("mock_noisy",),
                                 label="Survey depth (sky noise)",
                                 disabled=("!mock_has_depth",),
-                                color="#7FDBFF",
-                                hide_details=True,
-                                density="compact",
-                            )
-                        with v3.VSheet(color="transparent", style=_FIELD):
-                            v3.VCheckbox(
-                                v_model=("mock_hd",),
-                                label="HD galaxies (resolved ones from "
-                                "their HD models; optical surveys)",
-                                disabled=("!mock_hd_ok",),
                                 color="#7FDBFF",
                                 hide_details=True,
                                 density="compact",

@@ -58,8 +58,6 @@ HD works in Lightcone Mode with each galaxy as an observer sees it:
 
 The card shows its redshift, distance, apparent and absolute r magnitude, rest-frame g − r and A_V at its inclination; **All properties** adds the sky position, dust mass, dust-to-gas ratio, face-on optical depth, emission-line fluxes, AGN and dust luminosities and every magnitude. Galaxies are named by SAGE's GalaxyIndex.
 
-The Photometry tab's mock images can draw galaxies from their HD models (see [Lightcone Mode → Mock images](lightcone.md#mock-images)).
-
 ## Components
 
 In **Galaxy** context, the card's **?** (Components) button, next to the nearest-galaxy button, labels the parts of the HD galaxy, with leader lines to each: the central black hole, bulge or pseudo-bulge, bar, nuclear ring, spiral arms, star-forming regions, dust lanes, merger shells, tails and streams, the intracluster light and, with **Gas** on, the wind, radio jet, HI disk, cold stream and hot halo. Only what the galaxy has, from its SAGE26 properties, is labelled, and the labels follow the galaxy as you turn it. Press it again to hide them. (It isn't offered in **Halo + group** context.)

@@ -27,6 +27,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   dust.
 - **Source shot noise** in SDSS and LSST mock images.
 
+### Removed
+
+- HD models in mock images.
+
 ### Fixed
 
 - **Star-formation histories from current SAGE26:** since its snapshot-lag

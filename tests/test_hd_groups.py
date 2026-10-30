@@ -1,5 +1,4 @@
-"""Groups, clusters and drawn regions in HD; the group card; HD on the
-sky (HD+mock images)."""
+"""Groups, clusters and drawn regions in HD; the group card."""
 
 from __future__ import annotations
 
@@ -98,35 +97,6 @@ def test_glow_members_become_extras_when_visited(
     assert state.hd_member_tags[int(glow)] == "HD extra"
     assert state.hd_active
     ctrl.toggle_hd()
-
-
-def test_sky_stamp_scales_with_distance():
-    from visage.hd.sky import sky_stamp
-
-    g = _disk()
-    near = sky_stamp(g, None, (100.0, 0, 0), 50e3, 0.4, quality="lite")
-    far = sky_stamp(g, None, (300.0, 0, 0), 150e3, 0.4, quality="lite")
-    assert near.ndim == 3 and near.shape[2] == 3
-    assert near.shape[0] % 2 == 1 and np.all(near >= 0)
-    assert far.shape[0] < near.shape[0]
-    # Soft edge: nothing left in the corners.
-    assert near[0, 0].sum() == 0
-
-
-def test_hd_stamp_carries_each_bands_flux():
-    from visage.sed.mock_image import SURVEYS, _place_hd
-
-    s = SURVEYS["sdss"]
-    stamp = np.random.default_rng(0).random((21, 21, 3))
-    d = {
-        f"{c}_{b}": np.array([v])
-        for b, v in zip(s.bands, (3.0, 2.0, 1.0), strict=True)
-        for c in ("disk", "bulge")
-    }
-    images = {b: np.zeros((64, 64)) for b in s.bands}
-    assert _place_hd(images, s, stamp, d, 0, 32.3, 31.7, 64) == 1
-    for b, v in zip(s.bands, (3.0, 2.0, 1.0), strict=True):
-        assert images[b].sum() == pytest.approx(2 * v, rel=1e-6)
 
 
 def test_galaxies_are_named_by_their_galaxy_index():
