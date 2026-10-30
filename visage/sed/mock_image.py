@@ -501,14 +501,13 @@ def make_mock_image(
                 )
             images[b] = images[b] + rng.normal(0, np.sqrt(var))
 
-    # Stretch: sky noise at survey depth a faint grain (1 sigma ~ 15%
-    # grey). A noiseless image is stretched 5x less, so the faint outer
-    # light of bright galaxies (below any survey's noise) doesn't wash
-    # over the field.
+    # Stretch: as SDSS's own colour images, whose sky noise is about 1% of
+    # full scale. The same stretch with and without noise, so that switching
+    # noise on doesn't change how bright a galaxy looks.
     nb = len(s.bands)
     if s.depth:
         sig = np.array([noise_sigma(s, i) for i in range(nb)])
-        stretch = (6 if noisy else 30) * float(sig.mean())
+        stretch = 30 * float(sig.mean())
         w = s.weights or tuple(sig.mean() / sig)
     else:
         tot = sum(images.values())
