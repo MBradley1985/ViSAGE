@@ -105,6 +105,8 @@ galaxies beyond the cone's redshift range.
 ## Not included (yet)
 
 - The AGN's own continuum, in the magnitudes or spectra. Its lines are in spectra, but not in the broad bands.
+- A covering factor for AGN narrow lines. As in Hirschmann et al. (2017) the grid is scaled to the AGN's luminosity, so Hα/*L*<sub>AGN</sub> ≈ 0.004, close to case B for every ionising photon, while Feltre et al. (2016) note covering factors are typically below 10 %.
+- Central gas metallicity near the black hole: SAGE26 has only each galaxy's mean, so AGN lines use that, which keeps [NII]/Hα low.
 - Line emission from old (post-AGB) stars, which powers many LINER-like spectra in quiescent galaxies.
 
 ## References
