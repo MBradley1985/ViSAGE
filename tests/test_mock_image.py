@@ -192,10 +192,10 @@ def test_background_adds_only_galaxies_beyond_the_cone(tmp_path):
     _cone(p)
     _cone(deep, n=400)
     with h5py.File(deep, "a") as f:
-        f["redshift_cosmological"][...] = np.r_[
-            np.full(200, 0.04), np.full(200, 0.2)
-        ]
+        z = np.r_[np.full(200, 0.04), np.full(200, 0.2)]
+        f["redshift_cosmological"][...] = z
         f["ra"][...] = 1.0 + np.linspace(-0.1, 0.1, 400)
+        f["dec"][...] = 1.0 + np.linspace(-0.1, 0.1, 400)[::-1]
     plain = mi.make_mock_image(p, "sdss", 2, noisy=False)
     both = mi.make_mock_image(p, "sdss", 2, noisy=False, background=deep)
     assert both.n_galaxies > plain.n_galaxies

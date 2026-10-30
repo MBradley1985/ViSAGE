@@ -471,8 +471,9 @@ def _draw_background(images, path, s, npx, half_deg, zmin, noisy, rng) -> int:
     random point of it."""
     with h5py.File(path, "r") as f:
         ra, dec = f["ra"][:], f["dec"][:]
-    ra0 = rng.uniform(ra.min() + half_deg, ra.max() - half_deg)
-    dec0 = rng.uniform(dec.min() + half_deg, dec.max() - half_deg)
+    # (The patch's middle, if the field is wider than it.)
+    ra0 = rng.uniform(*sorted((ra.min() + half_deg, ra.max() - half_deg)))
+    dec0 = rng.uniform(*sorted((dec.min() + half_deg, dec.max() - half_deg)))
     return _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin)
 
 
