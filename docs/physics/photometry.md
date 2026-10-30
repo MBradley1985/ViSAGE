@@ -80,14 +80,13 @@ axis ratio *q* = (cos² *i* + *q*₀² sin² *i*)<sup>½</sup>, *q*₀ = 0.2 (Hu
 1926; Holmberg 1958), and turned to the position angle of its spin on the sky.
 Disk and bulge fluxes come from their observed-frame magnitudes (or the total,
 shared by bulge-to-total stellar mass, when a cone has no disk/bulge
-photometry). The image is blurred by a Gaussian of the survey's median seeing
-on its pixel grid, with profile centres integrated finely so a cusp doesn't depend on where it falls in a pixel; at survey depth, sky noise is added so that a point source
+photometry). The image is blurred by the survey's median seeing on its pixel grid (a Moffat profile with β = 4.765 from the ground, Trujillo et al. 2001, and a Gaussian of the quoted FWHM from space; a real SDSS PSF also has a fainter extended wing beyond about 3″ that this omits), with profile centres integrated finely so a cusp doesn't depend on where it falls in a pixel; at survey depth, sky noise is added so that a point source
 at the quoted limit has the quoted signal-to-noise. For SDSS and LSST, whose median sky brightness is given below, the galaxies' own shot noise is added too: the sky's mean over its variance gives the electrons per nanomaggy. Colour images are asinh
 composites (Lupton et al. 2004).
 
 | Survey | Bands | Pixel | Seeing (FWHM) | Depth | Source |
 |---|---|---|---|---|---|
-| SDSS | g, r, i | 0.396″ | 1.4″ | 95 % completeness for point sources: g 22.2, r 22.2, i 21.3 (taken as 5σ) | Gunn et al. 2006; Abazajian et al. 2009 |
+| SDSS | g, r, i | 0.396″ | 1.32″ | 95 % completeness for point sources: g 22.2, r 22.2, i 21.3 (taken as 5σ) | Gunn et al. 2006; Abazajian et al. 2009 |
 | DES DR2 (DECam) | g, r, z | 0.263″ | 1.11″, 0.95″, 0.83″ | 10σ in a 1.95″ aperture: g 24.7, r 24.4, z 23.1 | Abbott et al. 2021 |
 | Pan-STARRS1 3π | g, r, i | 0.25″ | 1.31″, 1.19″, 1.11″ | 5σ point source: g 23.3, r 23.2, i 23.1 | Chambers et al. 2016 |
 | Rubin LSST, 10 years | g, r, i | 0.2″ | 0.7″ | 5σ point source: g 27.4, r 27.5, i 26.8 | Ivezić et al. 2019 |
@@ -148,6 +147,7 @@ galaxies beyond the cone's redshift range.
 - Triani D. P. et al. 2020, *MNRAS* 493, 2490
 - Trayford J. W. et al. 2020, *MNRAS* 491, 3937
 - Triani D. P. et al. 2023, *MNRAS* 519, 2500
+- Trujillo I. et al. 2001, *MNRAS* 328, 977
 - Tsai J. C., Mathews W. G. 1995, *ApJ* 448, 84
 - Wang J. et al. 2016, *MNRAS* 460, 2143
 - Wright E. L. et al. 2010, *AJ* 140, 1868
