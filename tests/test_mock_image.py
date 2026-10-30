@@ -185,3 +185,18 @@ def test_black_point_keeps_a_galaxys_colour():
     cut = mi.lupton_rgb([r, 0.5 * (r + b), b], 1.0, black=1.0)
     assert cut[0, 0, 1] < plain[0, 0, 1]
     assert cut[0, 0, 0] / cut[0, 0, 2] == pytest.approx(2.0)
+
+
+def test_background_adds_only_galaxies_beyond_the_cone(tmp_path):
+    p, deep = tmp_path / "cone.h5", tmp_path / "deep.h5"
+    _cone(p)
+    _cone(deep, n=400)
+    with h5py.File(deep, "a") as f:
+        f["redshift_cosmological"][...] = np.r_[
+            np.full(200, 0.04), np.full(200, 0.2)
+        ]
+        f["ra"][...] = 1.0 + np.linspace(-0.1, 0.1, 400)
+    plain = mi.make_mock_image(p, "sdss", 2, noisy=False)
+    both = mi.make_mock_image(p, "sdss", 2, noisy=False, background=deep)
+    assert both.n_galaxies > plain.n_galaxies
+    assert both.images["sdss_r"].sum() > plain.images["sdss_r"].sum()

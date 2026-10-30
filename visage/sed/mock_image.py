@@ -373,50 +373,19 @@ def _read(path: Path, rows, bands):
     return hub, d
 
 
-def make_mock_image(
-    path: str | Path,
-    survey: str,
-    field_arcmin: float,
-    centre_row: int | None = None,
-    noisy: bool = True,
-    seed: int = 0,
-) -> MockImage:
-    """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
-    in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
-    away from the cone's edges, if None)."""
-    s = SURVEYS[survey]
-    path = Path(path)
-    if not s.depth:
-        noisy = False
+def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
+    """Add the galaxies of lightcone `path` beyond `zmin` around (ra0, dec0)
+    to `images`, as they'd fall on the survey's pixels; the number drawn."""
     from visage.io.lightcone_reader import _read_hubble_h
 
     with h5py.File(path, "r") as f:
         ra_all = f["ra"][:]
         dec_all = f["dec"][:]
         z_all = f["redshift_cosmological"][:]
-        red = nmgy(f[f"mag_obs_{s.bands[0]}"][:])
         hub = _read_hubble_h(f)
-        d_a_all = f["distance"][:] / hub / (1 + z_all)
+        d_a_all = np.maximum(f["distance"][:] / hub / (1 + z_all), 1e-6)
         rd_all = f["DiskRadius"][:] / hub / d_a_all * 206265 / s.pixel
         rb_all = f["BulgeRadius"][:] / hub / d_a_all * 206265 / s.pixel
-    half_deg = field_arcmin / 120
-    if centre_row is None:
-        inside = (
-            (ra_all > ra_all.min() + half_deg)
-            & (ra_all < ra_all.max() - half_deg)
-            & (dec_all > dec_all.min() + half_deg)
-            & (dec_all < dec_all.max() - half_deg)
-        )
-        cand = np.where(inside, red, -1.0)
-        centre_row = int(np.argmax(cand if inside.any() else red))
-        what = "the brightest galaxy"
-    else:
-        what = f"galaxy row {centre_row}"
-    ra0, dec0 = float(ra_all[centre_row]), float(dec_all[centre_row])
-    z0 = float(z_all[centre_row])
-    centre_label = f"{what} (RA {ra0:.4f}°, Dec {dec0:+.4f}°, z = {z0:.4f})"
-
-    npx = int(round(field_arcmin * 60 / s.pixel))
     cosd = np.cos(np.deg2rad(dec0))
     dx_all = -(ra_all - ra0) * cosd * 3600 / s.pixel + npx / 2
     dy_all = (dec_all - dec0) * 3600 / s.pixel + npx / 2
@@ -426,6 +395,7 @@ def make_mock_image(
     near = np.flatnonzero(
         (np.abs(dx_all - npx / 2) < npx / 2 + reach)
         & (np.abs(dy_all - npx / 2) < npx / 2 + reach)
+        & (z_all > zmin)
     )
     hub, d = _read(path, near, s.bands)
     dx, dy = dx_all[near], dy_all[near]
@@ -458,7 +428,6 @@ def make_mock_image(
     else:
         floor = [float(nmgy(32.0))] * len(s.bands)
 
-    images = {b: np.zeros((npx, npx)) for b in s.bands}
     drawn = 0
     for k in range(len(near)):
         hit = False
@@ -494,7 +463,67 @@ def make_mock_image(
             hit = True
         drawn += hit
 
+    return drawn
+
+
+def _draw_background(images, path, s, npx, half_deg, zmin, noisy, rng) -> int:
+    """Add the galaxies of deeper lightcone `path` beyond `zmin`, around a
+    random point of it."""
+    with h5py.File(path, "r") as f:
+        ra, dec = f["ra"][:], f["dec"][:]
+    ra0 = rng.uniform(ra.min() + half_deg, ra.max() - half_deg)
+    dec0 = rng.uniform(dec.min() + half_deg, dec.max() - half_deg)
+    return _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin)
+
+
+def make_mock_image(
+    path: str | Path,
+    survey: str,
+    field_arcmin: float,
+    centre_row: int | None = None,
+    noisy: bool = True,
+    seed: int = 0,
+    background: str | Path | None = None,
+) -> MockImage:
+    """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
+    in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
+    away from the cone's edges, if None). `background`, a deeper lightcone
+    with the same bands, adds the galaxies beyond this cone's redshift
+    from a random patch of it."""
+    s = SURVEYS[survey]
+    path = Path(path)
+    if not s.depth:
+        noisy = False
+    with h5py.File(path, "r") as f:
+        ra_all = f["ra"][:]
+        dec_all = f["dec"][:]
+        z_all = f["redshift_cosmological"][:]
+        red = nmgy(f[f"mag_obs_{s.bands[0]}"][:])
+    half_deg = field_arcmin / 120
+    if centre_row is None:
+        inside = (
+            (ra_all > ra_all.min() + half_deg)
+            & (ra_all < ra_all.max() - half_deg)
+            & (dec_all > dec_all.min() + half_deg)
+            & (dec_all < dec_all.max() - half_deg)
+        )
+        cand = np.where(inside, red, -1.0)
+        centre_row = int(np.argmax(cand if inside.any() else red))
+        what = "the brightest galaxy"
+    else:
+        what = f"galaxy row {centre_row}"
+    ra0, dec0 = float(ra_all[centre_row]), float(dec_all[centre_row])
+    z0 = float(z_all[centre_row])
+    centre_label = f"{what} (RA {ra0:.4f}°, Dec {dec0:+.4f}°, z = {z0:.4f})"
+
+    npx = int(round(field_arcmin * 60 / s.pixel))
+    images = {b: np.zeros((npx, npx)) for b in s.bands}
+    drawn = _draw_galaxies(images, path, s, npx, ra0, dec0, noisy)
     rng = np.random.default_rng(seed)
+    if background is not None:
+        drawn += _draw_background(
+            images, Path(background), s, npx, half_deg, z_all.max(), noisy, rng
+        )
     for i, b in enumerate(s.bands):
         images[b] = gaussian_filter(images[b], s.seeing[i] / 2.3548 / s.pixel)
         if noisy:

@@ -21,6 +21,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **AGN luminosities follow a quasar light curve** (Hopkins & Hernquist
   2009) from a burst placed uniformly in its step, in place of the mean
   over the step.
+- **Mock images can add galaxies beyond the cone** from a deeper lightcone.
 - **Infrared SEDs follow each galaxy's dust temperature:** U_min comes
   from its L_dust / M_dust, saved as `DustUmin`.
 - **Spectra show the AGN's narrow lines,** as `LineLumAGN_*` through the
