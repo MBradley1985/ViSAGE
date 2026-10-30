@@ -92,10 +92,8 @@ def test_depth_noise_matches_the_survey_limit(tmp_path):
     sky = m.images["sdss_r"][:20, :20]  # an empty corner
     assert sky.std() == pytest.approx(mi.noise_sigma(s, 1), rel=0.15)
     # A point source at the r limit (22.2) is 5 sigma for a PSF fit.
-    sig_psf = s.seeing[1] / 2.3548 / s.pixel
-    snr = mi.nmgy(22.2) / (
-        mi.noise_sigma(s, 1) * np.sqrt(4 * np.pi * sig_psf**2)
-    )
+    area = 1 / np.sum(mi.psf_kernel(s.seeing[1] / s.pixel) ** 2)
+    snr = mi.nmgy(22.2) / (mi.noise_sigma(s, 1) * np.sqrt(area))
     assert snr == pytest.approx(5.0)
 
 
@@ -200,3 +198,12 @@ def test_background_adds_only_galaxies_beyond_the_cone(tmp_path):
     both = mi.make_mock_image(p, "sdss", 2, noisy=False, background=deep)
     assert both.n_galaxies > plain.n_galaxies
     assert both.images["sdss_r"].sum() > plain.images["sdss_r"].sum()
+
+
+def test_moffat_psf_has_the_fwhm_and_wings():
+    k = mi.psf_kernel(4.0)
+    c = k.shape[0] // 2
+    assert k.sum() == pytest.approx(1.0)
+    assert k[c, c + 2] / k[c, c] == pytest.approx(0.5, abs=0.01)
+    gauss = np.exp(-4 * np.log(2) * (12.0 / 4.0) ** 2)
+    assert k[c, c + 12] / k[c, c] > 50 * gauss

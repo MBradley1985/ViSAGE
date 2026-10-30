@@ -9,8 +9,10 @@ by its inclination, axis ratio q = sqrt(cos^2 i + q0^2 sin^2 i), q0 = 0.2
 spin on the sky. Its disk and bulge fluxes come from its observed-frame
 disk_mag_obs_* and bulge_mag_obs_* magnitudes (total magnitudes split by
 bulge-to-total stellar mass when a cone has no disk/bulge photometry).
-The image is blurred by a Gaussian PSF of the survey's median seeing on
-its pixel grid. "Survey depth" adds sky noise so that a point source at
+The image is blurred by the survey's median seeing on its pixel grid: a
+Moffat profile for ground-based surveys, beta = 4.765 for Kolmogorov
+turbulence (Trujillo et al. 2001, MNRAS 328, 977), and a Gaussian of the
+quoted FWHM from space. "Survey depth" adds sky noise so that a point source at
 the survey's quoted limit has that signal-to-noise, and the galaxies' own
 shot noise where the survey's sky brightness is known: the sky's mean over
 its noise gives the electrons per nanomaggy. Colour images are asinh
@@ -18,7 +20,7 @@ composites (Lupton et al. 2004, PASP 116, 133).
 
 Survey numbers (pixel scale, median seeing, depth):
 
-- SDSS: 0.396"/pixel, 1.4" in r (Gunn et al. 2006; Abazajian et al. 2009),
+- SDSS: 0.396"/pixel, 1.32" in r (SDSS DR15 imaging data quality),
   depth the DR7 95%-completeness limits for point sources, g 22.2,
   r 22.2, i 21.3 (Abazajian et al. 2009, ApJS 182, 543), taken as 5 sigma.
 - DES DR2 (DECam): 0.263"/pixel, seeing g 1.11", r 0.95", z 0.83", 10 sigma
@@ -49,9 +51,11 @@ from pathlib import Path
 import h5py
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from scipy.signal import fftconvolve
 
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
+MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
 STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
 BLACK_SIGMA = 0.6  # black point above the mean sky, same units
@@ -73,6 +77,7 @@ class Survey:
     weights: tuple[float, ...] = field(default=())
     # Median sky per band, AB mag/arcsec^2; empty = no source shot noise.
     sky: tuple[float, ...] = ()
+    ground: bool = True  # seen through the atmosphere
 
 
 def _ab_from_mjy(mjy: float) -> float:
@@ -84,7 +89,7 @@ SURVEYS: dict[str, Survey] = {
         "SDSS (gri)",
         ("sdss_i", "sdss_r", "sdss_g"),
         0.396,
-        (1.4, 1.4, 1.4),
+        (1.32, 1.32, 1.32),
         ((21.3, 5, None), (22.2, 5, None), (22.2, 5, None)),
         "Abazajian et al. 2009",
         (1.0, 1.1, 1.4),
@@ -142,6 +147,7 @@ SURVEYS: dict[str, Survey] = {
             (_ab_from_mjy(0.08), 5, None),
         ),
         "Wright et al. 2010",
+        ground=False,
     ),
     "galex": Survey(
         "GALEX AIS (FUV, NUV)",
@@ -150,6 +156,7 @@ SURVEYS: dict[str, Survey] = {
         (5.3, 4.2),
         ((20.8, 5, None), (19.9, 5, None)),
         "Morrissey et al. 2007",
+        ground=False,
     ),
     "nircam": Survey(
         "JWST NIRCam (F115W, F200W, F444W)",
@@ -161,6 +168,7 @@ SURVEYS: dict[str, Survey] = {
         # An old population as warm as in the optical surveys' balance
         # (its F444W is about 3x fainter than F200W, in f_nu).
         (3.5, 1.0, 0.8),
+        ground=False,
     ),
 }
 
@@ -226,15 +234,25 @@ def sersic_stamp(n, re_pix, q, pa, size, sub=5, off=(0.0, 0.0)):
     return img / tot if tot > 0 else img
 
 
+def psf_kernel(fwhm_pix: float) -> np.ndarray:
+    """Unit-sum Moffat PSF of FWHM `fwhm_pix` pixels, out to 8 FWHM."""
+    half = int(np.ceil(8 * fwhm_pix))
+    y, x = np.mgrid[-half : half + 1, -half : half + 1]
+    alpha = fwhm_pix / (2 * np.sqrt(2 ** (1 / MOFFAT_BETA) - 1))
+    psf = (1 + (x**2 + y**2) / alpha**2) ** -MOFFAT_BETA
+    return psf / psf.sum()
+
+
 def noise_sigma(survey: Survey, i: int) -> float:
     """Sky noise per pixel (nanomaggies) for band i at the survey depth."""
     mag, snr, ap = survey.depth[i]
     flux = float(nmgy(mag))
-    if ap is None:  # PSF-fitted: effective area 4 pi sigma_psf^2
-        sig = survey.seeing[i] / 2.3548 / survey.pixel
-        n_pix = 4 * np.pi * sig**2
-    else:
+    if ap is not None:
         n_pix = np.pi * (ap / 2 / survey.pixel) ** 2
+    elif survey.ground:  # PSF-fitted: effective area 1 / sum(psf^2)
+        n_pix = 1.0 / np.sum(psf_kernel(survey.seeing[i] / survey.pixel) ** 2)
+    else:
+        n_pix = 4 * np.pi * (survey.seeing[i] / 2.3548 / survey.pixel) ** 2
     return flux / snr / np.sqrt(n_pix)
 
 
@@ -526,7 +544,13 @@ def make_mock_image(
             images, Path(background), s, npx, half_deg, z_all.max(), noisy, rng
         )
     for i, b in enumerate(s.bands):
-        images[b] = gaussian_filter(images[b], s.seeing[i] / 2.3548 / s.pixel)
+        fwhm = s.seeing[i] / s.pixel
+        if s.ground:
+            images[b] = np.clip(
+                fftconvolve(images[b], psf_kernel(fwhm), mode="same"), 0, None
+            )
+        else:
+            images[b] = gaussian_filter(images[b], fwhm / 2.3548)
         if noisy:
             var = noise_sigma(s, i) ** 2
             if s.sky:
