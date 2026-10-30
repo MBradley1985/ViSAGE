@@ -16,7 +16,8 @@ step isn't physical (mergers and instabilities cluster at the step's ends
 for numerical reasons). So a burst is placed uniformly within the step, and
 its radiated energy eta M c^2 follows the light curve of Hopkins & Hernquist
 (2009, ApJ 698, 1550, eq. 12), L = L_peak [1 + (t / t_Q)^1/2]^(-2 / beta),
-t_Q = 50 Myr, beta = 0.6, up to the Eddington limit. A burst's fading tail
+t_Q = 50 Myr, beta = 0.6, peaking at most at the Eddington limit, which a
+bigger burst holds until the excess is used up. A burst's fading tail
 past its own step isn't known, as the mass is only kept for that step.
 
 The accretion rate gives the luminosity: L = eta Mdot c^2 above 1 per cent
@@ -118,23 +119,23 @@ def burst_phase(galaxy_id, snap) -> np.ndarray:
 def burst_rate(mass, age_myr, bh_mass) -> np.ndarray:
     """Quasar accretion rate (Msun/yr) at `age_myr` after a burst of
     `mass` (Msun) on a black hole of `bh_mass`, as the light curve (see
-    the module docstring): its integral over time is `mass`, capped at
-    the Eddington rate."""
+    the module docstring): its integral over time is `mass`. A burst too
+    big to fit under the Eddington rate holds that rate until the excess
+    is used up, then fades from it."""
+    mass = np.asarray(mass, float)
     p = 2.0 / BURST_BETA
-    area = 2.0 / ((p - 1.0) * (p - 2.0))  # of the curve, per t_Q
-    t = np.maximum(np.asarray(age_myr, float), 0.0) / BURST_TQ_MYR
-    rate = (
-        np.asarray(mass, float)
-        / (area * BURST_TQ_MYR * 1e6)
-        * (1.0 + np.sqrt(t)) ** -p
-    )
+    tq_yr = BURST_TQ_MYR * 1e6
+    area = 2.0 / ((p - 1.0) * (p - 2.0)) * tq_yr  # of the curve, yr
     edd = (
         L_EDD_PER_MSUN
         * np.asarray(bh_mass, float)
         * YR_S
         / (ETA * MSUN_G * C_CM_S**2)
     )
-    return np.minimum(rate, edd)
+    peak = np.minimum(mass / area, edd)
+    held = (mass - peak * area) / np.maximum(edd, 1e-30)  # yr at Eddington
+    fading = np.maximum(np.asarray(age_myr, float) * 1e6 - held, 0.0)
+    return peak * (1.0 + np.sqrt(fading / tq_yr)) ** -p
 
 
 def luminosity(bh_mass, mdot_quasar, heating_log, mdot_radio=None):

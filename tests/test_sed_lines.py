@@ -138,3 +138,14 @@ def test_burst_phase_is_uniform_and_tied_to_the_galaxy():
     assert u.mean() == pytest.approx(0.5, abs=0.01)
     assert agn.burst_phase(ids[5:6], [60])[0] == u[5]
     assert agn.burst_phase(ids[5:6], [61])[0] != u[5]
+
+
+def test_burst_over_eddington_holds_it_and_keeps_the_mass():
+    t = np.r_[0.0, np.logspace(-3, 8, 400000)]  # Myr
+    rate = agn.burst_rate(1e9, t, 1e8)
+    edd = agn.burst_rate(1e9, 0.0, 1e8)
+    assert np.trapezoid(rate, t * 1e6) == pytest.approx(1e9, rel=0.02)
+    assert rate.max() == edd and np.all(np.diff(rate) <= 0)
+    held = t[rate == edd].max()
+    # 1e9 - 0.643 t_Q Mdot_Edd of excess, at ~2.3 Msun/yr.
+    assert held == pytest.approx((1e9 / edd - 0.643 * 50e6) / 1e6, rel=0.02)
