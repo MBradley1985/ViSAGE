@@ -55,9 +55,9 @@ from scipy.signal import fftconvolve
 
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
-# Colour balance (reddest band first), from SDSS's own colour images: real
-# galaxies of known g - i in their blue / red channels.
-OPTICAL_WEIGHTS = (1.0, 1.1, 1.6)
+# Colour balance (reddest band first), from SDSS's own colour images: the
+# blue / red profiles of real and mock red galaxies.
+OPTICAL_WEIGHTS = (1.0, 1.1, 1.3)
 MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
 STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
