@@ -50,7 +50,8 @@ from scipy.ndimage import gaussian_filter
 
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
-MARGIN = 200  # pixels beyond the field whose light can fall in it
+CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
+KNEE = 0.8  # display level above which bright cores roll off smoothly
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,9 @@ SURVEYS: dict[str, Survey] = {
         (0.145, 0.066, 0.040),
         (),
         "JWST User Documentation",
-        (1.0, 1.0, 1.0),
+        # An old population as warm as in the optical surveys' balance
+        # (its F444W is about 3x fainter than F200W, in f_nu).
+        (3.5, 1.0, 0.8),
     ),
 }
 
@@ -189,19 +192,36 @@ def sersic_stamp(n, re_pix, q, pa, size, sub=5, off=(0.0, 0.0)):
     """Unit-flux Sersic profile on a size x size grid, oversampled, its
     centre `off` (x, y) pixels from the stamp's middle."""
     bn = 2 * n - 1 / 3 + 0.009876 / n
-    g = (np.arange(size * sub) + 0.5) / sub - size / 2
-    x, y = np.meshgrid(g, g)
-    x, y = x - off[0], y - off[1]
     c, s = np.cos(pa), np.sin(pa)
-    xr = x * c + y * s
-    yr = -x * s + y * c
-    r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
-    img = np.exp(-bn * ((r / max(re_pix, 0.05)) ** (1 / n) - 1))
-    # Fade the outer 30% of the stamp to zero, so a stretched image shows
-    # no edge where the stamp ends.
-    edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
-    img *= 0.5 * (1 + np.cos(np.pi * edge))
-    img = img.reshape(size, sub, size, sub).mean(axis=(1, 3))
+
+    def light(gx, gy):
+        x, y = np.meshgrid(gx, gy)
+        x, y = x - off[0], y - off[1]
+        xr = x * c + y * s
+        yr = -x * s + y * c
+        r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
+        img = np.exp(-bn * ((r / max(re_pix, 0.05)) ** (1 / n) - 1))
+        # Fade the outer 30% of the stamp to zero, so a stretched image
+        # shows no edge where the stamp ends.
+        edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
+        return img * 0.5 * (1 + np.cos(np.pi * edge))
+
+    g = (np.arange(size * sub) + 0.5) / sub - size / 2
+    img = light(g, g).reshape(size, sub, size, sub).mean(axis=(1, 3))
+    # The cusp is far narrower than a pixel, and a sample landing on it
+    # would hold most of the galaxy's light: integrate around it finely.
+    # (An even CUSP_SUB never samples a pixel's exact centre.)
+    (x0, x1), (y0, y1) = (
+        (max(k - 2, 0), min(k + 3, size))
+        for k in (int(np.floor(o + size / 2)) for o in off)
+    )
+    gx = (np.arange((x1 - x0) * CUSP_SUB) + 0.5) / CUSP_SUB + x0 - size / 2
+    gy = (np.arange((y1 - y0) * CUSP_SUB) + 0.5) / CUSP_SUB + y0 - size / 2
+    img[y0:y1, x0:x1] = (
+        light(gx, gy)
+        .reshape(y1 - y0, CUSP_SUB, x1 - x0, CUSP_SUB)
+        .mean(axis=(1, 3))
+    )
     tot = img.sum()
     return img / tot if tot > 0 else img
 
@@ -231,8 +251,11 @@ def lupton_rgb(chans, stretch, q=8.0):
     i_safe = np.maximum(i, 1e-3 * stretch)
     f = np.arcsinh(q * i_safe / stretch) / q / i_safe
     rgb = np.stack([r * f, g * f, b * f], -1)
-    peak = np.maximum(rgb.max(-1, keepdims=True), 1.0)
-    return np.clip(rgb / peak, 0, 1)
+    # Bright cores roll off towards 1, not clip to a flat plateau.
+    peak = rgb.max(-1, keepdims=True)
+    soft = KNEE + (1 - KNEE) * -np.expm1(-(peak - KNEE) / (1 - KNEE))
+    soft = np.where(peak > KNEE, soft, peak)
+    return np.clip(rgb * soft / np.maximum(peak, 1e-30), 0, 1)
 
 
 @dataclass
@@ -364,11 +387,17 @@ def make_mock_image(
     path = Path(path)
     if not s.depth:
         noisy = False
+    from visage.io.lightcone_reader import _read_hubble_h
+
     with h5py.File(path, "r") as f:
         ra_all = f["ra"][:]
         dec_all = f["dec"][:]
         z_all = f["redshift_cosmological"][:]
         red = nmgy(f[f"mag_obs_{s.bands[0]}"][:])
+        hub = _read_hubble_h(f)
+        d_a_all = f["distance"][:] / hub / (1 + z_all)
+        rd_all = f["DiskRadius"][:] / hub / d_a_all * 206265 / s.pixel
+        rb_all = f["BulgeRadius"][:] / hub / d_a_all * 206265 / s.pixel
     half_deg = field_arcmin / 120
     if centre_row is None:
         inside = (
@@ -390,11 +419,12 @@ def make_mock_image(
     cosd = np.cos(np.deg2rad(dec0))
     dx_all = -(ra_all - ra0) * cosd * 3600 / s.pixel + npx / 2
     dy_all = (dec_all - dec0) * 3600 / s.pixel + npx / 2
+    # Every galaxy whose stamp (see below) or PSF can reach the field.
+    reach = np.minimum(np.maximum(16.78 * rd_all, 8 * rb_all), npx)
+    reach = reach + 3 * max(s.seeing) / s.pixel
     near = np.flatnonzero(
-        (dx_all > -MARGIN)
-        & (dx_all < npx + MARGIN)
-        & (dy_all > -MARGIN)
-        & (dy_all < npx + MARGIN)
+        (np.abs(dx_all - npx / 2) < npx / 2 + reach)
+        & (np.abs(dy_all - npx / 2) < npx / 2 + reach)
     )
     hub, d = _read(path, near, s.bands)
     dx, dy = dx_all[near], dy_all[near]

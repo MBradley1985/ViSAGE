@@ -90,6 +90,7 @@ _LC_TOGGLES = [
     ),
     ("SED_LINES_ENABLED", "Emission lines", "Star formation and AGN"),
     ("SED_DISK_BULGE_ENABLED", "Disk & bulge", "Separate magnitudes"),
+    ("SED_NOISE_ENABLED", "Survey noise", "Noisy fluxes and errors"),
 ]
 
 _SW_EFFORT = [

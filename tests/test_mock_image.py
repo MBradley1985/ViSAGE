@@ -3,6 +3,8 @@ lightcone."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import h5py
 import numpy as np
 import pytest
@@ -115,3 +117,39 @@ def test_rgb_and_fits(tmp_path):
         c = WCS(h[1].header).pixel_to_world(nx / 2 - 0.5, ny / 2 - 0.5)
     assert c.ra.deg == pytest.approx(m.ra0, abs=1e-6)
     assert c.dec.deg == pytest.approx(m.dec0, abs=1e-6)
+
+
+@pytest.mark.parametrize("re_pix", [4.0, 12.0])
+def test_bulge_cusp_does_not_depend_on_pixel_phase(re_pix):
+    size = int(16 * re_pix) | 1
+    on = mi.sersic_stamp(4.0, re_pix, 0.8, 0.3, size, sub=1)
+    off = mi.sersic_stamp(4.0, re_pix, 0.8, 0.3, size, sub=1, off=(0.3, 0.2))
+    c = size // 2
+    assert on[c, c] == pytest.approx(off[c, c], rel=0.15)
+    assert on[c, c] < 0.2
+
+
+def test_light_of_a_galaxy_outside_the_field_reaches_it(tmp_path, monkeypatch):
+    # Fine pixels: the galaxy is 800 pixels off a 968-pixel field, but its
+    # disk (Re ~ 25") still reaches it.
+    fine = replace(mi.SURVEYS["sdss"], pixel=0.031, seeing=(0.1,) * 3)
+    monkeypatch.setitem(mi.SURVEYS, "sdss", fine)
+    p = tmp_path / "cone.h5"
+    _cone(p, n=2)
+    with h5py.File(p, "a") as f:
+        f["ra"][1] = 1.0
+        f["dec"][1] = 1.0 + (15 + 24.8) / 3600
+        f["DiskRadius"][1] = 0.02
+        for b in ("sdss_g", "sdss_r", "sdss_i"):
+            for k in ("mag_obs", "disk_mag_obs", "bulge_mag_obs"):
+                f[f"{k}_{b}"][1] = 14.0
+    m = mi.make_mock_image(p, "sdss", 0.5, centre_row=0, noisy=False)
+    assert m.n_galaxies == 2
+
+
+def test_bright_core_keeps_a_gradient():
+    x = np.logspace(0, 5, 200)
+    rgb = mi.lupton_rgb([x[None], x[None], x[None]], 1.0)
+    assert rgb.max() <= 1
+    assert np.all(np.diff(rgb[0, :, 0]) >= 0)
+    assert np.sum(rgb[0, :, 0] >= 0.999) < 10

@@ -10,8 +10,8 @@ through each filter, and the plot marks them on it as a check.
 Shown in the observed frame, as a telescope would see it:
 f_nu(lambda_obs) = (1 + z_obs) L_nu(lambda_obs / (1 + z_obs)) / (4 pi D_L^2),
 D_L = (1 + z_obs) D_C(z_cos) (as the photometry; Davis et al. 2011, ApJ
-741, 67). No intergalactic absorption is modelled, so it starts at the
-rest-frame Lyman limit (912 A).
+741, 67), and through the IGM (visage/sed/igm.py) when the cone's
+photometry was. It starts at the rest-frame Lyman limit (912 A).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from visage.sed import igm
 from visage.sed.cosmology import MPC_TO_CM, luminosity_distance_mpc
 from visage.sed.photometry import (
     L_SUN_ERG_S,
@@ -53,6 +54,8 @@ class GalaxySpectrum:
             * L_SUN_ERG_S
             / (4 * np.pi * self.d_l_cm**2)
         )
+        if "IGM" in self.settings:
+            f = f * igm.transmission(self.wave, self.z_obs)
         return f * 1e29  # erg/s/cm^2/Hz -> µJy
 
     @property

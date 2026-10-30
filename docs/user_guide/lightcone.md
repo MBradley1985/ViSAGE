@@ -93,7 +93,7 @@ the way the cone's photometry was, with the same settings recorded in the
 file (IMF, recycling, metallicity, dust and its infrared glow, emission
 lines), so the catalogue's own magnitudes, marked as circles, sit on it. The
 stars' light without dust and the disk and bulge (when the cone has them) are
-drawn too. No intergalactic absorption is modelled, so the spectrum starts at
+drawn too. It passes through the intergalactic medium and starts at
 the rest-frame Lyman limit. The plot opens in a Library card and is saved in
 `sage_library/spectra/` as a PNG and a CSV table (rest and observed
 wavelength, the flux of each part, and the rest-frame L<sub>ν</sub>). A card

@@ -451,6 +451,9 @@ SED_DISK_BULGE_ENABLED=1
 # magnitudes, and each galaxy's H-alpha, H-beta, [OII], [OIII], [NII] and
 # [SII] luminosities and fluxes, through its dust.
 SED_LINES_ENABLED=1
+# Also write each band's flux with survey noise, and its error (flux_obs_*,
+# fluxerr_obs_*), for bands of surveys with a quoted depth.
+SED_NOISE_ENABLED=1
 {survey_flags}
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
@@ -493,6 +496,7 @@ if [ "$SED_ENABLED" = "1" ]; then
     [ "$SED_DUST_ENABLED" = "1" ] && [ "$SED_DUST_EMISSION_ENABLED" = "1" ] && sed_extra="$sed_extra --dust-emission"
     [ "$SED_DISK_BULGE_ENABLED" = "1" ] && sed_extra="$sed_extra --disk-bulge"
     [ "$SED_LINES_ENABLED" = "1" ] && sed_extra="$sed_extra --lines"
+    [ "$SED_NOISE_ENABLED" = "1" ] && sed_extra="$sed_extra --noise"
     "{python_exe}" -m visage.sed.photometry \\
       --input "$OUTDIR/$OUTFILE" \\
       --bands "$bands_csv" \\
@@ -3253,6 +3257,7 @@ class WizardController(InstallMixin, SetupRunMixin):
                 "SED_DUST_EMISSION_ENABLED",
                 "SED_DISK_BULGE_ENABLED",
                 "SED_LINES_ENABLED",
+                "SED_NOISE_ENABLED",
             )
             if k in old
         }

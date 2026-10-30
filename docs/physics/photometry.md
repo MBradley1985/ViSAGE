@@ -17,6 +17,7 @@ The LightSAGE flow's photometry stage (`python -m visage.sed.photometry`) gives 
 |---|---|
 | Redshifting | The filter is shifted onto the rest-frame spectrum at each galaxy's own observed redshift (K-correction), photon-counting AB magnitudes. |
 | Distance | *D*<sub>L</sub> = (1 + *z*<sub>obs</sub>) *D*<sub>C</sub>(*z*<sub>cos</sub>), so peculiar velocities count (Davis et al. 2011). |
+| Intergalactic absorption | The mean Lyman-series and Lyman-continuum absorption of Madau (1995) on the observed frame. It matters where a band sees the rest-frame UV below 1216 Å, so mostly above *z* ≈ 2. |
 | Absolute magnitudes | Rest frame, at 10 pc. |
 
 ## Dust (`--dust-model charlot_fall`)
@@ -33,7 +34,7 @@ The LightSAGE flow's photometry stage (`python -m visage.sed.photometry`) gives 
 
 Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the critical-metallicity behaviour of Asano et al. (2013). Dust in hot gas and the CGM is sputtered (Tsai & Mathews 1995) and its column is far below the disk's, so it isn't included.
 
-**Where the dust is.** The molecular gas follows the stars (Leroy et al. 2008). The atomic gas sits in its own exponential disk sized by the HI size–mass relation (Wang et al. 2016). The optical depth in front of the starlight is the mean hydrogen column inside the stellar half-light radius, with the Milky Way's *A*<sub>V</sub>/*N*<sub>H</sub> (Bohlin, Savage & Drake 1978; *R*<sub>V</sub> = 3.1) scaled by the galaxy's dust per hydrogen over the Milky Way's 0.010 (Draine & Li 2007).
+**Where the dust is.** The molecular gas follows the stars (Leroy et al. 2008). The atomic gas sits in its own exponential disk sized by the HI size–mass relation (Wang et al. 2016); above *M*<sub>HI</sub> ≈ 10<sup>10.3</sup> M☉ no exponential disk reaches 1 M☉ pc⁻² at that size, so those disks take the scale length that comes closest. The optical depth in front of the starlight is the mean hydrogen column inside the stellar half-light radius, with the Milky Way's *A*<sub>V</sub>/*N*<sub>H</sub> (Bohlin, Savage & Drake 1978; *R*<sub>V</sub> = 3.1) scaled by the galaxy's dust per hydrogen over the Milky Way's 0.010 (Draine & Li 2007).
 
 **How it dims the light** (Charlot & Fall 2000):
 
@@ -44,7 +45,7 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 
 ## Disk and bulge (`--disk-bulge`)
 
-`disk_mag_*` and `bulge_mag_*` are built from each component's own star-formation history and current SFR, through the same dust. SAGE26's `SFHMassBulge` holds only the stars formed in bulge starbursts: the disk stars that mergers and disk instabilities move into the bulge stay in `SFHMassDisk`. So the share of the disk's history that makes the bulge's total equal its `BulgeMass` is moved into the bulge, taking those stars to have the disk's age mix.
+`disk_mag_*` and `bulge_mag_*` are built from each component's own star-formation history and current SFR, through the same dust. In current SAGE26 outputs `SFHMassBulge` adds up to `BulgeMass`. In older ones it holds only the stars formed in bulge starbursts, with the disk stars that mergers and disk instabilities moved into the bulge still in `SFHMassDisk`; there, the share of the disk's history that makes the bulge's total equal its `BulgeMass` is moved into the bulge, taking those stars to have the disk's age mix.
 
 ## Emission lines (`--lines`)
 
@@ -61,6 +62,14 @@ The lines pass through the birth cloud and the diffuse ISM. The FSPS spectra use
 
 **AGN.** SAGE26's black holes accrete in quasar mode (`QuasarModeBHaccretionMass` over the snapshot step `dT`, which is in *h*⁻¹ Myr) and radio mode (`RadioModeBHaccretionMass` over the same step, or in older outputs its power `Heating` = η*Ṁc*², η = 0.1). SAGE26's black holes start at zero mass, so a dwarf's first merger or disk instability makes one of a tiny mass all at once; its Eddington ratio then reflects only the step's length (the card notes such a black hole), and its luminosity is negligible. Their luminosity is η*Ṁc*² above 1 % of Eddington and falls as *ṁ*² below it, where the flow becomes radiatively inefficient (Narayan & Yi 1995; Merloni & Heinz 2008). The narrow-line region uses the photoionisation models of Feltre, Charlot & Gutkin (2016), coupled to each galaxy as Hirschmann et al. (2017) do: an ionising spectrum *S*<sub>ν</sub> ∝ ν<sup>−1.7</sup>, gas clumps of *n*<sub>H</sub> = 10³ cm⁻³, dust-to-metal ratio 0.3, the cold gas's metallicity, and the ionisation parameter at the Strömgren radius from the AGN's ionising photons and the filling factor of the cold gas within 1 kpc. The lines pass through half the disk's dust, as a screen. `LAGN`, `EddingtonRatio`, `LogU_HII` and `LogU_AGN` are written too.
 
+## Survey noise (`--noise`)
+
+`flux_obs_*` and `fluxerr_obs_*` (µJy, in `visage/sed/noise.py`) are the fluxes a survey would catalogue, beside the noiseless magnitudes, for the bands of surveys with a quoted depth. It can also be run on an existing cone: `python -m visage.sed.noise --input <lightcone.h5>`.
+
+Each band's sky noise is set so that a point source at the survey's limit has its quoted signal-to-noise. A galaxy covers more sky than a point source, so its error is that noise over a matched-filter area, 4π(σ<sub>PSF</sub>² + σ<sub>gal</sub>²), with σ<sub>gal</sub> from its half-light radius, plus a 1 % calibration floor in quadrature (Padmanabhan et al. 2008). Source shot noise isn't included. Noise is Gaussian in flux, so a faint galaxy's flux can be negative. Nothing is removed: a catalogue cut is the flux over its error, at the survey's chosen limit.
+
+Depths are those of the mock-image table below, plus SDSS *u* 22.0, *z* 20.5 (Abazajian et al. 2009); DES *i* 23.8, *Y* 21.7 (10σ; Abbott et al. 2021); Pan-STARRS1 *z* 22.3, *y* 21.4 (Chambers et al. 2016); LSST *u* 26.1, *z* 26.1, *y* 24.9 (Ivezić et al. 2019); and WISE W4 6 mJy (Wright et al. 2010).
+
 ## Mock images
 
 Lightcone Mode's **Create mock image** (`visage/sed/mock_image.py`) draws the
@@ -73,7 +82,7 @@ axis ratio *q* = (cos² *i* + *q*₀² sin² *i*)<sup>½</sup>, *q*₀ = 0.2 (Hu
 Disk and bulge fluxes come from their observed-frame magnitudes (or the total,
 shared by bulge-to-total stellar mass, when a cone has no disk/bulge
 photometry). The image is blurred by a Gaussian of the survey's median seeing
-on its pixel grid; at survey depth, sky noise is added so that a point source
+on its pixel grid, with profile centres integrated finely so a cusp doesn't depend on where it falls in a pixel; at survey depth, sky noise is added so that a point source
 at the quoted limit has the quoted signal-to-noise. Colour images are asinh
 composites (Lupton et al. 2004).
 
@@ -95,7 +104,6 @@ galaxies beyond the cone's redshift range.
 
 ## Not included (yet)
 
-- IGM absorption (irrelevant below *z* ≈ 2).
 - The AGN's own continuum in the magnitudes (its lines aren't in the broad bands either).
 - Line emission from old (post-AGB) stars, which powers many LINER-like spectra in quiescent galaxies.
 
@@ -125,9 +133,11 @@ galaxies beyond the cone's redshift range.
 - Kashino D., Inoue A. K. 2019, *MNRAS* 486, 1053
 - Leroy A. K. et al. 2008, *AJ* 136, 2782
 - Lupton R. et al. 2004, *PASP* 116, 133
+- Madau P. 1995, *ApJ* 441, 18
 - Merloni A., Heinz S. 2008, *MNRAS* 388, 1011
 - Morrissey P. et al. 2007, *ApJS* 173, 682
 - Narayan R., Yi I. 1995, *ApJ* 452, 710
+- Padmanabhan N. et al. 2008, *ApJ* 674, 1217
 - Popping G., Somerville R. S., Galametz M. 2017, *MNRAS* 471, 3152
 - Shamshiri S. et al. 2015, *MNRAS* 451, 2681
 - Skrutskie M. F. et al. 2006, *AJ* 131, 1163

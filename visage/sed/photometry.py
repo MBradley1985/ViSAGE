@@ -23,6 +23,8 @@ How each galaxy's light is built (references in docs/physics/photometry.md):
     with luminosity distance D_L = (1 + z_obs) D_C(z_cos) (peculiar
     velocities included; Davis et al. 2011, ApJ 741, 67).
   - Dust: none by default (see --dust).
+  - Intergalactic absorption: Madau (1995) on the observed frame
+    (visage/sed/igm.py).
 
 Scale: a lightcone can carry millions of galaxies, and FSPS is far too slow
 to call per-galaxy. So galaxies are grouped by snapshot; each group's
@@ -51,6 +53,7 @@ from visage.sed.cosmology import (
     age_at_scale_factor,
     luminosity_distance_mpc,
 )
+from visage.sed import igm
 from visage.sed.filters import DEFAULT_BANDS, filter_transmission
 from visage.sed.ssp_grid import (
     IMF_CHABRIER,
@@ -128,6 +131,8 @@ class _FilterProjector:
             left=0.0,
             right=0.0,
         )
+        if z > 0 and self._filt_wave[0] / (1.0 + z) < igm.LY_ALPHA_A:
+            shifted_r = shifted_r * igm.transmission(self._ssp_wave, z)
         weights = shifted_r / self._ssp_wave * self._dw
         # Verified benign: this matmul reliably trips spurious divide/
         # overflow/invalid FPE flags on Apple's Accelerate BLAS backend
@@ -813,6 +818,7 @@ def compute_photometry(
         ),
         "KCorrection": "per galaxy at z_obs",
         "LuminosityDistance": "(1+z_obs) D_C(z_cos)",
+        "IGM": "Madau 1995",
         "Dust": (
             "Charlot & Fall 2000 birth clouds + ISM slab at each galaxy's "
             "inclination; cold dust from Dusty-SAGE (Triani+20) equilibrium"
@@ -926,7 +932,7 @@ def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
                 ds.attrs["Description"], ds.attrs["Units"] = _DUST_FIELDS[name]
                 ds.attrs["Source"] = "ViSAGE dust (Dusty-SAGE equilibrium)"
                 continue
-            band = name.split("_", 2)[-1]
+            band = name.split("mag_", 1)[1].split("_", 1)[1]
             frame_word = (
                 "Rest-frame absolute"
                 if "_rest_" in name
@@ -1015,6 +1021,12 @@ def main(argv: list[str] | None = None) -> None:
         "(disk_mag_* / bulge_mag_*).",
     )
     p.add_argument(
+        "--noise",
+        action="store_true",
+        help="Also write each band's flux with survey noise, and its error "
+        "(flux_obs_* / fluxerr_obs_*, µJy; see visage/sed/noise.py).",
+    )
+    p.add_argument(
         "--alist",
         default=None,
         metavar="FILE",
@@ -1076,6 +1088,10 @@ def main(argv: list[str] | None = None) -> None:
     write_photometry(args.input, results)
     n_mags = sum(1 for k in results if not k.startswith("_"))
     print(f"Wrote {n_mags} magnitude datasets into {args.input}")
+    if args.noise:
+        from visage.sed.noise import add_noise
+
+        print(f"Added survey noise in {len(add_noise(args.input))} bands")
 
 
 if __name__ == "__main__":

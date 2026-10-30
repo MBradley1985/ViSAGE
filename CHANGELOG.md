@@ -6,6 +6,29 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Intergalactic absorption** (Madau 1995) in observed-frame magnitudes
+  and spectra.
+- **Survey noise** (`--noise`, on by default in the LightSAGE flow):
+  `flux_obs_*` and `fluxerr_obs_*` in µJy, from each survey's depth and
+  the galaxy's size. `python -m visage.sed.noise` adds them to an
+  existing cone.
+
+### Fixed
+
+- **Dust in the most HI-rich disks:** above log M_HI ≈ 10.3 the HI disk's
+  size jumped, dropping τ_V about fourfold. Cones need their photometry
+  re-run for this.
+- **Mock images:** a false bright spike at the centre of a selected
+  galaxy's bulge when the image was an odd number of pixels wide; galaxies
+  just outside fine-pixelled fields no longer lose their light; bright
+  cores keep a gradient; NIRCam colour balance.
+- Zero-spin galaxies keep the same random inclination in a spectrum as in
+  the cone. `disk_mag_*` and `bulge_mag_*` descriptions name their band.
+
 ## [2.13.0] — 2026-10-27
 
 ### Added

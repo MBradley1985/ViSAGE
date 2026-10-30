@@ -253,3 +253,40 @@ def test_dust_equilibrium_and_attenuation():
     np.testing.assert_allclose(t[0], 1.0, atol=1e-6)
     assert (t[1] < 1).all() and (t[2] < t[1]).all()
     assert t[1, 0] < t[1, 2]
+
+
+def test_hi_disk_scale_is_continuous_with_mass():
+    from visage.sed import dust as dm
+
+    m = np.logspace(9, 11, 400)
+    r1 = 0.5 * 10 ** (0.506 * np.log10(m) - 3.293) * 1e3
+    h = dm._exp_scale_hi(m, r1)
+    assert np.all(h <= 0.5 * r1 + 1e-6)
+    assert np.max(np.diff(np.log(h))) < 0.1
+
+
+def test_zero_spin_orientation_does_not_depend_on_rows():
+    from visage.sed import dust as dm
+
+    pos = np.array([[10.0, 2.0, 3.0], [4.0, 50.0, 6.0], [7.0, 8.0, 90.0]])
+    spin = np.zeros_like(pos)
+    full = dm.cos_inclination(spin, pos)
+    assert dm.cos_inclination(spin[2:], pos[2:])[0] == full[2]
+    assert np.all((full >= 0) & (full <= 1))
+
+
+def test_igm_matches_fsps():
+    fsps = pytest.importorskip("fsps")
+    from visage.sed import igm
+
+    z = 4.0
+    kw = dict(zcontinuous=1, sfh=1, tau=1.0, imf_type=1, dust_type=0)
+    on = fsps.StellarPopulation(add_igm_absorption=True, zred=z, **kw)
+    off = fsps.StellarPopulation(add_igm_absorption=False, zred=z, **kw)
+    w, a = on.get_spectrum(tage=1.0)
+    _, b = off.get_spectrum(tage=1.0)
+    m = (w > 950) & (w < 1200)
+    ratio = np.mean(a[m]) / np.mean(b[m])
+    ours = np.mean(igm.transmission(w[m], z))
+    assert ours == pytest.approx(ratio, abs=0.05)
+    assert igm.transmission(np.array([1300.0]), z)[0] == 1.0

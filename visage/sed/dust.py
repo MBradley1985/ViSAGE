@@ -149,13 +149,15 @@ def cold_dust_ratio(
 
 def _exp_scale_hi(m_hi, r1_pc):
     """Scale length (pc) of an exponential HI disk of mass m_hi (Msun)
-    whose surface density falls to 1 Msun/pc^2 at radius r1_pc."""
+    whose surface density falls to 1 Msun/pc^2 at radius r1_pc. Sigma(r1)
+    peaks at h = r1/2 and the HI size-mass relation sits almost on that
+    peak; above M_HI ~ 10^10.3 it is below 1 even there, so no exponential
+    disk fits and those disks take the peak."""
     lo = np.full_like(m_hi, 1.0)
-    hi = np.maximum(r1_pc, 2.0)
+    hi = np.maximum(0.5 * r1_pc, 2.0)
     for _ in range(60):
         h = 0.5 * (lo + hi)
         sig = m_hi / (2 * np.pi * h * h) * np.exp(-r1_pc / h)
-        # Sigma(r1) rises with h up to h = r1/2; take the extended root.
         grow = sig < 1.0
         lo = np.where(grow, h, lo)
         hi = np.where(grow, hi, h)
@@ -190,14 +192,15 @@ def tau_v_ism(m_hi, m_h2, m_cold, disk_radius_kpc, delta) -> np.ndarray:
 
 
 def cos_inclination(spin, los) -> np.ndarray:
-    """|cos i| between each galaxy's spin axis and the line of sight
-    (random orientation where the spin is zero)."""
+    """|cos i| between each galaxy's spin axis and the line of sight (for
+    a zero spin, a random orientation taken from the galaxy's position,
+    so that it doesn't depend on which rows are being computed)."""
     s = np.asarray(spin, float)
     los = np.asarray(los, float)
     ns = np.linalg.norm(s, axis=1)
     nl = np.linalg.norm(los, axis=1)
     c = np.abs(np.sum(s * los, axis=1)) / np.maximum(ns * nl, 1e-30)
-    rnd = np.random.default_rng(0).random(len(c))
+    rnd = np.modf(np.abs(los).sum(axis=1) * 1e3)[0]
     return np.where(ns > 0, c, rnd)
 
 
