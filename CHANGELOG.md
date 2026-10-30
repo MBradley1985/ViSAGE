@@ -16,6 +16,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `flux_obs_*` and `fluxerr_obs_*` in µJy, from each survey's depth and
   the galaxy's size. `python -m visage.sed.noise` adds them to an
   existing cone.
+- **Each star-formation bin has its own metallicity** in photometry and
+  spectra, from SAGE26's `MHMetalsDisk` and `MHMetalsBulge` (`SaveFullMH`).
 - **Infrared SEDs follow each galaxy's dust temperature:** U_min comes
   from its L_dust / M_dust, saved as `DustUmin`.
 - **Spectra show the AGN's narrow lines,** as `LineLumAGN_*` through the

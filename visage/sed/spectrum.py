@@ -79,6 +79,7 @@ def run_settings(path: str | Path) -> tuple[dict, dict]:
         "use_metallicity": str(hdr.get("Metallicity", "")) != "solar",
         "lines": str(hdr.get("NebularEmission", "none")) != "none",
         "disk_bulge": disk_bulge,
+        "metal_history": "per SFH bin" in str(hdr.get("Metallicity", "")),
         "imf_type": {"Salpeter": 0, "Chabrier": 1, "Kroupa": 2}.get(
             str(hdr.get("IMF", "Chabrier")).split()[0], 1
         ),
@@ -135,7 +136,7 @@ def galaxy_spectrum(
 ) -> GalaxySpectrum:
     """Synthesise galaxy `row`'s spectrum as the cone's photometry was
     (``progress_cb`` as compute_photometry's: one call per metallicity
-    node, whose first use builds its FSPS grid)."""
+    node, which builds its FSPS grid, then per snapshot)."""
     path = Path(path)
     kw, hdr = run_settings(path)
     al = find_alist(path, alist)

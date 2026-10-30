@@ -9,7 +9,7 @@ The LightSAGE flow's photometry stage (`python -m visage.sed.photometry`) gives 
 | Stellar populations | FSPS (Conroy, Gunn & White 2009; Conroy & Gunn 2010) with MIST isochrones and MILES spectra, Chabrier (2003) IMF, as SAGE26 assumes. |
 | Star-formation history | SAGE26 files the stars formed between snapshots *k*−1 and *k* in bin *k* (outputs from before its snapshot-lag fix, *k* and *k*+1; read from the file), as the mass that survives recycling. Each bin is turned back into the mass formed, ÷ (1 − *R*) with the run's `RecycleFraction`, and spread at a constant rate over its own time span by integrating the populations over age (as TAO does: Shamshiri et al. 2015). |
 | Youngest stars | The last 100 Myr come from the galaxy's current SFR (`SfrDisk` + `SfrBulge`), not the last bin spread evenly over its 0.3–0.6 Gyr. |
-| Metallicity | One present-day value per galaxy, `MetalsStellarMass` / `StellarMass`; the spectrum is interpolated in log *Z* between population nodes. SAGE26 doesn't keep a metallicity history. |
+| Metallicity | Each star-formation bin's own, from SAGE26's metallicity history (`MHMetalsDisk`, `MHMetalsBulge`, with `SaveFullMH`), for the disk and bulge separately; the spectrum is interpolated in log *Z* between population nodes. Without a history, or with `--no-metal-history`, one present-day value per galaxy, `MetalsStellarMass` / `StellarMass`. |
 
 ## Observed magnitudes
 

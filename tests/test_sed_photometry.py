@@ -320,3 +320,55 @@ def test_warmer_dust_peaks_at_shorter_wavelengths():
     assert warm @ w == pytest.approx(1.0, rel=1e-3)
     fir = wave > 3e5
     assert wave[fir][np.argmax(warm[fir])] < wave[fir][np.argmax(cold[fir])]
+
+
+def _metal_cone(path, alist, enriched):
+    """Two galaxies at snapshot 7 whose stars total Z = 0.01; `enriched`
+    gives their older bins Z = 0.002 and their later ones 0.018."""
+    import h5py
+
+    n_bins = 8
+    sfh = np.full((2, n_bins), 0.1)
+    z_bin = np.full(n_bins, 0.01)
+    if enriched:
+        z_bin = np.r_[np.full(4, 0.002), np.full(4, 0.018)]
+    with h5py.File(path, "w") as f:
+        f["StellarMass"] = sfh.sum(1).astype(np.float32)
+        f["MetalsStellarMass"] = (0.01 * sfh.sum(1)).astype(np.float32)
+        f["SFHMassDisk"] = sfh.astype(np.float32)
+        f["SFHMassBulge"] = np.zeros_like(sfh, dtype=np.float32)
+        f["MHMetalsDisk"] = (sfh * z_bin).astype(np.float32)
+        f["MHMetalsBulge"] = np.zeros_like(sfh, dtype=np.float32)
+        f["SnapNum"] = np.full(2, 7, dtype=np.int32)
+        f["redshift_cosmological"] = np.full(2, 0.05)
+        sim = f.create_group("SageOutputHeader/Simulation")
+        sim.attrs["hubble_h"] = 0.7
+        sim.attrs["omega_matter"] = 0.3
+        sim.attrs["omega_lambda"] = 0.7
+        sim.attrs["FileWithSnapList"] = str(alist)
+
+
+@pytest.mark.slow
+def test_metal_history_gives_each_bin_its_metallicity(tmp_path):
+    from visage.sed.photometry import compute_photometry
+
+    alist = tmp_path / "a.list"
+    np.savetxt(alist, np.linspace(0.1, 1.0, 8))
+    flat, rising = tmp_path / "flat.h5", tmp_path / "rising.h5"
+    _metal_cone(flat, alist, False)
+    _metal_cone(rising, alist, True)
+    bands = ("sdss_g", "sdss_r")
+
+    def run(path, **kw):
+        return compute_photometry(path, bands=bands, frame="rest", **kw)
+
+    # A flat history is the one metallicity it's the same as...
+    a, b = run(flat), run(flat, metal_history=False)
+    assert "per SFH bin" in a["_settings"]["Metallicity"]
+    assert "present-day" in b["_settings"]["Metallicity"]
+    np.testing.assert_allclose(
+        a["mag_rest_sdss_r"], b["mag_rest_sdss_r"], atol=1e-4
+    )
+    # ...and the same total metals spread over time isn't.
+    c = run(rising)
+    assert abs(c["mag_rest_sdss_g"][0] - a["mag_rest_sdss_g"][0]) > 0.005

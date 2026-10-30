@@ -16,9 +16,10 @@ How each galaxy's light is built (references in docs/physics/photometry.md):
     Shamshiri et al. 2015, MNRAS 451, 2681). The youngest stars (< 100 Myr)
     come from the galaxy's current SFR (SfrDisk + SfrBulge).
   - IMF: Chabrier (2003), as SAGE26 assumes.
-  - Metallicity: one present-day value per galaxy (MetalsStellarMass /
-    StellarMass), the spectrum linearly interpolated in log Z between
-    fixed SSP nodes -- SAGE doesn't output a metallicity history.
+  - Metallicity: each bin's own (MHMetalsDisk / MHMetalsBulge, with
+    SAGE26's SaveFullMH), or else one present-day value per galaxy
+    (MetalsStellarMass / StellarMass), the spectrum linearly interpolated
+    in log Z between fixed SSP nodes.
   - Observed frame: K-corrected at each galaxy's own observed redshift
     (interpolated from a fine redshift grid within its snapshot shell),
     with luminosity distance D_L = (1 + z_obs) D_C(z_cos) (peculiar
@@ -29,8 +30,8 @@ How each galaxy's light is built (references in docs/physics/photometry.md):
 
 Scale: a lightcone can carry millions of galaxies, and FSPS is far too slow
 to call per-galaxy. So galaxies are grouped by snapshot; each group's
-composite spectra are one matrix multiply (mass per bin x cached bin
-spectra), at each metallicity node, then projected through the filters.
+composite spectra are matrix multiplies (mass per bin x cached bin spectra),
+one per metallicity node, summed, then projected through the filters.
 
 Output: new `mag_rest_<band>` / `mag_obs_<band>` datasets written into the
 same lightcone HDF5 file (float32, AB magnitudes), with the settings used
@@ -195,6 +196,46 @@ def _resolve_alist(
     return None
 
 
+def _bin_spectra(grid, age_lo, age_hi, dt_y, width, bc_age) -> dict:
+    """One metallicity's spectra for a snapshot: of each bin, of the last
+    bin's stars younger than `dt_y` outside and inside the birth clouds
+    (younger than `bc_age`, 0 without clouds), and of its older stars."""
+    young = grid.mean_spectrum(0.0, dt_y)
+    bc = grid.mean_spectrum(0.0, bc_age) if bc_age > 0 else young
+    return {
+        "bins": grid.mean_spectra(age_lo, age_hi),
+        "bc": bc,
+        "bc_frac": bc_age / dt_y if dt_y > 0 else float(bc_age > 0),
+        "after_bc": (
+            grid.mean_spectrum(bc_age, dt_y)
+            if bc_age > 0 and dt_y > bc_age
+            else bc
+        ),
+        "rest": grid.mean_spectrum(dt_y, width) if width > dt_y else young,
+    }
+
+
+def _stars(wts_in, sfr, spec, last, dt_y):
+    """Rest-frame light (chunk, n_wave, L_sun/Hz) of stars formed as
+    `wts_in` (Msun per bin), the youngest of bin `last` (if any) from the
+    current SFR `sfr`: that outside the birth clouds, and that inside."""
+    wts = wts_in.copy()
+    m_young = np.zeros(len(wts))
+    m_rest = np.zeros(len(wts))
+    if last is not None:
+        m_last = wts[:, last]
+        m_young = np.minimum(sfr * dt_y * 1e9, m_last)
+        m_rest = m_last - m_young
+        wts[:, last] = 0.0
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        older = (
+            wts @ spec["bins"]
+            + (m_young * (1 - spec["bc_frac"]))[:, None] * spec["after_bc"]
+            + m_rest[:, None] * spec["rest"]
+        )
+        return older, (m_young * spec["bc_frac"])[:, None] * spec["bc"]
+
+
 def compute_photometry(
     path: str | Path,
     bands: tuple[str, ...] = DEFAULT_BANDS,
@@ -212,6 +253,7 @@ def compute_photometry(
     disk_bulge: bool = False,
     spectra_out: dict | None = None,
     lines: bool = False,
+    metal_history: bool = True,
 ) -> dict[str, np.ndarray]:
     """Compute AB magnitudes for every galaxy in a lightcone HDF5 file
     (or just `rows`, sorted row indices).
@@ -223,6 +265,8 @@ def compute_photometry(
 
     ``use_metallicity`` (default True) uses each galaxy's own stellar
     metallicity (Z = MetalsStellarMass / StellarMass); False forces solar.
+    ``metal_history`` (default True) uses each star-formation bin's own
+    metallicity (MHMetalsDisk / MHMetalsBulge) where the file has them.
     ``dust`` (default False) applies a Calzetti starburst attenuation of
     V-band optical depth ``dust2`` to the synthesized spectra.
     ``dust_emission`` (default False) additionally re-emits the absorbed
@@ -273,6 +317,8 @@ def compute_photometry(
             )
         metals = get("MetalsStellarMass")
         bulge_mass = get("BulgeMass")
+        mh_disk = get("MHMetalsDisk")
+        mh_bulge = get("MHMetalsBulge")
         snapnum = get("SnapNum")
         if snapnum is None:
             raise KeyError(f"{path} has no SnapNum")
@@ -418,19 +464,57 @@ def compute_photometry(
     import fsps
 
     zsun = fsps.StellarPopulation(zcontinuous=1, sfh=0).solar_metallicity
+    has_history = (
+        use_metallicity
+        and metal_history
+        and mh_disk is not None
+        and mh_bulge is not None
+    )
     if use_metallicity:
+        nodes = METALLICITY_NODES
         z_frac = np.where(
             stellar_mass > 0,
             metals_mass / np.maximum(stellar_mass, 1e-30),
             0.0,
         )
-        logzsol_all = np.log10(np.clip(z_frac, 1e-6, 0.1) / zsun)
-        nodes = METALLICITY_NODES
-        z_lo, z_hi, z_w = metallicity_weights(logzsol_all, nodes)
+        log_z_now = np.log10(np.clip(z_frac, 1e-6, 0.1) / zsun)[:, None]
     else:
         nodes = np.array([0.0])
-        z_lo = z_hi = np.zeros(n, dtype=np.int64)
-        z_w = np.zeros(n)
+        log_z_now = np.zeros((n, 1))
+
+    def bin_log_z(metals, mass):
+        """log Z/Zsun of each bin's stars (n, n_bins); empty bins, which
+        hold no light, take the present-day value."""
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z = np.clip(metals.astype(np.float64) / mass, 1e-6, 0.1)
+            return np.where(mass > 0, np.log10(z / zsun), log_z_now)
+
+    # Each component: (Msun formed per bin, current SFR, log Z of its bins
+    # (n, n_bins) or, without a history, of the galaxy (n, 1)).
+    if disk_bulge:
+        log_z_d = log_z_b = log_z_now
+        if has_history:
+            log_z_d = bin_log_z(mh_disk, sfh_disk.astype(np.float64))
+            log_z_b = bin_log_z(mh_bulge, sfh_bulge.astype(np.float64))
+        components = {
+            "disk_": (sfh_disk_f, sfr_parts["SfrDisk"], log_z_d),
+            "bulge_": (sfh_bulge_f, sfr_parts["SfrBulge"], log_z_b),
+        }
+    else:
+        log_z = log_z_now
+        if has_history:
+            log_z = bin_log_z(
+                mh_disk.astype(np.float64) + mh_bulge,
+                sfh_disk.astype(np.float64) + sfh_bulge,
+            )
+        components = {"": (sfh_formed, sfr_now, log_z)}
+
+    def node_share(log_z_c, zi):
+        """Each bin's share of the population at node zi."""
+        if len(nodes) == 1:
+            return np.ones_like(log_z_c)
+        lo, hi, w = metallicity_weights(log_z_c, nodes)
+        return np.where(lo == zi, 1.0 - w, 0.0) + np.where(hi == zi, w, 0.0)
 
     a_list = np.loadtxt(alist_path)[: n_bins + 1]
     t_snap = age_at_scale_factor(a_list, hubble_h, omega_m, omega_l)  # Gyr
@@ -487,18 +571,15 @@ def compute_photometry(
 
     has_light = stellar_mass > 0
     unique_snaps = np.unique(snapnum)
-    used_nodes = np.unique(np.concatenate([z_lo, z_hi]))
-    n_groups_total = max(len(used_nodes) * len(unique_snaps), 1)
-    done_groups = 0
-    libraries = ()
-
-    for zi in used_nodes:
-        w_node = np.where(z_lo == zi, 1.0 - z_w, 0.0) + np.where(
-            z_hi == zi, z_w, 0.0
-        )
-        if not use_metallicity:
-            w_node = np.ones(n)
-        grid = _ssp_grid(
+    used_nodes = [
+        zi
+        for zi in range(len(nodes))
+        if any((node_share(c[2], zi) > 0).any() for c in components.values())
+    ]
+    n_steps = len(used_nodes) + len(unique_snaps)
+    grids = {}
+    for k_done, zi in enumerate(used_nodes, 1):
+        grids[zi] = _ssp_grid(
             float(nodes[zi]),
             bool(dust),
             float(dust2),
@@ -506,231 +587,166 @@ def compute_photometry(
             int(imf_type),
             bool(lines),
         )
-        libraries = grid.libraries
-        projectors = {b: _FilterProjector(b, grid.wave) for b in bands}
-        nu_w = dm.frequency_weights(grid.wave) if re_emit else None
+        if progress_cb is not None:
+            progress_cb(k_done, n_steps, -1, int(zi))
+    grid = grids[used_nodes[0]]
+    wave = grid.wave
+    libraries = grid.libraries
+    projectors = {b: _FilterProjector(b, wave) for b in bands}
+    nu_w = dm.frequency_weights(wave) if re_emit else None
 
-        for snap in unique_snaps:
-            group = has_light & (snapnum == snap) & (w_node > 0)
-            idx = np.where(group)[0]
-            if len(idx) == 0:
-                done_groups += 1
-                continue
-            s = int(snap)
-            t_now = t_snap[min(s, len(t_snap) - 1)]
-            # Ages of the stars in each bin (see sfh_step_offset); empty
-            # after the galaxy's own snapshot.
-            k = np.arange(n_bins) - sfh_shift
-            t_lo = t_snap[np.clip(k, 0, len(t_snap) - 1)]
-            t_hi = t_snap[np.clip(k + 1, 0, len(t_snap) - 1)]
-            age_lo = np.clip(t_now - t_hi, 0.0, None)
-            age_hi = np.clip(t_now - t_lo, 0.0, None)
-            bin_spec = grid.mean_spectra(age_lo, age_hi)  # (n_bins, n_wave)
-            # The last bin, split: its youngest YOUNG_GYR from the current
-            # SFR, the rest spread over the remainder.
-            last = s - 1 + sfh_shift
-            width = age_hi[last] - age_lo[last] if 0 <= last < n_bins else 0.0
-            dt_y = min(YOUNG_GYR, width)
-            young_spec = grid.mean_spectrum(0.0, dt_y)
-            rest_spec = (
-                grid.mean_spectrum(dt_y, width) if width > dt_y else young_spec
-            )
-            z_shell = z_obs[idx]
-            kz = np.linspace(z_shell.min(), z_shell.max(), N_KZ)
-            if kz[-1] - kz[0] < 1e-6:
-                kz = kz[:1]
-
-            step = 4000 if cf else MAX_GROUP_CHUNK
-            if cf:
-                # Stars younger than 10 Myr sit in their birth clouds.
-                bc_age = (
-                    min(dm.BC_AGE_GYR, dt_y) if dt_y > 0 else dm.BC_AGE_GYR
-                )
-                bc_spec = grid.mean_spectrum(0.0, bc_age)
-                y2_spec = (
-                    grid.mean_spectrum(bc_age, dt_y)
-                    if dt_y > bc_age
-                    else bc_spec
-                )
-                bc_frac = bc_age / dt_y if dt_y > 0 else 1.0
-
-            if not cf:
-                bc_frac = y2_spec = bc_spec = None
-
-            def build(
-                wts_in,
-                sfr_c,
-                t_ism=None,
-                t_bc=None,
-                *,
-                last=last,
-                width=width,
-                dt_y=dt_y,
-                bin_spec=bin_spec,
-                young_spec=young_spec,
-                rest_spec=rest_spec,
-                bc_frac=bc_frac,
-                y2_spec=y2_spec,
-                bc_spec=bc_spec,
-            ):
-                """Rest-frame spectra (chunk, n_wave, L_sun/Hz) of stars
-                formed as `wts_in` (Msun per bin), the youngest from the
-                current SFR `sfr_c`, through the dust if any, and what
-                the dust took out of them (None without dust)."""
-                wts = wts_in.copy()
-                m_young = np.zeros(len(wts))
-                m_rest = np.zeros(len(wts))
-                if 0 <= last < n_bins and width > 0:
-                    m_last = wts[:, last]
-                    m_young = np.minimum(sfr_c * dt_y * 1e9, m_last)
-                    m_rest = m_last - m_young
-                    wts[:, last] = 0.0
-                with np.errstate(
-                    divide="ignore", over="ignore", invalid="ignore"
-                ):
-                    if not cf:
-                        return (
-                            wts @ bin_spec
-                            + m_young[:, None] * young_spec
-                            + m_rest[:, None] * rest_spec
-                        ), None
-                    older = (
-                        wts @ bin_spec
-                        + (m_young * (1 - bc_frac))[:, None] * y2_spec
-                        + m_rest[:, None] * rest_spec
-                    )
-                    young = (m_young * bc_frac)[:, None] * bc_spec
-                    seen = t_ism * (older + young * t_bc)
-                    return seen, older + young - seen
-
-            for start in range(0, len(idx), step):
-                ci = idx[start : start + step]
-                t_ism = t_bc = None
-                if cf:
-                    t_ism = dm.ism_transmission(
-                        grid.wave, tau_v[ci], cos_i[ci]
-                    )
-                    t_bc = dm.bc_transmission(grid.wave, tau_v[ci])
-                if disk_bulge:
-                    parts = {
-                        "disk_": build(
-                            sfh_disk_f[ci],
-                            sfr_parts["SfrDisk"][ci],
-                            t_ism,
-                            t_bc,
-                        ),
-                        "bulge_": build(
-                            sfh_bulge_f[ci],
-                            sfr_parts["SfrBulge"][ci],
-                            t_ism,
-                            t_bc,
-                        ),
-                    }
-                else:
-                    parts = {
-                        "": build(sfh_formed[ci], sfr_now[ci], t_ism, t_bc)
-                    }
-                spectra = {pre: seen for pre, (seen, _) in parts.items()}
-                wn = w_node[ci]
-                zg = z_obs[ci]
-                if re_emit:
-                    # All of a galaxy's dust shares one radiation field.
-                    with np.errstate(
-                        over="ignore", invalid="ignore", divide="ignore"
-                    ):
-                        absorbed = {
-                            pre: lost @ nu_w
-                            for pre, (_, lost) in parts.items()
-                        }
-                    total = sum(absorbed.values())
-                    u_min = dm.umin_from_luminosity(total, dust_mass[ci])
-                    l_dust[ci] += wn * total
-                    dust_umin[ci] += wn * u_min
-                    ir = dm.emission_spectra(grid.wave, u_min)
-                    for pre, lum in absorbed.items():
-                        spectra[pre] = spectra[pre] + lum[:, None] * ir
-                if disk_bulge:
-                    spectra[""] = spectra["disk_"] + spectra["bulge_"]
-                if lines and 0 <= last < n_bins and width > 0:
-                    # Lines from the young stars (current SFR), in each
-                    # galaxy's own gas, through its birth cloud and ISM.
-                    # (the rate of the young stars the spectra hold)
-                    sfr_y = np.minimum(
-                        sfr_now[ci],
-                        sfh_formed[ci, last] / max(dt_y * 1e9, 1.0),
-                    )
-                    intr = sfr_y[:, None] * hii_per_sfr[ci]
-                    seen = intr
-                    if cf:
-                        seen = (
-                            intr
-                            * dm.ism_transmission(
-                                line_wave, tau_v[ci], cos_i[ci]
-                            )
-                            * dm.bc_transmission(line_wave, tau_v[ci])
-                        )
-                    line_intr[ci] += wn[:, None] * intr
-                    line_seen[ci] += wn[:, None] * seen
-                if spectra_out is not None:
-                    _keep_spectra(
-                        spectra_out,
-                        grid.wave,
-                        ci,
-                        wn,
-                        spectra,
-                        (
-                            build(
-                                sfh_formed[ci],
-                                sfr_now[ci],
-                                np.ones_like(t_ism),
-                                np.ones_like(t_bc),
-                            )[0]
-                            if cf
-                            else spectra[""]
-                        ),
-                        n,
-                    )
-                for pre, composite in spectra.items():
-                    for band in bands:
-                        proj = projectors[band]
-                        if want_rest:
-                            f_nu = (
-                                proj.project(composite, 0.0)
-                                * L_SUN_ERG_S
-                                / (4 * np.pi * d10_cm**2)
-                            )
-                            flux[f"{pre}mag_rest_{band}"][ci] += wn * f_nu
-                        if want_obs:
-                            # K-correction shape at each galaxy's own z_obs.
-                            fk = np.stack(
-                                [
-                                    (1.0 + z) * proj.project(composite, z)
-                                    for z in kz
-                                ]
-                            )  # (n_kz, chunk)
-                            if len(kz) > 1:
-                                j = np.clip(
-                                    np.searchsorted(kz, zg) - 1, 0, len(kz) - 2
-                                )
-                                t = np.clip(
-                                    (zg - kz[j]) / (kz[j + 1] - kz[j]), 0, 1
-                                )
-                                cols = np.arange(len(ci))
-                                f_eff = (1 - t) * fk[j, cols] + t * fk[
-                                    j + 1, cols
-                                ]
-                            else:
-                                f_eff = fk[0]
-                            f_nu = (
-                                f_eff
-                                * L_SUN_ERG_S
-                                / (4 * np.pi * d_l_cm[ci] ** 2)
-                            )
-                            flux[f"{pre}mag_obs_{band}"][ci] += wn * f_nu
-
-            done_groups += 1
+    for k_done, snap in enumerate(unique_snaps, len(used_nodes) + 1):
+        idx = np.where(has_light & (snapnum == snap))[0]
+        s = int(snap)
+        if len(idx) == 0:
             if progress_cb is not None:
-                progress_cb(done_groups, n_groups_total, s, int(zi))
+                progress_cb(k_done, n_steps, s, -1)
+            continue
+        t_now = t_snap[min(s, len(t_snap) - 1)]
+        # Ages of the stars in each bin (see sfh_step_offset); empty after
+        # the galaxy's own snapshot.
+        k = np.arange(n_bins) - sfh_shift
+        t_lo = t_snap[np.clip(k, 0, len(t_snap) - 1)]
+        t_hi = t_snap[np.clip(k + 1, 0, len(t_snap) - 1)]
+        age_lo = np.clip(t_now - t_hi, 0.0, None)
+        age_hi = np.clip(t_now - t_lo, 0.0, None)
+        # The last bin, split: its youngest YOUNG_GYR from the current SFR,
+        # the rest spread over the remainder.
+        last = s - 1 + sfh_shift
+        width = age_hi[last] - age_lo[last] if 0 <= last < n_bins else 0.0
+        dt_y = min(YOUNG_GYR, width)
+        # Stars younger than 10 Myr sit in their birth clouds.
+        bc_age = (
+            (min(dm.BC_AGE_GYR, dt_y) if dt_y > 0 else dm.BC_AGE_GYR)
+            if cf
+            else 0.0
+        )
+        specs = {
+            zi: _bin_spectra(g, age_lo, age_hi, dt_y, width, bc_age)
+            for zi, g in grids.items()
+        }
+        z_shell = z_obs[idx]
+        kz = np.linspace(z_shell.min(), z_shell.max(), N_KZ)
+        if kz[-1] - kz[0] < 1e-6:
+            kz = kz[:1]
+        has_last = 0 <= last < n_bins and width > 0
+
+        step = 4000 if cf else MAX_GROUP_CHUNK
+        for start in range(0, len(idx), step):
+            ci = idx[start : start + step]
+            parts = {}
+            for pre, (mass, sfr, log_z_c) in components.items():
+                older = np.zeros((len(ci), len(wave)))
+                young = np.zeros_like(older) if cf else None
+                lz = log_z_c[ci]
+                for zi in used_nodes:
+                    share = np.broadcast_to(
+                        node_share(lz, zi), (len(ci), n_bins)
+                    )
+                    use = np.flatnonzero(share.any(axis=1))
+                    if len(use) == 0:
+                        continue
+                    o, y = _stars(
+                        mass[ci[use]] * share[use],
+                        sfr[ci[use]] * (share[use, last] if has_last else 0),
+                        specs[zi],
+                        last if has_last else None,
+                        dt_y,
+                    )
+                    older[use] += o
+                    if cf:
+                        young[use] += y
+                parts[pre] = (older, young)
+            if cf:
+                t_ism = dm.ism_transmission(wave, tau_v[ci], cos_i[ci])
+                t_bc = dm.bc_transmission(wave, tau_v[ci])
+                spectra = {
+                    pre: t_ism * (o + y * t_bc)
+                    for pre, (o, y) in parts.items()
+                }
+                unseen = {
+                    pre: o + y for pre, (o, y) in parts.items()
+                }  # the stars alone
+            else:
+                spectra = {pre: o for pre, (o, _) in parts.items()}
+                unseen = spectra
+            zg = z_obs[ci]
+            if re_emit:
+                # All of a galaxy's dust shares one radiation field.
+                with np.errstate(
+                    over="ignore", invalid="ignore", divide="ignore"
+                ):
+                    absorbed = {
+                        pre: (unseen[pre] - spectra[pre]) @ nu_w
+                        for pre in parts
+                    }
+                total = sum(absorbed.values())
+                u_min = dm.umin_from_luminosity(total, dust_mass[ci])
+                l_dust[ci] = total
+                dust_umin[ci] = u_min
+                ir = dm.emission_spectra(wave, u_min)
+                for pre, lum in absorbed.items():
+                    spectra[pre] = spectra[pre] + lum[:, None] * ir
+            if disk_bulge:
+                spectra[""] = spectra["disk_"] + spectra["bulge_"]
+            if lines and has_last:
+                # Lines from the young stars (current SFR), in each
+                # galaxy's own gas, through its birth cloud and ISM.
+                # (the rate of the young stars the spectra hold)
+                sfr_y = np.minimum(
+                    sfr_now[ci],
+                    sfh_formed[ci, last] / max(dt_y * 1e9, 1.0),
+                )
+                intr = sfr_y[:, None] * hii_per_sfr[ci]
+                seen = intr
+                if cf:
+                    seen = (
+                        intr
+                        * dm.ism_transmission(line_wave, tau_v[ci], cos_i[ci])
+                        * dm.bc_transmission(line_wave, tau_v[ci])
+                    )
+                line_intr[ci] = intr
+                line_seen[ci] = seen
+            if spectra_out is not None:
+                _keep_spectra(
+                    spectra_out, wave, ci, spectra, sum(unseen.values()), n
+                )
+            for pre, composite in spectra.items():
+                for band in bands:
+                    proj = projectors[band]
+                    if want_rest:
+                        f_nu = (
+                            proj.project(composite, 0.0)
+                            * L_SUN_ERG_S
+                            / (4 * np.pi * d10_cm**2)
+                        )
+                        flux[f"{pre}mag_rest_{band}"][ci] = f_nu
+                    if want_obs:
+                        # K-correction shape at each galaxy's own z_obs.
+                        fk = np.stack(
+                            [
+                                (1.0 + z) * proj.project(composite, z)
+                                for z in kz
+                            ]
+                        )  # (n_kz, chunk)
+                        if len(kz) > 1:
+                            j = np.clip(
+                                np.searchsorted(kz, zg) - 1, 0, len(kz) - 2
+                            )
+                            t = np.clip(
+                                (zg - kz[j]) / (kz[j + 1] - kz[j]), 0, 1
+                            )
+                            cols = np.arange(len(ci))
+                            f_eff = (1 - t) * fk[j, cols] + t * fk[j + 1, cols]
+                        else:
+                            f_eff = fk[0]
+                        f_nu = (
+                            f_eff * L_SUN_ERG_S / (4 * np.pi * d_l_cm[ci] ** 2)
+                        )
+                        flux[f"{pre}mag_obs_{band}"][ci] = f_nu
+
+        if progress_cb is not None:
+            progress_cb(k_done, n_steps, s, -1)
 
     out: dict = {}
     for name, f_nu in flux.items():
@@ -816,9 +832,14 @@ def compute_photometry(
         "RecycleFraction": float(recycle_fraction),
         "YoungFromCurrentSFR_Gyr": float(YOUNG_GYR),
         "Metallicity": (
-            "per galaxy, present-day stellar Z, interpolated between SSP nodes"
-            if use_metallicity
-            else "solar"
+            "per SFH bin (MHMetals), interpolated between SSP nodes"
+            if has_history
+            else (
+                "per galaxy, present-day stellar Z, interpolated between "
+                "SSP nodes"
+                if use_metallicity
+                else "solar"
+            )
         ),
         "KCorrection": "per galaxy at z_obs",
         "LuminosityDistance": "(1+z_obs) D_C(z_cos)",
@@ -884,16 +905,16 @@ _DUST_FIELDS = {
 }
 
 
-def _keep_spectra(store, wave, rows, weight, spectra, intrinsic, n):
-    """Accumulate rest-frame spectra of `rows` (weighted by their
-    metallicity-node share) into `store` (see compute_photometry)."""
+def _keep_spectra(store, wave, rows, spectra, intrinsic, n):
+    """Keep the rest-frame spectra of `rows` in `store` (see
+    compute_photometry)."""
     names = {"": "observed", "disk_": "disk", "bulge_": "bulge"}
     store.setdefault("wave", wave)
     for pre, spec in spectra.items():
         arr = store.setdefault(names[pre], np.zeros((n, len(wave))))
-        arr[rows] += weight[:, None] * spec
+        arr[rows] = spec
     arr = store.setdefault("intrinsic", np.zeros((n, len(wave))))
-    arr[rows] += weight[:, None] * intrinsic
+    arr[rows] = intrinsic
 
 
 def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
@@ -982,6 +1003,13 @@ def main(argv: list[str] | None = None) -> None:
         action="store_false",
         help="Force solar metallicity for every galaxy instead of using its "
         "own mass-weighted stellar Z (MetalsStellarMass/StellarMass).",
+    )
+    p.add_argument(
+        "--no-metal-history",
+        dest="metal_history",
+        action="store_false",
+        help="Use one metallicity per galaxy even if the file has each star-"
+        "formation bin's (MHMetalsDisk, MHMetalsBulge).",
     )
     p.add_argument(
         "--dust",
@@ -1090,6 +1118,7 @@ def main(argv: list[str] | None = None) -> None:
         dust_model=args.dust_model,
         disk_bulge=args.disk_bulge,
         lines=args.lines,
+        metal_history=args.metal_history,
     )
     write_photometry(args.input, results)
     n_mags = sum(1 for k in results if not k.startswith("_"))
