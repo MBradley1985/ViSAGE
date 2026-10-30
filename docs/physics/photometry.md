@@ -34,12 +34,11 @@ The LightSAGE flow's photometry stage (`python -m visage.sed.photometry`) gives 
 
 Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the critical-metallicity behaviour of Asano et al. (2013). Dust in hot gas and the CGM is sputtered (Tsai & Mathews 1995) and its column is far below the disk's, so it isn't included.
 
-**Where the dust is.** The molecular gas follows the stars (Leroy et al. 2008). The atomic gas sits in its own exponential disk sized by the HI size–mass relation (Wang et al. 2016); above *M*<sub>HI</sub> ≈ 10<sup>10.3</sup> M☉ no exponential disk reaches 1 M☉ pc⁻² at that size, so those disks take the scale length that comes closest. The optical depth in front of the starlight is the mean hydrogen column inside the stellar half-light radius, with the Milky Way's *A*<sub>V</sub>/*N*<sub>H</sub> (Bohlin, Savage & Drake 1978; *R*<sub>V</sub> = 3.1) scaled by the galaxy's dust per hydrogen over the Milky Way's 0.010 (Draine & Li 2007).
+**How it dims the light.** The two-component model of Charlot & Fall (2000), as Dusty SAGE's default variant uses it (Triani et al. 2023, after Lagos et al. 2019):
 
-**How it dims the light** (Charlot & Fall 2000):
-
-- **Diffuse ISM:** dust mixed with the stars in a slab seen at the galaxy's inclination (its spin against the line of sight), τ<sub>λ</sub> ∝ λ<sup>−0.7</sup>.
-- **Birth clouds:** stars younger than 10 Myr are also behind their birth cloud, of optical depth τ̂<sub>ISM</sub>(1 − μ<sub>CF</sub>)/μ<sub>CF</sub> with μ<sub>CF</sub> = 0.3, τ<sub>λ</sub> ∝ λ<sup>−1.3</sup> (da Cunha, Charlot & Elbaz 2008; Charlot & Fall used λ<sup>−0.7</sup> for both). μ<sub>CF</sub> relates effective optical depths, so τ̂<sub>ISM</sub> is the slab's −ln *T* at the mean sec *i* = 2, not its column; the two agree for thin disks.
+- **Dust surface density:** Σ<sub>dust</sub> = *M*<sub>dust</sub> / (2π *r* *l*) inside the gas half-mass radius *r* = 1.68 *R*<sub>d</sub> (as Lagos et al.; Dusty SAGE's own radius is set to match its galaxies), with *l* = cos *i* (*r* − *r*/7.3) + *r*/7.3 the projected minor axis at the galaxy's inclination (its spin against the line of sight).
+- **Diffuse ISM:** a screen whose optical depth and slope follow Σ<sub>dust</sub>, from the radiative-transfer results of Trayford et al. (2020): the median relations as digitised by Lagos et al.
+- **Birth clouds:** stars younger than 10 Myr are also behind a cloud of τ<sub>BC</sub> = δ Σ<sub>cl</sub> / (*f*<sub>DTM,MW</sub> *Z*<sub>☉</sub> Σ<sub>MW,cl</sub>), with δ the dust-to-gas ratio, Σ<sub>cl</sub> = max(85 M☉ pc⁻², the ISM's Σ<sub>gas</sub>), *f*<sub>DTM,MW</sub> = 0.33, *Z*<sub>☉</sub> = 0.0189, at least τ<sub>ISM</sub> and at most 5, with τ<sub>λ</sub> ∝ λ<sup>−0.7</sup>.
 
 **Where the absorbed light goes** (`--dust-emission`). Each galaxy re-emits exactly the starlight its dust absorbed (energy balance, as in da Cunha et al. 2008), with the Draine & Li (2007) dust-emission spectrum FSPS uses (γ = 0.01, *q*<sub>PAH</sub> = 3.5 %). Its *U*<sub>min</sub> comes from the galaxy's own light per unit dust mass, *L*<sub>dust</sub> = *P*<sub>0</sub> ⟨*U*⟩ *M*<sub>dust</sub> with *P*<sub>0</sub> ≈ 125 L☉ M☉⁻¹ (Magdis et al. 2012), within the models' 0.1–25, so more light on less dust is warmer. `LDust` is the total and `DustUmin` the *U*<sub>min</sub>.
 
@@ -137,6 +136,7 @@ galaxies beyond the cone's redshift range.
 - Leroy A. K. et al. 2008, *AJ* 136, 2782
 - Lupton R. et al. 2004, *PASP* 116, 133
 - Madau P. 1995, *ApJ* 441, 18
+- Lagos C. d. P. et al. 2019, *MNRAS* 489, 4196
 - Magdis G. E. et al. 2012, *ApJ* 760, 6
 - Merloni A., Heinz S. 2008, *MNRAS* 388, 1011
 - Morrissey P. et al. 2007, *ApJS* 173, 682
@@ -146,6 +146,8 @@ galaxies beyond the cone's redshift range.
 - Shamshiri S. et al. 2015, *MNRAS* 451, 2681
 - Skrutskie M. F. et al. 2006, *AJ* 131, 1163
 - Triani D. P. et al. 2020, *MNRAS* 493, 2490
+- Trayford J. W. et al. 2020, *MNRAS* 491, 3937
+- Triani D. P. et al. 2023, *MNRAS* 519, 2
 - Tsai J. C., Mathews W. G. 1995, *ApJ* 448, 84
 - Wang J. et al. 2016, *MNRAS* 460, 2143
 - Wright E. L. et al. 2010, *AJ* 140, 1868

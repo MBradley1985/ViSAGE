@@ -255,16 +255,6 @@ def test_dust_equilibrium_and_attenuation():
     assert t[1, 0] < t[1, 2]
 
 
-def test_hi_disk_scale_is_continuous_with_mass():
-    from visage.sed import dust as dm
-
-    m = np.logspace(9, 11, 400)
-    r1 = 0.5 * 10 ** (0.506 * np.log10(m) - 3.293) * 1e3
-    h = dm._exp_scale_hi(m, r1)
-    assert np.all(h <= 0.5 * r1 + 1e-6)
-    assert np.max(np.diff(np.log(h))) < 0.1
-
-
 def test_zero_spin_orientation_does_not_depend_on_rows():
     from visage.sed import dust as dm
 
@@ -374,11 +364,28 @@ def test_metal_history_gives_each_bin_its_metallicity(tmp_path):
     assert abs(c["mag_rest_sdss_g"][0] - a["mag_rest_sdss_g"][0]) > 0.005
 
 
-def test_birth_clouds_scale_with_the_effective_optical_depth():
+def test_ism_screen_follows_trayford():
     from visage.sed import dust as dm
 
-    t = dm.effective_tau_v(np.array([1e-3, 3.0]))
-    assert t[0] == pytest.approx(1e-3, rel=0.01)  # thin: the column
-    assert t[1] < 2.0  # thick: saturates
-    trans = dm.bc_transmission(np.array([5500.0]), np.array([3.0]))
-    assert trans[0, 0] == pytest.approx(np.exp(-t[1] * 0.7 / 0.3))
+    tau, eta = dm.tau_eta_ism(np.array([10**5.0576, 10**6.47, 10**4.0]))
+    assert tau[0] == pytest.approx(0.149, abs=0.01)
+    assert tau[1] == pytest.approx(1.03, abs=0.01)
+    assert 0 < tau[2] < 0.03  # thinner than the table: scales down
+    assert np.all(eta < 0)
+
+
+def test_birth_clouds_of_a_milky_way_like_disk():
+    from visage.sed import dust as dm
+
+    t = dm.tau_bc(0.33 * 0.0189, 1e9, 4.0, 0.1)
+    assert t == pytest.approx(1.0)  # Sigma_cl = 85: tau_BC,0
+    assert dm.tau_bc(0.33 * 0.0189, 1e9, 4.0, 2.0) == 2.0
+    assert dm.tau_bc(0.33 * 0.0189, 1e11, 2.0, 0.1) > 1.0  # dense ISM
+    assert dm.tau_bc(0.2, 1e11, 1.0, 0.1) == dm.TAU_BC_MAX
+
+
+def test_edge_on_disks_show_more_dust():
+    from visage.sed import dust as dm
+
+    face, edge = dm.sigma_dust(1e7, 4.0, np.array([1.0, 0.0]))
+    assert edge == pytest.approx(7.3 * face)

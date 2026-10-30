@@ -357,7 +357,6 @@ def compute_photometry(
             step_myr = get("dT")
         if cf:
             h2 = get("H2gas")
-            h1 = get("H1gas")
             spin = np.column_stack([get(f"Spin{c}") for c in "xyz"])
             pos = np.column_stack([get(f"Pos{c}") for c in "xyz"])
 
@@ -446,18 +445,19 @@ def compute_photometry(
             yield_=yield_,
         )
         dust_mass = delta * cold_m
-        tau_v = dm.tau_v_ism(
-            h1.astype(np.float64) * mfac,
-            h2.astype(np.float64) * mfac,
-            cold_m,
-            disk_r * 1e3 / hubble_h,
-            delta,
-        )
         cos_i = dm.cos_inclination(spin, pos)
+        radius_kpc = disk_r * 1e3 / hubble_h
+        tau_v, eta_v = dm.tau_eta_ism(
+            dm.sigma_dust(dust_mass, radius_kpc, cos_i)
+        )
+        tau_birth = dm.tau_bc(delta, cold_m, radius_kpc, tau_v)
         dust_info = {
             "DustMassCold": dust_mass.astype(np.float32),
             "DustToGas": delta.astype(np.float32),
-            "TauV_ISM": tau_v.astype(np.float32),
+            "TauV_ISM": dm.tau_eta_ism(
+                dm.sigma_dust(dust_mass, radius_kpc, 1.0)
+            )[0].astype(np.float32),
+            "TauV_BC": tau_birth.astype(np.float32),
             "CosInclination": cos_i.astype(np.float32),
         }
         dust = False  # (the SSPs stay unattenuated; dust is applied here)
@@ -659,8 +659,8 @@ def compute_photometry(
                         young[use] += y
                 parts[pre] = (older, young)
             if cf:
-                t_ism = dm.ism_transmission(wave, tau_v[ci], cos_i[ci])
-                t_bc = dm.bc_transmission(wave, tau_v[ci])
+                t_ism = dm.ism_transmission(wave, tau_v[ci], eta_v[ci])
+                t_bc = dm.bc_transmission(wave, tau_birth[ci])
                 spectra = {
                     pre: t_ism * (o + y * t_bc)
                     for pre, (o, y) in parts.items()
@@ -703,8 +703,8 @@ def compute_photometry(
                 if cf:
                     seen = (
                         intr
-                        * dm.ism_transmission(line_wave, tau_v[ci], cos_i[ci])
-                        * dm.bc_transmission(line_wave, tau_v[ci])
+                        * dm.ism_transmission(line_wave, tau_v[ci], eta_v[ci])
+                        * dm.bc_transmission(line_wave, tau_birth[ci])
                     )
                 line_intr[ci] = intr
                 line_seen[ci] = seen
@@ -805,12 +805,9 @@ def compute_photometry(
         agn_intr[cold <= 0] = 0.0  # no gas, no narrow-line region
         agn_seen = agn_intr
         if cf:
-            # From the disk's mid-plane: a screen of half the slab.
-            agn_seen = agn_intr * np.exp(
-                -np.outer(
-                    tau_v / (2.0 * np.maximum(cos_i, 0.05)),
-                    (line_wave / 5500.0) ** -dm.N_ISM,
-                )
+            # From the disk's mid-plane: half the ISM screen.
+            agn_seen = agn_intr * np.sqrt(
+                dm.ism_transmission(line_wave, tau_v, eta_v)
             )
         line_intr += agn_intr
         line_seen += agn_seen
@@ -857,8 +854,9 @@ def compute_photometry(
         "LuminosityDistance": "(1+z_obs) D_C(z_cos)",
         "IGM": "Madau 1995",
         "Dust": (
-            "Charlot & Fall 2000 birth clouds + ISM slab at each galaxy's "
-            "inclination; cold dust from Dusty-SAGE (Triani+20) equilibrium"
+            "Charlot & Fall 2000 as Dusty SAGE (Lagos+19 birth clouds, "
+            "Trayford+20 ISM) at each galaxy's inclination; cold dust from "
+            "Dusty-SAGE (Triani+20) equilibrium"
             + (
                 "; re-emitted in the IR (Draine & Li 2007, energy balance, "
                 "U_min from L_dust/M_dust)"
@@ -910,6 +908,7 @@ _DUST_FIELDS = {
     "DustMassCold": ("Cold-ISM dust mass", "Msun"),
     "DustToGas": ("Cold-ISM dust-to-gas mass ratio", ""),
     "TauV_ISM": ("Face-on V-band optical depth of the diffuse ISM", ""),
+    "TauV_BC": ("V-band optical depth of the birth clouds", ""),
     "CosInclination": ("|cos| of the angle between spin and sight line", ""),
     "LDust": (
         "Dust luminosity (absorbed starlight re-emitted in the IR)",

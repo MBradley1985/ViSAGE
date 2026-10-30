@@ -39,9 +39,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   taken to be 0.1 Myr old, far too bright and with huge emission lines.
   Both layouts are now read correctly. Cones from such runs need their
   photometry re-run.
-- **Birth clouds scale with the ISM's effective optical depth,** not its
-  column, as Charlot & Fall's model is defined: less over-attenuation of
-  star-forming regions in gas-rich disks.
+- **Dust attenuation follows Dusty SAGE's default model:** a Trayford et
+  al. (2020) screen from each galaxy's dust surface density and birth
+  clouds from its dust and gas (Lagos et al. 2019), replacing the slab.
+  Hα and Hβ are far less over-attenuated. `TauV_BC` is new.
 - **AGN narrow lines need gas:** galaxies with no cold gas have none.
 - **Dust in the most HI-rich disks:** above log M_HI ≈ 10.3 the HI disk's
   size jumped, dropping τ_V about fourfold. Cones need their photometry
