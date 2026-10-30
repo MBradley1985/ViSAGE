@@ -244,11 +244,11 @@ def test_dust_equilibrium_and_attenuation():
         )[0]
         == 0
     )
-    # Slab transmission: 1 at zero depth, falls with depth and inclination,
-    # and is lower in the blue than the red.
+    # Screen transmission: 1 at zero depth, falls with depth, and is lower
+    # in the blue than the red.
     wave = np.array([3500.0, 5500.0, 8000.0])
     t = dust.ism_transmission(
-        wave, np.array([0.0, 1.0, 1.0]), np.array([1.0, 1.0, 0.2])
+        wave, np.array([0.0, 1.0, 2.0]), np.array([-0.7, -0.7, -0.7])
     )
     np.testing.assert_allclose(t[0], 1.0, atol=1e-6)
     assert (t[1] < 1).all() and (t[2] < t[1]).all()

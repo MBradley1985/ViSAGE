@@ -55,6 +55,9 @@ from scipy.signal import fftconvolve
 
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
+# Colour balance (reddest band first), from SDSS's own colour images: real
+# galaxies of known g - i in their blue / red channels.
+OPTICAL_WEIGHTS = (1.0, 1.1, 1.6)
 MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
 STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
@@ -92,7 +95,7 @@ SURVEYS: dict[str, Survey] = {
         (1.32, 1.32, 1.32),
         ((21.3, 5, None), (22.2, 5, None), (22.2, 5, None)),
         "Abazajian et al. 2009",
-        (1.0, 1.1, 1.4),
+        OPTICAL_WEIGHTS,
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
     ),
     "des": Survey(
@@ -102,7 +105,7 @@ SURVEYS: dict[str, Survey] = {
         (0.83, 0.95, 1.11),
         ((23.1, 10, 1.95), (24.4, 10, 1.95), (24.7, 10, 1.95)),
         "Abbott et al. 2021",
-        (1.0, 1.1, 1.4),
+        OPTICAL_WEIGHTS,
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -111,7 +114,7 @@ SURVEYS: dict[str, Survey] = {
         (1.11, 1.19, 1.31),
         ((23.1, 5, None), (23.2, 5, None), (23.3, 5, None)),
         "Chambers et al. 2016",
-        (1.0, 1.1, 1.4),
+        OPTICAL_WEIGHTS,
     ),
     "lsst": Survey(
         "Rubin LSST 10-year (gri)",
@@ -120,7 +123,7 @@ SURVEYS: dict[str, Survey] = {
         (0.7, 0.7, 0.7),
         ((26.8, 5, None), (27.5, 5, None), (27.4, 5, None)),
         "Ivezić et al. 2019",
-        (1.0, 1.1, 1.4),
+        OPTICAL_WEIGHTS,
         (20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
     ),
     "2mass": Survey(
