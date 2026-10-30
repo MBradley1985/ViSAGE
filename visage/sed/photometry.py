@@ -774,6 +774,7 @@ def compute_photometry(
         )
         agn_logu = ag.log_u(l_agn, n_c)
         agn_intr = ag.line_luminosities(l_agn, z_gas, agn_logu) / L_SUN_ERG_S
+        agn_intr[cold <= 0] = 0.0  # no gas, no narrow-line region
         agn_seen = agn_intr
         if cf:
             # From the disk's mid-plane: a screen of half the slab.
