@@ -147,7 +147,7 @@ galaxies beyond the cone's redshift range.
 - Skrutskie M. F. et al. 2006, *AJ* 131, 1163
 - Triani D. P. et al. 2020, *MNRAS* 493, 2490
 - Trayford J. W. et al. 2020, *MNRAS* 491, 3937
-- Triani D. P. et al. 2023, *MNRAS* 519, 2
+- Triani D. P. et al. 2023, *MNRAS* 519, 2500
 - Tsai J. C., Mathews W. G. 1995, *ApJ* 448, 84
 - Wang J. et al. 2016, *MNRAS* 460, 2143
 - Wright E. L. et al. 2010, *AJ* 140, 1868

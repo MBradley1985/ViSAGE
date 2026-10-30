@@ -325,6 +325,23 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 
 Both supported automatically — point at the `.par` file and ViSAGE figures out the rest from the HDF5.
 
+## Citation
+
+If you use ViSAGE in published work, please cite it using [CITATION.cff](CITATION.cff), and the models it runs:
+
+- **SAGE26:** Bradley M., Croton D. J., Mostoghiu Paun R. A., Dutta Chowdhury D., Willingham J. 2026, *SAGE26 Paper I: Modelling the baryon cycle from cosmic dawn to the present day*, [arXiv:2610.09564](https://arxiv.org/abs/2610.09564)
+- **SAGE:** Croton D. J. et al. 2016, *ApJS* 222, 22, [doi:10.3847/0067-0049/222/2/22](https://doi.org/10.3847/0067-0049/222/2/22)
+
+LightSAGE's synthetic photometry, spectra and mock images build on the following. The full list is in [Lightcone Photometry](docs/physics/photometry.md#references).
+
+- **Stellar populations (FSPS):** Conroy C., Gunn J. E., White M. 2009, *ApJ* 699, 486; Conroy C., Gunn J. E. 2010, *ApJ* 712, 833
+- **Dust mass:** Triani D. P. et al. 2020, *MNRAS* 493, 2490 (Dusty SAGE)
+- **Dust attenuation:** Charlot S., Fall S. M. 2000, *ApJ* 539, 718; Trayford J. W. et al. 2020, *MNRAS* 491, 3937; Lagos C. d. P. et al. 2019, *MNRAS* 489, 4196 (Shark); Triani D. P. et al. 2023, *MNRAS* 519, 2500
+- **Dust emission:** Draine B. T., Li A. 2007, *ApJ* 657, 810
+- **Emission lines:** Gutkin J., Charlot S., Bruzual G. 2016, *MNRAS* 462, 1757; Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354; Hirschmann M. et al. 2017, *MNRAS* 472, 2468
+- **AGN light curves:** Hopkins P. F., Hernquist L. 2009, *ApJ* 698, 1550
+- **Intergalactic absorption:** Madau P. 1995, *ApJ* 441, 18
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
