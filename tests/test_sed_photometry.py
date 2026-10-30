@@ -372,3 +372,13 @@ def test_metal_history_gives_each_bin_its_metallicity(tmp_path):
     # ...and the same total metals spread over time isn't.
     c = run(rising)
     assert abs(c["mag_rest_sdss_g"][0] - a["mag_rest_sdss_g"][0]) > 0.005
+
+
+def test_birth_clouds_scale_with_the_effective_optical_depth():
+    from visage.sed import dust as dm
+
+    t = dm.effective_tau_v(np.array([1e-3, 3.0]))
+    assert t[0] == pytest.approx(1e-3, rel=0.01)  # thin: the column
+    assert t[1] < 2.0  # thick: saturates
+    trans = dm.bc_transmission(np.array([5500.0]), np.array([3.0]))
+    assert trans[0, 0] == pytest.approx(np.exp(-t[1] * 0.7 / 0.3))

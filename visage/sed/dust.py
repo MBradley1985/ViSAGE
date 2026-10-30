@@ -53,8 +53,11 @@ MNRAS 375, 2):
                 stars in a slab seen at inclination i:
                 T = (1 - exp(-tau sec i)) / (tau sec i)
   birth clouds  stars younger than 10 Myr are also behind their birth
-                cloud, tau_V^BC = tau_V (1 - mu) / mu with mu = 0.3,
-                tau_lambda^BC = tau_V^BC (lambda / 5500 A)^-1.3
+                cloud, tau_V^BC = tau_eff (1 - mu) / mu with mu = 0.3,
+                tau_lambda^BC = tau_V^BC (lambda / 5500 A)^-1.3. mu relates
+                effective optical depths (da Cunha et al. 2008, sec. 2.1),
+                so tau_eff is the slab's, -ln T, at the mean sec i = 2,
+                not its column; they agree for thin disks.
 (Charlot & Fall used lambda^-0.7 for both; the steeper birth-cloud curve
 and mu = 0.3 are those of da Cunha, Charlot & Elbaz 2008, MNRAS 388, 1595,
 fitted to nearby galaxies' UV-to-IR SEDs.)
@@ -220,9 +223,16 @@ def ism_transmission(wave, tau_v, cos_i) -> np.ndarray:
     return tr
 
 
+def effective_tau_v(tau_v) -> np.ndarray:
+    """Effective optical depth, -ln T, of a slab of face-on `tau_v` at the
+    mean sec i = 2 of randomly oriented disks."""
+    t = 2.0 * np.maximum(np.asarray(tau_v, float), 1e-8)
+    return -np.log(-np.expm1(-t) / t)
+
+
 def bc_transmission(wave, tau_v) -> np.ndarray:
     """(n, n_wave) birth-cloud transmission (a screen)."""
-    tau_bc = tau_v * (1 - MU_ISM) / MU_ISM
+    tau_bc = effective_tau_v(tau_v) * (1 - MU_ISM) / MU_ISM
     return np.exp(-np.outer(tau_bc, (wave / 5500.0) ** -N_BC))
 
 

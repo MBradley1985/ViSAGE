@@ -39,7 +39,7 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 **How it dims the light** (Charlot & Fall 2000):
 
 - **Diffuse ISM:** dust mixed with the stars in a slab seen at the galaxy's inclination (its spin against the line of sight), τ<sub>λ</sub> ∝ λ<sup>−0.7</sup>.
-- **Birth clouds:** stars younger than 10 Myr are also behind their birth cloud, of optical depth τ<sub>ISM</sub>(1 − μ<sub>CF</sub>)/μ<sub>CF</sub> with μ<sub>CF</sub> = 0.3, τ<sub>λ</sub> ∝ λ<sup>−1.3</sup> (da Cunha, Charlot & Elbaz 2008; Charlot & Fall used λ<sup>−0.7</sup> for both).
+- **Birth clouds:** stars younger than 10 Myr are also behind their birth cloud, of optical depth τ̂<sub>ISM</sub>(1 − μ<sub>CF</sub>)/μ<sub>CF</sub> with μ<sub>CF</sub> = 0.3, τ<sub>λ</sub> ∝ λ<sup>−1.3</sup> (da Cunha, Charlot & Elbaz 2008; Charlot & Fall used λ<sup>−0.7</sup> for both). μ<sub>CF</sub> relates effective optical depths, so τ̂<sub>ISM</sub> is the slab's −ln *T* at the mean sec *i* = 2, not its column; the two agree for thin disks.
 
 **Where the absorbed light goes** (`--dust-emission`). Each galaxy re-emits exactly the starlight its dust absorbed (energy balance, as in da Cunha et al. 2008), with the Draine & Li (2007) dust-emission spectrum FSPS uses (γ = 0.01, *q*<sub>PAH</sub> = 3.5 %). Its *U*<sub>min</sub> comes from the galaxy's own light per unit dust mass, *L*<sub>dust</sub> = *P*<sub>0</sub> ⟨*U*⟩ *M*<sub>dust</sub> with *P*<sub>0</sub> ≈ 125 L☉ M☉⁻¹ (Magdis et al. 2012), within the models' 0.1–25, so more light on less dust is warmer. `LDust` is the total and `DustUmin` the *U*<sub>min</sub>.
 
