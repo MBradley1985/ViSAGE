@@ -348,6 +348,7 @@ def compute_photometry(
         if lines:
             bh_mass = get("BlackHoleMass")
             quasar_acc = get("QuasarModeBHaccretionMass")
+            galaxy_id = get("GalaxyIndex")
             # Radio-mode accretion since the last snapshot (newer SAGE26);
             # older outputs only have its power, Heating.
             radio_acc = get("RadioModeBHaccretionMass")
@@ -771,7 +772,18 @@ def compute_photometry(
                 step_myr.astype(np.float64) / hubble_h * 1e6, 1.0
             )
             if quasar_acc is not None:
+                # Without an id, the mean over the step.
                 mdot_q = quasar_acc.astype(np.float64) * mfac / step_yr
+                if galaxy_id is not None:
+                    mdot_q = ag.burst_rate(
+                        quasar_acc.astype(np.float64) * mfac,
+                        ag.burst_phase(galaxy_id, snapnum) * step_yr / 1e6,
+                        (
+                            bh_mass.astype(np.float64) * mfac
+                            if bh_mass is not None
+                            else zeros
+                        ),
+                    )
             if radio_acc is not None:
                 mdot_r = radio_acc.astype(np.float64) * mfac / step_yr
         l_agn, edd = ag.luminosity(
@@ -866,7 +878,9 @@ def compute_photometry(
             "spectra), gas Z = cold-gas Z, "
             "log U from Kashino & Inoue 2019, through birth cloud + ISM; "
             "AGN narrow-line region: Feltre+16 grids coupled as Hirschmann+17 "
-            "(quasar + radio-mode accretion, inefficient below 1% Eddington), "
+            "(quasar bursts on a Hopkins & Hernquist 2009 light curve, placed "
+            "uniformly in their step; radio-mode accretion; inefficient below "
+            "1% Eddington), "
             "through half the ISM"
             if lines
             else "none"

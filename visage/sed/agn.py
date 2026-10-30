@@ -11,6 +11,14 @@ SAGE26 grows black holes in two ways, both recorded in the lightcone:
                outputs only its power, ``Heating`` (eta Mdot c^2, log10
                erg/s, eta = 0.1, averaged over the step)
 
+SAGE26 adds a quasar burst's mass all at once, and when it did within the
+step isn't physical (mergers and instabilities cluster at the step's ends
+for numerical reasons). So a burst is placed uniformly within the step, and
+its radiated energy eta M c^2 follows the light curve of Hopkins & Hernquist
+(2009, ApJ 698, 1550, eq. 12), L = L_peak [1 + (t / t_Q)^1/2]^(-2 / beta),
+t_Q = 50 Myr, beta = 0.6, up to the Eddington limit. A burst's fading tail
+past its own step isn't known, as the mass is only kept for that step.
+
 The accretion rate gives the luminosity: L = eta Mdot c^2 above 1 per cent
 of Eddington (a thin disc), falling as Mdot^2 below it, where the flow
 becomes radiatively inefficient (Narayan & Yi 1995; Merloni & Heinz 2008,
@@ -54,6 +62,8 @@ N_H = 1.0e3  # cm^-3, narrow-line-region clumps (Hirschmann et al. 2017)
 X_H = 0.74  # hydrogen mass fraction
 R_CENTRAL_KPC = 1.0
 L_GRID = 1.0e45  # erg/s, the luminosity the grid is computed for
+BURST_TQ_MYR = 50.0  # Hopkins & Hernquist 2009
+BURST_BETA = 0.6
 LINE_SIGMA_KMS = 170.0  # a narrow line of FWHM ~ 400 km/s
 
 _GRID_FILE = Path(__file__).with_name("data") / "feltre16_nlr.npz"
@@ -90,6 +100,41 @@ def ionising_photons_per_erg(alpha: float = -1.7) -> float:
     )
     q = pint(s3, alpha - 1.0, n_ion, n3) / H_ERG_S
     return q / lum
+
+
+def burst_phase(galaxy_id, snap) -> np.ndarray:
+    """A repeatable uniform number in [0, 1) for each galaxy at each
+    snapshot, from its id, so that it doesn't depend on which rows are
+    being computed."""
+    key = np.asarray(galaxy_id).astype(np.uint64)
+    key = key ^ (np.asarray(snap).astype(np.uint64) << np.uint64(48))
+    # splitmix64's finaliser (Steele et al. 2014).
+    key = (key ^ (key >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    key = (key ^ (key >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    key = key ^ (key >> np.uint64(31))
+    return key.astype(np.float64) / 2.0**64
+
+
+def burst_rate(mass, age_myr, bh_mass) -> np.ndarray:
+    """Quasar accretion rate (Msun/yr) at `age_myr` after a burst of
+    `mass` (Msun) on a black hole of `bh_mass`, as the light curve (see
+    the module docstring): its integral over time is `mass`, capped at
+    the Eddington rate."""
+    p = 2.0 / BURST_BETA
+    area = 2.0 / ((p - 1.0) * (p - 2.0))  # of the curve, per t_Q
+    t = np.maximum(np.asarray(age_myr, float), 0.0) / BURST_TQ_MYR
+    rate = (
+        np.asarray(mass, float)
+        / (area * BURST_TQ_MYR * 1e6)
+        * (1.0 + np.sqrt(t)) ** -p
+    )
+    edd = (
+        L_EDD_PER_MSUN
+        * np.asarray(bh_mass, float)
+        * YR_S
+        / (ETA * MSUN_G * C_CM_S**2)
+    )
+    return np.minimum(rate, edd)
 
 
 def luminosity(bh_mass, mdot_quasar, heating_log, mdot_radio=None):

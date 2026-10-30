@@ -116,3 +116,25 @@ def test_agn_line_spectrum_keeps_the_luminosity():
     nu = 2.99792458e18 / wave
     total = np.trapezoid(spec[::-1], nu[::-1])
     assert total == pytest.approx(lum.sum(), rel=1e-3)
+
+
+def test_burst_light_curve_keeps_the_mass_and_fades():
+    t = np.logspace(-3, 7, 200000)  # Myr
+    rate = agn.burst_rate(1e8, t, 1e12)
+    assert np.trapezoid(rate, t * 1e6) == pytest.approx(1e8, rel=0.02)
+    assert np.all(np.diff(rate) < 0)
+
+
+def test_burst_rate_stops_at_eddington():
+    rate = agn.burst_rate(1e9, 0.0, 1e6)
+    lum = agn.ETA * rate * agn.MSUN_G / agn.YR_S * agn.C_CM_S**2
+    assert lum == pytest.approx(agn.L_EDD_PER_MSUN * 1e6)
+
+
+def test_burst_phase_is_uniform_and_tied_to_the_galaxy():
+    ids = np.arange(1000023000000000, 1000023000050000, 7)
+    u = agn.burst_phase(ids, np.full(len(ids), 60))
+    assert 0 <= u.min() and u.max() < 1
+    assert u.mean() == pytest.approx(0.5, abs=0.01)
+    assert agn.burst_phase(ids[5:6], [60])[0] == u[5]
+    assert agn.burst_phase(ids[5:6], [61])[0] != u[5]
