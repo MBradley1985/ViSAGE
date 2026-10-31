@@ -269,7 +269,8 @@ def test_stars_come_from_the_measured_counts_only_on_request(tmp_path):
     _cone(p)
     assert mi.make_mock_image(p, "sdss", 10, noisy=False).n_stars == 0
     m = mi.make_mock_image(p, "sdss", 10, noisy=False, stars=True)
-    assert m.n_stars == pytest.approx(2899 / 36, rel=0.5)
+    n = len(np.load(mi.STAR_FILE)["r"])
+    assert m.n_stars == pytest.approx(n / 36, rel=0.5)
 
 
 def test_star_temperature_follows_colour():
@@ -313,3 +314,26 @@ def test_displayed_sky_noise_is_equal_in_each_channel(tmp_path):
     assert sky.max() / sky.min() < 1.1
     a = mi.make_mock_image(p, "sdss", 2, seed=1)
     assert a.images["sdss_i"].std() > 1.5 * a.images["sdss_r"].std()
+
+
+@pytest.mark.parametrize("survey", ["sdss", "lsst", "hst", "nircam"])
+def test_mirror_psf_is_centred_and_even_across_bands(survey):
+    s = mi.SURVEYS[survey]
+    for i in range(len(s.bands)):
+        k = mi._kernel(s, i)
+        assert k.sum() == pytest.approx(1, abs=1e-3)
+        assert np.unravel_index(k.argmax(), k.shape) == (
+            k.shape[0] // 2,
+            k.shape[1] // 2,
+        )
+
+
+def test_equal_seeing_gives_equal_peaks():
+    s = mi.SURVEYS["lsst"]
+    peaks = [mi._kernel(s, i).max() for i in range(3)]
+    assert max(peaks) / min(peaks) < 1.2
+
+
+def test_shot_noise_reaches_surveys_with_a_sky_level():
+    for name in ("des", "euclid_vis", "roman", "hst", "nircam"):
+        assert len(mi.SURVEYS[name].sky) == len(mi.SURVEYS[name].bands)

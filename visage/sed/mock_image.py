@@ -70,7 +70,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, map_coordinates
 from scipy.signal import fftconvolve
 
 from visage.sed.filters import EFFECTIVE_WAVELENGTH_A
@@ -117,6 +117,9 @@ class Survey:
     # Galaxies bright in the bluest band come out white: stars set the
     # colour, with dust standing out as red.
     neutral: bool = False
+    # Telescope (diameter m, central obstruction m, support vanes, vane
+    # width m, hexagonal): the diffraction PSF and its spikes; none = none.
+    mirror: tuple = ()
     # Maps smoothed by the beam (WISE Atlas, Herschel): noise is correlated
     # on that scale, and a point source's peak is its signal-to-noise.
     beam_noise: bool = False
@@ -126,6 +129,19 @@ class Survey:
     # Confusion noise per band, mJy/beam: the same unresolved galaxies in
     # every band, so this share of the noise is common to the bands.
     confusion: tuple[float, ...] = ()
+
+
+def _zodi(bands: tuple[str, ...]) -> tuple[float, ...]:
+    """Sky in space, AB mag/arcsec^2: zodiacal light at its average V = 22.7
+    (ACS Instrument Handbook), scattered sunlight so a 5777 K blackbody."""
+
+    def sun(wave_a: float) -> float:
+        return (1 / wave_a) ** 3 / np.expm1(1.4388e8 / wave_a / 5777.0)
+
+    return tuple(
+        22.7 - 2.5 * np.log10(sun(EFFECTIVE_WAVELENGTH_A[b]) / sun(5500.0))
+        for b in bands
+    )
 
 
 def _ab_from_mjy(mjy: float) -> float:
@@ -143,6 +159,7 @@ SURVEYS: dict[str, Survey] = {
         OPTICAL_WEIGHTS,
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
         soften=0.7,
+        mirror=(2.5, 1.3, 4, 0.05, False),
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -151,6 +168,8 @@ SURVEYS: dict[str, Survey] = {
         (0.83, 0.95, 1.11),
         ((23.1, 10, 1.95), (24.4, 10, 1.95), (24.7, 10, 1.95)),
         "Abbott et al. 2021",
+        mirror=(4.0, 1.5, 4, 0.1, False),
+        sky=(18.72, 21.15, 22.01),  # Abbott et al. 2018
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -159,6 +178,7 @@ SURVEYS: dict[str, Survey] = {
         (1.11, 1.19, 1.31),
         ((23.1, 5, None), (23.2, 5, None), (23.3, 5, None)),
         "Chambers et al. 2016",
+        mirror=(1.8, 0.9, 4, 0.03, False),
     ),
     "lsst": Survey(
         "Rubin LSST 10-year (gri)",
@@ -168,6 +188,7 @@ SURVEYS: dict[str, Survey] = {
         ((26.8, 5, None), (27.5, 5, None), (27.4, 5, None)),
         "Ivezić et al. 2019",
         sky=(20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
+        mirror=(8.4, 5.0, 4, 0.1, False),
     ),
     "2mass": Survey(
         "2MASS (JHKs)",
@@ -215,6 +236,8 @@ SURVEYS: dict[str, Survey] = {
         ((26.2, 5, None),),
         "Mellier et al. 2025",
         ground=False,
+        mirror=(1.2, 0.4, 3, 0.03, False),
+        sky=_zodi(("euclid_vis",)),
     ),
     "euclid": Survey(
         "Euclid NISP (Y, J, H)",
@@ -224,6 +247,8 @@ SURVEYS: dict[str, Survey] = {
         ((24.4, 5, None), (24.4, 5, None), (24.4, 5, None)),
         "Mellier et al. 2025",
         ground=False,
+        mirror=(1.2, 0.4, 3, 0.03, False),
+        sky=_zodi(("euclid_h", "euclid_j", "euclid_y")),
     ),
     "roman": Survey(
         "Roman HLWAS (F106, F129, F158)",
@@ -233,6 +258,8 @@ SURVEYS: dict[str, Survey] = {
         ((26.4, 5, None), (26.4, 5, None), (26.5, 5, None)),
         "Roman community survey definition",
         ground=False,
+        mirror=(2.4, 0.74, 6, 0.04, False),
+        sky=_zodi(("roman_f158", "roman_f129", "roman_f106")),
     ),
     "hst": Survey(
         "HST CANDELS (F606W, F814W, F160W)",
@@ -242,6 +269,8 @@ SURVEYS: dict[str, Survey] = {
         ((27.3, 5, None), (28.0, 5, None), (28.7, 5, None)),
         "Grogin et al. 2011",
         ground=False,
+        mirror=(2.4, 0.79, 4, 0.04, False),
+        sky=_zodi(("wfc3_ir_f160w", "wfc_acs_f814w", "wfc_acs_f606w")),
     ),
     "vista": Survey(
         "VISTA VIKING (Y, J, Ks)",
@@ -308,6 +337,8 @@ SURVEYS: dict[str, Survey] = {
         ((28.58, 5, None), (29.17, 5, None), (29.15, 5, None)),
         "Bagley et al. 2023",
         ground=False,
+        mirror=(6.6, 0.74, 3, 0.08, True),
+        sky=_zodi(("jwst_f444w", "jwst_f200w", "jwst_f115w")),
     ),
 }
 
@@ -411,6 +442,55 @@ def psf_kernel(fwhm_pix: float) -> np.ndarray:
     alpha = fwhm_pix / (2 * np.sqrt(2 ** (1 / MOFFAT_BETA) - 1))
     psf = (1 + (x**2 + y**2) / alpha**2) ** -MOFFAT_BETA
     return psf / psf.sum()
+
+
+def mirror_psf(survey: Survey, i: int) -> np.ndarray:
+    """Diffraction PSF at the survey's pixels, from the mirror's shape and
+    support vanes: its core, rings and spikes. Sums to 1."""
+    diameter, inner, vanes, width, hexagon = survey.mirror
+    wave = EFFECTIVE_WAVELENGTH_A[survey.bands[i]] * 1e-10
+    n = 2048
+    step = 2 * diameter / n  # metres per pupil sample, so lambda / 2D pixels
+    y, x = (np.mgrid[:n, :n] - n / 2) * step
+    r = np.hypot(x, y)
+    if hexagon:
+        ang = np.arctan2(y, x) % (np.pi / 3) - np.pi / 6
+        pupil = r * np.cos(ang) < diameter / 2 * np.cos(np.pi / 6)
+    else:
+        pupil = r < diameter / 2
+    pupil = pupil & (r > inner / 2)
+    for k in range(vanes):
+        a = np.pi / 4 + 2 * np.pi * k / vanes
+        along = x * np.cos(a) + y * np.sin(a)
+        across = -x * np.sin(a) + y * np.cos(a)
+        pupil = pupil & ~((along > 0) & (np.abs(across) < width / 2))
+    psf = np.abs(np.fft.fftshift(np.fft.fft2(pupil.astype(float)))) ** 2
+    zoom = (wave / (2 * diameter) * 206265) / survey.pixel
+    if zoom < 1:  # average the fine samples into each survey pixel
+        psf = gaussian_filter(psf, 0.5 / zoom)
+    half = min(int(n / 2 * zoom) - 1, 256)
+    yy, xx = np.mgrid[-half : half + 1, -half : half + 1]
+    out = map_coordinates(
+        psf, [yy / zoom + n / 2, xx / zoom + n / 2], order=1, mode="constant"
+    )
+    edge = np.clip(np.hypot(xx, yy) / half, 0, 1)  # no edge to show
+    out = out * np.cos(np.pi / 2 * edge) ** 2
+    return out / out.sum()
+
+
+def _kernel(survey: Survey, i: int) -> np.ndarray:
+    """The PSF an image is convolved with: the seeing (or a space
+    telescope's stated PSF width) through the mirror's diffraction."""
+    fwhm = survey.seeing[i] / survey.pixel
+    if survey.mirror:
+        psf = mirror_psf(survey, i)
+        if survey.ground:
+            return fftconvolve(psf, psf_kernel(fwhm), mode="same")
+        wave = EFFECTIVE_WAVELENGTH_A[survey.bands[i]] * 1e-10
+        core = wave / survey.mirror[0] * 206265 / survey.pixel
+        extra = np.sqrt(max(fwhm**2 - core**2, 0.0)) / 2.3548
+        return gaussian_filter(psf, extra) if extra else psf
+    return psf_kernel(fwhm) if survey.ground else np.array([])
 
 
 def noise_sigma(survey: Survey, i: int) -> float:
@@ -720,9 +800,10 @@ def _planck(wave_a: float, teff: np.ndarray) -> np.ndarray:
 
 def _draw_stars(images, s, npx, rng) -> int:
     """Add Milky Way stars, which SAGE26 doesn't model, as point sources:
-    a random draw from every clean SDSS star (12 < r < 22.5) in one square
-    degree at b = 79 deg, blackbodies at their g-r temperature in other
-    bands. The number drawn."""
+    a random draw from one square degree at b = 79 deg of 2MASS stars,
+    where SDSS saturates, and clean SDSS stars fainter than them (to
+    r = 22.5), blackbodies at their g-r temperature in other bands. The
+    number drawn."""
     data = np.load(STAR_FILE)
     g, r = data["g"], data["r"]
     n = rng.poisson((npx * s.pixel / 3600) ** 2 * len(r))
@@ -805,9 +886,9 @@ def make_mock_image(
     drawn_noise = {}
     for i, b in enumerate(s.bands):
         fwhm = s.seeing[i] / s.pixel
-        if s.ground:
+        if s.ground or s.mirror:
             images[b] = np.clip(
-                fftconvolve(images[b], psf_kernel(fwhm), mode="same"), 0, None
+                fftconvolve(images[b], _kernel(s, i), mode="same"), 0, None
             )
         else:
             images[b] = gaussian_filter(images[b], fwhm / 2.3548)

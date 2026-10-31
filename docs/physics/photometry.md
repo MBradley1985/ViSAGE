@@ -145,12 +145,22 @@ Pan-STARRS cutout services show it. The FITS bands are sky-subtracted either
 way.
 
 **Add stars** (off) adds Milky Way stars, which SAGE26 doesn't model, so they
-are never on by default. They are a random draw from the 2,899 clean SDSS DR18
-stars (12 < *r* < 22.5) in one square degree at *b* = 79°, so their number
-doesn't change with position. Other bands use a blackbody at each star's
-temperature (*g*−*r* to *B*−*V*, Jester et al. 2005; Teff, Ballesteros 2012),
-which is rough in the UV. Stars have no diffraction spikes, and none are
-fainter than *r* = 22.5.
+are never on by default. They are a random draw from one square degree at
+*b* = 79°: real 2MASS stars at the bright end, where SDSS saturates, and clean
+SDSS DR18 stars down to *r* = 22.5. Their number doesn't change with position.
+Other bands use a blackbody at each star's temperature (*g*−*r* to *B*−*V*,
+Jester et al. 2005; Teff, Ballesteros 2012), which is rough in the UV.
+
+The PSF includes diffraction from each telescope's mirror and support vanes,
+computed from their geometry. These are simplified, not the observatories'
+measured PSFs: JWST's segments and each telescope's real strut layout are
+approximated. Ground surveys convolve this with the Moffat seeing PSF; space
+surveys add a Gaussian that brings it to their stated width.
+
+Source shot noise uses the sky level where it is published: SDSS, LSST and DES
+(Abbott et al. 2018). In space the sky is zodiacal light, taken as V = 22.7
+(ACS Instrument Handbook) with a solar spectrum, which is too faint at F444W,
+where zodiacal and telescope thermal emission take over.
 
 ## Not included (yet)
 
