@@ -8,6 +8,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.14.0] — 2026-10-31
+
 ### Added
 
 - HD on a lightcone takes its light from the photometry by component: disk, bulge, Halpha, AGN and intracluster stars, with SAGE26 radii.
