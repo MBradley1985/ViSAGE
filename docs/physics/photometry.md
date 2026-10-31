@@ -270,6 +270,7 @@ Above 1% of Eddington an AGN has the mean quasar spectrum of Shen et al. (2020),
 scaled to SAGE26's `LAGN`, and an absorbing column drawn from Ueda et al. (2014).
 Below it there is no thin disk, so only narrow lines. AGN are point sources in
 images, and are in spectra and survey catalogues.
+Narrow lines are in spectra and line fluxes, not in `agn_mag_obs_*`.
 
 **Add intracluster stars** in the Image view draws SAGE26's `IntraClusterStars`
 as a projected NFW profile with its `Rvir` and `Concentration`, as the ICL traces
