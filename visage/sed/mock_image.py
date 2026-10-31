@@ -86,10 +86,13 @@ OPTICAL_WEIGHTS = (1.0, 1.1, 1.3)
 BALANCE = (1.0, 0.79, 0.475)
 MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
-STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
-BLACK_SIGMA = 0.6  # black point above the mean sky, same units
-SKY_SIGMA = 1.0  # sky left in, same units: ~0.1 of full scale, as SDSS,
+# In the mean noise of the displayed channels, per pixel.
+STRETCH_SIGMA = 5.34  # asinh softening
+BLACK_SIGMA = 0.42  # black point above the mean sky
+SKY_SIGMA = 0.7  # sky left in: ~0.1 of full scale, as SDSS,
 # Legacy Survey and Pan-STARRS cutout services show it
+BEAM_DISPLAY = 2.0  # softer stretch for beam-smoothed maps, whose sky is
+# their noise: sources stand on a dark sky, as in WISE and Herschel images
 KNEE = 0.8  # display level above which bright cores roll off smoothly
 
 
@@ -111,6 +114,15 @@ class Survey:
     # Each band in its own noise units, where red starlight is no reference
     # for colour: the UV, and the dust emission of the mid and far infrared.
     by_noise: bool = False
+    # Galaxies bright in the bluest band come out white: stars set the
+    # colour, with dust standing out as red.
+    neutral: bool = False
+    # Maps smoothed by the beam (WISE Atlas, Herschel): noise is correlated
+    # on that scale, and a point source's peak is its signal-to-noise.
+    beam_noise: bool = False
+    # Confusion noise per band, mJy/beam: the same unresolved galaxies in
+    # every band, so this share of the noise is common to the bands.
+    confusion: tuple[float, ...] = ()
 
 
 def _ab_from_mjy(mjy: float) -> float:
@@ -178,6 +190,7 @@ SURVEYS: dict[str, Survey] = {
         "Wright et al. 2010",
         ground=False,
         by_noise=True,
+        beam_noise=True,
     ),
     "galex": Survey(
         "GALEX AIS (FUV, NUV)",
@@ -253,7 +266,7 @@ SURVEYS: dict[str, Survey] = {
         ),
         "Lonsdale et al. 2003",
         ground=False,
-        by_noise=True,
+        neutral=True,
     ),
     "spire": Survey(
         "Herschel H-ATLAS SPIRE (250-500 µm)",
@@ -268,6 +281,8 @@ SURVEYS: dict[str, Survey] = {
         "Valiante et al. 2016",
         ground=False,
         by_noise=True,
+        beam_noise=True,
+        confusion=(6.8, 6.3, 5.8),  # Nguyen et al. 2010
     ),
     "pacs": Survey(
         "Herschel H-ATLAS PACS (100, 160 µm)",
@@ -278,6 +293,7 @@ SURVEYS: dict[str, Survey] = {
         "Valiante et al. 2016",
         ground=False,
         by_noise=True,
+        beam_noise=True,
     ),
     "nircam": Survey(
         "JWST CEERS (F115W, F200W, F444W)",
@@ -403,6 +419,17 @@ def noise_sigma(survey: Survey, i: int) -> float:
     else:
         n_pix = 4 * np.pi * (survey.seeing[i] / 2.3548 / survey.pixel) ** 2
     return flux / snr / np.sqrt(n_pix)
+
+
+def map_sigma(survey: Survey, i: int) -> float:
+    """Noise per pixel of the image as displayed: noise_sigma, or for a
+    beam-smoothed map the point-source noise over the beam's peak area."""
+    if not survey.beam_noise:
+        return noise_sigma(survey, i)
+    s = survey.seeing[i] / 2.3548 / survey.pixel
+    return (
+        noise_sigma(survey, i) * np.sqrt(4 * np.pi * s**2) / (2 * np.pi * s**2)
+    )
 
 
 def electrons_per_nmgy(survey: Survey, i: int) -> float:
@@ -554,10 +581,13 @@ def _balance(path, s, n_bright: int = 200) -> tuple[float, ...]:
     """Colour weights that show the cone's brightest galaxies, in `s`'s
     bands, as bright red galaxies look in SDSS's colour images."""
     if s.by_noise:
-        return tuple(1 / noise_sigma(s, i) for i in range(len(s.bands)))
+        return tuple(1 / map_sigma(s, i) for i in range(len(s.bands)))
     n = len(s.bands)
     with h5py.File(path, "r") as f:
         flux = [nmgy(f[f"mag_obs_{b}"][:]) for b in s.bands]
+    if s.neutral:
+        top = np.argsort(-flux[-1])[:n_bright]
+        return tuple(1 / float(np.median(fl[top])) for fl in flux)
     top = np.argsort(-flux[0])[:n_bright]
     ratio = [float(np.median(fl[top])) for fl in flux]
     return tuple(
@@ -766,6 +796,7 @@ def make_mock_image(
             images, Path(background), s, npx, half_deg, z_all.max(), noisy, rng
         )
     n_stars = _draw_stars(images, s, npx, rng) if stars else 0
+    common = rng.normal(size=(npx, npx)) if s.confusion else None
     for i, b in enumerate(s.bands):
         fwhm = s.seeing[i] / s.pixel
         if s.ground:
@@ -780,18 +811,26 @@ def make_mock_image(
                 var = var + np.clip(images[b], 0, None) / electrons_per_nmgy(
                     s, i
                 )
-            images[b] = images[b] + rng.normal(
-                0, np.sqrt(var), images[b].shape
-            )
+            noise = rng.normal(0, np.sqrt(var), images[b].shape)
+            if s.confusion:
+                # 5 sigma point-source depth, in mJy, gives the total noise.
+                total = 3.631e-3 * float(nmgy(s.depth[i][0])) / s.depth[i][1]
+                c = min(s.confusion[i] / total, 1.0)
+                noise = c * np.sqrt(var) * common + np.sqrt(1 - c**2) * noise
+            if s.beam_noise:
+                noise = gaussian_filter(noise, fwhm / 2.3548)
+                noise = noise * map_sigma(s, i) / noise.std()
+            images[b] = images[b] + noise
 
     # Stretch and black point: calibrated on SDSS's own colour images, where
     # summing galaxies' pixels through the asinh stretch recovers their
-    # catalogue fluxes at 0.38 nanomaggies, ~8 sigma of its sky noise. The
+    # catalogue fluxes at 0.38 nanomaggies, STRETCH_SIGMA of its noise. The
     # black point sets the sky to the images' ~1% of full scale.
     w = s.weights or _balance(path, s)
     chans = [images[b] * wi for b, wi in zip(s.bands, w, strict=True)]
-    # The deepest band's noise: one shallow band mustn't dim the others.
-    noise = min(noise_sigma(s, i) * wi for i, wi in enumerate(w))
+    noise = float(np.mean([map_sigma(s, i) * wi for i, wi in enumerate(w)]))
+    if s.beam_noise:
+        noise *= BEAM_DISPLAY
     stretch = STRETCH_SIGMA * noise
     black = BLACK_SIGMA * noise if noisy else 0.0
     if not subtract_sky:

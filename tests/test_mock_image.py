@@ -275,3 +275,31 @@ def test_stars_come_from_the_measured_counts_only_on_request(tmp_path):
 def test_star_temperature_follows_colour():
     assert mi._star_temperature(np.array(1.5)) < 4000
     assert mi._star_temperature(np.array(0.2)) > 6000
+
+
+def test_beam_noise_is_correlated_at_the_map_noise(tmp_path, monkeypatch):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    s = replace(
+        mi.SURVEYS["sdss"],
+        seeing=(6.0, 6.0, 6.0),
+        ground=False,
+        beam_noise=True,
+        sky=(),
+    )
+    monkeypatch.setitem(mi.SURVEYS, "sdss", s)
+    im = mi.make_mock_image(p, "sdss", 5, seed=1).images["sdss_r"][:60, :60]
+    assert im.std() == pytest.approx(mi.map_sigma(s, 1), rel=0.3)
+    assert np.corrcoef(im[:-1].ravel(), im[1:].ravel())[0, 1] > 0.5
+
+
+def test_confusion_noise_is_shared_between_bands(tmp_path, monkeypatch):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    s = mi.SURVEYS["sdss"]
+    conf = 3.631e-3 * float(mi.nmgy(22.2)) / 5
+    s = replace(s, sky=(), confusion=(0.0, conf, conf))
+    monkeypatch.setitem(mi.SURVEYS, "sdss", s)
+    m = mi.make_mock_image(p, "sdss", 2, seed=1)
+    r, g = m.images["sdss_r"][:60, :60], m.images["sdss_g"][:60, :60]
+    assert np.corrcoef(r.ravel(), g.ravel())[0, 1] > 0.9

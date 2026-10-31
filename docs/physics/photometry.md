@@ -121,6 +121,18 @@ extension per band in nanomaggies, with a TAN WCS centred on the chosen
 galaxy, or on a random point of the cone's sky with **Random patch of sky**.
 The image is saved as PNG (default), JPEG or PDF.
 
+Colour uses one rule per kind of survey. Optical and near-infrared bands are
+balanced on the cone's bright galaxies. Spitzer makes galaxies bright at
+3.6 µm white, so stars set the colour and dust shows as red. GALEX, WISE and
+Herschel show each band in its own noise units. The stretch comes from the
+mean noise of the displayed channels, calibrated on SDSS.
+
+WISE and Herschel maps are smoothed by the beam, so their noise is correlated
+on that scale. In SPIRE, the share of the noise from confusion (Nguyen et al.
+2010) is common to the bands, as the same unresolved galaxies cause it. The
+drawn faint galaxies aren't removed from it, so faint-source confusion is
+counted slightly more than once.
+
 **Galaxies beyond this cone** adds a deeper cone's galaxies; it reaches as far
 as that cone does, so build a deeper one to see fainter galaxies.
 
