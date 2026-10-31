@@ -191,6 +191,8 @@ def catalogue(path: str | Path, key: str, seed: int = 0) -> dict:
             "z_cos": z,
             "GalaxyIndex": f["GalaxyIndex"][:],
             "StellarMass": f["StellarMass"][:] * 1e10 / hub,
+            "halo": f["CentralGalaxyIndex"][:],
+            "halo_mass": f["CentralMvir"][:] * 1e10,  # M_sun/h
             "Sfr": f["SfrDisk"][:] + f["SfrBulge"][:],
         }
     fd, fb = comp[sel.band]
@@ -218,6 +220,8 @@ def catalogue(path: str | Path, key: str, seed: int = 0) -> dict:
     if sel.mu50 is not None:
         keep &= out["mu50"] <= sel.mu50
     out["detected_mag"] = seen
+    out["row"] = np.arange(len(seen))
+    out["rd"], out["rb"] = m["rd"], m["rb"]
     idx = np.flatnonzero(keep)
     collided = np.zeros(len(keep), bool)
     if sel.collision > 0:
@@ -237,6 +241,12 @@ def write_fits(cat: dict, path: str | Path, key: str) -> None:
     t.meta["REF"] = SELECTIONS[key].ref
     t.meta["ORIGIN"] = "ViSAGE (visage.sed.survey)"
     t.write(path, overwrite=True)
+
+
+def hubble_h(path: str | Path) -> float:
+    """Hubble parameter of lightcone `path`."""
+    with h5py.File(path, "r", locking=False) as f:
+        return float(f["SageOutputHeader"]["Simulation"].attrs["hubble_h"])
 
 
 def available(path: str | Path) -> list[str]:

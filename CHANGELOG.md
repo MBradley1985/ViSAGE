@@ -10,6 +10,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Mock SDSS fibre spectroscopy (`python -m visage.sed.spectroscopy`): disk and bulge light in the fibre, instrument resolution, real sky noise, and measured lines and Dn4000.
+- Redshift-space group finding after Van Kempen et al., with calibrated virial masses and scores against true haloes; exported catalogues carry each galaxy's group.
 - Survey sub-panel in the Photometry tab: SDSS Main and GAMA selections with Petrosian and fibre photometry, exported as FITS or CSV.
 - Mock images: random patch of sky, a sky brightness checkbox, optional SDSS stars, and JPEG and PDF output beside the default PNG.
 - **Intergalactic absorption** (Madau 1995) in observed-frame magnitudes

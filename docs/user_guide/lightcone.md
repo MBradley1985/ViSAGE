@@ -144,3 +144,20 @@ would from the cone, and exports them as FITS or CSV with Petrosian and fibre
 magnitudes in every band with disk and bulge photometry. `python -m
 visage.sed.survey` does the same from the command line. A cone that stops short
 of a survey's depth gives a lower limit on its counts: GAMA needs z ≈ 0.5.
+
+Exports also give each galaxy's `group` and `group_n`, from the group finder of
+Van Kempen et al. (2024, 2025), and the note scores those groups against the
+cone's true haloes.
+
+## Mock spectroscopy
+
+```
+python -m visage.sed.spectroscopy --input cone.h5 --survey sdss_main --output spectra.fits
+```
+
+This writes SDSS Main fibre spectra and what's measured from them. The first
+extension is the catalogue; `FLUX`, `LOGLAM` and `SIGMA` hold the spectra. About
+2,000 galaxies take a few minutes. A fibre mixes SAGE26's disk and bulge, so it
+can't show gradients within either; noise comes from real faint SDSS spectra, sky
+lines included, without each galaxy's own shot noise; and Balmer lines aren't
+corrected for stellar absorption.

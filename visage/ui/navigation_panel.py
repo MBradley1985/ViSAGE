@@ -4005,6 +4005,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # ── Survey catalogues (Photometry tab) ──
     # The galaxies a real survey would select from this cone, with Petrosian
     # and fibre photometry (visage.sed.survey).
+    from visage.sed import groups as _groups
     from visage.sed import survey as _survey
 
     _sv_path = getattr(scene.active_model, "path", None)
@@ -4032,13 +4033,23 @@ def build_navigation_panel(server, scene: Scene) -> None:
             import datetime
 
             cat = _survey.catalogue(path, key)
+            cat = _groups.add_groups(
+                cat,
+                _survey.SELECTIONS[key].limit,
+                _survey.hubble_h(path),
+            )
+            found = _groups.bijective(
+                cat["group"][~cat["fibre_collided"]],
+                cat["halo"][~cat["fibre_collided"]],
+                5,
+            )
             stem = f"survey_{key}_{datetime.datetime.now():%H%M%S}"
             out = _get_session_dir() / f"{stem}.{fmt}"
             if fmt == "fits":
                 _survey.write_fits(cat, out, key)
             else:
                 _survey.write_csv(cat, out)
-            return out, _survey.summary(cat, path, key)
+            return out, _survey.summary(cat, path, key) | found
 
         try:
             loop = asyncio.get_running_loop()
@@ -4050,7 +4061,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 f"r50 = {n['r50']:.1f}″, fibre − Petrosian = "
                 f"{n['fibre']:.2f} mag. This cone stops at z = "
                 f"{n['zmax']:.2f}, so a deeper survey's counts are a lower "
-                f"limit. Saved {out.name}."
+                f"limit. Groups of 5 or more: {n['n_groups']} found against "
+                f"{n['n_haloes']} true haloes, purity {n['purity']:.0%}, "
+                f"completeness {n['completeness']:.0%}. Saved {out.name}."
             )
             state.library_files = _scan_library()
         except Exception as exc:
