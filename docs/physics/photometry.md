@@ -134,7 +134,7 @@ balanced on the cone's bright galaxies. Spitzer and WISE make galaxies bright in
 Herschel show each band in its own noise units. The stretch comes from the
 mean noise of the displayed channels, calibrated on SDSS.
 
-WISE and Herschel maps are smoothed by the beam, so their noise is correlated
+2MASS, WISE and Herschel maps are smoothed by the beam, so their noise is correlated
 on that scale. In SPIRE, the share of the noise from confusion (Nguyen et al.
 2010) is common to the bands, as the same unresolved galaxies cause it. The
 drawn faint galaxies aren't removed from it, so faint-source confusion is
@@ -162,7 +162,8 @@ approximated. Ground surveys convolve this with the Moffat seeing PSF; space
 surveys add a Gaussian that brings it to their stated width.
 
 Sky noise in images is the per-pixel noise measured in real cutouts where they
-exist (SDSS, DECam, Pan-STARRS, Euclid, GALEX, Spitzer SEIP, H-ATLAS), because
+exist (SDSS, DECam, Pan-STARRS, Euclid, GALEX, 2MASS, Spitzer SEIP, H-ATLAS,
+HST GOODS-S and JWST CEERS), because
 resampling coadds smooths it below what a survey's quoted depth implies. Quoted
 depths still set the catalogue flux errors.
 

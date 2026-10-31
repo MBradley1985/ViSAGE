@@ -210,6 +210,8 @@ SURVEYS: dict[str, Survey] = {
             (15.8 + 0.91, 10, None),
         ),
         "Skrutskie et al. 2006",
+        beam_noise=True,  # Atlas images are interpolated
+        pixel_noise=(1.90, 1.64, 1.08),
     ),
     "wise": Survey(
         "WISE (W1-W3)",
