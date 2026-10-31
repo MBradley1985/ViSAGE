@@ -253,6 +253,7 @@ def test_random_patch_moves_with_the_seed_and_has_no_redshift(tmp_path):
     a = mi.make_mock_image(p, "sdss", 0.5, noisy=False, patch=True, seed=1)
     b = mi.make_mock_image(p, "sdss", 0.5, noisy=False, patch=True, seed=2)
     assert a.ra0 != b.ra0 and np.isnan(a.z0)
+    pytest.importorskip("astropy")
     assert a.write_fits(tmp_path / "patch.fits")
 
 
