@@ -32,12 +32,11 @@ def test_fibre_collisions_lose_one_of_each_close_pair():
     assert lost[:2].sum() == 1 and not lost[2]
 
 
-def test_available_needs_the_detection_band(tmp_path):
-    p = tmp_path / "cone.h5"
-    with h5py.File(p, "w") as f:
-        f["disk_mag_obs_sdss_g"] = np.ones(2)
-        f["bulge_mag_obs_sdss_g"] = np.ones(2)
-    assert sv.available(p) == []
+def test_available_needs_the_detection_band():
+    assert sv.available({"disk_mag_obs_sdss_g", "bulge_mag_obs_sdss_g"}) == []
+    assert sv.available(set()) == []
+    both = {"disk_mag_obs_sdss_r", "bulge_mag_obs_sdss_r"}
+    assert "sdss_main" in sv.available(both)
 
 
 def test_csv_has_a_row_per_galaxy(tmp_path):

@@ -249,15 +249,14 @@ def hubble_h(path: str | Path) -> float:
         return float(f["SageOutputHeader"]["Simulation"].attrs["hubble_h"])
 
 
-def available(path: str | Path) -> list[str]:
-    """Selections lightcone `path` has the bands for."""
-    with h5py.File(path, "r", locking=False) as f:
-        return [
-            k
-            for k, sel in SELECTIONS.items()
-            if f"disk_mag_obs_{sel.band}" in f
-            and f"bulge_mag_obs_{sel.band}" in f
-        ]
+def available(present: set[str]) -> list[str]:
+    """Selections a lightcone with the columns `present` has the bands for."""
+    return [
+        k
+        for k, sel in SELECTIONS.items()
+        if f"disk_mag_obs_{sel.band}" in present
+        and f"bulge_mag_obs_{sel.band}" in present
+    ]
 
 
 def write_csv(cat: dict, path: str | Path) -> None:

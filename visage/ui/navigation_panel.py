@@ -4008,8 +4008,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     from visage.sed import groups as _groups
     from visage.sed import survey as _survey
 
-    _sv_path = getattr(scene.active_model, "path", None)
-    _sv_keys = _survey.available(_sv_path) if _sv_path else []
+    _sv_keys = _survey.available(_lc_present)
     state.survey_items = [
         {"title": _survey.SELECTIONS[k].label, "value": k} for k in _sv_keys
     ]
