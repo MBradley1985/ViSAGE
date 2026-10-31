@@ -33,6 +33,16 @@ MASS_FIELDS = {
     "MetalsHotGas",
     "MetalsEjectedMass",
     "MetalsCGMgas",
+    "ColdDust",
+    "HotDust",
+    "CGMDust",
+    "EjectedDust",
+    "DiscDust",
+    "DiscGas",
+    "DiscGasMetals",
+    "DiscStars",
+    "DiscHI",
+    "DiscH2",
 }
 
 
@@ -48,6 +58,13 @@ class Sample:
 
     def __len__(self) -> int:
         return len(self.rows)
+
+    def has(self, name: str) -> bool:
+        try:
+            self._read(name)
+        except KeyError:
+            return False
+        return True
 
     def __call__(self, name: str) -> np.ndarray:
         if name == "SFR":

@@ -215,6 +215,67 @@ def sfrd(p):
 
 
 @plot(
+    "Dust",
+    "dust_density",
+    "Cosmic dust density",
+    ("ColdDust", "HotDust", "CGMDust", "EjectedDust"),
+    group=False,
+)
+def dust_density(p):
+    fig, ax = p.figure()
+    views = [s for s in p.views if s.volume]
+    z = np.array([s.z for s in views])
+    for (label, field), colour in zip(
+        (
+            ("Cold", "ColdDust"),
+            ("Hot", "HotDust"),
+            ("CGM", "CGMDust"),
+            ("Ejected", "EjectedDust"),
+        ),
+        GROUPS,
+        strict=False,
+    ):
+        rho = np.array([np.sum(s(field)) / s.volume for s in views])
+        keep = rho > 0
+        ax.plot(z[keep], rho[keep], color=colour, label=label)
+    ax.set(yscale="log", ylim=(1e2, None))
+    z_axis(p, ax, 8.0)
+    ax.set_ylabel(r"$\rho_{\rm dust}\ (M_\odot\,{\rm Mpc}^{-3})$")
+    p.finish()
+    return fig
+
+
+@plot(
+    "Dust",
+    "dust_budget",
+    "Dust made and destroyed",
+    ("DustFormationRate", "DustGrowthRate", "DustDestructionRate"),
+    group=False,
+)
+def dust_budget(p):
+    fig, ax = p.figure()
+    views = [s for s in p.views if s.volume]
+    z = np.array([s.z for s in views])
+    for (label, field), colour in zip(
+        (
+            ("Made by stars", "DustFormationRate"),
+            ("Grown in clouds", "DustGrowthRate"),
+            ("Destroyed by SNe", "DustDestructionRate"),
+        ),
+        GROUPS,
+        strict=False,
+    ):
+        rate = np.array([np.sum(s(field)) / s.volume for s in views])
+        keep = rate > 0
+        ax.plot(z[keep], rate[keep], color=colour, label=label)
+    ax.set(yscale="log", ylim=(1e-8, None))
+    z_axis(p, ax, 8.0)
+    ax.set_ylabel(r"$\dot{\rho}\ (M_\odot\,{\rm yr}^{-1}\,{\rm Mpc}^{-3})$")
+    p.finish()
+    return fig
+
+
+@plot(
     "Cosmic density",
     "smd",
     "Stellar mass density",

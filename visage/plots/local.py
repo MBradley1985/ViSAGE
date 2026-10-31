@@ -610,6 +610,249 @@ def reservoirs(p):
     return fig
 
 
+DUST_EDGES = log_edges(5.0, 9.5, 0.25)
+DUST = (
+    ("Cold", "ColdDust"),
+    ("Hot", "HotDust"),
+    ("CGM", "CGMDust"),
+    ("Ejected", "EjectedDust"),
+)
+
+
+@plot(
+    "Dust",
+    "dust_mf",
+    "Dust mass function",
+    ("ColdDust",),
+)
+def dust_mf(p):
+    fig, ax = p.figure()
+    s = p.s
+    dust = s("ColdDust")
+    p.mass_function(ax, dust[dust > 0], DUST_EDGES, "Model")
+    grid = np.geomspace(1e5, 3e9, 18)
+    observed(ax, grid, obs.dust_mf(grid, s.h), "Beeston+18 fit", dark=p.o.dark)
+    ax.set(
+        xscale="log",
+        ylim=(1e-5, 0.1),
+        xlabel=r"$M_{\rm dust}\ (M_\odot)$",
+    )
+    p.phi_label(ax)
+    p.finish()
+    return fig
+
+
+@plot(
+    "Dust",
+    "dust_gas",
+    "Dust-to-gas vs metallicity",
+    ("ColdDust", "ColdGas", "MetalsColdGas"),
+)
+def dust_gas(p):
+    fig, ax = p.figure()
+    s = p.s
+    cold, metals = s("ColdGas"), s("MetalsColdGas")
+    ok = (cold > 0) & (metals > 0)
+    oh = np.full(len(cold), np.nan)
+    oh[ok] = obs.oh_from_z(metals[ok] / cold[ok])
+    ratio = np.divide(
+        s("ColdDust"), cold, out=np.zeros(len(cold)), where=cold > 0
+    )
+    p.relation(ax, oh, ratio, np.arange(7.0, 9.7, 0.1), ok)
+    grid = np.arange(7.1, 9.6, 0.2)
+    observed(
+        ax,
+        grid,
+        obs.dust_to_gas(grid),
+        "Rémy-Ruyer+14 fit",
+        dark=p.o.dark,
+    )
+    ax.set(
+        yscale="log",
+        xlim=(7.0, 9.6),
+        ylim=(1e-6, 0.1),
+        xlabel=r"$12 + \log_{10}({\rm O/H})$",
+        ylabel=r"$M_{\rm dust} / M_{\rm cold}$",
+    )
+    p.finish("upper left", "lower right")
+    return fig
+
+
+@plot(
+    "Dust",
+    "dust_metals",
+    "Dust-to-metal ratio",
+    ("ColdDust", "MetalsColdGas", "StellarMass"),
+)
+def dust_metals(p):
+    fig, ax = p.figure()
+    s = p.s
+    metals = s("MetalsColdGas")
+    ratio = np.divide(
+        s("ColdDust"),
+        metals,
+        out=np.zeros(len(metals)),
+        where=metals > 0,
+    )
+    p.relation(ax, s("StellarMass"), ratio, M_EDGES, metals > 0, log_y=False)
+    ax.set(
+        xscale="log",
+        xlim=(1e8, 1e12),
+        ylim=(0, 1),
+        xlabel=M_STAR,
+        ylabel=r"$M_{\rm dust} / M_{Z,\rm cold}$",
+    )
+    p.finish("lower right")
+    return fig
+
+
+@plot(
+    "Dust",
+    "dust_reservoirs",
+    "Dust reservoirs",
+    ("Mvir", "Type") + tuple(f for _, f in DUST),
+)
+def dust_reservoirs(p):
+    fig, ax = p.figure()
+    s = p.s
+    mvir = s("Mvir")
+    ok = (s("Type") == 0) & (mvir > 1e10)
+    for (label, field), colour in zip(DUST, GROUPS, strict=False):
+        p.relation(ax, mvir, s(field), HALO_EDGES, ok, label, colour)
+    ax.set(
+        xscale="log",
+        yscale="log",
+        xlim=(1e10, 1e15),
+        ylim=(1e2, 1e10),
+        xlabel=M_VIR,
+        ylabel=r"Dust $(M_\odot)$",
+    )
+    p.finish("upper left")
+    return fig
+
+
+@plot(
+    "Discs",
+    "disc_sizes",
+    "Disc half-mass radii",
+    ("StellarDiscHalfMassRadius", "GasDiscHalfMassRadius", "StellarMass"),
+)
+def disc_sizes(p):
+    fig, ax = p.figure()
+    s = p.s
+    mass = s("StellarMass")
+    for label, field, colour in (
+        ("Stellar disc", "StellarDiscHalfMassRadius", GROUPS[0]),
+        ("Gas disc", "GasDiscHalfMassRadius", GROUPS[1]),
+    ):
+        p.relation(
+            ax, mass, s(field) * 1e3 / s.h, M_EDGES, mass > 0, label, colour
+        )
+    grid = np.geomspace(1e9, 4e11, 9)
+    observed(
+        ax,
+        grid,
+        obs.late_size(grid),
+        "Lange+15 late types (half-light)",
+        dark=p.o.dark,
+    )
+    ax.set(
+        xscale="log",
+        yscale="log",
+        xlim=(1e8, 1e12),
+        ylim=(0.3, 100),
+        xlabel=M_STAR,
+        ylabel=r"$r_{50}\ ({\rm kpc})$",
+    )
+    p.finish("upper left", "lower right")
+    return fig
+
+
+def _stack(p, values):
+    """(radii in kpc, median and 16th, 84th percentile of `values` by
+    radius) over massive disc galaxies, from their (n, 30) annuli."""
+    s = p.s
+    mass = s("StellarMass")
+    ok = (mass > 1e10) & (s("BulgeMass") < 0.3 * mass)
+    edges = s("DiscRadii")[ok] * 1e3 / s.h
+    mid = np.log(np.maximum(0.5 * (edges[:, 1:] + edges[:, :-1]), 1e-4))
+    grid = np.geomspace(0.1, 50, 30)
+    logv = np.log(np.maximum(values(ok, edges), 1e-12))
+    rows = [
+        np.interp(np.log(grid), m, v) for m, v in zip(mid, logv, strict=True)
+    ]
+    if not rows:
+        return grid, np.full((3, len(grid)), np.nan)
+    return grid, np.exp(np.percentile(rows, [50, 16, 84], axis=0))
+
+
+@plot(
+    "Discs",
+    "disc_profiles",
+    "Stacked disc profiles",
+    ("DiscRadii", "DiscStars", "DiscHI", "DiscH2", "StellarMass", "BulgeMass"),
+)
+def disc_profiles(p):
+    fig, ax = p.figure()
+    s = p.s
+    fields = [
+        ("Stars", "DiscStars", 1),
+        ("HI", "DiscHI", 1),
+        ("H2", "DiscH2", 1),
+    ]
+    if s.has("DiscDust"):
+        fields.append(("Dust x 100", "DiscDust", 100))
+
+    def surface(field, scale):
+        def values(ok, edges):
+            area = np.pi * np.diff(edges**2, axis=1) * 1e6  # pc^2
+            return s(field)[ok] * scale / np.maximum(area, 1e-6)
+
+        return values
+
+    for (label, field, scale), colour in zip(fields, GROUPS, strict=False):
+        r, (med, lo, hi) = _stack(p, surface(field, scale))
+        ax.fill_between(r, lo, hi, color=colour, alpha=0.22, lw=0)
+        ax.plot(r, med, color=colour, label=label)
+    ax.set(
+        xscale="log",
+        yscale="log",
+        ylim=(1e-3, 1e4),
+        xlabel=r"$R\ ({\rm kpc})$",
+        ylabel=r"$\Sigma\ (M_\odot\,{\rm pc}^{-2})$",
+    )
+    p.finish()
+    return fig
+
+
+@plot(
+    "Discs",
+    "disc_metals",
+    "Gas metallicity gradient",
+    ("DiscRadii", "DiscGas", "DiscGasMetals", "StellarMass", "BulgeMass"),
+)
+def disc_metals(p):
+    fig, ax = p.figure()
+    s = p.s
+
+    def ratio(ok, edges):
+        gas = s("DiscGas")[ok]
+        return s("DiscGasMetals")[ok] / np.maximum(gas, 1e-3)
+
+    r, (med, lo, hi) = _stack(p, ratio)
+    ax.fill_between(
+        r, obs.oh_from_z(lo), obs.oh_from_z(hi), color=p.ink, alpha=0.22, lw=0
+    )
+    ax.plot(r, obs.oh_from_z(med), color=p.ink, label="Model")
+    ax.set(
+        xscale="log",
+        xlabel=r"$R\ ({\rm kpc})$",
+        ylabel=r"$12 + \log_{10}({\rm O/H})$",
+    )
+    p.finish()
+    return fig
+
+
 def _density_colour(a, b, n: int = 128) -> np.ndarray:
     """Each point's local density, from a 2D histogram."""
     hist, xe, ye = np.histogram2d(a, b, bins=n)

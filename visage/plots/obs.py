@@ -180,3 +180,36 @@ MARCHESINI09 = (
     ("2 $<$ z $<$ 3", 9.7, 10.96, -1.01, 3.95e-4),
     ("3 $<$ z $<$ 4", 10.0, 11.38, -1.39, 0.53e-4),
 )
+
+
+def oh_from_z(z):
+    """12 + log(O/H) of metal mass fraction `z` (Remy-Ruyer et al. 2014:
+    8.69 at Z = 0.014)."""
+    return 8.69 + np.log10(z / 0.014)
+
+
+def dust_to_gas(oh):
+    """Remy-Ruyer et al. (2014, A&A 563, A31) Table 1: dust-to-gas ratio,
+    broken power law with their metallicity-scaled X_CO. Their gas has
+    helium in it, as SAGE26's ColdGas does."""
+    x = 8.69 - np.asarray(oh, float)
+    return 10.0 ** -np.where(x < 8.69 - 8.10, 2.21 + x, 0.96 + 3.10 * x)
+
+
+def dust_mf(masses, h: float):
+    """Beeston et al. (2018, MNRAS 479, 1077) Table 1, single Schechter
+    pVmax fit, per Mpc^3 per dex, from their h = 0.7."""
+    star = 4.65e7 * (0.7 / h) ** 2
+    phi = 6.26e-3 * (h / 0.7) ** 3
+    return (
+        np.log(10.0)
+        * phi
+        * (masses / star) ** (1 - 1.22)
+        * np.exp(-masses / star)
+    )
+
+
+def late_size(masses):
+    """Half-light radius (kpc) of late types, r band, Sersic cut: Lange et
+    al. (2015, MNRAS 447, 2603) Table 2."""
+    return 0.08 * masses**0.16 * (1 + masses / 17.10e10) ** (0.81 - 0.16)
