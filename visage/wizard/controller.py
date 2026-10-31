@@ -842,6 +842,7 @@ class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
         self._st.wiz_mode = ""
         self._st.wiz_home_cards = []
         self._st.wiz_home_split = []
+        self._family_dirs: dict = {}
         self._st.wiz_home_load = {}
         self._st.wiz_mode_info = {}
         self._st.wiz_tools_note = ""
