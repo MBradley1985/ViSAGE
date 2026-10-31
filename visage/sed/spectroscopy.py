@@ -145,6 +145,8 @@ def spectroscopy(
             measured[f"{name}_{part}"] = np.full(len(rows), np.nan)
     use_igm = "IGM" in hdr
     for i in range(len(rows)):
+        if i % 50 == 0:
+            print(f"PROGRESS {60 + 40 * i // len(rows)}", flush=True)
         z = float(cat["z_obs"][i])
         lnu = w_d[i] * spec["disk"][i] + w_b[i] * spec["bulge"][i]
         if "agn" in spec:  # the narrow-line region is nuclear
@@ -196,7 +198,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--output", required=True, metavar="FILE")
     p.add_argument("--seed", type=int, default=0)
     a = p.parse_args(argv)
-    res = spectroscopy(native_path(a.input), a.survey, a.seed, print)
+
+    def progress(done, total, _snap, _node):
+        print(f"PROGRESS {60 * done // max(total, 1)}", flush=True)
+
+    res = spectroscopy(native_path(a.input), a.survey, a.seed, progress)
     write_fits(*res, a.output, a.survey)
 
 

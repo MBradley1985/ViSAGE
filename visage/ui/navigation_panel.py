@@ -3862,7 +3862,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.mock_background = None
     state.phot_view = "photometry"
     state.mock_busy = False
-    state.mock_note = ""
     state.mock_centre = ""
 
     @state.change("mock_survey")
@@ -3917,7 +3916,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         fmt = state.mock_format
         seed = int(time.time()) if patch else 0  # a new patch each time
         state.mock_busy = True
-        state.mock_note = ""
         state.flush()
         loop = asyncio.get_running_loop()
         try:
@@ -3946,46 +3944,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if fmt == "pdf":  # the library can't show a PDF
                 shown = sess / f"{stem}.png"
                 shown.write_bytes(img.image_bytes("png"))
-            fits_ok = await loop.run_in_executor(
+            await loop.run_in_executor(
                 None, img.write_fits, sess / f"{stem}.fits"
-            )
-            sv = _mock.SURVEYS[survey]
-            from visage.utils.group_info import galaxy_label
-
-            centre = (
-                f"Galaxy {galaxy_label(gal, int(state.nav_gal_idx))}"
-                if row is not None
-                else img.centre_label.split(" (")[0]
-            )
-            zmax = float(model._lc.redshift.max())
-            state.mock_note = (
-                f"{sv.label}, {field_am:.2g}′ around {centre} "
-                f"({img.centre_label.split(' (', 1)[1]}; "
-                f"{sv.pixel:g}″ pixels, "
-                f"{'/'.join(dict.fromkeys(f'{x:g}' for x in sv.seeing))}″ "
-                "seeing, "
-                + (f"survey depth ({sv.ref})" if noisy else "noiseless")
-                + f". {img.n_galaxies} galaxies drawn"
-                + (
-                    f"; beyond z = {zmax:.2f} from {pathlib.Path(background).stem}"
-                    if background
-                    else f"; only this cone's galaxies (z < {zmax:.2f}) are "
-                    "in the sky"
-                )
-                + (
-                    f"; real stars added, not from SAGE26: {img.n_stars}"
-                    if stars
-                    else ""
-                )
-                + ("" if subtract_sky else "; sky level left in the colours")
-                + f". Saved {out.name}"
-                + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
             )
             on_library_open(str(shown))
             state.library_files = _scan_library()
         except Exception as exc:
-            state.mock_note = f"Couldn't make the image: {exc!s}"
-            state.notice_text = state.mock_note
+            state.notice_text = f"Couldn't make the image: {exc!s}"
             state.notice_color = "error"
             state.notice_show = True
         finally:
@@ -4070,19 +4035,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     # Fibre spectra take minutes, and FSPS holds the GIL: a process of its
     # own (visage.sed.spectroscopy), which procs stops with ViSAGE.
-    state.fibre_busy = False
-    state.fibre_note = ""
     _fibre = {"proc": None, "cancelled": False}
 
     @ctrl.set("make_fibre_spectra")
     def on_make_fibre_spectra():
         asyncio.ensure_future(_make_fibre_spectra())
 
-    @ctrl.set("cancel_fibre_spectra")
-    def on_cancel_fibre_spectra():
-        if _fibre["proc"] is not None:
-            _fibre["cancelled"] = True
-            _procs.stop_group(_fibre["proc"])
+    def _fibre_percent(log) -> int:
+        """The run's last "PROGRESS n" line."""
+        try:
+            lines = log.read_text().splitlines()
+        except OSError:
+            return 0
+        for line in reversed(lines):
+            if line.startswith("PROGRESS "):
+                return int(line.split()[1])
+        return 0
 
     async def _make_fibre_spectra():
         import datetime
@@ -4090,7 +4058,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         import sys
 
         path = getattr(scene.active_model, "path", None)
-        if state.fibre_busy or path is None:
+        if state.spec_busy or path is None:
             return
         sess = _get_session_dir()
         stem = f"spectra_sdss_main_{datetime.datetime.now():%H%M%S}"
@@ -4116,34 +4084,28 @@ def build_navigation_panel(server, scene: Scene) -> None:
             )
         _procs.track(proc)
         _fibre.update(proc=proc, cancelled=False)
-        state.fibre_busy = True
-        state.fibre_note = "Making fibre spectra: this takes a few minutes."
+        state.spec_busy = True
+        state.spec_title = "Making fibre spectra"
+        state.spec_progress = "SDSS Main sample, in a process of its own…"
+        state.spec_percent = 0
         state.flush()
-        t0 = time.monotonic()
         while proc.poll() is None:
             await asyncio.sleep(1.0)
-            minutes = (time.monotonic() - t0) / 60
-            state.fibre_note = (
-                f"Making fibre spectra: {minutes:.1f} min so far, "
-                "a few minutes in all."
-            )
+            state.spec_percent = _fibre_percent(log)
             state.flush()
         _procs.untrack(proc)
         if _fibre["cancelled"]:
-            state.fibre_note = "Cancelled."
             out.unlink(missing_ok=True)
             log.unlink(missing_ok=True)
         elif proc.returncode == 0:
             log.unlink(missing_ok=True)
-            state.fibre_note = (
-                f"Saved {out.name}: measured lines and Dn4000 in its "
-                "catalogue, spectra in FLUX, LOGLAM and SIGMA."
-            )
             state.library_files = _scan_library()
         else:
-            state.fibre_note = f"Couldn't make the spectra: see {log.name}."
+            state.notice_text = f"Couldn't make the spectra: see {log.name}."
+            state.notice_color = "error"
+            state.notice_show = True
         _fibre["proc"] = None
-        state.fibre_busy = False
+        state.spec_busy = False
         state.flush()
 
     # ── Spectrum of the selected galaxy (Photometry tab) ──
@@ -4151,7 +4113,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # and its table go to sage_library/spectra/.
     state.spec_ok = "SFHMassDisk" in _lc_present
     state.spec_busy = False
-    state.spec_note = ""
     # The build card: what is happening and how far.
     state.spec_title = ""
     state.spec_progress = ""
@@ -4206,7 +4167,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         jid = worker.submit(path, row, label, png, csv)
         _spec_run["job"] = jid
         state.spec_busy = True
-        state.spec_note = ""
         state.spec_title = f"Building spectrum of Galaxy {label}"
         state.spec_progress = (
             "Starting the spectrum worker…" if fresh else "Reading the galaxy…"
@@ -4277,16 +4237,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if error is not None:
                 raise RuntimeError(error)
             state.spec_percent = 100
-            state.spec_note = (
-                f"Galaxy {label} at z = {result['z_obs']:.4f}, observed "
-                "frame, with the cone's own photometry marked on it. Saved "
-                f"{png.name} and its table (.csv) in sage_library/spectra."
-            )
             on_library_open(str(png))
             state.library_files = _scan_library()
         except Exception as exc:
-            state.spec_note = f"Couldn't make the spectrum: {exc!s}"
-            state.notice_text = state.spec_note
+            state.notice_text = f"Couldn't make the spectrum: {exc!s}"
             state.notice_color = "error"
             state.notice_show = True
         finally:
@@ -4300,13 +4254,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @ctrl.set("spectrum_cancel")
     def on_spectrum_cancel():
         """Stop the build (the worker goes, and the grids it built)."""
+        if _fibre["proc"] is not None:
+            _fibre["cancelled"] = True
+            _procs.stop_group(_fibre["proc"])
+            return
         if _spec_run["job"] is None:
             return
         _spec_run["job"] = None
         if _spec_run["worker"] is not None:
             _spec_run["worker"].stop()
         state.spec_busy = False
-        state.spec_note = "Spectrum cancelled."
         state.flush()
 
     @ctrl.set("library_rename")
@@ -6397,19 +6354,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v_show=("has_sed_data",),
                     density="compact",
                     color="#7FDBFF",
-                    style="width:100%;margin-bottom:8px;",
+                    style=(
+                        "width:100%;height:auto;margin-bottom:8px;"
+                        "display:flex;flex-wrap:wrap;"
+                    ),
                 ):
-                    for label, value in (
-                        ("Photometry", "photometry"),
-                        ("Image", "image"),
-                        ("Survey", "survey"),
+                    for label, value, basis in (
+                        ("Photometry", "photometry", "100%"),
+                        ("Image", "image", "50%"),
+                        ("Survey", "survey", "50%"),
                     ):
                         v3.VBtn(
                             label,
                             value=value,
                             size="small",
                             variant="tonal",
-                            style="flex:1;",
+                            style=f"flex:1 1 {basis};height:30px;",
                         )
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'photometry'",)
@@ -6502,11 +6462,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             click=ctrl.create_spectrum,
                             id="btn-spectrum",
                         )
-                        html.Div(
-                            "{{ spec_note }}",
-                            v_show=("spec_note",),
-                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
-                        )
 
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'survey'",)
@@ -6570,23 +6525,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 block=True,
                                 color="#7FDBFF",
                                 variant="tonal",
-                                loading=("fibre_busy",),
+                                loading=("spec_busy",),
                                 click=ctrl.make_fibre_spectra,
                                 id="btn-fibre",
-                            )
-                            v3.VBtn(
-                                "Cancel",
-                                v_show=("fibre_busy",),
-                                block=True,
-                                variant="text",
-                                size="small",
-                                click=ctrl.cancel_fibre_spectra,
-                                id="btn-fibre-cancel",
-                            )
-                            html.Div(
-                                "{{ fibre_note }}",
-                                v_show=("fibre_note",),
-                                style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                             )
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'image'",)
@@ -6687,11 +6628,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             loading=("mock_busy",),
                             click=ctrl.create_mock_image,
                             id="btn-mock-image",
-                        )
-                        html.Div(
-                            "{{ mock_note }}",
-                            v_show=("mock_note",),
-                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                         )
 
             # ── CONSOLE tab — multi-session REPL ────────────────────
