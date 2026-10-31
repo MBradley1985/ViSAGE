@@ -117,6 +117,10 @@ class Survey:
     # Galaxies bright in the bluest band come out white: stars set the
     # colour, with dust standing out as red.
     neutral: bool = False
+    # Bands in the colour image, by index; empty = all.
+    shown: tuple[int, ...] = ()
+    # Point source AB mag that fills a CCD pixel (r band), for bleed trails.
+    saturates: float = 0.0
     # Measured sky noise per pixel in real cutouts, nanomaggies: resampling
     # coadds smooths it below what `depth` gives. Images only, not catalogues.
     pixel_noise: tuple[float, ...] = ()
@@ -126,9 +130,6 @@ class Survey:
     # Maps smoothed by the beam (WISE Atlas, Herschel): noise is correlated
     # on that scale, and a point source's peak is its signal-to-noise.
     beam_noise: bool = False
-    # Asinh softening relative to SDSS's own colour images: archive viewers
-    # show sources harder. Display only, the images keep their fluxes.
-    soften: float = 1.0
     # Confusion noise per band, mJy/beam: the same unresolved galaxies in
     # every band, so this share of the noise is common to the bands.
     confusion: tuple[float, ...] = ()
@@ -161,9 +162,9 @@ SURVEYS: dict[str, Survey] = {
         "Abazajian et al. 2009",
         OPTICAL_WEIGHTS,
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
-        soften=0.7,
         mirror=(2.5, 1.3, 4, 0.05, False),
         pixel_noise=(0.0443, 0.0276, 0.0162),
+        saturates=14.0,  # Stoughton et al. 2002
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -175,6 +176,7 @@ SURVEYS: dict[str, Survey] = {
         mirror=(4.0, 1.5, 4, 0.1, False),
         sky=(18.72, 21.15, 22.01),  # Abbott et al. 2018
         pixel_noise=(0.0077, 0.0030, 0.0016),
+        saturates=16.0,  # Abbott et al. 2018
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -195,6 +197,7 @@ SURVEYS: dict[str, Survey] = {
         "Ivezić et al. 2019",
         sky=(20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
         mirror=(8.4, 5.0, 4, 0.1, False),
+        saturates=16.0,  # Ivezic et al. 2019
     ),
     "2mass": Survey(
         "2MASS (JHKs)",
@@ -222,6 +225,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         neutral=True,
         beam_noise=True,
+        shown=(1, 2),  # W3 is far shallower: W2, W1 as in unWISE images
     ),
     "galex": Survey(
         "GALEX AIS (FUV, NUV)",
@@ -232,7 +236,6 @@ SURVEYS: dict[str, Survey] = {
         "Morrissey et al. 2007",
         ground=False,
         by_noise=True,
-        soften=0.25,
         pixel_noise=(0.0324, 0.0244),
     ),
     "euclid_vis": Survey(
@@ -561,6 +564,26 @@ def lupton_rgb(chans, stretch, q=8.0, black=0.0):
     return np.clip(rgb * soft / np.maximum(peak, 1e-30), 0, 1)
 
 
+def composite(
+    images, weights, sigma, black_point=True, sky_level=False, beam=False
+) -> np.ndarray:
+    """Colour image of sky-subtracted bands (reddest first), used on mock and
+    real data alike: `sigma` is each band's sky noise per pixel. Stretch and
+    black point are calibrated on SDSS's own colour images, where summing
+    galaxies' pixels through the asinh stretch recovers their catalogue
+    fluxes at 0.38 nanomaggies, STRETCH_SIGMA of its noise."""
+    chans = [im * w for im, w in zip(images, weights, strict=True)]
+    noise = float(
+        np.mean([s * w for s, w in zip(sigma, weights, strict=True)])
+    )
+    if beam:
+        noise *= BEAM_DISPLAY
+    if sky_level:
+        chans = [c + SKY_SIGMA * noise for c in chans]
+    black = BLACK_SIGMA * noise if black_point else 0.0
+    return lupton_rgb(chans, STRETCH_SIGMA * noise, black=black)
+
+
 @dataclass
 class MockImage:
     survey: str
@@ -832,6 +855,33 @@ def _draw_stars(images, s, npx, rng) -> int:
     return int(n)
 
 
+def _bleed(image: np.ndarray, full: float) -> np.ndarray:
+    """Charge above a pixel's full well runs along its CCD column."""
+    out = image.copy()
+    for x in np.flatnonzero((image > full).any(0)):
+        col = out[:, x]
+        over = col > full
+        run = int(np.clip(col[over].sum() / full - over.sum(), 0, len(col)))
+        y = np.flatnonzero(over)
+        lo, hi = max(y[0] - run // 2, 0), y[-1] + run // 2 + 1
+        col[lo:hi] = full
+    return out
+
+
+def _add_cosmic_rays(image, sigma, rng, rate=2e-4) -> None:
+    """Short bright tracks on `rate` of the pixels: an illustration of one
+    exposure, which coadded survey images have had removed."""
+    n, m = image.shape
+    for _ in range(rng.poisson(rate * n * m)):
+        y, x = rng.integers(0, n), rng.integers(0, m)
+        ang = rng.uniform(0, np.pi)
+        for t in range(rng.integers(1, 8)):
+            yy = int(y + t * np.sin(ang))
+            xx = int(x + t * np.cos(ang))
+            if 0 <= yy < n and 0 <= xx < m:
+                image[yy, xx] += rng.uniform(20, 200) * sigma
+
+
 def make_mock_image(
     path: str | Path,
     survey: str,
@@ -843,6 +893,7 @@ def make_mock_image(
     patch: bool = False,
     subtract_sky: bool = True,
     stars: bool = False,
+    cosmic_rays: bool = False,
 ) -> MockImage:
     """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
     in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
@@ -851,7 +902,8 @@ def make_mock_image(
     from a random patch of it. `patch` centres on a random point of the
     cone's sky, not a galaxy. `subtract_sky` False leaves the sky's level
     in the colour composite (never in the images, which are sky-subtracted
-    like a survey's own). `stars` adds Milky Way stars (see _draw_stars)."""
+    like a survey's own). `stars` adds Milky Way stars (see _draw_stars).
+    `cosmic_rays` adds the hits of one unreduced exposure."""
     s = SURVEYS[survey]
     path = Path(path)
     with h5py.File(path, "r") as f:
@@ -898,7 +950,6 @@ def make_mock_image(
         )
     n_stars = _draw_stars(images, s, npx, rng) if stars else 0
     common = rng.normal(size=(npx, npx)) if s.confusion else None
-    drawn_noise = {}
     for i, b in enumerate(s.bands):
         fwhm = s.seeing[i] / s.pixel
         if s.ground or s.mirror:
@@ -923,29 +974,22 @@ def make_mock_image(
                 noise = gaussian_filter(noise, fwhm / 2.3548)
                 noise = noise * map_sigma(s, i) / noise.std()
             images[b] = images[b] + noise
-            drawn_noise[b] = noise
+        if stars and s.saturates:
+            full = float(nmgy(s.saturates)) * _kernel(s, i).max()
+            images[b] = _bleed(images[b], full)
+        if cosmic_rays:
+            _add_cosmic_rays(images[b], map_sigma(s, i), rng)
 
-    # Stretch and black point: calibrated on SDSS's own colour images, where
-    # summing galaxies' pixels through the asinh stretch recovers their
-    # catalogue fluxes at 0.38 nanomaggies, STRETCH_SIGMA of its noise. The
-    # black point sets the sky to the images' ~1% of full scale.
     w = s.weights or _balance(path, s)
-    chans = [images[b] * wi for b, wi in zip(s.bands, w, strict=True)]
-    noise = float(np.mean([map_sigma(s, i) * wi for i, wi in enumerate(w)]))
-    # Colour images have the same sky noise in R, G and B, whatever the
-    # bands' depths (measured on SDSS, Legacy Survey, PS1 and HSC cutouts).
-    for i, b in enumerate(s.bands):
-        if b in drawn_noise:
-            even = noise / map_sigma(s, i) - w[i]
-            chans[i] = chans[i] + drawn_noise[b] * even
-    if s.beam_noise:
-        noise *= BEAM_DISPLAY
-    stretch = STRETCH_SIGMA * noise * s.soften
-    black = BLACK_SIGMA * noise if noisy else 0.0
-    if not subtract_sky:
-        chans = [c + SKY_SIGMA * noise for c in chans]
-        black = 0.0
-    rgb = lupton_rgb(chans, stretch, black=black)
+    keep = s.shown or range(len(s.bands))
+    rgb = composite(
+        [images[s.bands[i]] for i in keep],
+        [w[i] for i in keep],
+        [map_sigma(s, i) for i in keep],
+        black_point=noisy and subtract_sky,
+        sky_level=not subtract_sky,
+        beam=s.beam_noise,
+    )
     return MockImage(
         survey=survey,
         field_arcmin=field_arcmin,

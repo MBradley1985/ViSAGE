@@ -121,9 +121,13 @@ extension per band in nanomaggies, with a TAN WCS centred on the chosen
 galaxy, or on a random point of the cone's sky with **Random patch of sky**.
 The image is saved as PNG (default), JPEG or PDF.
 
-The colour image shows the same sky noise in R, G and B, however the bands'
-depths differ, as measured on SDSS, Legacy Survey, Pan-STARRS and HSC cutouts.
-That applies to the composite only: the FITS bands keep their true noise.
+`composite` is the one colour renderer, used for mock images and for real FITS
+in comparisons, so differences between them aren't display differences. WISE
+shows W1 and W2, as unWISE images do, as W3 is far shallower.
+
+**Cosmic rays** (off) adds short tracks as in one unreduced exposure, as an
+illustration: coadded survey images have them removed. With stars on, SDSS, DES
+and LSST pixels above the CCD full well bleed along their column.
 
 Colour uses one rule per kind of survey. Optical and near-infrared bands are
 balanced on the cone's bright galaxies. Spitzer and WISE make galaxies bright in their bluest band white, so stars set the colour and dust shows as red. GALEX and

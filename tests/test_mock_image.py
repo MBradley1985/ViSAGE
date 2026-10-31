@@ -306,17 +306,6 @@ def test_confusion_noise_is_shared_between_bands(tmp_path, monkeypatch):
     assert np.corrcoef(r.ravel(), g.ravel())[0, 1] > 0.9
 
 
-def test_displayed_sky_noise_is_equal_in_each_channel(tmp_path):
-    p = tmp_path / "cone.h5"
-    _cone(p)
-    m = mi.make_mock_image(p, "sdss", 2, seed=1, subtract_sky=False)
-    sky = m.rgb[:60, :60].reshape(-1, 3).std(0)
-    assert sky.max() / sky.min() < 1.1
-    a = mi.make_mock_image(p, "sdss", 2, seed=1)
-    i, r = a.images["sdss_i"][:40, :40], a.images["sdss_r"][:40, :40]
-    assert i.std() > 1.3 * r.std()
-
-
 @pytest.mark.parametrize("survey", ["sdss", "lsst", "hst", "nircam"])
 def test_mirror_psf_is_centred_and_even_across_bands(survey):
     s = mi.SURVEYS[survey]
@@ -338,3 +327,26 @@ def test_equal_seeing_gives_equal_peaks():
 def test_shot_noise_reaches_surveys_with_a_sky_level():
     for name in ("des", "euclid_vis", "roman", "hst", "nircam"):
         assert len(mi.SURVEYS[name].sky) == len(mi.SURVEYS[name].bands)
+
+
+def test_real_and_mock_share_the_composite():
+    im = [np.full((4, 4), 1.0)] * 3
+    a = mi.composite(im, (1, 1, 1), (0.1, 0.1, 0.1))
+    b = mi.composite(im, (1, 1, 1), (0.1, 0.1, 0.1), sky_level=True)
+    assert a.shape == (4, 4, 3) and b.mean() >= a.mean()
+
+
+def test_saturated_charge_bleeds_along_the_column():
+    im = np.zeros((41, 41))
+    im[20, 20] = 50.0
+    out = mi._bleed(im, 5.0)
+    assert out[:, 20].max() == 5.0 and (out[:, 20] == 5.0).sum() > 5
+    assert out[20, 19] == 0
+
+
+def test_cosmic_rays_only_on_request(tmp_path):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    a = mi.make_mock_image(p, "sdss", 2, seed=1).images["sdss_r"]
+    b = mi.make_mock_image(p, "sdss", 2, seed=1, cosmic_rays=True)
+    assert b.images["sdss_r"].max() > a.max()

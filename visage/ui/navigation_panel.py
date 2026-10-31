@@ -3856,6 +3856,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.mock_patch = False
     state.mock_subtract_sky = True
     state.mock_stars = False
+    state.mock_cosmic = False
     state.mock_format = "png"
     state.mock_has_depth = True
     state.mock_backgrounds = []
@@ -3914,6 +3915,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         background = state.mock_background
         subtract_sky = bool(state.mock_subtract_sky)
         stars = bool(state.mock_stars)
+        cosmic = bool(state.mock_cosmic)
         fmt = state.mock_format
         seed = int(time.time()) if patch else 0  # a new patch each time
         state.mock_busy = True
@@ -3934,6 +3936,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     patch=patch,
                     subtract_sky=subtract_sky,
                     stars=stars,
+                    cosmic_rays=cosmic,
                 ),
             )
             import datetime
@@ -6426,6 +6429,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             ("mock_patch", "Random patch of sky"),
                             ("mock_subtract_sky", "Subtract sky brightness"),
                             ("mock_stars", "Add stars (SDSS, not SAGE26)"),
+                            ("mock_cosmic", "Cosmic rays (one exposure)"),
                         ):
                             with v3.VSheet(color="transparent", style=_FIELD):
                                 v3.VCheckbox(
