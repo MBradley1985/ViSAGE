@@ -204,6 +204,44 @@ def test_the_card_shows_a_runs_own_dust_and_hides_zeros():
     assert dust_details(SimpleNamespace(extra={}), 0, 1.0) == {}
 
 
+def test_toomre_q_and_height_of_a_known_disc():
+    from visage.hd.adapter import disc_height_kpc, toomre_q
+
+    # A flat rotation curve: kappa = sqrt(2) v / r.
+    prof = {
+        "r": np.array([[4.0, 8.0]]),
+        "vcirc": np.full((1, 3), 200.0),
+        "sigma": np.array([[20.0, 20.0]]),
+        "stars": np.array([[50.0, 50.0]]),
+        "gas": np.array([[0.0, 0.0]]),
+    }
+    q = toomre_q(prof, 0.0)
+    kappa = np.sqrt(2) * 200 / 4
+    want = 20 * kappa / (3.36 * 4.30e-6 * 50e6)
+    assert q[0] == pytest.approx(want, rel=1e-3)
+    assert disc_height_kpc(prof, 4.0) == pytest.approx(
+        400 / (np.pi * 4.30e-6 * 50e6)
+    )
+
+
+def test_stable_annuli_lose_their_arms():
+    from types import SimpleNamespace
+
+    from visage.hd.model import arm_reach
+
+    rc = SimpleNamespace(
+        radial=(
+            (1.0, 2.0, 4.0),
+            (), (), (), (), (),
+            (0.8, 1.2, 4.0),
+        )
+    )  # fmt: skip
+    assert arm_reach(rc, np.array([1.0]))[0] == pytest.approx(1.0)
+    assert arm_reach(rc, np.array([4.0]))[0] == pytest.approx(0.0)
+    assert 0 < arm_reach(rc, np.array([2.0]))[0] < 1
+    assert arm_reach(SimpleNamespace(radial=()), np.ones(2)) == 1.0
+
+
 def test_other_models_have_no_radial_scale():
     from types import SimpleNamespace
 

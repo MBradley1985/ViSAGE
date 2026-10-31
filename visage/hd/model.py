@@ -264,9 +264,11 @@ class SageGalaxy:
     ics_share: float = 0.0
     ha_share: float = 0.0
     lum_v: float = 0.0  # relative luminosity in V, 0 without photometry
-    # DarkSAGE's discs: radii (kpc), surface densities of stars, HI, H2 and
-    # star formation; () for any other model.
+    # Discs in annuli: radii (kpc), surface densities of stars, HI, H2 and
+    # star formation, then dust and Toomre Q if the run has them (else ());
+    # () for a run without annuli.
     radial: tuple = ()
+    disc_height_kpc: float = 0.0  # stars, from their dispersion; 0 unknown
     sfh_disk: tuple = ()
     sfh_bulge: tuple = ()
     # The massive haloes around it (its cosmic web): (dx, dy, dz, weight)
@@ -806,6 +808,8 @@ def recipe_from_sage(
         # (steep: the population's sigma/Vmax spans only ~0.45-0.65)
         hz *= float(np.clip(((g.vel_disp / g.vmax) / 0.55) ** 6, 0.6, 2.0))
     hz = float(min(hz, 0.45))
+    if g.disc_height_kpc > 0:
+        hz = float(np.clip(g.disc_height_kpc / rd, 0.02, 0.6))
 
     # Bulges: the classical (merger-built) one round, at its own radius;
     # the pseudo-bulge (instability-built) compact and flattened at its own.
@@ -1203,7 +1207,7 @@ def _arm_field(rc, r, th, lnr0, tanp, wobble, shift, sharp):
         taper = 1 / (1 + np.exp(-(r - ra) / (0.15 * max(ra, 0.2))))
         taper *= 1 / (1 + np.exp((r - rb) / (0.12 * rb)))
         out *= 1 - a * lobe * taper
-    return 1 - out
+    return (1 - out) * arm_reach(rc, r)
 
 
 def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
@@ -1223,6 +1227,17 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
     lg = lg - 4.0 * np.clip(r - edge[ok].max(), 0, None)
     want = np.exp(lg - np.interp(0.0, np.log(edge[ok]), np.log(v[ok])))
     return want / np.maximum(base / np.mean(base[np.abs(r - 1) < 0.05]), 1e-6)
+
+
+def arm_reach(rc, r) -> np.ndarray | float:
+    """How much of a spiral pattern a disc with annuli holds at radius r:
+    all where Toomre Q <= 1, none where Q >= 2, as it's stable; 1 without Q."""
+    if len(rc.radial) < 7 or not rc.radial[6]:
+        return 1.0
+    x = np.log(np.maximum(np.asarray(rc.radial[0], float), 1e-4))
+    q = np.log(np.maximum(np.asarray(rc.radial[6], float), 0.01))
+    here = np.interp(np.log(np.maximum(r, 1e-3)), x, q)
+    return np.clip(np.log(2.0 / np.exp(here)) / np.log(2.0), 0.0, 1.0)
 
 
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
@@ -1369,8 +1384,12 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 - 0.7 * np.exp(-((r / 1.2) ** 2)))
         * (0.15 + arm_dust)
     )
-    h2 = h2 * radial_scale(rc, 3, r, np.exp(-r / 0.9))
-    hi = hi * radial_scale(rc, 2, r, np.exp(-r / rc.hi_scale))
+    # The dust follows the run's own dust where it has it, else the gas.
+    has_dust = len(rc.radial) > 5 and len(rc.radial[5]) > 0
+    h2 = h2 * radial_scale(rc, 5 if has_dust else 3, r, np.exp(-r / 0.9))
+    hi = hi * radial_scale(
+        rc, 5 if has_dust else 2, r, np.exp(-r / rc.hi_scale)
+    )
     if rc.clumps:
         h2 = h2 + 1.5 * giant * np.exp(-r / 3.0)
     dust = (h2 + 0.35 * hi) * outer_cut * inner
