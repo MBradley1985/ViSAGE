@@ -346,7 +346,7 @@ LightSAGE's synthetic photometry, spectra and mock images build on the following
 - **Survey catalogues:** Strauss M. A. et al. 2002, *AJ* 124, 1810; Baldry I. K. et al. 2018, *MNRAS* 474, 3875
 - **Mock image display and PSF:** Lupton R. et al. 2004, *PASP* 116, 133; Trujillo I. et al. 2001, *MNRAS* 328, 977
 - **Mock image noise:** Nguyen H. T. et al. 2010, *A&A* 518, L5 (SPIRE confusion); Bagley M. B. et al. 2023, *ApJL* 946, L12 (CEERS depths); Abbott T. M. C. et al. 2018, *ApJS* 239, 18 (DES sky); Leinert C. et al. 1998, *A&AS* 127, 1 (zodiacal light)
-- **Mock image saturation:** Stoughton C. et al. 2002, *AJ* 123, 485; Ivezić Ž. et al. 2019, *ApJ* 873, 111
+- **Mock image saturation:** York D. G. et al. 2000, *AJ* 120, 1579; Drlica-Wagner A. et al. 2022, *ApJS* 261, 38; LSST Science Collaboration 2009, arXiv:0912.0201
 - **Mock image stars:** Skrutskie M. F. et al. 2006, *AJ* 131, 1163 (2MASS); Almeida A. et al. 2023, *ApJS* 267, 44 (SDSS DR18); Jester S. et al. 2005, *AJ* 130, 873; Ballesteros F. J. 2012, *EPL* 97, 34008
 
 ## License

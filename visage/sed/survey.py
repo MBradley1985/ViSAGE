@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import h5py
@@ -109,6 +109,11 @@ class Selection:
     fibre: float  # diameter, arcsec
     seeing: float  # FWHM, arcsec
     ref: str
+    # Rejected if brighter than these fibre magnitudes: light scatters into
+    # neighbouring fibres.
+    fibre_bright: dict = field(default_factory=dict)
+    # (mag, arcsec): rejected if brighter with a smaller r50, as likely stars.
+    compact: tuple = ()
 
 
 SELECTIONS = {
@@ -116,18 +121,20 @@ SELECTIONS = {
         "SDSS Main Galaxy Sample",
         "sdss_r",
         17.77,
-        14.5,
+        -np.inf,
         24.5,
         55.0,
         3.0,
         1.32,
         "Strauss et al. 2002",
+        {"sdss_g": 15.0, "sdss_r": 15.0, "sdss_i": 14.5},
+        (15.0, 2.0),
     ),
     "gama": Selection(
         "GAMA II",
         "sdss_r",
         19.8,
-        14.5,
+        -np.inf,
         None,
         0.0,
         2.0,
@@ -219,6 +226,11 @@ def catalogue(path: str | Path, key: str, seed: int = 0) -> dict:
     keep = (seen <= sel.limit) & (seen >= sel.bright)
     if sel.mu50 is not None:
         keep &= out["mu50"] <= sel.mu50
+    for b, limit in sel.fibre_bright.items():
+        if f"fibre_mag_{b}" in out:
+            keep &= out[f"fibre_mag_{b}"] >= limit
+    if sel.compact:
+        keep &= ~((seen < sel.compact[0]) & (m["r50"] < sel.compact[1]))
     out["detected_mag"] = seen
     out["row"] = np.arange(len(seen))
     out["rd"], out["rb"] = m["rd"], m["rb"]

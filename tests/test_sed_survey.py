@@ -61,3 +61,10 @@ def test_summary_density_uses_the_cone_area(tmp_path):
     n = sv.summary(cat, p, "sdss_main")
     assert n["density"] == pytest.approx(1.0, rel=0.01)
     assert n["fibre"] == pytest.approx(1.5)
+
+
+def test_sdss_uses_the_published_bright_cuts_not_a_magnitude_limit():
+    sel = sv.SELECTIONS["sdss_main"]
+    assert sel.bright == -np.inf and sel.fibre_bright["sdss_i"] == 14.5
+    assert sel.compact == (15.0, 2.0)
+    assert sv.SELECTIONS["gama"].bright == -np.inf

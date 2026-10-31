@@ -9,14 +9,18 @@ by its inclination, axis ratio q = sqrt(cos^2 i + q0^2 sin^2 i), q0 = 0.2
 spin on the sky. Its disk and bulge fluxes come from its observed-frame
 disk_mag_obs_* and bulge_mag_obs_* magnitudes (total magnitudes split by
 bulge-to-total stellar mass when a cone has no disk/bulge photometry).
+SAGE26 gives bulges no shape, so their axis ratios are drawn from real SDSS
+early types. Intracluster stars aren't drawn: SAGE26 gives their mass and
+metals, but no profile or ages.
 The image is blurred by the survey's median seeing on its pixel grid: a
 Moffat profile for ground-based surveys, beta = 4.765 for Kolmogorov
-turbulence (Trujillo et al. 2001, MNRAS 328, 977), and a Gaussian of the
-quoted FWHM from space. "Survey depth" adds sky noise so that a point source at
-the survey's quoted limit has that signal-to-noise, and the galaxies' own
-shot noise where the survey's sky brightness is known: the sky's mean over
-its noise gives the electrons per nanomaggy. Colour images are asinh
-composites (Lupton et al. 2004, PASP 116, 133).
+turbulence (Trujillo et al. 2001, MNRAS 328, 977), and the diffraction pattern
+of a simplified mirror where one is given. "Survey depth" adds sky noise, as
+measured per pixel in real data where we have it and otherwise so that a point
+source at the survey's quoted limit has that signal-to-noise, and the galaxies'
+own shot noise where the sky brightness is known: the sky's mean over its
+noise gives the electrons per nanomaggy. Colour images are asinh composites
+(Lupton et al. 2004, PASP 116, 133).
 
 Survey numbers (pixel scale, median seeing, depth):
 
@@ -58,8 +62,9 @@ Survey numbers (pixel scale, median seeing, depth):
   10.2, 9.4, 7.4 mJy with confusion at 500, 350, 250 um (Valiante et al.
   2016; Maddox et al. 2018); PACS 3"/pixel, beams 13.7", 11.4", 49, 44 mJy
   at 160, 100 um.
-- JWST NIRCam: 0.031"/pixel, PSF F115W 0.040", F200W 0.066", F444W 0.145"
-  (JWST User Documentation); depth depends on the programme, so noiseless.
+- JWST NIRCam, CEERS: 0.031"/pixel, PSF F115W 0.040", F200W 0.066", F444W
+  0.145" (JWST User Documentation); noise measured in the CEERS mosaics
+  (Bagley et al. 2023).
 """
 
 from __future__ import annotations
@@ -78,6 +83,11 @@ from visage.sed.filters import EFFECTIVE_WAVELENGTH_A
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
 STAR_FILE = Path(__file__).parent / "data" / "sdss_stars.npz"
+REFERENCE_FILE = Path(__file__).parent / "data" / "reference_population.npz"
+# Deciles of the axis ratio of SDSS early types, as SAGE26 gives bulges no
+# shape (deVAB_r of 757 red galaxies, fracDeV_r > 0.9, 14 < r < 16.5).
+BULGE_Q = (0.25, 0.377, 0.536, 0.623, 0.683, 0.725)
+BULGE_Q += (0.769, 0.815, 0.854, 0.893, 1.0)
 # Colour balance (reddest band first), from SDSS's own colour images: the
 # blue / red profiles of real and mock red galaxies.
 OPTICAL_WEIGHTS = (1.0, 1.1, 1.3)
@@ -119,8 +129,8 @@ class Survey:
     neutral: bool = False
     # Bands in the colour image, by index; empty = all.
     shown: tuple[int, ...] = ()
-    # Point source AB mag that fills a CCD pixel (r band), for bleed trails.
-    saturates: float = 0.0
+    # Point source AB mag that fills a CCD pixel, per band, for bleed trails.
+    saturates: tuple[float, ...] = ()
     # Measured sky noise per pixel in real cutouts, nanomaggies: resampling
     # coadds smooths it below what `depth` gives. Images only, not catalogues.
     pixel_noise: tuple[float, ...] = ()
@@ -164,7 +174,7 @@ SURVEYS: dict[str, Survey] = {
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
         mirror=(2.5, 1.3, 4, 0.05, False),
         pixel_noise=(0.0443, 0.0276, 0.0162),
-        saturates=14.0,  # Stoughton et al. 2002
+        saturates=(14.0, 14.0, 14.0),  # York et al. 2000
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -176,7 +186,7 @@ SURVEYS: dict[str, Survey] = {
         mirror=(4.0, 1.5, 4, 0.1, False),
         sky=(18.72, 21.15, 22.01),  # Abbott et al. 2018
         pixel_noise=(0.0077, 0.0030, 0.0016),
-        saturates=16.0,  # Abbott et al. 2018
+        saturates=(15.5, 15.7, 15.2),  # 90 s: Drlica-Wagner et al. 2022
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -197,7 +207,7 @@ SURVEYS: dict[str, Survey] = {
         "Ivezić et al. 2019",
         sky=(20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
         mirror=(8.4, 5.0, 4, 0.1, False),
-        saturates=16.0,  # Ivezic et al. 2019
+        saturates=(15.8, 15.8, 15.7),  # 15 s: LSST Science Book
     ),
     "2mass": Survey(
         "2MASS (JHKs)",
@@ -543,7 +553,7 @@ def electrons_per_nmgy(survey: Survey, i: int) -> float:
     """Electrons per nanomaggy for band i: sky-limited noise means the
     sky's variance in nanomaggies is its mean over this."""
     sky = float(nmgy(survey.sky[i])) * survey.pixel**2  # nmgy / pixel
-    return sky / noise_sigma(survey, i) ** 2
+    return sky / map_sigma(survey, i) ** 2
 
 
 def lupton_rgb(chans, stretch, q=8.0, black=0.0):
@@ -641,7 +651,7 @@ class MockImage:
         hdr["DEC_CEN"] = (self.dec0, "centre Dec, deg")
         if np.isfinite(self.z0):
             hdr["Z_CEN"] = (self.z0, "redshift of the centre galaxy")
-        hdr["NSTARS"] = (self.n_stars, "SDSS stars added, not from SAGE26")
+        hdr["NSTARS"] = (self.n_stars, "real stars added, not from SAGE26")
         hdr["ORIGIN"] = "ViSAGE mock image (visage.sed.mock_image)"
         for i, b in enumerate(s.bands):
             img = self.images[b]
@@ -683,12 +693,9 @@ def _read(path: Path, rows, bands):
             "BulgeMass",
         )
         d = {k: f[k][:] if rows is None else f[k][rows] for k in need}
-        if "CosInclination" in f:
-            d["CosInclination"] = (
-                f["CosInclination"][:]
-                if rows is None
-                else f["CosInclination"][rows]
-            )
+        for key in ("CosInclination", "GalaxyIndex"):
+            if key in f:
+                d[key] = f[key][:] if rows is None else f[key][rows]
         for b in bands:
             split = f"disk_mag_obs_{b}" in f and f"bulge_mag_obs_{b}" in f
             for comp in ("disk", "bulge"):
@@ -704,22 +711,23 @@ def _read(path: Path, rows, bands):
     return hub, d
 
 
-def _balance(path, s, n_bright: int = 200) -> tuple[float, ...]:
-    """Colour weights that show the cone's brightest galaxies, in `s`'s
-    bands, as bright red galaxies look in SDSS's colour images."""
+def _balance(s) -> tuple[float, ...]:
+    """Colour weights, which never depend on the cone, so that a model's
+    colours show as they are: a fixed old population (10 Gyr, solar, FSPS,
+    at z = 0.1) has the display colour of a red galaxy in SDSS images, or
+    is white with `neutral`. Surveys with `by_noise` show each band in its
+    own noise units, as old starlight is no reference for them."""
     if s.by_noise:
         return tuple(1 / map_sigma(s, i) for i in range(len(s.bands)))
-    n = len(s.bands)
-    with h5py.File(path, "r") as f:
-        flux = [nmgy(f[f"mag_obs_{b}"][:]) for b in s.bands]
+    with np.load(REFERENCE_FILE) as d:
+        mags = dict(zip(d["bands"].tolist(), d["mag"].tolist(), strict=True))
+    flux = [float(nmgy(mags[b])) for b in s.bands]
     if s.neutral:
-        top = np.argsort(-flux[-1])[:n_bright]
-        return tuple(1 / float(np.median(fl[top])) for fl in flux)
-    top = np.argsort(-flux[0])[:n_bright]
-    ratio = [float(np.median(fl[top])) for fl in flux]
+        return tuple(flux[-1] / f for f in flux)
+    two = len(flux) == 2
     return tuple(
-        (BALANCE[1] if n == 2 and i else BALANCE[i]) * ratio[0] / r
-        for i, r in enumerate(ratio)
+        (BALANCE[1] if two and i else BALANCE[i]) * flux[0] / f
+        for i, f in enumerate(flux)
     )
 
 
@@ -771,10 +779,14 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
         sn = np.linalg.norm(spin, axis=1)
         cosi = np.abs(np.sum(spin * los, 1)) / np.maximum(sn, 1e-30)
     q_disk = np.sqrt(cosi**2 + Q0**2 * (1 - cosi**2))
+    # The same galaxy keeps its shape from image to image.
+    index = np.asarray(d.get("GalaxyIndex", np.arange(len(near))), np.uint64)
+    phase = (index * np.uint64(2654435761)) % np.uint64(2**32)
+    q_bulge = np.interp(phase / 2.0**32, np.linspace(0, 1, 11), BULGE_Q)
 
     # Skip galaxies far below the noise in every band.
     if noisy:
-        floor = [0.05 * noise_sigma(s, i) for i in range(len(s.bands))]
+        floor = [0.05 * map_sigma(s, i) for i in range(len(s.bands))]
     else:
         floor = [float(nmgy(32.0))] * len(s.bands)
 
@@ -783,7 +795,7 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
         hit = False
         for comp, n_s, re, q in (
             ("disk", 1.0, 1.678 * rd_pix[k], q_disk[k]),
-            ("bulge", 4.0, rb_pix[k], 0.8),
+            ("bulge", 4.0, rb_pix[k], q_bulge[k]),
         ):
             fl = [float(d[f"{comp}_{b}"][k]) for b in s.bands]
             if all(v <= fl0 for v, fl0 in zip(fl, floor, strict=True)):
@@ -872,20 +884,6 @@ def _bleed(image: np.ndarray, full: float) -> np.ndarray:
     return out
 
 
-def _add_cosmic_rays(image, sigma, rng, rate=2e-4) -> None:
-    """Short bright tracks on `rate` of the pixels: an illustration of one
-    exposure, which coadded survey images have had removed."""
-    n, m = image.shape
-    for _ in range(rng.poisson(rate * n * m)):
-        y, x = rng.integers(0, n), rng.integers(0, m)
-        ang = rng.uniform(0, np.pi)
-        for t in range(rng.integers(1, 8)):
-            yy = int(y + t * np.sin(ang))
-            xx = int(x + t * np.cos(ang))
-            if 0 <= yy < n and 0 <= xx < m:
-                image[yy, xx] += rng.uniform(20, 200) * sigma
-
-
 def make_mock_image(
     path: str | Path,
     survey: str,
@@ -897,7 +895,6 @@ def make_mock_image(
     patch: bool = False,
     subtract_sky: bool = True,
     stars: bool = False,
-    cosmic_rays: bool = False,
 ) -> MockImage:
     """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
     in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
@@ -906,8 +903,7 @@ def make_mock_image(
     from a random patch of it. `patch` centres on a random point of the
     cone's sky, not a galaxy. `subtract_sky` False leaves the sky's level
     in the colour composite (never in the images, which are sky-subtracted
-    like a survey's own). `stars` adds Milky Way stars (see _draw_stars).
-    `cosmic_rays` adds the hits of one unreduced exposure."""
+    like a survey's own). `stars` adds Milky Way stars (see _draw_stars)."""
     s = SURVEYS[survey]
     path = Path(path)
     with h5py.File(path, "r") as f:
@@ -979,12 +975,10 @@ def make_mock_image(
                 noise = noise * map_sigma(s, i) / noise.std()
             images[b] = images[b] + noise
         if stars and s.saturates:
-            full = float(nmgy(s.saturates)) * _kernel(s, i).max()
+            full = float(nmgy(s.saturates[i])) * _kernel(s, i).max()
             images[b] = _bleed(images[b], full)
-        if cosmic_rays:
-            _add_cosmic_rays(images[b], map_sigma(s, i), rng)
 
-    w = s.weights or _balance(path, s)
+    w = s.weights or _balance(s)
     keep = s.shown or range(len(s.bands))
     rgb = composite(
         [images[s.bands[i]] for i in keep],

@@ -45,7 +45,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Mock images: one colour renderer for mock and real data, WISE in W1 and W2, bleed trails from saturated stars, and an optional cosmic ray checkbox.
+- Mock image colours no longer depend on the cone's own galaxies, so a model's colours show as they are.
+- Mock bulges take real SDSS axis ratios, not one fixed value. Saturation limits are per band, from published values.
+- SDSS Main selection uses its published bright cuts. GAMA has no bright limit.
+- Mock images: one colour renderer for mock and real data, WISE in W1 and W2, and bleed trails from saturated stars.
 - Mock images: sky noise per pixel measured from real SDSS, DECam, Pan-STARRS, Euclid, GALEX, Spitzer and H-ATLAS data.
 - Mock images: diffraction spikes from each mirror, shot noise in DES and space surveys, and real 2MASS stars at the bright end.
 - Mock images: stretch from the mean channel noise, beam-correlated noise in WISE and Herschel, shared SPIRE confusion noise, and starlight-balanced Spitzer colours.

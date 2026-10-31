@@ -125,14 +125,16 @@ The image is saved as PNG (default), JPEG or PDF.
 in comparisons, so differences between them aren't display differences. WISE
 shows W1 and W2, as unWISE images do, as W3 is far shallower.
 
-**Cosmic rays** (off) adds short tracks as in one unreduced exposure, as an
-illustration: coadded survey images have them removed. With stars on, SDSS, DES
-and LSST pixels above the CCD full well bleed along their column.
+With stars on, SDSS, DES and LSST pixels above the CCD full well bleed along
+their column, using the published saturation limit of a single exposure.
 
-Colour uses one rule per kind of survey. Optical and near-infrared bands are
-balanced on the cone's bright galaxies. Spitzer and WISE make galaxies bright in their bluest band white, so stars set the colour and dust shows as red. GALEX and
-Herschel show each band in its own noise units. The stretch comes from the
-mean noise of the displayed channels, calibrated on SDSS.
+Colour weights never depend on the cone, so that a model's colours show as
+they are. A fixed old population (10 Gyr, solar, FSPS, z = 0.1) has the display
+colour of a red galaxy in SDSS's images in optical and near-infrared surveys,
+and is white in Spitzer and WISE, so dust shows as red. GALEX and Herschel show
+each band in its own noise units. The stretch comes from the mean noise of the
+displayed channels, calibrated on SDSS. Real data shown beside a mock goes
+through the same weights and renderer.
 
 2MASS, WISE and Herschel maps are smoothed by the beam, so their noise is correlated
 on that scale. In SPIRE, the share of the noise from confusion (Nguyen et al.
@@ -226,3 +228,33 @@ where zodiacal and telescope thermal emission take over.
 - Tsai J. C., Mathews W. G. 1995, *ApJ* 448, 84
 - Wang J. et al. 2016, *MNRAS* 460, 2143
 - Wright E. L. et al. 2010, *AJ* 140, 1868
+
+## What doesn't come from SAGE26
+
+Everything about a galaxy comes from SAGE26's output: stellar mass and its
+history in disk and bulge, metallicity per history bin, cold gas and H2, black
+hole accretion, position, velocity, spin and radii. These fill what it doesn't
+give, each from the literature or real data:
+
+| Stage | Input | Source |
+|---|---|---|
+| Stars | Spectra of stellar populations, Chabrier IMF | FSPS |
+| Stars | Disk stars moved to the bulge keep the disk's age mix, as SAGE26 doesn't record when they moved | Assumption |
+| Dust | Dust mass, as a steady state of the Dusty-SAGE model | Triani et al. 2020 |
+| Dust | Attenuation and birth clouds | Trayford et al. 2020; Lagos et al. 2019 |
+| Dust | Emission | Draine & Li 2007 |
+| Lines | HII regions, AGN narrow-line regions | Gutkin et al. 2016; Feltre et al. 2016 |
+| AGN | Quasar light curve, placed at random in its step | Hopkins & Hernquist 2009 |
+| Light of a galaxy | Exponential disk; de Vaucouleurs bulge, half-light equal to SAGE26's half-mass radius | Assumption |
+| Light of a galaxy | Disk thickness 0.2 | Hubble 1926; Holmberg 1958 |
+| Light of a galaxy | Bulge axis ratios | Real SDSS early types |
+| Images | Noise, seeing, depths, sky levels, saturation | Real data and survey papers |
+| Images | Stars (optional) | Real 2MASS and SDSS stars |
+| Images | Display stretch, black point, sky level, softer stretch for beam maps | Display only: never in the FITS. The softer stretch was set by eye |
+| Selections | Survey cuts | Strauss et al. 2002; Baldry et al. 2018 |
+| Groups | Linking lengths, virial mass | Van Kempen et al. 2024, 2025 |
+
+Not modelled: an AGN's continuum, in any band (only its narrow lines, in
+spectra and line fluxes, not magnitudes); intracluster stars, 12% of the stellar mass in
+the test cone, as SAGE26 gives no profile or ages for them; arms, rings, dust
+lanes and tidal features; Galactic extinction.

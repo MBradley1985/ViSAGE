@@ -172,8 +172,9 @@ def test_bright_core_keeps_a_gradient():
 def test_shot_noise_grows_with_the_source():
     s = mi.SURVEYS["sdss"]
     g = mi.electrons_per_nmgy(s, 1)
-    # r sky of 20.84 is 0.7245 nmgy/pixel, over a 0.05 nmgy noise.
-    assert g == pytest.approx(0.7245 / mi.noise_sigma(s, 1) ** 2, rel=0.01)
+    # r sky of 20.84 is 0.7245 nmgy/pixel, over the measured noise: near
+    # the real camera, about 900 electrons per nanomaggy.
+    assert g == pytest.approx(0.7245 / mi.map_sigma(s, 1) ** 2, rel=0.01)
     assert not mi.SURVEYS["wise"].sky
 
 
@@ -344,9 +345,16 @@ def test_saturated_charge_bleeds_along_the_column():
     assert out[20, 19] == 0
 
 
-def test_cosmic_rays_only_on_request(tmp_path):
-    p = tmp_path / "cone.h5"
-    _cone(p)
-    a = mi.make_mock_image(p, "sdss", 2, seed=1).images["sdss_r"]
-    b = mi.make_mock_image(p, "sdss", 2, seed=1, cosmic_rays=True)
-    assert b.images["sdss_r"].max() > a.max()
+def test_old_population_is_white_in_a_neutral_survey():
+    s = mi.SURVEYS["spitzer"]
+    with np.load(mi.REFERENCE_FILE) as d:
+        mags = dict(zip(d["bands"].tolist(), d["mag"].tolist(), strict=True))
+    w = mi._balance(s)
+    f = [mi.nmgy(mags[b]) * x for b, x in zip(s.bands, w, strict=True)]
+    assert max(f) / min(f) == pytest.approx(1.0)
+
+
+def test_every_band_has_a_reference():
+    with np.load(mi.REFERENCE_FILE) as d:
+        have = set(d["bands"].tolist())
+    assert {b for s in mi.SURVEYS.values() for b in s.bands} <= have
