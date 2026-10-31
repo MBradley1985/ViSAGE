@@ -10,6 +10,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- AGN continuum (Shen et al. 2020) above 1% Eddington, as a point source in images and in spectra and survey catalogues.
+- Intracluster stars from SAGE26's own mass and metals, with an option in the Image view.
+- Mock images use measured PSFs, and sky noise from many real fields.
 - Mock SDSS fibre spectroscopy (**Make fibre spectra** in the Survey view, or `python -m visage.sed.spectroscopy`): disk and bulge light in the fibre, instrument resolution, real sky noise, and measured lines and Dn4000.
 - Redshift-space group finding after Van Kempen et al., with calibrated virial masses and scores against true haloes; exported catalogues carry each galaxy's group.
 - Survey sub-panel in the Photometry tab: SDSS Main and GAMA selections with Petrosian and fibre photometry, exported as FITS or CSV.

@@ -191,6 +191,12 @@ def catalogue(path: str | Path, key: str, seed: int = 0) -> dict:
             )
             for b in bands
         }
+        # A point source at the centre, inside every aperture.
+        agn = {
+            b: nmgy(f[f"agn_mag_obs_{b}"][:])
+            for b in bands
+            if f"agn_mag_obs_{b}" in f
+        }
         out = {
             "ra": f["ra"][:],
             "dec": f["dec"][:],
@@ -207,10 +213,12 @@ def catalogue(path: str | Path, key: str, seed: int = 0) -> dict:
     ap = m["r_petro"] * N_PETRO
     fib = np.full_like(ap, 0.5 * sel.fibre)
     for b, (d, b_) in comp.items():
-        total = np.maximum(d + b_, 1e-30)
+        total = np.maximum(d + b_ + np.nan_to_num(agn.get(b, 0.0)), 1e-30)
         for name, r in (("petro", ap), ("fibre", fib)):
             flux = d * _light_inside(r, m["rd"], 1.0)
             flux = flux + b_ * _light_inside(r, m["rb"], 4.0)
+            if b in agn:
+                flux = flux + np.nan_to_num(agn[b])
             with np.errstate(divide="ignore"):
                 out[f"{name}_mag_{b}"] = 22.5 - 2.5 * np.log10(
                     np.maximum(flux, 1e-30)

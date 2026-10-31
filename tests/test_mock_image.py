@@ -362,5 +362,5 @@ def test_every_band_has_a_reference():
 
 def test_measured_psfs_cover_their_surveys():
     have = set(mi._measured())
-    for name in ("sdss", "des", "ps1", "hst", "euclid", "roman", "nircam"):
+    for name in ("sdss", "ps1", "hst", "euclid", "roman", "nircam"):
         assert {f"{name}/{b}" for b in mi.SURVEYS[name].bands} <= have

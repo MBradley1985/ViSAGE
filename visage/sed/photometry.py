@@ -236,6 +236,20 @@ def _stars(wts_in, sfr, spec, last, dt_y):
         return older, (m_young * spec["bc_frac"])[:, None] * spec["bc"]
 
 
+def _agn_continuum(wave, l_agn, edd, galaxy_index, snap, z) -> np.ndarray:
+    """The AGN continuum (visage.sed.components), L_sun/Hz at `wave`."""
+    from visage.sed import agn as ag
+    from visage.sed import components as cp
+
+    out = np.zeros((len(l_agn), len(wave)))
+    hot = np.flatnonzero((edd >= ag.MDOT_CRIT) & (l_agn > 0))
+    if hot.size:
+        u = ag.burst_phase(galaxy_index[hot], snap[hot] + 1000)
+        nh = cp.column_density(cp.hard_xray(l_agn[hot]), z[hot], u)
+        out[hot] = cp.continuum(wave, l_agn[hot], nh) / L_SUN_ERG_S
+    return out
+
+
 def compute_photometry(
     path: str | Path,
     bands: tuple[str, ...] = DEFAULT_BANDS,
@@ -815,6 +829,10 @@ def compute_photometry(
             agn_spec = np.stack(
                 [ag.line_spectrum(spectra_out["wave"], x) for x in agn_seen]
             )
+            if galaxy_id is not None:
+                agn_spec = agn_spec + _agn_continuum(
+                    spectra_out["wave"], l_agn, edd, galaxy_id, snapnum, z_obs
+                )
             spectra_out["agn"] = agn_spec
             spectra_out["observed"] = spectra_out["observed"] + agn_spec
         out["LAGN"] = l_agn
@@ -1134,6 +1152,9 @@ def main(argv: list[str] | None = None) -> None:
         metal_history=args.metal_history,
     )
     write_photometry(args.input, results)
+    from visage.sed.components import add_components
+
+    add_components(args.input, args.alist)
     n_mags = sum(1 for k in results if not k.startswith("_"))
     print(f"Wrote {n_mags} magnitude datasets into {args.input}")
     if args.noise:

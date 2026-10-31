@@ -10,8 +10,9 @@ spin on the sky. Its disk and bulge fluxes come from its observed-frame
 disk_mag_obs_* and bulge_mag_obs_* magnitudes (total magnitudes split by
 bulge-to-total stellar mass when a cone has no disk/bulge photometry).
 SAGE26 gives bulges no shape, so their axis ratios are drawn from real SDSS
-early types. Intracluster stars aren't drawn: SAGE26 gives their mass and
-metals, but no profile or ages.
+early types. AGN are point sources at the galaxy's centre, and intracluster
+stars, as an option, follow a projected NFW profile with SAGE26's Rvir and
+Concentration, as it gives them no profile (visage/sed/components.py).
 The image is blurred by the survey's median seeing on its pixel grid: a
 Moffat profile for ground-based surveys, beta = 4.765 for Kolmogorov
 turbulence (Trujillo et al. 2001, MNRAS 328, 977), and the diffraction pattern
@@ -86,7 +87,7 @@ MAX_PIXELS = 2400  # longest side of an image
 STAR_FILE = Path(__file__).parent / "data" / "sdss_stars.npz"
 REFERENCE_FILE = Path(__file__).parent / "data" / "reference_population.npz"
 # Measured PSFs on each survey's pixels, by "survey/band": real stars stacked
-# (SDSS, DES, Pan-STARRS), STDPSF (HST; Anderson 2016), the MER PSF grid
+# (SDSS, Pan-STARRS), the STDPSF library (HST), the MER PSF grid
 # (Euclid Q1), STPSF (JWST from in-flight wavefronts, Roman from models).
 PSF_FILE = Path(__file__).parent / "data" / "measured_psfs.npz"
 # Deciles of the axis ratio of SDSS early types, as SAGE26 gives bulges no
@@ -106,8 +107,6 @@ STRETCH_SIGMA = 5.34  # asinh softening
 BLACK_SIGMA = 0.42  # black point above the mean sky
 SKY_SIGMA = 0.7  # sky left in: ~0.1 of full scale, as SDSS,
 # Legacy Survey and Pan-STARRS cutout services show it
-BEAM_DISPLAY = 2.0  # softer stretch for beam-smoothed maps, whose sky is
-# their noise: sources stand on a dark sky, as in WISE and Herschel images
 KNEE = 0.8  # display level above which bright cores roll off smoothly
 
 
@@ -584,7 +583,7 @@ def lupton_rgb(chans, stretch, q=8.0, black=0.0):
 
 
 def composite(
-    images, weights, sigma, black_point=True, sky_level=False, beam=False
+    images, weights, sigma, black_point=True, sky_level=False
 ) -> np.ndarray:
     """Colour image of sky-subtracted bands (reddest first), used on mock and
     real data alike: `sigma` is each band's sky noise per pixel. Stretch and
@@ -595,8 +594,6 @@ def composite(
     noise = float(
         np.mean([s * w for s, w in zip(sigma, weights, strict=True)])
     )
-    if beam:
-        noise *= BEAM_DISPLAY
     if sky_level:
         chans = [c + SKY_SIGMA * noise for c in chans]
     black = BLACK_SIGMA * noise if black_point else 0.0
@@ -833,6 +830,94 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
     return drawn
 
 
+def nfw_projected(x, c: float) -> np.ndarray:
+    """Surface density of an NFW halo at R / r_vir = x, concentration c,
+    cut at r_vir and normalised so the area integral (in units of r_vir^2)
+    is 1 (Bartelmann 1996)."""
+    u = np.maximum(np.asarray(x, float) * c, 1e-3)
+    out = np.zeros_like(u)
+    low, high = u < 1 - 1e-6, u > 1 + 1e-6
+    out[low] = (1 - np.arccosh(1 / u[low]) / np.sqrt(1 - u[low] ** 2)) / (
+        u[low] ** 2 - 1
+    )
+    out[high] = (1 - np.arccos(1 / u[high]) / np.sqrt(u[high] ** 2 - 1)) / (
+        u[high] ** 2 - 1
+    )
+    out[~(low | high)] = 1 / 3
+    out[np.asarray(x) > 1] = 0.0
+    grid = np.linspace(1e-4, 1, 2000)
+    ug = grid * c
+    v = np.where(
+        ug < 1,
+        (
+            1
+            - np.arccosh(1 / np.minimum(ug, 1 - 1e-9))
+            / np.sqrt(np.maximum(1 - ug**2, 1e-18))
+        )
+        / (ug**2 - 1 - 1e-18),
+        (
+            1
+            - np.arccos(1 / np.maximum(ug, 1 + 1e-9))
+            / np.sqrt(np.maximum(ug**2 - 1, 1e-18))
+        )
+        / (ug**2 - 1 + 1e-18),
+    )
+    return out / np.trapezoid(2 * np.pi * grid * v, grid)
+
+
+def _concentration(c, mvir_msun_h) -> np.ndarray:
+    """SAGE26's concentration, or where it has none the mass relation of
+    Duffy et al. (2008) at z = 0."""
+    return np.where(c > 0, c, 5.71 * (mvir_msun_h / 2e12) ** -0.084)
+
+
+def _draw_agn_ics(images, path, s, npx, ra0, dec0, agn, ics) -> int:
+    """Add the point sources of AGN and, with `ics`, the intracluster stars
+    of the haloes reaching the field, spread as the dark matter (Montes &
+    Trujillo 2019; Alonso Asensio et al. 2020). The number of haloes."""
+    from visage.io.lightcone_reader import _read_hubble_h
+
+    bands = list(s.bands)
+    with h5py.File(path, "r") as f:
+        if f"agn_mag_obs_{bands[0]}" not in f:
+            return 0
+        hub = _read_hubble_h(f)
+        ra, dec = f["ra"][:], f["dec"][:]
+        cosd = np.cos(np.deg2rad(dec0))
+        dx = -(ra - ra0) * cosd * 3600 / s.pixel + npx / 2
+        dy = (dec - dec0) * 3600 / s.pixel + npx / 2
+        z = f["redshift_cosmological"][:]
+        d_a = np.maximum(f["distance"][:] / hub / (1 + z), 1e-6)
+        r_pix = f["Rvir"][:] / hub / d_a * 206265 / s.pixel
+        if agn:
+            flux = [nmgy(f[f"agn_mag_obs_{b}"][:]) for b in bands]
+            seen = np.isfinite(flux[0]) | np.isfinite(flux[-1])
+            inside = (dx >= 0) & (dx < npx) & (dy >= 0) & (dy < npx)
+            for k in np.flatnonzero(seen & inside):
+                y, x = int(dy[k]), int(dx[k])
+                for b, fl in zip(bands, flux, strict=True):
+                    if np.isfinite(fl[k]):
+                        images[b][y, x] += fl[k]
+        if not ics:
+            return 0
+        flux = [nmgy(f[f"ics_mag_obs_{b}"][:]) for b in bands]
+        reach = (np.abs(dx - npx / 2) < npx / 2 + r_pix) & (
+            np.abs(dy - npx / 2) < npx / 2 + r_pix
+        )
+        rows = np.flatnonzero(reach & np.isfinite(flux[0]))
+        conc = _concentration(
+            f["Concentration"][:][rows], f["Mvir"][:][rows] * 1e10
+        )
+    yy, xx = np.mgrid[:npx, :npx] + 0.5
+    for i, k in enumerate(rows):
+        x = np.hypot(xx - dx[k], yy - dy[k]) / r_pix[k]
+        sigma = nfw_projected(x, float(conc[i])) / r_pix[k] ** 2
+        for b, fl in zip(bands, flux, strict=True):
+            if np.isfinite(fl[k]):
+                images[b] += fl[k] * sigma
+    return len(rows)
+
+
 def _draw_background(images, path, s, npx, half_deg, zmin, noisy, rng) -> int:
     """Add the galaxies of deeper lightcone `path` beyond `zmin`, around a
     random point of it."""
@@ -900,6 +985,7 @@ def make_mock_image(
     patch: bool = False,
     subtract_sky: bool = True,
     stars: bool = False,
+    ics: bool = False,
 ) -> MockImage:
     """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
     in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
@@ -908,7 +994,8 @@ def make_mock_image(
     from a random patch of it. `patch` centres on a random point of the
     cone's sky, not a galaxy. `subtract_sky` False leaves the sky's level
     in the colour composite (never in the images, which are sky-subtracted
-    like a survey's own). `stars` adds Milky Way stars (see _draw_stars)."""
+    like a survey's own). `stars` adds Milky Way stars (see _draw_stars).
+    `ics` adds intracluster stars. AGN are drawn where a cone has them."""
     s = SURVEYS[survey]
     path = Path(path)
     with h5py.File(path, "r") as f:
@@ -953,6 +1040,7 @@ def make_mock_image(
         drawn += _draw_background(
             images, Path(background), s, npx, half_deg, z_all.max(), noisy, rng
         )
+    _draw_agn_ics(images, path, s, npx, ra0, dec0, True, ics)
     n_stars = _draw_stars(images, s, npx, rng) if stars else 0
     common = rng.normal(size=(npx, npx)) if s.confusion else None
     for i, b in enumerate(s.bands):
@@ -992,7 +1080,6 @@ def make_mock_image(
         [map_sigma(s, i) for i in keep],
         black_point=noisy and subtract_sky,
         sky_level=not subtract_sky,
-        beam=s.beam_noise,
     )
     return MockImage(
         survey=survey,

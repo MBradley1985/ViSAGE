@@ -3856,6 +3856,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.mock_patch = False
     state.mock_subtract_sky = True
     state.mock_stars = False
+    state.mock_ics = False
+    state.mock_ics_ok = "ics_mag_obs_sdss_r" in _lc_present
     state.mock_format = "png"
     state.mock_has_depth = True
     state.mock_backgrounds = []
@@ -3913,6 +3915,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         background = state.mock_background
         subtract_sky = bool(state.mock_subtract_sky)
         stars = bool(state.mock_stars)
+        ics = bool(state.mock_ics) and bool(state.mock_ics_ok)
         fmt = state.mock_format
         seed = int(time.time()) if patch else 0  # a new patch each time
         state.mock_busy = True
@@ -3932,6 +3935,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     patch=patch,
                     subtract_sky=subtract_sky,
                     stars=stars,
+                    ics=ics,
                 ),
             )
             import datetime
@@ -6604,6 +6608,18 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                     hide_details=True,
                                     density="compact",
                                 )
+                        with v3.VSheet(
+                            color="transparent",
+                            style=_FIELD,
+                            v_show=("mock_ics_ok",),
+                        ):
+                            v3.VCheckbox(
+                                v_model=("mock_ics",),
+                                label="Add intracluster stars",
+                                color="#7FDBFF",
+                                hide_details=True,
+                                density="compact",
+                            )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VSelect(
                                 v_model=("mock_format",),

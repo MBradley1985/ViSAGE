@@ -157,15 +157,18 @@ SDSS DR18 stars down to *r* = 22.5. Their number doesn't change with position.
 Other bands use a blackbody at each star's temperature (*g*−*r* to *B*−*V*,
 Jester et al. 2005; Teff, Ballesteros 2012), which is rough in the UV.
 
-The PSF includes diffraction from each telescope's mirror and support vanes,
-computed from their geometry. These are simplified, not the observatories'
-measured PSFs: JWST's segments and each telescope's real strut layout are
-approximated. Ground surveys convolve this with the Moffat seeing PSF; space
-surveys add a Gaussian that brings it to their stated width.
+PSFs are measured wherever one exists: real stars stacked from SDSS and
+Pan-STARRS FITS, STDPSF for HST, Euclid's Q1 PSF grids, and STPSF for JWST (from
+in-flight wavefronts) and Roman (a model, as it hasn't flown). LSST uses Moffat
+seeing through its mirror's diffraction; other ground surveys, DES included, use
+Moffat seeing at the published value. A small stack of true DES stars agrees
+with DES's published seeing, but it's too noisy to use as a kernel.
+Stacks of ordinary stars don't reach the wings and spikes of very bright stars.
 
-Sky noise in images is the per-pixel noise measured in real cutouts where they
-exist (SDSS, DECam, Pan-STARRS, Euclid, GALEX, 2MASS, Spitzer SEIP, H-ATLAS,
-HST GOODS-S and JWST CEERS), because
+Sky noise in images is the per-pixel noise measured in real data where it exists:
+the median of 11-18 fields for SDSS, DES and Pan-STARRS, about 30% field to
+field, and a smaller number of survey fields for Euclid, GALEX, 2MASS, Spitzer
+SEIP, H-ATLAS, HST GOODS-S and JWST CEERS, because
 resampling coadds smooths it below what a survey's quoted depth implies. Quoted
 depths still set the catalogue flux errors.
 
@@ -249,12 +252,29 @@ give, each from the literature or real data:
 | Light of a galaxy | Disk thickness 0.2 | Hubble 1926; Holmberg 1958 |
 | Light of a galaxy | Bulge axis ratios | Real SDSS early types |
 | Images | Noise, seeing, depths, sky levels, saturation | Real data and survey papers |
+| Images | PSFs | Measured: stacked real stars (SDSS, Pan-STARRS), STDPSF (HST), Euclid Q1 grids, STPSF (JWST; a model for Roman). Otherwise Moffat seeing |
 | Images | Stars (optional) | Real 2MASS and SDSS stars |
-| Images | Display stretch, black point, sky level, softer stretch for beam maps | Display only: never in the FITS. The softer stretch was set by eye |
+| Images | Display stretch, black point, sky level | Display only: never in the FITS. Calibrated on SDSS, and real 2MASS, WISE and Herschel maps reach the same contrast (0.94-1.12 of it) with no change |
 | Selections | Survey cuts | Strauss et al. 2002; Baldry et al. 2018 |
 | Groups | Linking lengths, virial mass | Van Kempen et al. 2024, 2025 |
 
-Not modelled: an AGN's continuum, in any band (only its narrow lines, in
-spectra and line fluxes, not magnitudes); intracluster stars, 12% of the stellar mass in
-the test cone, as SAGE26 gives no profile or ages for them; arms, rings, dust
-lanes and tidal features; Galactic extinction.
+Not modelled: arms, rings, dust lanes and tidal features; Galactic extinction.
+
+## AGN and intracluster stars
+
+`visage.sed.components` runs after the photometry, or on its own with `python -m
+visage.sed.components --input cone.h5`, and writes `agn_mag_obs_*`,
+`ics_mag_obs_*` and `AGNObscured`. `mag_obs_*` stays the galaxy's own light.
+
+Above 1% of Eddington an AGN has the mean quasar spectrum of Shen et al. (2020),
+scaled to SAGE26's `LAGN`, and an absorbing column drawn from Ueda et al. (2014).
+Below it there is no thin disk, so only narrow lines. AGN are point sources in
+images, and are in spectra and survey catalogues.
+
+**Add intracluster stars** in the Image view draws SAGE26's `IntraClusterStars`
+as a projected NFW profile with its `Rvir` and `Concentration`, as the ICL traces
+the dark matter (Montes & Trujillo 2019; Alonso Asensio et al. 2020), or with the
+Duffy et al. (2008) relation where `Concentration` is 0. SAGE26 gives their mass,
+metals and deposit times, so they are one population at SAGE26's metallicity and
+the mass-weighted age of the central's own stars, or the deposit's age if older.
+That age is an assumption.

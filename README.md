@@ -340,6 +340,9 @@ LightSAGE's synthetic photometry, spectra and mock images build on the following
 - **Dust emission:** Draine B. T., Li A. 2007, *ApJ* 657, 810
 - **Emission lines:** Gutkin J., Charlot S., Bruzual G. 2016, *MNRAS* 462, 1757; Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354; Hirschmann M. et al. 2017, *MNRAS* 472, 2468
 - **AGN light curves:** Hopkins P. F., Hernquist L. 2009, *ApJ* 698, 1550
+- **AGN continuum:** Shen X. et al. 2020, *MNRAS* 495, 3252; Ueda Y. et al. 2014, *ApJ* 786, 104
+- **Intracluster stars:** Montes M., Trujillo I. 2019, *MNRAS* 482, 2838; Alonso Asensio I. et al. 2020, *MNRAS* 494, 1859; Duffy A. R. et al. 2008, *MNRAS* 390, L64; Bartelmann M. 1996, *A&A* 313, 697
+- **Measured PSFs:** the STDPSF library of J. Anderson, STScI (HST); Euclid Q1 MER PSF grids, IRSA; Perrin M. D. et al. 2014, *Proc. SPIE* 9143, 91433X (STPSF)
 - **Intergalactic absorption:** Madau P. 1995, *ApJ* 441, 18
 - **Mock spectroscopy:** Smee S. A. et al. 2013, *AJ* 146, 32; Balogh M. L. et al. 1999, *ApJ* 527, 54
 - **Group finding:** Van Kempen W. et al. 2024, arXiv:2410.15548; Van Kempen W. et al. 2025, arXiv:2508.12556; Lambert T. S. et al. 2020, *MNRAS* 497, 2954; Huchra J. P., Geller M. J. 1982, *ApJ* 257, 423; Robotham A. S. G. et al. 2011, *MNRAS* 416, 2640; Beers T. C., Flynn K., Gebhardt K. 1990, *AJ* 100, 32; Blanton M. R. et al. 2003, *ApJ* 592, 819
