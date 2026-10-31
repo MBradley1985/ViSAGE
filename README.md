@@ -187,6 +187,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
 | Library    | Browse stored screenshots / movies; double-click a row to open as a movable, resizable floating card over the viewport (multiple items open simultaneously); per-row delete button removes the file from disk immediately |
+| Plotting   | SAGE26's diagnostic plots with observations, for the whole catalogue, a sphere, a box or a group, with the Filters and Environments applied. In a lightcone, Observed plots too. PNG, PDF, JPEG, SVG |
 
 The **Focus button** (top of the right panel) is tab-aware: it focuses on the selection (galaxy, or halo and group), the coords point, or the box region.
 
@@ -334,6 +335,14 @@ If you use ViSAGE in published work, please cite it using [CITATION.cff](CITATIO
 
 - **DarkSAGE:** Stevens A. R. H., Croton D. J., Mutch S. J. 2016, *MNRAS* 461, 859
 - **DustySAGE:** Triani D. P. et al. 2020, *MNRAS* 493, 2490
+
+The Plotting tab's observations are from the following.
+
+- **Mass functions:** Bell E. F. et al. 2003, *ApJS* 149, 289; Zwaan M. A. et al. 2005, *MNRAS* 359, L30; Obreschkow D., Rawlings S. 2009, *ApJ* 696, L129; Marchesini D. et al. 2009, *ApJ* 701, 1765; GAMA and Baldry et al. stellar mass functions by type and colour; TRINITY black hole mass functions, arXiv:2309.07210
+- **Scaling relations:** Stark D. V., McGaugh S. S., Swaters R. A. 2009, *AJ* 138, 392; Tremonti C. A. et al. 2004, *ApJ* 613, 898; Curti M. et al. 2020, *MNRAS* 491, 944; Andrews B. H., Martini P. 2013, *ApJ* 765, 140; Kewley L. J., Ellison S. L. 2008, *ApJ* 681, 1183; Gallazzi A. et al. 2005, *MNRAS* 362, 41; Häring N., Rix H.-W. 2004, *ApJ* 604, L89; Scott N., Graham A. W., Schombert J. 2013, *ApJ* 768, 76
+- **Morphology and sizes:** Moffett A. J. et al. 2016, *MNRAS* 462, 4336; Somerville R. S. et al. 2018, *MNRAS* 473, 2714
+- **Stellar mass density:** Dickinson M. et al. 2003, *ApJ* 587, 25; Drory N. et al. 2005, *ApJ* 619, L131; Pérez-González P. G. et al. 2008, *ApJ* 675, 234; Glazebrook K. et al. 2004, *Nature* 430, 181; Fontana A. et al. 2006, *A&A* 459, 745; Rudnick G. et al. 2006, *ApJ* 650, 624; Elsner F., Feulner G., Hopp U. 2008, *A&A* 477, 503
+- **Observed:** Driver S. P. et al. 2012, *MNRAS* 427, 3244 (luminosity functions); Driver S. P. et al. 2016, *ApJ* 827, 108 (number counts); Kauffmann G. et al. 2003, *MNRAS* 346, 1055; Kewley L. J. et al. 2001, *ApJ* 556, 121 (BPT)
 
 LightSAGE's synthetic photometry, spectra and mock images build on the following. The full list is in [Lightcone Photometry](docs/physics/photometry.md#references).
 
