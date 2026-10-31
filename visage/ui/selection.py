@@ -319,6 +319,15 @@ def selection_card(server) -> None:
                 click=ctrl.sel_toggle_info,
                 style="margin:4px 0;",
             )
+            v3.VBtn(
+                "Radial profile",
+                v_show=("radial_ok",),
+                size="x-small",
+                variant="text",
+                color="cyan",
+                click=ctrl.radial_profile,
+                style="margin:4px 0;",
+            )
             with html.Div(v_show=("sel_info_open",)):
                 with html.Div(
                     v_for="(p, i) in sel_info_items",

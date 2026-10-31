@@ -86,6 +86,16 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Jellyfish (ram-pressure) tail | `Vel*`, `Pos*`, `HotGas` (host), `Rvir` (host), `StellarMass`, `ColdGas`, `DiskRadius` | The strength is ρ_ICM v² against the disk's restoring force (Σ\* Σ_gas). It is set so a few per cent of satellites in hot haloes have a tail, as observed jellyfish are a few per cent of cluster galaxies (e.g. Poggianti et al. 2016): on SAGE26 at z = 0, 7% any tail, 2% a strong one. The tail is faint gas in the galaxy's own HII colour with blue star-forming knots, trailing the motion. It is brightened to undo the group's shared exposure, and ram pressure also strips up to half the satellite's CGM. |
 | Tidal stripping (satellites) | `Mvir`, `infallMvir` | A satellite that has lost more than 65% of its infall subhalo mass sheds stars into tidal streams. |
 
+## DarkSAGE and DustySAGE
+
+On these models' runs, HD replaces two of the estimates above with what the model itself computed. On any other model nothing changes.
+
+| Component | Fields | How |
+|---|---|---|
+| Disc size (DarkSAGE) | `StellarDiscScaleRadius` | Replaces `DiskRadius`. |
+| Disc profiles (DarkSAGE) | The radial stars, HI, H₂ and star-formation arrays | Older stars, HI, H₂ and young stars each follow their own surface-density profile in place of an exponential, falling away beyond the last annulus that has any. |
+| Dust (DustySAGE) | `ColdDust`, `DiskRadius` | The face-on optical depth comes from its dust mass, by the same recipe as the [photometry](photometry.md). |
+
 ## Fields not used for visuals
 
 `Concentration`, `ICS_accrete` and `infallStellarMass` are read but don't change the picture. `Cooling` was used only by an early offline prototype.

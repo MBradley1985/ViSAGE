@@ -20,7 +20,8 @@ ViSAGE renders dark matter haloes and SAGE galaxies together in a browser-based 
 | HD mode | A detailed 3D model of the selected galaxy and its whole group from its SAGE properties — arms, bars, bulges, dust, tidal features, halo gas — ray-marched on the GPU |
 | Multi-model | Switch between SAGE flavours of the same sim; overlay two compatible models simultaneously |
 | Lightcone Mode | Open a LightSAGE lightcone output in the same Explore UI; the snapshot slider becomes a redshift/time cut over the cone, plus an optional false-colour synthetic-photometry (SED) imaging layer |
-| Launch Mode | Install, set up and run SAGE26, LightSAGE or SAGEswarm with big buttons (every setting under All settings), watch each run's progress beside its terminal, and open the result straight in ViSAGE; SAGE26 can run under MPI |
+| Plotting | SAGE26's diagnostic plots with observations, for the whole catalogue or any selection, with the Filters and Environments applied; PNG, PDF, JPEG, SVG |
+| Launch Mode | Install, set up and run SAGE26, LightSAGE, SAGEswarm, DarkSAGE or DustySAGE with big buttons (every setting under All settings), watch each run's progress beside its terminal, and open the result straight in ViSAGE; SAGE26 can run under MPI |
 | Story Mode | Author JSON "stories" and play them back as full presentations over the live 3D view — text/media/equation overlays, camera motions, time sweeps |
 | Embedded console | Real shell terminal + Python REPL + natural-language SAGE commands in one tab, with multi-session tabs, script loading, and a pop-out window |
 | Output | Screenshots (PNG/JPG/TIFF), movies (GIF/MOV/PNG-sequence) at 1–60 fps, 1×/2×/4× supersampling |
@@ -52,7 +53,8 @@ visage --par input/millennium.par
 
 - **[Getting Started](getting_started/installation.md)** — install and launch
 - **[User Guide](user_guide/interface.md)** — UI reference and navigation controls
-- **[Launch Mode](user_guide/launch_mode.md)** — guided SAGE26 / SAGEswarm / LightSAGE setup flows
+- **[Plotting](user_guide/plotting.md)** — diagnostic plots with observations
+- **[Launch Mode](user_guide/launch_mode.md)** — guided SAGE26 / SAGEswarm / LightSAGE / DarkSAGE / DustySAGE setup flows
 - **[Lightcone Mode](user_guide/lightcone.md)** — visualize a LightSAGE lightcone output
 - **[Story Mode](user_guide/story_mode.md)** — author and present data-driven talks in the viewer
 - **[Physics Reference](physics/haloes.md)** — field definitions and units

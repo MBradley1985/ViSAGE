@@ -44,6 +44,10 @@ visage --lightcone /path/to/lightcone.h5
 
 See [Lightcone Mode](lightcone.md) for what's different about viewing a lightcone versus a SAGE box.
 
+## DarkSAGE and DustySAGE output
+
+Both write SAGE's binary format, which ViSAGE converts to HDF5 with SAGE26's field names, so a run opens as any other model. See [Launch Mode](launch_mode.md#darksage-and-dustysage).
+
 ## How the par file is used
 
 ViSAGE's `parse_par()` reads the `.par` file you pass to the CLI. Relative paths in the par file are resolved relative to the par file's parent directory (your SAGE26 root), so you can run `visage` from anywhere as long as you give it the absolute or correctly relative path to the par file.

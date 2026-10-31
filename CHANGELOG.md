@@ -6,7 +6,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [2.15.0] — 2026-11-01
+
+### Added
+
+- DarkSAGE and DustySAGE in Launch Mode, on a split card: clone, install, run and load, with their binary output converted for ViSAGE. Their code isn't changed.
+- A Radial profile plot for DarkSAGE galaxies, H2 fraction and dust-to-gas colouring.
+- LightSAGE refuses DarkSAGE and DustySAGE output.
+- A Plotting tab: SAGE26's Local and History plots with observations, plus Observed plots for lightcones, for the whole catalogue, a sphere, a box or a group, with the Filters and Environments applied. Median and 1σ or each galaxy, colour by a property, log or linear axes, limits, dark background; PNG, PDF, JPEG, SVG.
+- HD draws DarkSAGE discs from their real radial profiles, and DustySAGE dust from its real dust mass.
 
 ## [2.14.0] — 2026-10-31
 

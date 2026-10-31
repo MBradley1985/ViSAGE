@@ -34,7 +34,7 @@ ViSAGE's browser UI has three main regions and a number of overlays that appear 
 
 ## Right tabs panel
 
-Seven tabs in two rows:
+Eight tabs in two rows of four:
 
 | Tab | Purpose |
 |---|---|
@@ -45,6 +45,7 @@ Seven tabs in two rows:
 | Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
+| Plotting    | SAGE26's diagnostic plots, with observations, for the whole catalogue or any selection (see [Plotting](plotting.md)) |
 
 Above the tabs sit **Reset Camera**, **Info (i)**, **Focus**, **Centre**, **Isolate** and **HD**, which work regardless of which tab is active (see [Navigation](navigation.md)).
 

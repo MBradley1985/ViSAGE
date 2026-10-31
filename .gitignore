@@ -73,6 +73,10 @@ sage_library/
 !visage/static/*.jpg
 !visage/static/*.jpeg
 !visage/static/*.png
+!visage/static/wizard/*.jpg
+!visage/static/wizard/*.png
+# Observations the Plotting tab reads (package data)
+!visage/plots/data/*.dat
 # Bundled Story Mode example stories (package data — must be committed)
 !visage/examples/*.json
 # Personal stories in sage_stories/ stay local (covered by *.json above);
