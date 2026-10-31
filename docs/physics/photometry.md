@@ -118,8 +118,24 @@ Sky brightness (AB mag arcsec⁻²): SDSS *g* 21.84, *r* 20.84, *i* 20.16 (SDSS 
 
 The PNG is the colour composite (north up, east left); the FITS file holds one
 extension per band in nanomaggies, with a TAN WCS centred on the chosen
-galaxy. Only the cone's own galaxies are drawn: there are no stars, and no
-galaxies beyond the cone's redshift range.
+galaxy, or on a random point of the cone's sky with **Random patch of sky**.
+The image is saved as PNG (default), JPEG or PDF.
+
+**Galaxies beyond this cone** adds a deeper cone's galaxies; it reaches as far
+as that cone does, so build a deeper one to see fainter galaxies.
+
+**Subtract sky brightness** (on) sets the sky to black. Off, the sky stays in
+the colour image at about 0.1 of full scale, as SDSS, Legacy Survey and
+Pan-STARRS cutout services show it. The FITS bands are sky-subtracted either
+way.
+
+**Add stars** (off) adds Milky Way stars, which SAGE26 doesn't model, so they
+are never on by default. They are a random draw from the 2,899 clean SDSS DR18
+stars (12 < *r* < 22.5) in one square degree at *b* = 79°, so their number
+doesn't change with position. Other bands use a blackbody at each star's
+temperature (*g*−*r* to *B*−*V*, Jester et al. 2005; Teff, Ballesteros 2012),
+which is rough in the UV. Stars have no diffraction spikes, and none are
+fainter than *r* = 22.5.
 
 ## Not included (yet)
 

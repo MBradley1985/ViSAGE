@@ -73,8 +73,11 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.signal import fftconvolve
 
+from visage.sed.filters import EFFECTIVE_WAVELENGTH_A
+
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
+STAR_FILE = Path(__file__).parent / "data" / "sdss_stars.npz"
 # Colour balance (reddest band first), from SDSS's own colour images: the
 # blue / red profiles of real and mock red galaxies.
 OPTICAL_WEIGHTS = (1.0, 1.1, 1.3)
@@ -85,6 +88,8 @@ MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
 STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
 BLACK_SIGMA = 0.6  # black point above the mean sky, same units
+SKY_SIGMA = 1.0  # sky left in, same units: ~0.1 of full scale, as SDSS,
+# Legacy Survey and Pan-STARRS cutout services show it
 KNEE = 0.8  # display level above which bright cores roll off smoothly
 
 
@@ -441,13 +446,21 @@ class MockImage:
     n_galaxies: int
     centre_label: str
     noisy: bool
+    n_stars: int = 0
+    sky_subtracted: bool = True
 
-    def png_bytes(self) -> bytes:
+    def image_bytes(self, fmt: str = "png") -> bytes:
+        """The colour composite as `fmt`: png, jpeg or pdf."""
         from PIL import Image
 
         buf = io.BytesIO()
         img = (self.rgb[::-1] * 255).astype(np.uint8)  # north up
-        Image.fromarray(img).save(buf, "PNG")
+        options = {
+            "png": {},
+            "jpeg": {"quality": 95, "subsampling": 0},
+            "pdf": {"resolution": 150.0},
+        }
+        Image.fromarray(img).save(buf, fmt.upper(), **options[fmt])
         return buf.getvalue()
 
     def write_fits(self, path: Path) -> bool:
@@ -472,7 +485,9 @@ class MockImage:
         hdr["NOISE"] = (self.noisy, "sky noise at the survey depth")
         hdr["RA_CEN"] = (self.ra0, "centre RA, deg")
         hdr["DEC_CEN"] = (self.dec0, "centre Dec, deg")
-        hdr["Z_CEN"] = (self.z0, "redshift of the centre galaxy")
+        if np.isfinite(self.z0):
+            hdr["Z_CEN"] = (self.z0, "redshift of the centre galaxy")
+        hdr["NSTARS"] = (self.n_stars, "SDSS stars added, not from SAGE26")
         hdr["ORIGIN"] = "ViSAGE mock image (visage.sed.mock_image)"
         for i, b in enumerate(s.bands):
             img = self.images[b]
@@ -655,6 +670,37 @@ def _draw_background(images, path, s, npx, half_deg, zmin, noisy, rng) -> int:
     return _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin)
 
 
+def _star_temperature(g_r: np.ndarray) -> np.ndarray:
+    """Teff (K) from SDSS g-r: B-V from Jester et al. (2005), Teff from
+    Ballesteros (2012)."""
+    x = 0.92 * (0.98 * g_r + 0.22)
+    return 4600 * (1 / (x + 1.7) + 1 / (x + 0.62))
+
+
+def _planck(wave_a: float, teff: np.ndarray) -> np.ndarray:
+    """Blackbody f_nu, in arbitrary units."""
+    nu_t = 1.4388e8 / wave_a / teff  # h nu / k T
+    return (1 / wave_a) ** 3 / np.expm1(np.minimum(nu_t, 500.0))
+
+
+def _draw_stars(images, s, npx, rng) -> int:
+    """Add Milky Way stars, which SAGE26 doesn't model, as point sources:
+    a random draw from every clean SDSS star (12 < r < 22.5) in one square
+    degree at b = 79 deg, blackbodies at their g-r temperature in other
+    bands. The number drawn."""
+    data = np.load(STAR_FILE)
+    g, r = data["g"], data["r"]
+    n = rng.poisson((npx * s.pixel / 3600) ** 2 * len(r))
+    pick = rng.integers(0, len(r), n)
+    teff = np.clip(_star_temperature(g[pick] - r[pick]), 2500, 12000)
+    x, y = rng.integers(0, npx, (2, n))
+    ref = _planck(EFFECTIVE_WAVELENGTH_A["sdss_r"], teff)
+    for b in s.bands:
+        wave = EFFECTIVE_WAVELENGTH_A[b]
+        np.add.at(images[b], (y, x), nmgy(r[pick]) * _planck(wave, teff) / ref)
+    return int(n)
+
+
 def make_mock_image(
     path: str | Path,
     survey: str,
@@ -663,12 +709,18 @@ def make_mock_image(
     noisy: bool = True,
     seed: int = 0,
     background: str | Path | None = None,
+    patch: bool = False,
+    subtract_sky: bool = True,
+    stars: bool = False,
 ) -> MockImage:
     """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
     in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
     away from the cone's edges, if None). `background`, a deeper lightcone
     with the same bands, adds the galaxies beyond this cone's redshift
-    from a random patch of it."""
+    from a random patch of it. `patch` centres on a random point of the
+    cone's sky, not a galaxy. `subtract_sky` False leaves the sky's level
+    in the colour composite (never in the images, which are sky-subtracted
+    like a survey's own). `stars` adds Milky Way stars (see _draw_stars)."""
     s = SURVEYS[survey]
     path = Path(path)
     with h5py.File(path, "r") as f:
@@ -677,7 +729,17 @@ def make_mock_image(
         z_all = f["redshift_cosmological"][:]
         red = nmgy(f[f"mag_obs_{s.bands[0]}"][:])
     half_deg = field_arcmin / 120
-    if centre_row is None:
+    rng = np.random.default_rng(seed)
+    if patch:
+        ra0 = rng.uniform(
+            *sorted((ra_all.min() + half_deg, ra_all.max() - half_deg))
+        )
+        dec0 = rng.uniform(
+            *sorted((dec_all.min() + half_deg, dec_all.max() - half_deg))
+        )
+        z0 = float("nan")
+        centre_label = f"a random patch (RA {ra0:.4f}°, Dec {dec0:+.4f}°)"
+    elif centre_row is None:
         inside = (
             (ra_all > ra_all.min() + half_deg)
             & (ra_all < ra_all.max() - half_deg)
@@ -689,18 +751,21 @@ def make_mock_image(
         what = "the brightest galaxy"
     else:
         what = f"galaxy row {centre_row}"
-    ra0, dec0 = float(ra_all[centre_row]), float(dec_all[centre_row])
-    z0 = float(z_all[centre_row])
-    centre_label = f"{what} (RA {ra0:.4f}°, Dec {dec0:+.4f}°, z = {z0:.4f})"
+    if not patch:
+        ra0, dec0 = float(ra_all[centre_row]), float(dec_all[centre_row])
+        z0 = float(z_all[centre_row])
+        centre_label = (
+            f"{what} (RA {ra0:.4f}°, Dec {dec0:+.4f}°, z = {z0:.4f})"
+        )
 
     npx = int(round(field_arcmin * 60 / s.pixel))
     images = {b: np.zeros((npx, npx)) for b in s.bands}
     drawn = _draw_galaxies(images, path, s, npx, ra0, dec0, noisy)
-    rng = np.random.default_rng(seed)
     if background is not None:
         drawn += _draw_background(
             images, Path(background), s, npx, half_deg, z_all.max(), noisy, rng
         )
+    n_stars = _draw_stars(images, s, npx, rng) if stars else 0
     for i, b in enumerate(s.bands):
         fwhm = s.seeing[i] / s.pixel
         if s.ground:
@@ -725,9 +790,13 @@ def make_mock_image(
     # black point sets the sky to the images' ~1% of full scale.
     w = s.weights or _balance(path, s)
     chans = [images[b] * wi for b, wi in zip(s.bands, w, strict=True)]
-    noise = float(np.mean([noise_sigma(s, i) * wi for i, wi in enumerate(w)]))
+    # The deepest band's noise: one shallow band mustn't dim the others.
+    noise = min(noise_sigma(s, i) * wi for i, wi in enumerate(w))
     stretch = STRETCH_SIGMA * noise
     black = BLACK_SIGMA * noise if noisy else 0.0
+    if not subtract_sky:
+        chans = [c + SKY_SIGMA * noise for c in chans]
+        black = 0.0
     rgb = lupton_rgb(chans, stretch, black=black)
     return MockImage(
         survey=survey,
@@ -740,4 +809,6 @@ def make_mock_image(
         n_galaxies=drawn,
         centre_label=centre_label,
         noisy=noisy,
+        n_stars=n_stars,
+        sky_subtracted=subtract_sky,
     )

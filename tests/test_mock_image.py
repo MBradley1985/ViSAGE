@@ -122,7 +122,7 @@ def test_rgb_and_fits(tmp_path):
     _cone(p)
     m = mi.make_mock_image(p, "sdss", 1, centre_row=1, noisy=False)
     assert m.rgb.shape[-1] == 3 and 0 <= m.rgb.min() and m.rgb.max() <= 1
-    assert m.png_bytes()[:4] == b"\x89PNG"
+    assert m.image_bytes()[:4] == b"\x89PNG"
     out = tmp_path / "m.fits"
     assert m.write_fits(out)
     with fits.open(out) as h:
@@ -233,3 +233,45 @@ def test_background_cones_are_deeper_and_have_the_bands(tmp_path):
             f["redshift_cosmological"][...] = z
     got = mi.background_cones(tmp_path / "cone" / "cone.h5", "sdss")
     assert [c["title"] for c in got] == ["deep"]
+
+
+@pytest.mark.parametrize(
+    "fmt, magic",
+    [("png", b"\x89PNG"), ("jpeg", b"\xff\xd8"), ("pdf", b"%PDF")],
+)
+def test_image_formats(tmp_path, fmt, magic):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    m = mi.make_mock_image(p, "sdss", 1, noisy=False)
+    assert m.image_bytes(fmt).startswith(magic)
+
+
+def test_random_patch_moves_with_the_seed_and_has_no_redshift(tmp_path):
+    p = tmp_path / "cone.h5"
+    _cone(p, n=20)
+    a = mi.make_mock_image(p, "sdss", 0.5, noisy=False, patch=True, seed=1)
+    b = mi.make_mock_image(p, "sdss", 0.5, noisy=False, patch=True, seed=2)
+    assert a.ra0 != b.ra0 and np.isnan(a.z0)
+    assert a.write_fits(tmp_path / "patch.fits")
+
+
+def test_leaving_the_sky_in_lifts_the_colours_not_the_images(tmp_path):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    a = mi.make_mock_image(p, "sdss", 2, seed=1)
+    b = mi.make_mock_image(p, "sdss", 2, seed=1, subtract_sky=False)
+    assert np.array_equal(a.images["sdss_r"], b.images["sdss_r"])
+    assert 0.05 < np.median(b.rgb) < 0.2 and np.median(a.rgb) < 0.02
+
+
+def test_stars_come_from_the_measured_counts_only_on_request(tmp_path):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    assert mi.make_mock_image(p, "sdss", 10, noisy=False).n_stars == 0
+    m = mi.make_mock_image(p, "sdss", 10, noisy=False, stars=True)
+    assert m.n_stars == pytest.approx(2899 / 36, rel=0.5)
+
+
+def test_star_temperature_follows_colour():
+    assert mi._star_temperature(np.array(1.5)) < 4000
+    assert mi._star_temperature(np.array(0.2)) > 6000

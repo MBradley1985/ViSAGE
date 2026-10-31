@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Mock images: random patch of sky, a sky brightness checkbox, optional SDSS stars, and JPEG and PDF output beside the default PNG.
 - **Intergalactic absorption** (Madau 1995) in observed-frame magnitudes
   and spectra.
 - **Survey noise** (`--noise`, on by default in the LightSAGE flow):

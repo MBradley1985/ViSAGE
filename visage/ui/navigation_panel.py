@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math as _math
 import pathlib
+import time
 
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
@@ -3852,6 +3853,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.mock_fields = []
     state.mock_field = None
     state.mock_noisy = True
+    state.mock_patch = False
+    state.mock_subtract_sky = True
+    state.mock_stars = False
+    state.mock_format = "png"
     state.mock_has_depth = True
     state.mock_backgrounds = []
     state.mock_background = None
@@ -3901,11 +3906,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if path is None or survey not in _mock.SURVEYS:
             return
         _, gal = model.loader.get(model.current_snap)
+        patch = bool(state.mock_patch)
         row = None
-        if state.nav_gal_idx is not None:
+        if state.nav_gal_idx is not None and not patch:
             row = int(gal.sage_indices[int(state.nav_gal_idx)])
         noisy = bool(state.mock_noisy) and bool(_mock.SURVEYS[survey].depth)
         background = state.mock_background
+        subtract_sky = bool(state.mock_subtract_sky)
+        stars = bool(state.mock_stars)
+        fmt = state.mock_format
+        seed = int(time.time()) if patch else 0  # a new patch each time
         state.mock_busy = True
         state.mock_note = ""
         state.flush()
@@ -3919,15 +3929,23 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     field_am,
                     centre_row=row,
                     noisy=noisy,
+                    seed=seed,
                     background=background,
+                    patch=patch,
+                    subtract_sky=subtract_sky,
+                    stars=stars,
                 ),
             )
             import datetime
 
             sess = _get_session_dir()
             stem = f"mock_{survey}_{datetime.datetime.now():%H%M%S}"
-            png = sess / f"{stem}.png"
-            png.write_bytes(img.png_bytes())
+            out = sess / f"{stem}.{'jpg' if fmt == 'jpeg' else fmt}"
+            out.write_bytes(img.image_bytes(fmt))
+            shown = out
+            if fmt == "pdf":  # the library can't show a PDF
+                shown = sess / f"{stem}.png"
+                shown.write_bytes(img.image_bytes("png"))
             fits_ok = await loop.run_in_executor(
                 None, img.write_fits, sess / f"{stem}.fits"
             )
@@ -3954,10 +3972,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     else f"; only this cone's galaxies (z < {zmax:.2f}) are "
                     "in the sky"
                 )
-                + f". Saved {png.name}"
+                + (
+                    f"; SDSS stars added, not from SAGE26: {img.n_stars}"
+                    if stars
+                    else ""
+                )
+                + ("" if subtract_sky else "; sky level left in the colours")
+                + f". Saved {out.name}"
                 + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
             )
-            on_library_open(str(png))
+            on_library_open(str(shown))
             state.library_files = _scan_library()
         except Exception as exc:
             state.mock_note = f"Couldn't make the image: {exc!s}"
@@ -6398,8 +6422,32 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 color="#7FDBFF",
                                 density="compact",
                             )
+                        for model, label in (
+                            ("mock_patch", "Random patch of sky"),
+                            ("mock_subtract_sky", "Subtract sky brightness"),
+                            ("mock_stars", "Add stars (SDSS, not SAGE26)"),
+                        ):
+                            with v3.VSheet(color="transparent", style=_FIELD):
+                                v3.VCheckbox(
+                                    v_model=(model,),
+                                    label=label,
+                                    color="#7FDBFF",
+                                    hide_details=True,
+                                    density="compact",
+                                )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("mock_format",),
+                                items=("['png', 'jpeg', 'pdf']",),
+                                label="Image format",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
                         html.Div(
-                            "Centred on {{ mock_centre }}.",
+                            "Centred on {{ mock_patch ? "
+                            "'a random patch of sky' : mock_centre }}.",
                             style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
                         )
                         v3.VBtn(
