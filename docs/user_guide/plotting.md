@@ -2,7 +2,8 @@
 
 The Plotting tab makes SAGE26's diagnostic plots from the open model, with
 observations, and opens them over the viewer. They are saved in
-`sage_library/plots/` and listed in the Library.
+`sage_library/plots/` and listed in the Library. It works on SAGE26
+models, LightSAGE lightcones and DarkSAGE and DustySAGE runs.
 
 ## Choosing the galaxies
 

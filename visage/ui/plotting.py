@@ -274,9 +274,7 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
         elif proc.returncode != 0:
             state.plot_status = (lines or ["Couldn't make the plots."])[-1]
         else:
-            state.plot_status = f"Made {len(made)} in the Library."
-            if bad:
-                state.plot_status += " " + "; ".join(bad)
+            state.plot_status = "; ".join(bad)
         state.flush()
 
     @ctrl.set("plot_cancel")
@@ -344,21 +342,34 @@ def tab(ctrl) -> None:
                                 "padding:6px 0 0;"
                             ),
                         )
-                        v3.VCheckbox(
-                            v_for=("item in sec.items",),
-                            key=("item.key",),
-                            v_model=("plot_selected",),
-                            value=("item.key",),
-                            label=("item.title",),
-                            disabled=(
-                                "item.missing || (plot_region === 'group'"
-                                " && !item.group)",
+                        with html.Div(
+                            style=(
+                                "display:grid;gap:0 6px;"
+                                "grid-template-columns:1fr 1fr;"
                             ),
-                            density="compact",
-                            hide_details=True,
-                            color="cyan",
-                            style="margin-bottom:-10px;",
-                        )
+                        ):
+                            with v3.VCheckbox(
+                                v_for=("item in sec.items",),
+                                key=("item.key",),
+                                v_model=("plot_selected",),
+                                value=("item.key",),
+                                disabled=(
+                                    "item.missing || (plot_region === 'group'"
+                                    " && !item.group)",
+                                ),
+                                density="compact",
+                                hide_details=True,
+                                color="cyan",
+                                style="min-width:0;",
+                            ):
+                                with v3.Template(v_slot_label=True):
+                                    html.Span(
+                                        "{{ item.title }}",
+                                        style=(
+                                            "font-size:0.68rem;"
+                                            "line-height:1.15;"
+                                        ),
+                                    )
         v3.VSwitch(
             v_model=("plot_scatter",),
             label="Each galaxy, not the median and 1σ",

@@ -1,6 +1,6 @@
 # Library
 
-The **Library** tab lists all screenshots and movies captured in the current session.
+The **Library** tab lists all screenshots and movies captured in the current session, and the figures from the [Plotting](plotting.md) tab.
 
 ## Browsing
 

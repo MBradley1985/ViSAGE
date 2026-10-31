@@ -8,7 +8,7 @@
 visage --par /path/to/SAGE26/input/millennium.par
 ```
 
-**Launch Mode** — install, set up and run SAGE26, build a lightcone with LightSAGE, or calibrate with SAGEswarm. Run from your SAGE26 root (or the folder you want SAGE26 in) so ViSAGE finds your `.par` files and the tools automatically:
+**Launch Mode** — install, set up and run SAGE26, build a lightcone with LightSAGE, calibrate with SAGEswarm, or run DarkSAGE or DustySAGE. Run from your SAGE26 root (or the folder you want SAGE26 in) so ViSAGE finds your `.par` files and the tools automatically:
 
 ```bash
 cd /path/to/SAGE26

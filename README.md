@@ -16,7 +16,7 @@ pip install sage-viewer
 visage --par /path/to/SAGE26/input/millennium.par
 ```
 
-**Launch Mode** — install, set up and run SAGE26, LightSAGE and SAGEswarm. Run from your SAGE26 root (or the folder you want SAGE26 in) so ViSAGE finds your `.par` files and the tools automatically:
+**Launch Mode** — install, set up and run SAGE26, LightSAGE, SAGEswarm, DarkSAGE and DustySAGE. Run from your SAGE26 root (or the folder you want SAGE26 in) so ViSAGE finds your `.par` files and the tools automatically:
 
 ```bash
 cd /path/to/SAGE26
@@ -194,16 +194,18 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 ![Launch](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/launch.png)
 
 ### Launch Mode
-- Set up and run SAGE26, LightSAGE (lightcones) and SAGEswarm (calibration) without leaving the viewer: `visage` with no `--par`/`--lightcone`, or the Launch Mode menu (SAGE-logo button, top-left of the toolbar), which opens **SAGE26**, **LightSAGE** or **SAGEswarm** directly, or the home page
-- **Home:** a picture card per tool, showing whether it's installed, and **Load a previous model**, listing every SAGE26 model and lightcone found
+- Set up and run SAGE26, LightSAGE (lightcones), SAGEswarm (calibration), DarkSAGE and DustySAGE without leaving the viewer: `visage` with no `--par`/`--lightcone`, or the Launch Mode menu (SAGE-logo button, top-left of the toolbar), which opens **SAGE26**, **LightSAGE** or **SAGEswarm** directly, or the home page
+- **Home:** a picture card per tool, showing whether it's installed (DarkSAGE and DustySAGE share a split card), and **Load a previous model**, listing every model and lightcone found
 - **Each tool's page:** Run, Load existing, Install, Check for update (turns into Update when behind) and Clone / Re-clone. Install and Clone run on their button, showing the step and latest output, then the result:
   - **SAGE26:** downloads the mini-Millennium trees on a first install, then `make` on every core (serial when there's no MPI compiler)
   - **LightSAGE:** CMake, Boost and HDF5 (Homebrew / apt in WSL), the photometry packages and FSPS stellar libraries, then *only* its `sage2kdtree` / `cli_lightcone` tools; SAGE itself is never rebuilt, since ViSAGE feeds it your SAGE26 output
   - **SAGEswarm:** its Python packages
+  - **DarkSAGE, DustySAGE:** `make`; their code is never changed
 - **Setting up a run:** the key choices as big buttons (SAGE26: simulation, physics switches, and **Run on** 1 process or several under MPI; LightSAGE: source model, sky-and-depth presets, surveys, dust/IR/lines/disk-bulge; SAGEswarm: observations to match, search effort, free parameters), a **Name** that sets the run's output (with a warning when it would replace an existing model), and **All settings**: every value of the file in sections, with a search. The two always agree
 - **While it runs:** the stages, a progress bar and numbers read from the tool's output (a growing tree branch for SAGE26; rounds and particle circles for SAGEswarm), and the tool's terminal beside what it's making: a SAGE26 box filling with galaxies, a lightcone filling outwards, or SAGEswarm's latest plots. Then **Open in Explore** / **Open in Lightcone view**
+- **DarkSAGE and DustySAGE:** **Run** goes straight to the mini-Millennium trees and converts the binary output, and the run opens as any other model. They add H₂ fraction and dust-to-gas colouring, a **Radial profile** plot on DarkSAGE's selection card, and HD from DarkSAGE's real disc profiles and DustySAGE's real dust mass. They have no photometry, and LightSAGE refuses their output
 - Opening any model or lightcone shows **Opening …** and reloads the page by itself when ViSAGE is ready
-- **Windows:** all three tools run inside WSL automatically, with a one-click **Install Linux build tools** — see [Windows](#windows)
+- **Windows:** the tools run inside WSL automatically, with a one-click **Install Linux build tools** — see [Windows](#windows)
 - Screenshots, recordings, catalogue exports and lightcones save to `sage_outputs/` in the directory you launched from; build and run scripts live in `~/.visage/`, never inside a tool's checkout
 
 ![ViSAGE](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/hero.png)
@@ -283,9 +285,15 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - Portable stories: symbolic snapshot references (`"first"`, `"last"`, `"40%"`, `"z=1.5"`) resolve against whatever model is loaded
 - Stories load from `sage_stories/` in your launch directory; a bundled **Presentation Template** provides a full talk skeleton to copy and fill in — see the [Story Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/story_mode/)
 
+### Plotting
+- SAGE26's Local and History plots with observations, plus Observed plots for lightcones with photometry; works on SAGE26 models, lightcones, DarkSAGE and DustySAGE
+- For the whole catalogue, a sphere, a box or a group, with the Filters and Environments applied
+- Median and 1σ or each galaxy, colour by a property, log or linear axes, limits, dark background; saved to the Library as PNG, PDF, JPEG or SVG — see [Plotting](docs/user_guide/plotting.md)
+
 ### HD Mode
 - Using the galactic properties from the SAGE26 run, selecting this allows for a HD depiction of what the selected galaxies could/should/would appear.
 - Within LightSAGE mode the galaxy is modified based on the photometry and dust properties calculated.
+- On DarkSAGE runs the disc follows the model's radial profiles, and on DustySAGE runs the dust follows its dust mass.
 - The more galaxies selected, the more CPU and GPU usage, be warned.
 
 ![HD Mode](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/HD_mode.png)

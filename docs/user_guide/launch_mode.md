@@ -1,9 +1,12 @@
 # Launch Mode
 
-Launch Mode sets up and runs SAGE26 and its two companion tools,
+Launch Mode sets up and runs SAGE26, its two companion tools,
 [LightSAGE](https://github.com/sage-home/sage-lightcone) (lightcones) and
-[SAGEswarm](https://github.com/MBradley1985/SAGEswarm) (calibration), without
-leaving the viewer: big buttons for each choice, a progress page for each run,
+[SAGEswarm](https://github.com/MBradley1985/SAGEswarm) (calibration), and two
+more of the SAGE family,
+[DarkSAGE](https://github.com/arhstevens/DarkSAGE) and
+[DustySAGE](https://github.com/dptriani/dusty-sage), without leaving the
+viewer: big buttons for each choice, a progress page for each run,
 and the model opening straight in ViSAGE when it's done.
 
 ## Opening Launch Mode
@@ -16,13 +19,15 @@ visage
 Open the printed URL. From inside a model, the **Launch Mode** menu (the
 SAGE-logo button, top-left of the toolbar) lists **SAGE26**, **LightSAGE** and
 **SAGEswarm** (each opens that tool's page) and **Setup Wizard** (the home
-page), then the models opened this session.
+page), then the models opened this session. DarkSAGE and DustySAGE are on
+the home page.
 
 ## Home
 
-Three picture cards, one per tool, each saying whether it's installed, and
-**Load a previous model**, which lists every SAGE26 model and lightcone ViSAGE
-can find (size, date, galaxies, `.par`). Click one to open it.
+Picture cards, one per tool, each saying whether it's installed (DarkSAGE and
+DustySAGE share one, split corner to corner), and **Load a previous model**,
+which lists every model and lightcone ViSAGE can find (size, date, galaxies,
+`.par`). Click one to open it.
 
 ## A tool's page
 
@@ -54,6 +59,7 @@ What **Install** does:
   your SAGE26 output.
 - **SAGEswarm:** its Python packages (`requirements.txt`). It runs SAGE26, so
   it says if SAGE26 still needs installing.
+- **DarkSAGE, DustySAGE:** `make` in the checkout.
 
 ## Setting up a run
 
@@ -72,6 +78,8 @@ What **Install** does:
 - **SAGEswarm:** the observations to match (each constraint, grouped), how hard
   to search (particles × iterations, with the number of SAGE26 runs that
   means), and the free parameters from its space file.
+- **DarkSAGE, DustySAGE:** no setup page. **Run** goes straight to the
+  mini-Millennium trees (see [below](#darksage-and-dustysage)).
 
 **Name** is the run's name, and it *is* its output: SAGE26's `OutputDir` (and a
 `.par` of that name when you run), LightSAGE's `OUTDIR`/`OUTFILE`, SAGEswarm's
@@ -108,6 +116,35 @@ Opening a model or lightcone, from any of these pages or from the Launch Mode
 menu, restarts ViSAGE on it: the page shows **Opening …** and reloads itself
 when it's ready.
 
+## DarkSAGE and DustySAGE
+
+Their code is never changed. **Run** writes a tested `input/millennium.par`
+into the checkout, because their sample files don't run as they stand, and
+uses SAGE26's mini-Millennium trees, or those DustySAGE ships. If neither is
+there, install SAGE26 first. Each run replaces the last.
+
+Both write SAGE's binary format. ViSAGE converts a finished run to
+`output/millennium/<name>_0.hdf5`, working out the layout from the checkout's
+own header, and then opens it as any other model. To convert a run made
+outside ViSAGE:
+
+```bash
+python -m visage.io.family_binary --par FILE --header FILE --model DarkSAGE
+```
+
+What they add in the viewer:
+
+- **Colour by:** H₂ fraction for both, dust-to-gas ratio for DustySAGE, and
+  each model's other fields, which the Filters tab offers too.
+- **Radial profile** (DarkSAGE): a button on the selection card that plots
+  the selected galaxy's disc.
+- **HD:** DarkSAGE discs follow their real radial profiles, and DustySAGE
+  dust follows its real dust mass (see
+  [HD Galaxy Components](../physics/hd_components.md#darksage-and-dustysage)).
+- **Plotting:** the [Plotting](plotting.md) tab works on them.
+
+Photometry isn't part of these models, and LightSAGE refuses their output.
+
 ## Where ViSAGE looks for things
 
 The folder you launch from anchors the session:
@@ -115,15 +152,16 @@ The folder you launch from anchors the session:
 | What | Where |
 |---|---|
 | SAGE26, LightSAGE, SAGEswarm checkouts | The launch folder, its parent, then your home folder |
+| DarkSAGE, DustySAGE checkouts | Beside SAGE26, then as above |
 | `.par` files | `<SAGE26>/input/` and `<launch folder>/input/` |
-| Models | `<SAGE26>/output/`, `<launch folder>/output/`, `<launch folder>/sage_outputs/` |
+| Models | `<SAGE26>/output/`, `<launch folder>/output/`, `<launch folder>/sage_outputs/`, and each DarkSAGE or DustySAGE checkout's `output/` |
 | Lightcones | `<launch folder>/sage_outputs/` (each build in its own folder) |
 | Screenshots, recordings, exports | `<launch folder>/sage_outputs/session_<timestamp>/` |
 | Build and run scripts | `~/.visage/` (never inside a tool's checkout) |
 
 ## On Windows
 
-The three tools build and run Unix programs, so on Windows every install and
+The tools build and run Unix programs, so on Windows every install and
 run happens inside **WSL** (Windows Subsystem for Linux), automatically:
 
 - If Linux build tools are missing, the home page says so and offers
