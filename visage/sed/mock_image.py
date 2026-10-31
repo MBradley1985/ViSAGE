@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from functools import lru_cache, cache
 from pathlib import Path
 
 import h5py
@@ -84,6 +85,10 @@ Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
 STAR_FILE = Path(__file__).parent / "data" / "sdss_stars.npz"
 REFERENCE_FILE = Path(__file__).parent / "data" / "reference_population.npz"
+# Measured PSFs on each survey's pixels, by "survey/band": real stars stacked
+# (SDSS, DES, Pan-STARRS), STDPSF (HST; Anderson 2016), the MER PSF grid
+# (Euclid Q1), STPSF (JWST from in-flight wavefronts, Roman from models).
+PSF_FILE = Path(__file__).parent / "data" / "measured_psfs.npz"
 # Deciles of the axis ratio of SDSS early types, as SAGE26 gives bulges no
 # shape (deVAB_r of 757 red galaxies, fracDeV_r > 0.9, 14 < r < 16.5).
 BULGE_Q = (0.25, 0.377, 0.536, 0.623, 0.683, 0.725)
@@ -131,8 +136,10 @@ class Survey:
     shown: tuple[int, ...] = ()
     # Point source AB mag that fills a CCD pixel, per band, for bleed trails.
     saturates: tuple[float, ...] = ()
-    # Measured sky noise per pixel in real cutouts, nanomaggies: resampling
-    # coadds smooths it below what `depth` gives. Images only, not catalogues.
+    # Measured sky noise per pixel, nanomaggies: the median of 11-18 fields
+    # for SDSS, DES and Pan-STARRS (30% field to field), one survey field
+    # otherwise. Resampling coadds smooths it below what `depth` gives.
+    # Images only, not catalogues.
     pixel_noise: tuple[float, ...] = ()
     # Telescope (diameter m, central obstruction m, support vanes, vane
     # width m, hexagonal): the diffraction PSF and its spikes; none = none.
@@ -172,8 +179,7 @@ SURVEYS: dict[str, Survey] = {
         "Abazajian et al. 2009",
         OPTICAL_WEIGHTS,
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
-        mirror=(2.5, 1.3, 4, 0.05, False),
-        pixel_noise=(0.0443, 0.0276, 0.0162),
+        pixel_noise=(0.0362, 0.0209, 0.0128),
         saturates=(14.0, 14.0, 14.0),  # York et al. 2000
     ),
     "des": Survey(
@@ -183,9 +189,8 @@ SURVEYS: dict[str, Survey] = {
         (0.83, 0.95, 1.11),
         ((23.1, 10, 1.95), (24.4, 10, 1.95), (24.7, 10, 1.95)),
         "Abbott et al. 2021",
-        mirror=(4.0, 1.5, 4, 0.1, False),
         sky=(18.72, 21.15, 22.01),  # Abbott et al. 2018
-        pixel_noise=(0.0077, 0.0030, 0.0016),
+        pixel_noise=(0.00776, 0.00243, 0.00173),
         saturates=(15.5, 15.7, 15.2),  # 90 s: Drlica-Wagner et al. 2022
     ),
     "ps1": Survey(
@@ -195,8 +200,7 @@ SURVEYS: dict[str, Survey] = {
         (1.11, 1.19, 1.31),
         ((23.1, 5, None), (23.2, 5, None), (23.3, 5, None)),
         "Chambers et al. 2016",
-        mirror=(1.8, 0.9, 4, 0.03, False),
-        pixel_noise=(0.0076, 0.0033, 0.0028),
+        pixel_noise=(0.01118, 0.01009, 0.00878),
     ),
     "lsst": Survey(
         "Rubin LSST 10-year (gri)",
@@ -258,7 +262,6 @@ SURVEYS: dict[str, Survey] = {
         ((26.2, 5, None),),
         "Mellier et al. 2025",
         ground=False,
-        mirror=(1.2, 0.4, 3, 0.03, False),
         sky=_zodi(("euclid_vis",)),
         pixel_noise=(0.00048,),
     ),
@@ -270,7 +273,6 @@ SURVEYS: dict[str, Survey] = {
         ((24.4, 5, None), (24.4, 5, None), (24.4, 5, None)),
         "Mellier et al. 2025",
         ground=False,
-        mirror=(1.2, 0.4, 3, 0.03, False),
         sky=_zodi(("euclid_h", "euclid_j", "euclid_y")),
         pixel_noise=(0.0043, 0.0041, 0.0047),
     ),
@@ -282,7 +284,6 @@ SURVEYS: dict[str, Survey] = {
         ((26.4, 5, None), (26.4, 5, None), (26.5, 5, None)),
         "Roman community survey definition",
         ground=False,
-        mirror=(2.4, 0.74, 6, 0.04, False),
         sky=_zodi(("roman_f158", "roman_f129", "roman_f106")),
     ),
     "hst": Survey(
@@ -293,7 +294,6 @@ SURVEYS: dict[str, Survey] = {
         ((27.3, 5, None), (28.0, 5, None), (28.7, 5, None)),
         "Grogin et al. 2011",
         ground=False,
-        mirror=(2.4, 0.79, 4, 0.04, False),
         sky=_zodi(("wfc3_ir_f160w", "wfc_acs_f814w", "wfc_acs_f606w")),
         pixel_noise=(0.00053, 0.00014, 0.000055),  # ACS: GOODS-S
     ),
@@ -365,7 +365,6 @@ SURVEYS: dict[str, Survey] = {
         ((28.58, 5, None), (29.17, 5, None), (29.15, 5, None)),
         "Bagley et al. 2023",
         ground=False,
-        mirror=(6.6, 0.74, 3, 0.08, True),
         sky=_zodi(("jwst_f444w", "jwst_f200w", "jwst_f115w")),
         pixel_noise=(3.3e-5, 3.4e-5, 3.4e-5),  # CEERS mosaics
     ),
@@ -507,18 +506,24 @@ def mirror_psf(survey: Survey, i: int) -> np.ndarray:
     return out / out.sum()
 
 
-def _kernel(survey: Survey, i: int) -> np.ndarray:
-    """The PSF an image is convolved with: the seeing (or a space
-    telescope's stated PSF width) through the mirror's diffraction."""
+@cache
+def _measured() -> dict:
+    with np.load(PSF_FILE) as d:
+        return {k: d[k] for k in d.files}
+
+
+def _kernel(key: str, survey: Survey, i: int) -> np.ndarray:
+    """The PSF an image is convolved with: measured where we have one,
+    otherwise the seeing through the mirror's diffraction; empty where
+    only a width is known, in space."""
+    measured = _measured().get(f"{key}/{survey.bands[i]}")
+    if measured is not None:
+        return measured
     fwhm = survey.seeing[i] / survey.pixel
     if survey.mirror:
-        psf = mirror_psf(survey, i)
-        if survey.ground:
-            return fftconvolve(psf, psf_kernel(fwhm), mode="same")
-        wave = EFFECTIVE_WAVELENGTH_A[survey.bands[i]] * 1e-10
-        core = wave / survey.mirror[0] * 206265 / survey.pixel
-        extra = np.sqrt(max(fwhm**2 - core**2, 0.0)) / 2.3548
-        return gaussian_filter(psf, extra) if extra else psf
+        return fftconvolve(
+            mirror_psf(survey, i), psf_kernel(fwhm), mode="same"
+        )
     return psf_kernel(fwhm) if survey.ground else np.array([])
 
 
@@ -952,9 +957,10 @@ def make_mock_image(
     common = rng.normal(size=(npx, npx)) if s.confusion else None
     for i, b in enumerate(s.bands):
         fwhm = s.seeing[i] / s.pixel
-        if s.ground or s.mirror:
+        kernel = _kernel(survey, s, i)
+        if kernel.size:
             images[b] = np.clip(
-                fftconvolve(images[b], _kernel(s, i), mode="same"), 0, None
+                fftconvolve(images[b], kernel, mode="same"), 0, None
             )
         else:
             images[b] = gaussian_filter(images[b], fwhm / 2.3548)
@@ -975,7 +981,7 @@ def make_mock_image(
                 noise = noise * map_sigma(s, i) / noise.std()
             images[b] = images[b] + noise
         if stars and s.saturates:
-            full = float(nmgy(s.saturates[i])) * _kernel(s, i).max()
+            full = float(nmgy(s.saturates[i])) * _kernel(survey, s, i).max()
             images[b] = _bleed(images[b], full)
 
     w = s.weights or _balance(s)

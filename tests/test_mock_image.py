@@ -308,10 +308,10 @@ def test_confusion_noise_is_shared_between_bands(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("survey", ["sdss", "lsst", "hst", "nircam"])
-def test_mirror_psf_is_centred_and_even_across_bands(survey):
+def test_psf_is_centred_and_even_across_bands(survey):
     s = mi.SURVEYS[survey]
     for i in range(len(s.bands)):
-        k = mi._kernel(s, i)
+        k = mi._kernel(survey, s, i)
         assert k.sum() == pytest.approx(1, abs=1e-3)
         assert np.unravel_index(k.argmax(), k.shape) == (
             k.shape[0] // 2,
@@ -321,7 +321,7 @@ def test_mirror_psf_is_centred_and_even_across_bands(survey):
 
 def test_equal_seeing_gives_equal_peaks():
     s = mi.SURVEYS["lsst"]
-    peaks = [mi._kernel(s, i).max() for i in range(3)]
+    peaks = [mi._kernel("lsst", s, i).max() for i in range(3)]
     assert max(peaks) / min(peaks) < 1.2
 
 
@@ -358,3 +358,9 @@ def test_every_band_has_a_reference():
     with np.load(mi.REFERENCE_FILE) as d:
         have = set(d["bands"].tolist())
     assert {b for s in mi.SURVEYS.values() for b in s.bands} <= have
+
+
+def test_measured_psfs_cover_their_surveys():
+    have = set(mi._measured())
+    for name in ("sdss", "des", "ps1", "hst", "euclid", "roman", "nircam"):
+        assert {f"{name}/{b}" for b in mi.SURVEYS[name].bands} <= have
