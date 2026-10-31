@@ -18,6 +18,8 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from visage.io.sage_files import open_snapshot
+
 TYPES = {
     "short": "i2",
     "int": "i4",
@@ -188,28 +190,55 @@ def _derived(gals: np.ndarray) -> dict:
 
 
 def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
-    """DarkSAGE's discs for galaxy rows of a converted run: "r" (kpc, annulus
-    middles) and surface densities (Msun/pc^2) of stars, gas, HI and H2, and
-    of star formation (Msun/yr/kpc^2)."""
+    """The discs of galaxy rows of a run with annuli: "r" (kpc, annulus
+    middles), surface densities (Msun/pc^2) of stars, gas, HI and H2, and of
+    star formation (Msun/yr/kpc^2). As the run has them: "dust" (likewise),
+    "z_gas" and "z_stars" (metal mass fractions), "vcirc" (km/s, at "edges",
+    kpc) and "sigma" (km/s)."""
     rows = np.atleast_1d(rows)
-    with h5py.File(path, "r") as f:
-        g = f[f"Snap_{snap}"]
-        edges = g["DiscRadii"][rows].astype(float) * 1e3 / hubble_h  # kpc
+    with open_snapshot(path, snap) as g:
+
+        def read(name):
+            return np.asarray(g[name][rows]).astype(float)
+
+        def have(name):
+            return name in g
+
+        edges = read("DiscRadii") * 1e3 / hubble_h  # kpc
         mass = 1e10 / hubble_h
-        stars = g["DiscStars"][rows].astype(float)
+        stars = read("DiscStars")
         if stars.ndim == 3:  # by age
             stars = stars.sum(axis=2)
         out = {
             "stars": stars,
-            "gas": g["DiscGas"][rows].astype(float),
-            "hi": g["DiscHI"][rows].astype(float),
-            "h2": g["DiscH2"][rows].astype(float),
+            "gas": read("DiscGas"),
+            "hi": read("DiscHI"),
+            "h2": read("DiscH2"),
         }
-        sfr = g["DiscSFR"][rows].astype(float)
+        if have("DiscDust"):
+            out["dust"] = read("DiscDust")
+        sfr = read("DiscSFR")
+        extra = {}
+        if have("DiscGasMetals"):
+            extra["z_gas"] = read("DiscGasMetals") / np.maximum(
+                out["gas"], 1e-30
+            )
+        if have("DiscStarsMetals"):
+            metals = read("DiscStarsMetals")
+            if metals.ndim == 2:
+                extra["z_stars"] = metals / np.maximum(stars, 1e-30)
+        if have("DiscVcirc"):
+            extra["vcirc"] = read("DiscVcirc")
+        if have("VelDispStars"):
+            sigma = read("VelDispStars")
+            if sigma.ndim == 2:
+                extra["sigma"] = sigma
     area = np.maximum(np.pi * (edges[:, 1:] ** 2 - edges[:, :-1] ** 2), 1e-12)
     res = {k: v * mass / (area * 1e6) for k, v in out.items()}
+    res.update(extra)
     res["sfr"] = sfr / area
     res["r"] = 0.5 * (edges[:, 1:] + edges[:, :-1])
+    res["edges"] = edges
     return res
 
 
@@ -220,19 +249,22 @@ def plot_profile(prof: dict, label: str) -> bytes:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
 
-    fig = Figure(figsize=(8.5, 4.6), dpi=130)
+    fig = Figure(figsize=(9.5, 7.6), dpi=130)
     FigureCanvasAgg(fig)
-    a, b = fig.subplots(1, 2)
+    (a, b), (c, d) = fig.subplots(2, 2)
     r = prof["r"][0]
-    for key, name, colour in (
-        ("stars", "Stars", "#d9622b"),
-        ("gas", "Cold gas", "#7a2fb0"),
-        ("hi", "HI", "#3aa655"),
-        ("h2", "H2", "#2a78b5"),
+    middle = r > MIN_PLOT_KPC
+    for key, name, colour, ls, scale in (
+        ("stars", "Stars", "#d9622b", "-", 1),
+        ("gas", "Cold gas", "#7a2fb0", "-", 1),
+        ("hi", "HI", "#3aa655", "-", 1),
+        ("h2", "H2", "#2a78b5", "-", 1),
+        ("dust", "Dust x 100", "#222222", "--", 100),
     ):
-        v = prof[key][0]
-        keep = (v > 0) & (r > MIN_PLOT_KPC)
-        a.plot(r[keep], v[keep], label=name, color=colour, lw=2)
+        if key in prof:
+            v = prof[key][0] * scale
+            keep = (v > 0) & middle
+            a.plot(r[keep], v[keep], label=name, color=colour, ls=ls, lw=2)
     a.set(
         xscale="log",
         yscale="log",
@@ -241,7 +273,7 @@ def plot_profile(prof: dict, label: str) -> bytes:
     )
     a.legend(frameon=False)
     s = prof["sfr"][0]
-    keep = (s > 0) & (r > MIN_PLOT_KPC)
+    keep = (s > 0) & middle
     b.plot(r[keep], s[keep], color="#17324d", lw=2)
     b.set(
         xscale="log",
@@ -249,7 +281,51 @@ def plot_profile(prof: dict, label: str) -> bytes:
         xlabel="R (kpc)",
         ylabel="Star formation (M☉ yr⁻¹ kpc⁻²)",
     )
-    fig.suptitle(f"Galaxy {label}: DarkSAGE discs")
+    if s.max() > 0:
+        b.set_ylim(s[middle].max() * 1e-7, s[middle].max() * 3)
+    for key, name, colour, mass_key in (
+        ("z_gas", "Gas", "#3aa655", "gas"),
+        ("z_stars", "Stars", "#d9622b", "stars"),
+    ):
+        if key in prof:
+            keep = (prof[mass_key][0] > 1e-3) & middle
+            c.plot(
+                r[keep],
+                prof[key][0][keep] / 0.014,
+                label=name,
+                color=colour,
+                lw=2,
+            )
+    if c.has_data():
+        c.set(xscale="log", yscale="log", xlabel="R (kpc)", ylabel="Z / Z☉")
+        c.legend(frameon=False)
+    else:
+        c.axis("off")
+    if "vcirc" in prof:
+        e = prof["edges"][0]
+        keep = e > MIN_PLOT_KPC
+        d.plot(
+            e[keep],
+            prof["vcirc"][0][keep],
+            label="Rotation",
+            color="#2a78b5",
+            lw=2,
+        )
+    if "sigma" in prof:
+        keep = (prof["stars"][0] > 1e-3) & middle
+        d.plot(
+            r[keep],
+            prof["sigma"][0][keep],
+            label="Stellar σ",
+            color="#d9622b",
+            lw=2,
+        )
+    if d.has_data():
+        d.set(xscale="log", xlabel="R (kpc)", ylabel="km/s", ylim=(0, None))
+        d.legend(frameon=False)
+    else:
+        d.axis("off")
+    fig.suptitle(f"Galaxy {label}: discs")
     fig.tight_layout()
     buf = io.BytesIO()
     fig.savefig(buf, format="png")

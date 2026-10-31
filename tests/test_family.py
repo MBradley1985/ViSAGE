@@ -157,6 +157,53 @@ def test_profile_conserves_the_annulus_mass(tmp_path):
     assert np.allclose(out["r"][0], [0.5, 1.5])
 
 
+def test_profile_plots_with_or_without_the_newer_fields(tmp_path):
+    p = tmp_path / "m.hdf5"
+    with h5py.File(p, "w") as f:
+        g = f.create_group("Snap_1")
+        g["DiscRadii"] = np.array([[0.0, 1e-3, 2e-3]])
+        for k in ("DiscGas", "DiscHI", "DiscH2", "DiscStars", "DiscSFR"):
+            g[k] = np.array([[1.0, 1.0]])
+    plain = fb.radial_profiles(p, 1, 0, 1.0)
+    assert fb.plot_profile(plain, "1")[:4] == b"\x89PNG"
+    assert "dust" not in plain
+    with h5py.File(p, "a") as f:
+        g = f["Snap_1"]
+        g["DiscDust"] = np.array([[0.01, 0.01]])
+        g["DiscGasMetals"] = np.array([[0.02, 0.01]])
+        g["DiscStarsMetals"] = np.array([[0.02, 0.02]])
+        g["DiscVcirc"] = np.array([[0.0, 200.0, 180.0]])
+        g["VelDispStars"] = np.array([[30.0, 20.0]])
+    full = fb.radial_profiles(p, 1, 0, 1.0)
+    assert full["dust"][0] == pytest.approx(plain["gas"][0] * 0.01)
+    assert full["z_gas"][0] == pytest.approx([0.02, 0.01])
+    assert fb.plot_profile(full, "1")[:4] == b"\x89PNG"
+
+
+def test_the_card_shows_a_runs_own_dust_and_hides_zeros():
+    from types import SimpleNamespace
+
+    from visage.utils.galaxy_info import dust_details
+
+    extra = {
+        "ColdDust": np.array([1e-3]),
+        "HotDust": np.array([0.0]),
+        "DustGrowthRate": np.array([1.2]),
+    }
+    gal = SimpleNamespace(
+        extra=extra,
+        cold_gas=np.array([1e9]),
+        metals_cold_gas=np.array([2e7]),
+    )
+    d = dust_details(gal, 0, 1.0)
+    assert d["Dust (cold)"] == "1.00e+07 Msun"
+    assert "Dust (hot)" not in d
+    assert d["Dust-to-gas"] == "1.00e-02"
+    assert d["Dust-to-metals"] == "0.50"
+    assert d["Dust grown"] == "1.2 Msun/yr"
+    assert dust_details(SimpleNamespace(extra={}), 0, 1.0) == {}
+
+
 def test_other_models_have_no_radial_scale():
     from types import SimpleNamespace
 
