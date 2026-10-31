@@ -4072,6 +4072,84 @@ def build_navigation_panel(server, scene: Scene) -> None:
             state.survey_busy = False
             state.flush()
 
+    # Fibre spectra take minutes, and FSPS holds the GIL: a process of its
+    # own (visage.sed.spectroscopy), which procs stops with ViSAGE.
+    state.fibre_busy = False
+    state.fibre_note = ""
+    _fibre = {"proc": None, "cancelled": False}
+
+    @ctrl.set("make_fibre_spectra")
+    def on_make_fibre_spectra():
+        asyncio.ensure_future(_make_fibre_spectra())
+
+    @ctrl.set("cancel_fibre_spectra")
+    def on_cancel_fibre_spectra():
+        if _fibre["proc"] is not None:
+            _fibre["cancelled"] = True
+            _procs.stop_group(_fibre["proc"])
+
+    async def _make_fibre_spectra():
+        import datetime
+        import subprocess
+        import sys
+
+        path = getattr(scene.active_model, "path", None)
+        if state.fibre_busy or path is None:
+            return
+        sess = _get_session_dir()
+        stem = f"spectra_sdss_main_{datetime.datetime.now():%H%M%S}"
+        out, log = sess / f"{stem}.fits", sess / f"{stem}.log"
+        with open(log, "w") as handle:
+            proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-W",
+                    "ignore",
+                    "-m",
+                    "visage.sed.spectroscopy",
+                    "--input",
+                    str(path),
+                    "--survey",
+                    "sdss_main",
+                    "--output",
+                    str(out),
+                ],
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        _procs.track(proc)
+        _fibre.update(proc=proc, cancelled=False)
+        state.fibre_busy = True
+        state.fibre_note = "Making fibre spectra: this takes a few minutes."
+        state.flush()
+        t0 = time.monotonic()
+        while proc.poll() is None:
+            await asyncio.sleep(1.0)
+            minutes = (time.monotonic() - t0) / 60
+            state.fibre_note = (
+                f"Making fibre spectra: {minutes:.1f} min so far, "
+                "a few minutes in all."
+            )
+            state.flush()
+        _procs.untrack(proc)
+        if _fibre["cancelled"]:
+            state.fibre_note = "Cancelled."
+            out.unlink(missing_ok=True)
+            log.unlink(missing_ok=True)
+        elif proc.returncode == 0:
+            log.unlink(missing_ok=True)
+            state.fibre_note = (
+                f"Saved {out.name}: measured lines and Dn4000 in its "
+                "catalogue, spectra in FLUX, LOGLAM and SIGMA."
+            )
+            state.library_files = _scan_library()
+        else:
+            state.fibre_note = f"Couldn't make the spectra: see {log.name}."
+        _fibre["proc"] = None
+        state.fibre_busy = False
+        state.flush()
+
     # ── Spectrum of the selected galaxy (Photometry tab) ──
     # Made as the cone's photometry was (visage.sed.spectrum); the plot
     # and its table go to sage_library/spectra/.
@@ -6486,6 +6564,34 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             v_show=("survey_note",),
                             style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                         )
+                        with html.Div(
+                            v_show=("survey_key === 'sdss_main'",),
+                            style="padding-top:10px;",
+                        ):
+                            v3.VBtn(
+                                "Make fibre spectra",
+                                prepend_icon="mdi-chart-bell-curve",
+                                block=True,
+                                color="#7FDBFF",
+                                variant="tonal",
+                                loading=("fibre_busy",),
+                                click=ctrl.make_fibre_spectra,
+                                id="btn-fibre",
+                            )
+                            v3.VBtn(
+                                "Cancel",
+                                v_show=("fibre_busy",),
+                                block=True,
+                                variant="text",
+                                size="small",
+                                click=ctrl.cancel_fibre_spectra,
+                                id="btn-fibre-cancel",
+                            )
+                            html.Div(
+                                "{{ fibre_note }}",
+                                v_show=("fibre_note",),
+                                style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
+                            )
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'image'",)
                 ):

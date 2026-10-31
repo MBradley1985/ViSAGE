@@ -155,6 +155,7 @@ cone's true haloes.
 python -m visage.sed.spectroscopy --input cone.h5 --survey sdss_main --output spectra.fits
 ```
 
+**Make fibre spectra** in the Survey view runs the same thing in its own process.
 This writes SDSS Main fibre spectra and what's measured from them. The first
 extension is the catalogue; `FLUX`, `LOGLAM` and `SIGMA` hold the spectra. About
 2,000 galaxies take a few minutes. A fibre mixes SAGE26's disk and bulge, so it
