@@ -355,6 +355,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         mirror=(6.6, 0.74, 3, 0.08, True),
         sky=_zodi(("jwst_f444w", "jwst_f200w", "jwst_f115w")),
+        pixel_noise=(3.3e-5, 3.4e-5, 3.4e-5),  # CEERS mosaics
     ),
 }
 
