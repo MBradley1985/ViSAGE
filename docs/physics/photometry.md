@@ -112,7 +112,7 @@ composites (Lupton et al. 2004).
 | Spitzer SWIRE | 3.6, 4.5, 8.0 µm | 0.6″ | 2.05″, 2.05″, 2.5″ | 5σ: 7.3, 9.7, 32.5 µJy (pre-flight) | Lonsdale et al. 2003 |
 | Herschel H-ATLAS SPIRE | 250, 350, 500 µm | 6″ | 17.8″, 24″, 35.2″ | 5 × 1σ with confusion: 37, 47, 51 mJy | Valiante et al. 2016; Maddox et al. 2018 |
 | Herschel H-ATLAS PACS | 100, 160 µm | 3″ | 11.4″, 13.7″ | 5 × typical noise: 220, 245 mJy | Valiante et al. 2016; Maddox et al. 2018 |
-| JWST NIRCam | F115W, F200W, F444W | 0.031″ | 0.040″, 0.066″, 0.145″ | noiseless (depth depends on the programme) | JWST User Documentation |
+| JWST CEERS | F115W, F200W, F444W | 0.031″ | 0.040″, 0.066″, 0.145″ | 5σ point source: 29.15, 29.17, 28.58 | Bagley et al. 2023 |
 
 Sky brightness (AB mag arcsec⁻²): SDSS *g* 21.84, *r* 20.84, *i* 20.16 (SDSS DR15 imaging data quality); LSST *g* 22.26, *r* 21.20, *i* 20.48 (Ivezić et al. 2019). The other surveys have sky noise only.
 

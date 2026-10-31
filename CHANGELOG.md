@@ -41,6 +41,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Mock images: sky noise is drawn per pixel in every survey, not as one value per band; UV, mid and far-infrared surveys are shown in noise units; JWST has CEERS depths.
 - **Star-formation histories from current SAGE26:** since its snapshot-lag
   fix, bin k holds the stars formed up to snapshot k. Photometry, spectra
   and HD galaxies read it as the step after, so the newest stars were

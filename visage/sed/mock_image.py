@@ -78,6 +78,9 @@ MAX_PIXELS = 2400  # longest side of an image
 # Colour balance (reddest band first), from SDSS's own colour images: the
 # blue / red profiles of real and mock red galaxies.
 OPTICAL_WEIGHTS = (1.0, 1.1, 1.3)
+# What those weights give a bright red galaxy, red to blue: every other
+# survey's weights are set to show it the same way (a display choice).
+BALANCE = (1.0, 0.79, 0.475)
 MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
 CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
 STRETCH_SIGMA = 7.6  # asinh softening, in sky-noise sigma per pixel
@@ -95,12 +98,14 @@ class Survey:
     # or None for a PSF-fitted point source); empty = noiseless only.
     depth: tuple = ()
     ref: str = ""
-    # Colour balance per band; empty = each band scaled by its own noise
-    # (for surveys whose bands differ a lot in depth, like WISE).
+    # Colour balance per band; empty = from the cone's bright galaxies.
     weights: tuple[float, ...] = field(default=())
     # Median sky per band, AB mag/arcsec^2; empty = no source shot noise.
     sky: tuple[float, ...] = ()
     ground: bool = True  # seen through the atmosphere
+    # Each band in its own noise units, where red starlight is no reference
+    # for colour: the UV, and the dust emission of the mid and far infrared.
+    by_noise: bool = False
 
 
 def _ab_from_mjy(mjy: float) -> float:
@@ -125,7 +130,6 @@ SURVEYS: dict[str, Survey] = {
         (0.83, 0.95, 1.11),
         ((23.1, 10, 1.95), (24.4, 10, 1.95), (24.7, 10, 1.95)),
         "Abbott et al. 2021",
-        OPTICAL_WEIGHTS,
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -134,7 +138,6 @@ SURVEYS: dict[str, Survey] = {
         (1.11, 1.19, 1.31),
         ((23.1, 5, None), (23.2, 5, None), (23.3, 5, None)),
         "Chambers et al. 2016",
-        OPTICAL_WEIGHTS,
     ),
     "lsst": Survey(
         "Rubin LSST 10-year (gri)",
@@ -143,8 +146,7 @@ SURVEYS: dict[str, Survey] = {
         (0.7, 0.7, 0.7),
         ((26.8, 5, None), (27.5, 5, None), (27.4, 5, None)),
         "Ivezić et al. 2019",
-        OPTICAL_WEIGHTS,
-        (20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
+        sky=(20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
     ),
     "2mass": Survey(
         "2MASS (JHKs)",
@@ -157,7 +159,6 @@ SURVEYS: dict[str, Survey] = {
             (15.8 + 0.91, 10, None),
         ),
         "Skrutskie et al. 2006",
-        (1.0, 1.0, 1.0),
     ),
     "wise": Survey(
         "WISE (W1-W3)",
@@ -171,6 +172,7 @@ SURVEYS: dict[str, Survey] = {
         ),
         "Wright et al. 2010",
         ground=False,
+        by_noise=True,
     ),
     "galex": Survey(
         "GALEX AIS (FUV, NUV)",
@@ -180,6 +182,7 @@ SURVEYS: dict[str, Survey] = {
         ((20.8, 5, None), (19.9, 5, None)),
         "Morrissey et al. 2007",
         ground=False,
+        by_noise=True,
     ),
     "euclid_vis": Survey(
         "Euclid VIS",
@@ -224,7 +227,6 @@ SURVEYS: dict[str, Survey] = {
         (1.0, 1.0, 1.0),
         ((21.2, 5, None), (22.1, 5, None), (22.3, 5, None)),
         "Edge et al. 2013",
-        (1.0, 1.0, 1.0),
     ),
     "ukidss": Survey(
         "UKIDSS LAS (Y, J, K)",
@@ -233,7 +235,6 @@ SURVEYS: dict[str, Survey] = {
         (1.2, 1.2, 1.2),
         ((20.09, 5, None), (20.49, 5, None), (20.79, 5, None)),
         "Lawrence et al. 2007",
-        (1.0, 1.0, 1.0),
     ),
     "spitzer": Survey(
         "Spitzer SWIRE (3.6, 4.5, 8.0 µm)",
@@ -247,6 +248,7 @@ SURVEYS: dict[str, Survey] = {
         ),
         "Lonsdale et al. 2003",
         ground=False,
+        by_noise=True,
     ),
     "spire": Survey(
         "Herschel H-ATLAS SPIRE (250-500 µm)",
@@ -260,6 +262,7 @@ SURVEYS: dict[str, Survey] = {
         ),
         "Valiante et al. 2016",
         ground=False,
+        by_noise=True,
     ),
     "pacs": Survey(
         "Herschel H-ATLAS PACS (100, 160 µm)",
@@ -269,17 +272,15 @@ SURVEYS: dict[str, Survey] = {
         ((_ab_from_mjy(245.0), 5, None), (_ab_from_mjy(220.0), 5, None)),
         "Valiante et al. 2016",
         ground=False,
+        by_noise=True,
     ),
     "nircam": Survey(
-        "JWST NIRCam (F115W, F200W, F444W)",
+        "JWST CEERS (F115W, F200W, F444W)",
         ("jwst_f444w", "jwst_f200w", "jwst_f115w"),
         0.031,
         (0.145, 0.066, 0.040),
-        (),
-        "JWST User Documentation",
-        # An old population as warm as in the optical surveys' balance
-        # (its F444W is about 3x fainter than F200W, in f_nu).
-        (3.5, 1.0, 0.8),
+        ((28.58, 5, None), (29.17, 5, None), (29.15, 5, None)),
+        "Bagley et al. 2023",
         ground=False,
     ),
 }
@@ -534,6 +535,22 @@ def _read(path: Path, rows, bands):
     return hub, d
 
 
+def _balance(path, s, n_bright: int = 200) -> tuple[float, ...]:
+    """Colour weights that show the cone's brightest galaxies, in `s`'s
+    bands, as bright red galaxies look in SDSS's colour images."""
+    if s.by_noise:
+        return tuple(1 / noise_sigma(s, i) for i in range(len(s.bands)))
+    n = len(s.bands)
+    with h5py.File(path, "r") as f:
+        flux = [nmgy(f[f"mag_obs_{b}"][:]) for b in s.bands]
+    top = np.argsort(-flux[0])[:n_bright]
+    ratio = [float(np.median(fl[top])) for fl in flux]
+    return tuple(
+        (BALANCE[1] if n == 2 and i else BALANCE[i]) * ratio[0] / r
+        for i, r in enumerate(ratio)
+    )
+
+
 def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
     """Add the galaxies of lightcone `path` beyond `zmin` around (ra0, dec0)
     to `images`, as they'd fall on the survey's pixels; the number drawn."""
@@ -654,8 +671,6 @@ def make_mock_image(
     from a random patch of it."""
     s = SURVEYS[survey]
     path = Path(path)
-    if not s.depth:
-        noisy = False
     with h5py.File(path, "r") as f:
         ra_all = f["ra"][:]
         dec_all = f["dec"][:]
@@ -700,25 +715,19 @@ def make_mock_image(
                 var = var + np.clip(images[b], 0, None) / electrons_per_nmgy(
                     s, i
                 )
-            images[b] = images[b] + rng.normal(0, np.sqrt(var))
+            images[b] = images[b] + rng.normal(
+                0, np.sqrt(var), images[b].shape
+            )
 
     # Stretch and black point: calibrated on SDSS's own colour images, where
     # summing galaxies' pixels through the asinh stretch recovers their
     # catalogue fluxes at 0.38 nanomaggies, ~8 sigma of its sky noise. The
     # black point sets the sky to the images' ~1% of full scale.
-    nb = len(s.bands)
-    black = 0.0
-    if s.depth:
-        sig = np.array([noise_sigma(s, i) for i in range(nb)])
-        stretch = STRETCH_SIGMA * float(sig.mean())
-        if noisy:
-            black = BLACK_SIGMA * float(sig.mean())
-        w = s.weights or tuple(sig.mean() / sig)
-    else:
-        tot = sum(images.values())
-        stretch = 0.02 * float(np.percentile(tot, 99.9) or 1.0)
-        w = s.weights or (1.0,) * nb
+    w = s.weights or _balance(path, s)
     chans = [images[b] * wi for b, wi in zip(s.bands, w, strict=True)]
+    noise = float(np.mean([noise_sigma(s, i) * wi for i, wi in enumerate(w)]))
+    stretch = STRETCH_SIGMA * noise
+    black = BLACK_SIGMA * noise if noisy else 0.0
     rgb = lupton_rgb(chans, stretch, black=black)
     return MockImage(
         survey=survey,

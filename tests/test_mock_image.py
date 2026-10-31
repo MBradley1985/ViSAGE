@@ -97,6 +97,22 @@ def test_depth_noise_matches_the_survey_limit(tmp_path):
     assert snr == pytest.approx(5.0)
 
 
+def test_noise_varies_pixel_to_pixel_without_a_sky_level(
+    tmp_path, monkeypatch
+):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    s = replace(mi.SURVEYS["sdss"], sky=())
+    monkeypatch.setitem(mi.SURVEYS, "sdss", s)
+    m = mi.make_mock_image(p, "sdss", 2, noisy=True, seed=3)
+    sky = m.images["sdss_r"][:20, :20]
+    assert sky.std() == pytest.approx(mi.noise_sigma(s, 1), rel=0.15)
+
+
+def test_every_survey_has_a_depth():
+    assert all(s.depth for s in mi.SURVEYS.values())
+
+
 def test_rgb_and_fits(tmp_path):
     pytest.importorskip("astropy")
     from astropy.io import fits
