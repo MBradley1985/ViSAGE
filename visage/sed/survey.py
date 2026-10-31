@@ -239,6 +239,43 @@ def write_fits(cat: dict, path: str | Path, key: str) -> None:
     t.write(path, overwrite=True)
 
 
+def available(path: str | Path) -> list[str]:
+    """Selections lightcone `path` has the bands for."""
+    with h5py.File(path, "r", locking=False) as f:
+        return [
+            k
+            for k, sel in SELECTIONS.items()
+            if f"disk_mag_obs_{sel.band}" in f
+            and f"bulge_mag_obs_{sel.band}" in f
+        ]
+
+
+def write_csv(cat: dict, path: str | Path) -> None:
+    """The catalogue as a table of plain text."""
+    names = list(cat)
+    data = np.column_stack([np.asarray(cat[k], float) for k in names])
+    np.savetxt(path, data, delimiter=",", header=",".join(names), comments="")
+
+
+def summary(cat: dict, path: str | Path, key: str) -> dict:
+    """Numbers to quote for a catalogue: count, density, median redshift
+    and half-light radius, median fibre minus Petrosian magnitude."""
+    band = SELECTIONS[key].band
+    with h5py.File(path, "r", locking=False) as f:
+        ra, dec = f["ra"][:], f["dec"][:]
+    area = np.ptp(ra) * np.ptp(np.sin(np.deg2rad(dec))) * 180 / np.pi
+    fibre = cat[f"fibre_mag_{band}"] - cat[f"petro_mag_{band}"]
+    n = len(cat["ra"])
+    return {
+        "n": n,
+        "zmax": float(np.max(cat["z_cos"], initial=0.0)),
+        "density": n / area,
+        "z": float(np.median(cat["z_cos"])),
+        "r50": float(np.median(cat["r50"])),
+        "fibre": float(np.median(fibre)),
+    }
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(
         prog="visage-survey",

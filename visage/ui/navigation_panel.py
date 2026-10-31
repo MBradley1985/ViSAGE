@@ -4002,6 +4002,63 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return
         await _make_mock(survey, float(state.mock_field or 5))
 
+    # ── Survey catalogues (Photometry tab) ──
+    # The galaxies a real survey would select from this cone, with Petrosian
+    # and fibre photometry (visage.sed.survey).
+    from visage.sed import survey as _survey
+
+    _sv_path = getattr(scene.active_model, "path", None)
+    _sv_keys = _survey.available(_sv_path) if _sv_path else []
+    state.survey_items = [
+        {"title": _survey.SELECTIONS[k].label, "value": k} for k in _sv_keys
+    ]
+    state.survey_key = _sv_keys[0] if _sv_keys else None
+    state.survey_format = "fits"
+    state.survey_busy = False
+    state.survey_note = ""
+
+    @ctrl.set("export_survey")
+    async def on_export_survey():
+        key = state.survey_key
+        path = getattr(scene.active_model, "path", None)
+        if state.survey_busy or key is None or path is None:
+            return
+        fmt = state.survey_format
+        state.survey_busy = True
+        state.survey_note = ""
+        state.flush()
+
+        def build():
+            import datetime
+
+            cat = _survey.catalogue(path, key)
+            stem = f"survey_{key}_{datetime.datetime.now():%H%M%S}"
+            out = _get_session_dir() / f"{stem}.{fmt}"
+            if fmt == "fits":
+                _survey.write_fits(cat, out, key)
+            else:
+                _survey.write_csv(cat, out)
+            return out, _survey.summary(cat, path, key)
+
+        try:
+            loop = asyncio.get_running_loop()
+            out, n = await loop.run_in_executor(None, build)
+            state.survey_note = (
+                f"{_survey.SELECTIONS[key].label} ("
+                f"{_survey.SELECTIONS[key].ref}): {n['n']:,} galaxies, "
+                f"{n['density']:.1f} per deg², median z = {n['z']:.3f}, "
+                f"r50 = {n['r50']:.1f}″, fibre − Petrosian = "
+                f"{n['fibre']:.2f} mag. This cone stops at z = "
+                f"{n['zmax']:.2f}, so a deeper survey's counts are a lower "
+                f"limit. Saved {out.name}."
+            )
+            state.library_files = _scan_library()
+        except Exception as exc:
+            state.survey_note = f"Couldn't make the catalogue: {exc!s}"
+        finally:
+            state.survey_busy = False
+            state.flush()
+
     # ── Spectrum of the selected galaxy (Photometry tab) ──
     # Made as the cone's photometry was (visage.sed.spectrum); the plot
     # and its table go to sage_library/spectra/.
@@ -6258,6 +6315,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     for label, value in (
                         ("Photometry", "photometry"),
                         ("Image", "image"),
+                        ("Survey", "survey"),
                     ):
                         v3.VBtn(
                             label,
@@ -6363,6 +6421,58 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                         )
 
+                with html.Div(
+                    v_show=("has_sed_data && phot_view === 'survey'",)
+                ):
+                    v3.VLabel(
+                        "SURVEY CATALOGUE",
+                        style=(
+                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                        ),
+                    )
+                    html.Div(
+                        "This cone has no disk and bulge magnitudes in a "
+                        "survey's detection band.",
+                        v_show=("!survey_items.length",),
+                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
+                    )
+                    with html.Div(v_show=("survey_items.length",)):
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("survey_key",),
+                                items=("survey_items",),
+                                label="Selection",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("survey_format",),
+                                items=("['fits', 'csv']",),
+                                label="Catalogue format",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        v3.VBtn(
+                            "Export catalogue",
+                            prepend_icon="mdi-table-arrow-down",
+                            block=True,
+                            color="#7FDBFF",
+                            variant="tonal",
+                            loading=("survey_busy",),
+                            click=ctrl.export_survey,
+                            id="btn-survey",
+                        )
+                        html.Div(
+                            "{{ survey_note }}",
+                            v_show=("survey_note",),
+                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
+                        )
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'image'",)
                 ):

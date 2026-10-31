@@ -341,6 +341,7 @@ LightSAGE's synthetic photometry, spectra and mock images build on the following
 - **Emission lines:** Gutkin J., Charlot S., Bruzual G. 2016, *MNRAS* 462, 1757; Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354; Hirschmann M. et al. 2017, *MNRAS* 472, 2468
 - **AGN light curves:** Hopkins P. F., Hernquist L. 2009, *ApJ* 698, 1550
 - **Intergalactic absorption:** Madau P. 1995, *ApJ* 441, 18
+- **Survey catalogues:** Strauss M. A. et al. 2002, *AJ* 124, 1810; Baldry I. K. et al. 2018, *MNRAS* 474, 3875
 - **Mock image display and PSF:** Lupton R. et al. 2004, *PASP* 116, 133; Trujillo I. et al. 2001, *MNRAS* 328, 977
 - **Mock image noise:** Nguyen H. T. et al. 2010, *A&A* 518, L5 (SPIRE confusion); Bagley M. B. et al. 2023, *ApJL* 946, L12 (CEERS depths); Abbott T. M. C. et al. 2018, *ApJS* 239, 18 (DES sky); Leinert C. et al. 1998, *A&AS* 127, 1 (zodiacal light)
 - **Mock image saturation:** Stoughton C. et al. 2002, *AJ* 123, 485; Ivezić Ž. et al. 2019, *ApJ* 873, 111

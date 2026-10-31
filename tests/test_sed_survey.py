@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import h5py
 import numpy as np
 import pytest
 
@@ -29,3 +30,35 @@ def test_fibre_collisions_lose_one_of_each_close_pair():
     dec = np.zeros(3)
     lost = sv._collided(ra, dec, 55.0, np.random.default_rng(0))
     assert lost[:2].sum() == 1 and not lost[2]
+
+
+def test_available_needs_the_detection_band(tmp_path):
+    p = tmp_path / "cone.h5"
+    with h5py.File(p, "w") as f:
+        f["disk_mag_obs_sdss_g"] = np.ones(2)
+        f["bulge_mag_obs_sdss_g"] = np.ones(2)
+    assert sv.available(p) == []
+
+
+def test_csv_has_a_row_per_galaxy(tmp_path):
+    p = tmp_path / "cat.csv"
+    sv.write_csv({"ra": np.arange(3.0), "z_cos": np.ones(3)}, p)
+    assert p.read_text().splitlines()[0] == "ra,z_cos"
+    assert len(p.read_text().splitlines()) == 4
+
+
+def test_summary_density_uses_the_cone_area(tmp_path):
+    p = tmp_path / "cone.h5"
+    with h5py.File(p, "w") as f:
+        f["ra"] = np.array([0.0, 10.0])
+        f["dec"] = np.array([0.0, 5.0])
+    cat = {
+        "ra": np.zeros(50),
+        "z_cos": np.full(50, 0.1),
+        "r50": np.full(50, 2.0),
+        "fibre_mag_sdss_r": np.full(50, 19.0),
+        "petro_mag_sdss_r": np.full(50, 17.5),
+    }
+    n = sv.summary(cat, p, "sdss_main")
+    assert n["density"] == pytest.approx(1.0, rel=0.01)
+    assert n["fibre"] == pytest.approx(1.5)

@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Survey sub-panel in the Photometry tab: SDSS Main and GAMA selections with Petrosian and fibre photometry, exported as FITS or CSV.
 - Mock images: random patch of sky, a sky brightness checkbox, optional SDSS stars, and JPEG and PDF output beside the default PNG.
 - **Intergalactic absorption** (Madau 1995) in observed-frame magnitudes
   and spectra.
