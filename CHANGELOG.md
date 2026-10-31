@@ -42,6 +42,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Mock images: sky noise per pixel measured from real SDSS, DECam, Pan-STARRS, Euclid, GALEX, Spitzer and H-ATLAS data.
 - Mock images: diffraction spikes from each mirror, shot noise in DES and space surveys, and real 2MASS stars at the bright end.
 - Mock images: equal sky noise in each colour channel, and display stretch set per survey from real cutouts.
 - Mock images: stretch from the mean channel noise, beam-correlated noise in WISE and Herschel, shared SPIRE confusion noise, and starlight-balanced Spitzer colours.

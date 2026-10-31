@@ -117,6 +117,9 @@ class Survey:
     # Galaxies bright in the bluest band come out white: stars set the
     # colour, with dust standing out as red.
     neutral: bool = False
+    # Measured sky noise per pixel in real cutouts, nanomaggies: resampling
+    # coadds smooths it below what `depth` gives. Images only, not catalogues.
+    pixel_noise: tuple[float, ...] = ()
     # Telescope (diameter m, central obstruction m, support vanes, vane
     # width m, hexagonal): the diffraction PSF and its spikes; none = none.
     mirror: tuple = ()
@@ -160,6 +163,7 @@ SURVEYS: dict[str, Survey] = {
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
         soften=0.7,
         mirror=(2.5, 1.3, 4, 0.05, False),
+        pixel_noise=(0.0443, 0.0276, 0.0162),
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -170,6 +174,7 @@ SURVEYS: dict[str, Survey] = {
         "Abbott et al. 2021",
         mirror=(4.0, 1.5, 4, 0.1, False),
         sky=(18.72, 21.15, 22.01),  # Abbott et al. 2018
+        pixel_noise=(0.0077, 0.0030, 0.0016),
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -179,6 +184,7 @@ SURVEYS: dict[str, Survey] = {
         ((23.1, 5, None), (23.2, 5, None), (23.3, 5, None)),
         "Chambers et al. 2016",
         mirror=(1.8, 0.9, 4, 0.03, False),
+        pixel_noise=(0.0076, 0.0033, 0.0028),
     ),
     "lsst": Survey(
         "Rubin LSST 10-year (gri)",
@@ -227,6 +233,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         by_noise=True,
         soften=0.25,
+        pixel_noise=(0.0324, 0.0244),
     ),
     "euclid_vis": Survey(
         "Euclid VIS",
@@ -238,6 +245,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         mirror=(1.2, 0.4, 3, 0.03, False),
         sky=_zodi(("euclid_vis",)),
+        pixel_noise=(0.00048,),
     ),
     "euclid": Survey(
         "Euclid NISP (Y, J, H)",
@@ -249,6 +257,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         mirror=(1.2, 0.4, 3, 0.03, False),
         sky=_zodi(("euclid_h", "euclid_j", "euclid_y")),
+        pixel_noise=(0.0043, 0.0041, 0.0047),
     ),
     "roman": Survey(
         "Roman HLWAS (F106, F129, F158)",
@@ -301,6 +310,7 @@ SURVEYS: dict[str, Survey] = {
         "Lonsdale et al. 2003",
         ground=False,
         neutral=True,
+        pixel_noise=(0.1305, 0.0292, 0.0210),
     ),
     "spire": Survey(
         "Herschel H-ATLAS SPIRE (250-500 µm)",
@@ -317,6 +327,7 @@ SURVEYS: dict[str, Survey] = {
         by_noise=True,
         beam_noise=True,
         confusion=(6.8, 6.3, 5.8),  # Nguyen et al. 2010
+        pixel_noise=(51.6, 105.0, 231.0),
     ),
     "pacs": Survey(
         "Herschel H-ATLAS PACS (100, 160 µm)",
@@ -328,6 +339,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         by_noise=True,
         beam_noise=True,
+        pixel_noise=(165.0, 393.0),
     ),
     "nircam": Survey(
         "JWST CEERS (F115W, F200W, F444W)",
@@ -507,8 +519,11 @@ def noise_sigma(survey: Survey, i: int) -> float:
 
 
 def map_sigma(survey: Survey, i: int) -> float:
-    """Noise per pixel of the image as displayed: noise_sigma, or for a
-    beam-smoothed map the point-source noise over the beam's peak area."""
+    """Noise per pixel of the image: as measured in real cutouts where we
+    have them, noise_sigma, or for a beam-smoothed map the point-source
+    noise over the beam's peak area."""
+    if survey.pixel_noise:
+        return survey.pixel_noise[i]
     if not survey.beam_noise:
         return noise_sigma(survey, i)
     s = survey.seeing[i] / 2.3548 / survey.pixel
@@ -893,7 +908,7 @@ def make_mock_image(
         else:
             images[b] = gaussian_filter(images[b], fwhm / 2.3548)
         if noisy:
-            var = noise_sigma(s, i) ** 2
+            var = map_sigma(s, i) ** 2
             if s.sky:
                 var = var + np.clip(images[b], 0, None) / electrons_per_nmgy(
                     s, i

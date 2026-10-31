@@ -90,7 +90,7 @@ def test_depth_noise_matches_the_survey_limit(tmp_path):
     m = mi.make_mock_image(p, "sdss", 2, noisy=True, seed=3)
     s = mi.SURVEYS["sdss"]
     sky = m.images["sdss_r"][:20, :20]  # an empty corner
-    assert sky.std() == pytest.approx(mi.noise_sigma(s, 1), rel=0.15)
+    assert sky.std() == pytest.approx(mi.map_sigma(s, 1), rel=0.15)
     # A point source at the r limit (22.2) is 5 sigma for a PSF fit.
     area = 1 / np.sum(mi.psf_kernel(s.seeing[1] / s.pixel) ** 2)
     snr = mi.nmgy(22.2) / (mi.noise_sigma(s, 1) * np.sqrt(area))
@@ -106,7 +106,7 @@ def test_noise_varies_pixel_to_pixel_without_a_sky_level(
     monkeypatch.setitem(mi.SURVEYS, "sdss", s)
     m = mi.make_mock_image(p, "sdss", 2, noisy=True, seed=3)
     sky = m.images["sdss_r"][:20, :20]
-    assert sky.std() == pytest.approx(mi.noise_sigma(s, 1), rel=0.15)
+    assert sky.std() == pytest.approx(mi.map_sigma(s, 1), rel=0.15)
 
 
 def test_every_survey_has_a_depth():
@@ -313,7 +313,8 @@ def test_displayed_sky_noise_is_equal_in_each_channel(tmp_path):
     sky = m.rgb[:60, :60].reshape(-1, 3).std(0)
     assert sky.max() / sky.min() < 1.1
     a = mi.make_mock_image(p, "sdss", 2, seed=1)
-    assert a.images["sdss_i"].std() > 1.5 * a.images["sdss_r"].std()
+    i, r = a.images["sdss_i"][:40, :40], a.images["sdss_r"][:40, :40]
+    assert i.std() > 1.3 * r.std()
 
 
 @pytest.mark.parametrize("survey", ["sdss", "lsst", "hst", "nircam"])

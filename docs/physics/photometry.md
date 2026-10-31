@@ -157,6 +157,11 @@ measured PSFs: JWST's segments and each telescope's real strut layout are
 approximated. Ground surveys convolve this with the Moffat seeing PSF; space
 surveys add a Gaussian that brings it to their stated width.
 
+Sky noise in images is the per-pixel noise measured in real cutouts where they
+exist (SDSS, DECam, Pan-STARRS, Euclid, GALEX, Spitzer SEIP, H-ATLAS), because
+resampling coadds smooths it below what a survey's quoted depth implies. Quoted
+depths still set the catalogue flux errors.
+
 Source shot noise uses the sky level where it is published: SDSS, LSST and DES
 (Abbott et al. 2018). In space the sky is zodiacal light, taken as V = 22.7
 (ACS Instrument Handbook) with a solar spectrum, which is too faint at F444W,
