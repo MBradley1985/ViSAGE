@@ -69,6 +69,16 @@ Each band's sky noise is set so that a point source at the survey's limit has it
 
 Depths are those of the mock-image table below, plus SDSS *u* 22.0, *z* 20.5 (Abazajian et al. 2009); DES *i* 23.8, *Y* 21.7 (10σ; Abbott et al. 2021); Pan-STARRS1 *z* 22.3, *y* 21.4 (Chambers et al. 2016); LSST *u* 26.1, *z* 26.1, *y* 24.9 (Ivezić et al. 2019); and WISE W4 6 mJy (Wright et al. 2010).
 
+## Survey catalogues
+
+`python -m visage.sed.survey --input <cone.h5> --survey sdss_main --output <file.fits>` (`visage/sed/survey.py`) measures each galaxy as a survey does, from its disk (exponential) and bulge (de Vaucouleurs), each circularised and broadened by the seeing in quadrature:
+
+- **Petrosian magnitude:** the radius *r*<sub>P</sub> where the surface brightness in 0.8–1.25 *r*<sub>P</sub> is 0.2 of the mean inside it, and the flux inside 2 *r*<sub>P</sub> (Blanton et al. 2001), about 99 % of an exponential and 80 % of a de Vaucouleurs profile.
+- **r50 and μ50:** the radius holding half that flux, and the mean surface brightness inside it.
+- **Fibre magnitude:** the flux inside the fibre (3″ for SDSS, 2″ for GAMA's).
+
+Apertures are set in the detection band and used in every band. Selections add the survey's noise and its published cuts: the SDSS Main Galaxy Sample, 14.5 < *r* ≤ 17.77 and μ<sub>50</sub> ≤ 24.5 mag arcsec⁻² (Strauss et al. 2002), and GAMA II, *r* < 19.8 (Baldry et al. 2018). One of each pair closer than 55″ is flagged `fibre_collided`, as SDSS can't place fibres closer. Galaxies have no arms or clumps here, so their Petrosian radii are those of smooth profiles.
+
 ## Mock images
 
 Lightcone Mode's **Create mock image** (`visage/sed/mock_image.py`) draws the
@@ -93,6 +103,15 @@ composites (Lupton et al. 2004).
 | 2MASS | J, H, Ks | 1″ (Atlas) | 2.5″ | 10σ point source: J 15.8, H 15.1, Ks 14.3 Vega (+0.91, +1.39, +1.85 to AB) | Skrutskie et al. 2006; Blanton & Roweis 2007 |
 | WISE | W1, W2, W3 | 1.375″ (Atlas) | 6.1″, 6.4″, 6.5″ | 5σ point source: 0.08, 0.11, 1 mJy | Wright et al. 2010 |
 | GALEX AIS | FUV, NUV | 1.5″ | 4.2″, 5.3″ | 5σ: FUV 19.9, NUV 20.8 | Morrissey et al. 2007 |
+| Euclid VIS | VIS | 0.1″ | 0.13″ | 5σ point source: 26.2 | Mellier et al. 2025; Scaramella et al. 2022 |
+| Euclid NISP | Y, J, H | 0.298″ | 0.33″, 0.35″, 0.35″ | 5σ point source: 24.4 | Mellier et al. 2025 |
+| Roman HLWAS, medium tier | F106, F129, F158 | 0.11″ | diffraction limit: 0.096″, 0.117″, 0.139″ | 5σ point source: 26.5, 26.4, 26.4 | Roman community survey definition |
+| HST CANDELS wide | F606W, F814W, F160W | 0.06″ | diffraction limit 0.054″, 0.073″; 0.18″ | 5σ point source: 28.7, 28.0, 27.3 | Grogin et al. 2011; Koekemoer et al. 2011 |
+| VISTA VIKING | Y, J, Ks | 0.34″ | 1″ (the survey's limit) | 5σ: 22.3, 22.1, 21.2 AB (as quoted; sources differ on the magnitude system) | Edge et al. 2013 |
+| UKIDSS LAS | Y, J, K | 0.4″ | 1.2″ (the survey's limit) | 5σ point source: 20.79, 20.49, 20.09 AB | Lawrence et al. 2007; Hill et al. 2010 |
+| Spitzer SWIRE | 3.6, 4.5, 8.0 µm | 0.6″ | 2.05″, 2.05″, 2.5″ | 5σ: 7.3, 9.7, 32.5 µJy (pre-flight) | Lonsdale et al. 2003 |
+| Herschel H-ATLAS SPIRE | 250, 350, 500 µm | 6″ | 17.8″, 24″, 35.2″ | 5 × 1σ with confusion: 37, 47, 51 mJy | Valiante et al. 2016; Maddox et al. 2018 |
+| Herschel H-ATLAS PACS | 100, 160 µm | 3″ | 11.4″, 13.7″ | 5 × typical noise: 220, 245 mJy | Valiante et al. 2016; Maddox et al. 2018 |
 | JWST NIRCam | F115W, F200W, F444W | 0.031″ | 0.040″, 0.066″, 0.145″ | noiseless (depth depends on the programme) | JWST User Documentation |
 
 Sky brightness (AB mag arcsec⁻²): SDSS *g* 21.84, *r* 20.84, *i* 20.16 (SDSS DR15 imaging data quality); LSST *g* 22.26, *r* 21.20, *i* 20.48 (Ivezić et al. 2019). The other surveys have sky noise only.
@@ -115,8 +134,10 @@ galaxies beyond the cone's redshift range.
 - Abbott T. M. C. et al. 2021, *ApJS* 255, 20
 - Asano R. S. et al. 2013, *Earth, Planets and Space* 65, 213
 - Asplund M. et al. 2009, *ARA&A* 47, 481
+- Blanton M. R. et al. 2001, *AJ* 121, 2358
 - Blanton M. R., Roweis S. 2007, *AJ* 133, 734
 - Bohlin R. C., Savage B. D., Drake J. F. 1978, *ApJ* 224, 132
+- Baldry I. K. et al. 2018, *MNRAS* 474, 3875
 - Byler N. et al. 2017, *ApJ* 840, 44
 - Chabrier G. 2003, *PASP* 115, 763
 - Chambers K. C. et al. 2016, arXiv:1612.05560
@@ -147,6 +168,7 @@ galaxies beyond the cone's redshift range.
 - Shamshiri S. et al. 2015, *MNRAS* 451, 2681
 - Skrutskie M. F. et al. 2006, *AJ* 131, 1163
 - Triani D. P. et al. 2020, *MNRAS* 493, 2490
+- Strauss M. A. et al. 2002, *AJ* 124, 1810
 - Trayford J. W. et al. 2020, *MNRAS* 491, 3937
 - Triani D. P. et al. 2023, *MNRAS* 519, 2500
 - Trujillo I. et al. 2001, *MNRAS* 328, 977

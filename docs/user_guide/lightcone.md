@@ -63,8 +63,7 @@ The Photometry tab only appears for lightcones that actually carry SED data
 
 **Create mock image** (under **Image** in the Photometry tab) makes a survey image of the sky
 around the selected galaxy, or the cone's brightest galaxy if none is
-selected: what SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam
-would record. Only surveys whose filters the cone has are offered. Choose the
+selected: what any of the LightSAGE surveys would record. Only surveys whose filters the cone has are offered. Choose the
 field (½′ to 30′, kept under 2400 pixels a side) and whether to add the
 survey's sky noise. Each galaxy is drawn as its disk and bulge at its own size,
 inclination and colours, blurred by the survey's seeing on its pixel grid. The

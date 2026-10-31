@@ -24,6 +24,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Moffat PSF** for ground-based mock images, in place of a Gaussian.
 - **Mock images can add galaxies beyond the cone** from a deeper lightcone,
   in a new **Image** view of the Photometry tab.
+- **Mock images for every survey:** Euclid, Roman, HST, VISTA, UKIDSS,
+  Spitzer and Herschel join the others, each with its published depths.
+- **Survey catalogues** (`python -m visage.sed.survey`): Petrosian and fibre
+  magnitudes from each galaxy's disk and bulge, the SDSS Main Galaxy Sample
+  and GAMA selections with fibre collisions, written as FITS tables.
 - **Infrared SEDs follow each galaxy's dust temperature:** U_min comes
   from its L_dust / M_dust, saved as `DustUmin`.
 - **Spectra show the AGN's narrow lines,** as `LineLumAGN_*` through the

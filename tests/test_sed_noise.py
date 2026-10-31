@@ -20,7 +20,7 @@ def _cone(path, n=20000):
         f["distance"] = np.full(n, 150.0)
         f["redshift_cosmological"] = np.full(n, 0.05)
         f["mag_obs_sdss_r"] = np.full(n, 20.0, dtype=np.float32)
-        f["mag_obs_euclid_vis"] = np.full(n, 20.0, dtype=np.float32)
+        f["mag_obs_jwst_f200w"] = np.full(n, 20.0, dtype=np.float32)
 
 
 def test_point_source_at_the_limit_has_the_quoted_snr():
@@ -45,7 +45,7 @@ def test_add_noise_writes_only_bands_with_depths(tmp_path):
     _cone(p)
     assert noise.add_noise(p, seed=2) == ["sdss_r"]
     with h5py.File(p) as f:
-        assert "flux_obs_euclid_vis" not in f
+        assert "flux_obs_jwst_f200w" not in f
         flux, err = f["flux_obs_sdss_r"][:], f["fluxerr_obs_sdss_r"][:]
         assert "Noise" in f["PhotometryHeader"].attrs
     z = (flux - noise.ujy(20.0)) / err

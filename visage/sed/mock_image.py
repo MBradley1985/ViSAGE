@@ -38,6 +38,26 @@ Survey numbers (pixel scale, median seeing, depth):
   0.08, 0.11, 1 mJy in W1-W3 (Wright et al. 2010, AJ 140, 1868).
 - GALEX AIS: 1.5"/pixel, PSF FUV 4.2", NUV 5.3", 5 sigma FUV 19.9,
   NUV 20.8 (Morrissey et al. 2007, ApJS 173, 682).
+- Euclid VIS: 0.1"/pixel, PSF 0.13", 5 sigma point source 26.2; NISP:
+  0.298"/pixel, PSF 1.10, 1.17, 1.19 pixels in Y, J, H, 5 sigma point
+  source 24.4 (Mellier et al. 2025, A&A 697, A1; Scaramella et al. 2022).
+- Roman High-Latitude Wide-Area Survey, medium tier: 0.11"/pixel, the
+  diffraction limit 1.03 lambda / D (D = 2.36 m), 5 sigma point sources
+  F106 26.5, F129 26.4, F158 26.4 (Roman community survey definition).
+- HST, CANDELS wide: mosaics at 0.06"/pixel, WFC3/IR 0.18", ACS the
+  diffraction limit (D = 2.4 m), 5 sigma point sources F160W 27.3, F814W
+  28.0, F606W 28.7 (Grogin et al. 2011; Koekemoer et al. 2011).
+- VISTA, VIKING: 0.34"/pixel, seeing the survey's limit of 1", 5 sigma Ks
+  21.2, J 22.1, Y 22.3 (Edge et al. 2013).
+- UKIDSS Large Area Survey: 0.4"/pixel, seeing the survey's limit of 1.2",
+  5 sigma K 20.09, J 20.49, Y 20.79 AB (Lawrence et al. 2007; Hill et al.
+  2010).
+- Spitzer, SWIRE: mosaics at 0.6"/pixel, beams 2.5", 2.05", 2.05", 5 sigma
+  32.5, 9.7, 7.3 uJy at 8.0, 4.5, 3.6 um (Lonsdale et al. 2003).
+- Herschel, H-ATLAS: SPIRE 6"/pixel, beams 35.2", 24", 17.8", 1 sigma
+  10.2, 9.4, 7.4 mJy with confusion at 500, 350, 250 um (Valiante et al.
+  2016; Maddox et al. 2018); PACS 3"/pixel, beams 13.7", 11.4", 49, 44 mJy
+  at 160, 100 um.
 - JWST NIRCam: 0.031"/pixel, PSF F115W 0.040", F200W 0.066", F444W 0.145"
   (JWST User Documentation); depth depends on the programme, so noiseless.
 """
@@ -159,6 +179,95 @@ SURVEYS: dict[str, Survey] = {
         (5.3, 4.2),
         ((20.8, 5, None), (19.9, 5, None)),
         "Morrissey et al. 2007",
+        ground=False,
+    ),
+    "euclid_vis": Survey(
+        "Euclid VIS",
+        ("euclid_vis",),
+        0.1,
+        (0.13,),
+        ((26.2, 5, None),),
+        "Mellier et al. 2025",
+        ground=False,
+    ),
+    "euclid": Survey(
+        "Euclid NISP (Y, J, H)",
+        ("euclid_h", "euclid_j", "euclid_y"),
+        0.298,
+        (0.355, 0.349, 0.328),
+        ((24.4, 5, None), (24.4, 5, None), (24.4, 5, None)),
+        "Mellier et al. 2025",
+        ground=False,
+    ),
+    "roman": Survey(
+        "Roman HLWAS (F106, F129, F158)",
+        ("roman_f158", "roman_f129", "roman_f106"),
+        0.11,
+        (0.139, 0.117, 0.096),
+        ((26.4, 5, None), (26.4, 5, None), (26.5, 5, None)),
+        "Roman community survey definition",
+        ground=False,
+    ),
+    "hst": Survey(
+        "HST CANDELS (F606W, F814W, F160W)",
+        ("wfc3_ir_f160w", "wfc_acs_f814w", "wfc_acs_f606w"),
+        0.06,
+        (0.18, 0.073, 0.054),
+        ((27.3, 5, None), (28.0, 5, None), (28.7, 5, None)),
+        "Grogin et al. 2011",
+        ground=False,
+    ),
+    "vista": Survey(
+        "VISTA VIKING (Y, J, Ks)",
+        ("vista_k", "vista_j", "vista_y"),
+        0.34,
+        (1.0, 1.0, 1.0),
+        ((21.2, 5, None), (22.1, 5, None), (22.3, 5, None)),
+        "Edge et al. 2013",
+        (1.0, 1.0, 1.0),
+    ),
+    "ukidss": Survey(
+        "UKIDSS LAS (Y, J, K)",
+        ("wfcam_k", "wfcam_j", "wfcam_y"),
+        0.4,
+        (1.2, 1.2, 1.2),
+        ((20.09, 5, None), (20.49, 5, None), (20.79, 5, None)),
+        "Lawrence et al. 2007",
+        (1.0, 1.0, 1.0),
+    ),
+    "spitzer": Survey(
+        "Spitzer SWIRE (3.6, 4.5, 8.0 µm)",
+        ("irac_4", "irac_2", "irac_1"),
+        0.6,
+        (2.5, 2.05, 2.05),
+        (
+            (_ab_from_mjy(0.0325), 5, None),
+            (_ab_from_mjy(0.0097), 5, None),
+            (_ab_from_mjy(0.0073), 5, None),
+        ),
+        "Lonsdale et al. 2003",
+        ground=False,
+    ),
+    "spire": Survey(
+        "Herschel H-ATLAS SPIRE (250-500 µm)",
+        ("spire_500", "spire_350", "spire_250"),
+        6.0,
+        (35.2, 24.0, 17.8),
+        (
+            (_ab_from_mjy(51.0), 5, None),
+            (_ab_from_mjy(47.0), 5, None),
+            (_ab_from_mjy(37.0), 5, None),
+        ),
+        "Valiante et al. 2016",
+        ground=False,
+    ),
+    "pacs": Survey(
+        "Herschel H-ATLAS PACS (100, 160 µm)",
+        ("pacs_160", "pacs_100"),
+        3.0,
+        (13.7, 11.4),
+        ((_ab_from_mjy(245.0), 5, None), (_ab_from_mjy(220.0), 5, None)),
+        "Valiante et al. 2016",
         ground=False,
     ),
     "nircam": Survey(
