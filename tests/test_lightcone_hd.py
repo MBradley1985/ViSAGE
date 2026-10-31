@@ -223,3 +223,77 @@ def test_hd_on_a_bare_cone(tmp_path):
     assert prep["rc"].col_gain == (1.0, 1.0, 1.0)
     assert dict(cone_summary(lc.galaxies, 0))["Distance"]
     build_galaxy_info(lc.galaxies, {}, 0, st, H)
+
+
+def _spiral(**kw):
+    """A star-forming lightcone galaxy with component photometry."""
+    from visage.hd.model import SageGalaxy
+
+    base = dict(
+        galaxy_index=7,
+        stellar_mass=3e10,
+        bulge_mass=6e9,
+        merger_bulge_mass=0.0,
+        instability_bulge_mass=0.0,
+        cold_gas=8e9,
+        h2_gas=2e9,
+        h1_gas=6e9,
+        metals_cold_gas=1.2e8,
+        bh_mass=1e7,
+        sfr_disk=2.0,
+        sfr_bulge=0.0,
+        disk_radius_kpc=4.0,
+        bulge_radius_kpc=1.2,
+        regime=0,
+        gtype=0,
+        tau_v_ism=0.4,
+        los=(0.0, 0.0, 1.0),
+        sed_ratio=(1.3, 0.7),
+        sed_disk=(1.2, 0.75),
+        sed_bulge=(1.5, 0.45),
+        bulge_share=0.3,
+        agn_share=0.5,
+        ha_share=0.02,
+    )
+    return SageGalaxy(**(base | kw))
+
+
+def test_lightcone_galaxy_has_sage26_radii():
+    from visage.hd.model import display_sizes
+
+    assert display_sizes(_spiral(disk_radius_kpc=9.0))[0] == 9.0
+
+
+def test_box_galaxy_keeps_the_display_sizes():
+    from visage.hd.model import display_sizes
+
+    assert display_sizes(_spiral(disk_radius_kpc=9.0, los=()))[0] != 9
+
+
+def test_closure_sets_the_components_to_the_photometry():
+    from visage.hd.layer import observer_rotation, photometry_closure
+    from visage.hd.model import build_disk_maps, build_points, recipe_from_sage
+    from visage.hd.raymarch import render
+
+    g = _spiral()
+    rc = recipe_from_sage(g)
+    maps = build_disk_maps(rc, n=256)
+    rc, pts = photometry_closure(rc, maps, build_points(rc, maps), g, None)
+    R = observer_rotation(g.los, None, rc.seed)
+    lay = render(rc, maps, pts, R=R, npix=96, threads=1)
+    disk = (lay.disk + lay.young)[..., 1].sum()
+    bulge = lay.bulge[..., 1].sum()
+    host = disk + bulge
+    assert bulge / host == pytest.approx(0.3, rel=0.2)
+    assert lay.points["agn"][..., 1].sum() / host == pytest.approx(
+        0.5, rel=0.2
+    )
+    assert lay.points["hii"][..., 1].sum() / host == pytest.approx(
+        0.02, rel=0.3
+    )
+
+
+def test_hidden_agn_is_not_drawn():
+    from visage.hd.model import recipe_from_sage
+
+    assert recipe_from_sage(_spiral(agn_share=0.0)).agn == 0

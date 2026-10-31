@@ -141,6 +141,91 @@ def photometry_gain(rc, maps, pts, gal, spin, threads=1) -> tuple:
     return tuple(float(v) for v in gain)
 
 
+def _gain_to(sed, rgb) -> np.ndarray | None:
+    """Per-channel gain putting light `rgb` (I, V, B) at photometric colour
+    `sed` on HD's colour scale, keeping its total."""
+    r, g, b = (float(v) for v in rgb)
+    if not sed or min(r, g, b) <= 0 or min(sed) <= 0:
+        return None
+    f_i, f_b = sed
+    a_i, k_i = SED_COLOUR["I"]
+    a_b, k_b = SED_COLOUR["B"]
+    want = _on_stellar_locus(a_i + k_i * np.log(f_i), a_b + k_b * np.log(f_b))
+    gain = np.array(
+        [np.exp(want[0]) / (r / g), 1.0, np.exp(want[1]) / (b / g)]
+    )
+    return gain / ((gain * (r, g, b)).sum() / (r + g + b))
+
+
+def photometry_closure(rc, maps, pts, gal, spin, threads=1):
+    """The recipe with its light set to the lightcone's photometry, seen
+    from the observer: the disk's and bulge's colours and ratio, and the
+    shares of Halpha, the AGN and intracluster stars. HD's structure is
+    unchanged. Returns the recipe and the points."""
+    import dataclasses
+
+    from visage.hd.raymarch import render
+
+    R = observer_rotation(gal.los, spin, rc.seed)
+    lay = render(rc, maps, pts, R=R, npix=96, threads=threads)
+    disk = (lay.disk + lay.young).reshape(-1, 3).sum(axis=0)
+    bulge = lay.bulge.reshape(-1, 3).sum(axis=0)
+    new = {}
+    if rc.kind == "disk":
+        # Light per unit recipe luminosity is fixed, so ratios scale.
+        if gal.bulge_share > 0 and disk[1] > 0 and bulge[1] > 0:
+            f = (gal.bulge_share / (1 - gal.bulge_share)) / (
+                bulge[1] / disk[1]
+            )
+            f = float(np.clip(f, 0.01, 100.0))
+            new["l_bulge"] = rc.l_bulge * f
+            new["l_pseudo"] = rc.l_pseudo * f
+            bulge = bulge * f
+        g_d = _gain_to(gal.sed_disk, disk)
+        g_b = _gain_to(gal.sed_bulge, bulge)
+        if g_d is not None:
+            new["col_gain"] = tuple(float(v) for v in g_d)
+        if g_b is not None:
+            base = g_d if g_d is not None else np.ones(3)
+            new["bulge_rgb"] = tuple(
+                float(v) for v in np.asarray(rc.bulge_rgb) * g_b / base
+            )
+    else:
+        g_a = _gain_to(gal.sed_ratio, disk + bulge)
+        if g_a is not None:
+            new["col_gain"] = tuple(float(v) for v in g_a)
+    host = float(disk[1] + bulge[1])
+    pts = list(pts)
+    hii = sum(
+        float(lay.points[n][..., 1].sum())
+        for n in ("hii", "ring_hii")
+        if n in lay.points
+    )
+    if hii > 0 and gal.ha_share >= 0:
+        f = float(np.clip(gal.ha_share * host / hii, 0.0, 100.0))
+        for i, p in enumerate(pts):
+            if p.name in ("hii", "ring_hii"):
+                pts[i] = dataclasses.replace(p, lum=p.lum * f)
+    if rc.agn > 0 and "agn" in lay.points:
+        seen = float(lay.points["agn"][..., 1].sum())
+        new["agn"] = rc.agn * gal.agn_share * host / seen
+    if rc.l_icl > 0 and "icl" in lay.points:
+        seen = float(lay.points["icl"][..., 1].sum())
+        # Share of it inside the frame (a Hernquist profile's mass).
+        edge = float(lay.half_width)
+        inside = (edge / (edge + rc.icl_a)) ** 2
+        new["l_icl"] = rc.l_icl * gal.ics_share * host * inside / seen
+        if gal.sed_ics:
+            base = np.asarray(new.get("col_gain", rc.col_gain))
+            rgb = lay.points["icl"].reshape(-1, 3).sum(axis=0)
+            g_i = _gain_to(gal.sed_ics, rgb)
+            if g_i is not None:
+                new["icl_rgb"] = tuple(
+                    float(v) for v in np.asarray(rc.icl_rgb) * g_i / base
+                )
+    return dataclasses.replace(rc, **new), pts
+
+
 # Texture resolutions per build quality.
 # A jellyfish's own CGM streams fade with its ram pressure: by up to
 # CGM_STRIP of their strength at full ram pressure (the user found 1.0 too
@@ -280,7 +365,16 @@ class HDGalaxyLayer:
                         sense,
                     )
                 )
-        if gal.sed_ratio and gal.los:
+        if gal.bulge_share >= 0 and gal.los:
+            rc, pts = photometry_closure(
+                rc,
+                maps,
+                pts,
+                gal,
+                ctx.get("spin"),
+                threads=8 if quality == "full" else 1,
+            )
+        elif gal.sed_ratio and gal.los:
             import dataclasses
 
             rc = dataclasses.replace(

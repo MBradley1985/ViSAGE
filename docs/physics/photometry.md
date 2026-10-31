@@ -232,6 +232,18 @@ where zodiacal and telescope thermal emission take over.
 - Wang J. et al. 2016, *MNRAS* 460, 2143
 - Wright E. L. et al. 2010, *AJ* 140, 1868
 
+## HD on a lightcone
+
+HD stays separate from mock images, but on a lightcone its light comes from the
+same photometry. After a first render, `layer.photometry_closure` sets the
+disk's and bulge's colours and ratio, and the shares of Halpha, the AGN and
+intracluster stars, to the cone's magnitudes as seen from the observer. Dust is
+the photometry's `TauV_ISM`. Radii are SAGE26's, bulges take the images' axis
+ratios, hidden AGN aren't drawn, and intracluster light has the half-light
+radius of the images' NFW, in HD's Hernquist shape. Group members are lit by
+their luminosity. Arms, clusters and dust structure are HD's own. A box keeps
+HD's own look and sizes throughout.
+
 ## What doesn't come from SAGE26
 
 Everything about a galaxy comes from SAGE26's output: stellar mass and its

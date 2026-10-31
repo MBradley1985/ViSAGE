@@ -418,6 +418,21 @@ def field_sizes(survey: str) -> list[float]:
     return [f for f in FIELDS_ARCMIN if f * 60 / pix <= MAX_PIXELS]
 
 
+def bulge_axis_ratio(index) -> np.ndarray:
+    """A bulge's axis ratio from its galaxy's id, so that it's the same in
+    every image and in HD."""
+    index = np.asarray(index, np.uint64)
+    phase = (index * np.uint64(2654435761)) % np.uint64(2**32)
+    return np.interp(phase / 2.0**32, np.linspace(0, 1, 11), BULGE_Q)
+
+
+def nfw_half_light(c: float) -> float:
+    """Radius holding half of the projected NFW light, in r_vir."""
+    x = np.linspace(1e-3, 1, 2000)
+    cum = np.cumsum(x * nfw_projected(x, c))
+    return float(x[np.searchsorted(cum, 0.5 * cum[-1])])
+
+
 def nmgy(mag: np.ndarray) -> np.ndarray:
     """AB magnitude to nanomaggies (0 for missing)."""
     mag = np.asarray(mag, dtype=np.float64)
@@ -782,9 +797,7 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
         cosi = np.abs(np.sum(spin * los, 1)) / np.maximum(sn, 1e-30)
     q_disk = np.sqrt(cosi**2 + Q0**2 * (1 - cosi**2))
     # The same galaxy keeps its shape from image to image.
-    index = np.asarray(d.get("GalaxyIndex", np.arange(len(near))), np.uint64)
-    phase = (index * np.uint64(2654435761)) % np.uint64(2**32)
-    q_bulge = np.interp(phase / 2.0**32, np.linspace(0, 1, 11), BULGE_Q)
+    q_bulge = bulge_axis_ratio(d.get("GalaxyIndex", np.arange(len(near))))
 
     # Skip galaxies far below the noise in every band.
     if noisy:

@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- HD on a lightcone takes its light from the photometry by component: disk, bulge, Halpha, AGN and intracluster stars, with SAGE26 radii.
 - AGN continuum (Shen et al. 2020) above 1% Eddington, as a point source in images and in spectra and survey catalogues.
 - Intracluster stars from SAGE26's own mass and metals, with an option in the Image view.
 - Mock images use measured PSFs, and sky noise from many real fields.

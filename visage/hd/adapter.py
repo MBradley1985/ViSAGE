@@ -280,6 +280,7 @@ def sage_galaxy_from_snapshot(
         tau_v_ism=_sed_tau(snap, i),
         sed_ratio=_sed_ratio(snap, i),
         los=_los(snap, i),
+        **_sed_parts(snap, i),
         sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
         sfh_bulge=(
             () if sfh is None else tuple(float(v) * mass for v in sfh[1])
@@ -309,6 +310,54 @@ def _sed_ratio(snap, i: int) -> tuple:
                 return ()
             return (10 ** (-0.4 * (mi - mv)), 10 ** (-0.4 * (mb - mv)))
     return ()
+
+
+def _flux(snap, key, i) -> float:
+    """Flux from a lightcone magnitude, 0 if it has none."""
+    mag = _extra(snap, key, i, np.inf)
+    return float(10 ** (-0.4 * mag)) if np.isfinite(mag) else 0.0
+
+
+def _sed_parts(snap, i: int) -> dict:
+    """What a lightcone's photometry says of a galaxy's components, on HD's
+    (B, V, I) bands: their colours, and shares of its light in V. Empty
+    without disk and bulge magnitudes, or in a box."""
+    if getattr(snap, "snap_nums", None) is None:
+        return {}
+    extra = getattr(snap, "extra", None)
+    if extra is None:
+        return {}
+    for b, v, ir in SED_BANDS:
+        if f"disk_mag_obs_{v}" not in extra:
+            continue
+        band = (b, v, ir)
+        disk = [_flux(snap, f"disk_mag_obs_{x}", i) for x in band]
+        bulge = [_flux(snap, f"bulge_mag_obs_{x}", i) for x in band]
+        agn = [_flux(snap, f"agn_mag_obs_{x}", i) for x in band]
+        ics = [_flux(snap, f"ics_mag_obs_{x}", i) for x in band]
+        host = disk[1] + bulge[1]
+        if host <= 0:
+            return {}
+
+        def ratio(f):
+            return (f[2] / f[1], f[0] / f[1]) if min(f) > 0 else ()
+
+        # Halpha as a share of the V band's light, across the r band's
+        # width (R = 1387 A; Fukugita et al. 1996).
+        ha = _extra(snap, "LineFlux_Halpha", i, 0.0)
+        f_nu = host * 3631e-23
+        band_flux = f_nu * 2.998e18 / 6165.0**2 * 1387.0
+        return {
+            "sed_disk": ratio(disk),
+            "sed_bulge": ratio(bulge),
+            "sed_ics": ratio(ics),
+            "bulge_share": bulge[1] / host,
+            "agn_share": agn[1] / host,
+            "ics_share": ics[1] / host,
+            "ha_share": float(ha / band_flux) if ha > 0 else 0.0,
+            "lum_v": host * float(np.sum(snap.positions[i] ** 2)),
+        }
+    return {}
 
 
 def _sed_tau(snap, i: int) -> float:

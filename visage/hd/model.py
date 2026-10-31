@@ -254,6 +254,16 @@ class SageGalaxy:
     mdot_cool: float = 0.0  # hot-halo cooling rate (relative units)
     # Stellar mass formed (Msun) in each SFH_AGES lookback bin, disk and
     # bulge; empty without SAGE's full SFH (SaveFullSFH).
+    # A lightcone's photometry by component: (f_I / f_V, f_B / f_V) of the
+    # disk, bulge and intracluster stars, and shares of the light in V.
+    sed_disk: tuple = ()
+    sed_bulge: tuple = ()
+    sed_ics: tuple = ()
+    bulge_share: float = -1.0  # <0: no such photometry
+    agn_share: float = 0.0
+    ics_share: float = 0.0
+    ha_share: float = 0.0
+    lum_v: float = 0.0  # relative luminosity in V, 0 without photometry
     sfh_disk: tuple = ()
     sfh_bulge: tuple = ()
     # The massive haloes around it (its cosmic web): (dx, dy, dz, weight)
@@ -398,6 +408,13 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     radius only nudges it (to the 1/4 power, at most ~+-30%).
     """
     m = max(g.stellar_mass, 1e7)
+    if g.los and g.disk_radius_kpc > 0:
+        # On a lightcone: SAGE26's own radii, as its images and photometry.
+        r50 = (
+            g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 2.88e-6 * m**0.56
+        )
+        note = f"size: SAGE26 Rd={g.disk_radius_kpc:.2f}, R50={r50:.2f} kpc"
+        return float(g.disk_radius_kpc), float(r50), [note]
     r50_late = 0.10 * m**0.14 * (1 + m / 3.98e10) ** 0.25
     rd_rel = r50_late / 1.678
     r50_early = 2.88e-6 * m**0.56
@@ -568,7 +585,16 @@ def _extras(
         )
 
     # Intracluster stars: a faint, very extended envelope (~50 kpc).
-    if g.ics > 0:
+    if g.ics > 0 and g.bulge_share >= 0:
+        # Set against the photometry once built (layer.photometry_closure),
+        # spread like the images' NFW, to its half-light radius.
+        from visage.sed.mock_image import _concentration, nfw_half_light
+
+        c = float(_concentration(np.array(g.concentration), g.mvir))
+        half = nfw_half_light(c) * g.rvir_kpc
+        out["l_icl"] = float(0.1 * main_light) if g.ics_share > 0 else 0.0
+        out["icl_a"] = float(half / (1 + np.sqrt(2)) / unit_kpc)
+    elif g.ics > 0:
         # Diffuse emission only (the ICL's look is its display overlay and
         # stripped stars); capped, as ICS can exceed M* many times and its
         # glow would otherwise haze over the whole view.
@@ -611,7 +637,10 @@ def _extras(
     # (Below ~1e4 Msun a step there is nothing an observer would see:
     # SAGE26's black holes start at zero, so a dwarf's first merger or
     # instability "accretes" its whole, tiny new black hole at once.)
-    if g.qso_accretion >= 1e4:
+    if g.bulge_share >= 0:
+        # Its share of the light, set once built; none if hidden.
+        out["agn"] = 0.01 if g.agn_share > 0 else 0.0
+    elif g.qso_accretion >= 1e4:
         out["agn"] = float(
             0.05 * np.clip(g.qso_accretion / 1e6, 0.01, 1e3) ** 0.4
         )
@@ -782,6 +811,10 @@ def recipe_from_sage(
     bulge_a = float(np.clip(rb / rd / (1 + np.sqrt(2)), 0.03, 0.4))
     merger_share = g.merger_bulge_mass / max(g.bulge_mass, 1.0)
     bulge_q = float(0.85 if split else 0.5 + 0.4 * merger_share)
+    if g.los:
+        from visage.sed.mock_image import bulge_axis_ratio
+
+        bulge_q = float(bulge_axis_ratio(g.galaxy_index))
     rp = g.instability_bulge_radius_kpc
     pseudo_a = float(
         np.clip(
