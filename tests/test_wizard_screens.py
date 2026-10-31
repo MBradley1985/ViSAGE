@@ -166,6 +166,29 @@ def test_physics_toggle_and_run_name(tmp_path):
     assert c._cfg_values("sage26")["OutputDir"]["value"] == "output/test_run/"
 
 
+def test_mode_switches_join_an_older_par(tmp_path):
+    """A .par from before DarkSAGEMode shows it off and gains it when on."""
+    c = _ctrl()
+    c._setup_mode = "sage26"
+    c._st.wiz_par_text = "SupernovaRecipeOn 1  % 0: off\n"
+    c._par_path = tmp_path / "old.par"
+    c._render_setup = lambda: None
+    assert "DustySAGEMode" not in c._cfg_values("sage26")
+    asyncio.run(c._setup_choose("tog:DustySAGEMode"))
+    assert c._cfg_values("sage26")["DustySAGEMode"]["value"] == "1"
+    asyncio.run(c._setup_choose("tog:DustySAGEMode"))
+    assert c._cfg_values("sage26")["DustySAGEMode"]["value"] == "0"
+    assert c._st.wiz_par_text.count("DustySAGEMode") == 1
+
+
+def test_par_template_has_only_tags_sage26_reads():
+    from visage.wizard.controller import _MILLENNIUM_PAR_TEMPLATE as t
+
+    for gone in ("FeedbackFreeModeOn", "TrackICSAssembly", "FFBMaxEfficiency"):
+        assert gone not in t
+    assert "EnhancedStarFormationOn" in t and "DustySAGEMode" in t
+
+
 def test_fill_frames_follow_progress():
     static = Path(__file__).resolve().parents[1] / "visage" / "static"
     assert _fill_frame("sage26", 0).startswith(

@@ -599,17 +599,22 @@ CGMrecipeOn                 1   %0: switch off
 FIREmodeOn                  1   %0: switch off
 
 ConcentrationOn             3   %0: off; 1: Ishiyama+21 lookup table; 2: Vmax/Vvir from simulation; 3: Vmax/Vvir + infall freeze for satellites
-FeedbackFreeModeOn          1   %0: off; 1: Li+24 sigmoid; 2: BK25 (Ishiyama+21 conc); 3: BK25 (ConcentrationOn method); 4: BK25 + log-normal c scatter; 5: Li+24 sharp; 6: Li+24 sigmoid + H2 SF; 7: BK25 log-normal c scatter + H2 SF
+EnhancedStarFormationOn     1   %0: off; 1: Li+24 mass threshold w. sigmoid; 2: BK25 acceleration threshold w. log-normal c scatter
 
 SaveFullSFH                 1   %0: switch off
-TrackICSAssembly            1   %0: switch off; 1: track ICS_disrupt and ICS_accrete
+SaveFullMH                  0   %0: switch off; 1: also save stellar metal mass per SFH bin (needs SaveFullSFH = 1)
+DarkSAGEMode                0   %0: switch off; 1: SAGE26 bulk recipes shared over 30 radial annuli; 2: SF law evaluated per annulus
+DustySAGEMode               0   %0: switch off; 1: passive dust within SAGE26's metals; 2: Dusty-SAGE delayed yields and dust
+DustSNIIYields              0   %DustySAGEMode SNII yields: 0: Woosley & Weaver 1995; 1: Nomoto et al. 2006
+DustSNIaYields              0   %DustySAGEMode SNIa yields: 0: Iwamoto et al. 1999; 1: Seitenzahl et al. 2013
+DustBinaryFraction          0.1 %DustySAGEMode: fraction of 3-16 Msun stars in SNIa binaries
 
 %------------------------------------------
 %----- SAGE model parameters --------------
 %------------------------------------------
 
 SfrEfficiency               0.05    %efficiency of SF; unused for SFprescription=3,6
-FFBMaxEfficiency            0.2     %0.2 fits observations best, 1.0 is theoretical maximum
+EnhancedSFEfficiency        0.2     %0.2 fits observations best, 1.0 is theoretical maximum
 
 FeedbackReheatingEpsilon    2.9     %mass of cold gas reheated due to SF (see Martin 1999) (SupernovaRecipeOn=1)
 FeedbackEjectionEfficiency  0.3     %mixing efficiency of SN energy with hot gas to unbind and eject some (SupernovaRecipeOn=1)

@@ -36,7 +36,15 @@ _PHYSICS = [
     ("FIREmodeOn", "FIRE mode"),
     ("EnhancedStarFormationOn", "Burst star formation"),
     ("SaveFullSFH", "Full star-formation histories"),
+    ("DarkSAGEMode", "Radial discs"),
+    ("DustySAGEMode", "Dust"),
 ]
+# SAGE26's newer switches: older .par files lack them, so they're shown off
+# and written in when turned on.  Mode 2 is typed in All settings.
+_ADDED_SWITCHES = {
+    "DarkSAGEMode": "%0: switch off; 1: gas and stars in 30 radial annuli",
+    "DustySAGEMode": "%0: switch off; 1: dust reservoirs within the metals",
+}
 
 _LC_PRESETS = [
     (
@@ -124,6 +132,10 @@ _PAR_SECTIONS = [
             "SupernovaRecipeOn ReIncorporationFactor EtaSN Yield "
             "RecycleFraction FracZleaveDisk FIREmodeOn"
         ).split(),
+    ),
+    (
+        "Discs & dust",
+        lambda k: k.startswith(("DarkSAGE", "Dust")) or k == "SaveFullMH",
     ),
     (
         "Black holes & AGN",
@@ -381,11 +393,16 @@ class SetupRunMixin:
         from visage.wizard.controller import _apply_params
 
         var, kind, _ = self._cfg(mode)
-        self._st[var] = _apply_params(
+        text = _apply_params(
             str(self._st[var] or ""),
             [{"key": k, "value": str(v)} for k, v in values.items()],
             kind,
         )
+        have = self._cfg_values(mode)
+        for k, hint in _ADDED_SWITCHES.items():
+            if k in values and k not in have:
+                text = f"{text.rstrip()}\n{k} {values[k]}   {hint}\n"
+        self._st[var] = text
 
     def _refresh_pool(self, mode: str) -> None:
         """Fill the All-settings slots from the current text, each tagged
@@ -403,7 +420,7 @@ class SetupRunMixin:
             sec = _section(key, sections)
             self._st[f"wiz_pg_{i}"] = sec
             counts[sec] = counts.get(sec, 0) + 1
-            if key.endswith("On") or key == "SaveFullSFH":
+            if key.endswith("On") or key in ("SaveFullSFH", "SaveFullMH"):
                 v = str(vals.get(key, {}).get("value", "")).strip()
                 self._st[f"wiz_pcb_{i}"] = v in ("0", "1")
         order = [s for s, _ in sections] + ["Other"]
@@ -553,14 +570,17 @@ class SetupRunMixin:
             )
             tiles = []
             for key, label in _PHYSICS:
-                if key not in vals:
+                if key not in vals and key not in _ADDED_SWITCHES:
                     continue
-                v = _num(vals[key]["value"]) or 0
+                par = vals.get(
+                    key, {"value": "0", "hint": _ADDED_SWITCHES.get(key)}
+                )
+                v = _num(par["value"]) or 0
                 tiles.append(
                     {
                         "label": label,
-                        "sub": vals[key]["hint"],
-                        "code": f"{key} = {vals[key]['value']}",
+                        "sub": par["hint"],
+                        "code": f"{key} = {par['value']}",
                         "value": f"su:tog:{key}",
                         "on": v != 0,
                     }
