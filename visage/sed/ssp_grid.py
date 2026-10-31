@@ -55,7 +55,7 @@ class SSPGrid:
             # Nebular lines and continuum in the spectra, for gas at this
             # metallicity (visage/sed/nebular.py).
             add_neb_emission=bool(nebular),
-            gas_logz=float(logzsol),
+            gas_logz=max(float(logzsol), -2.0),  # FSPS's nebular grid
             # (U for a main-sequence galaxy, sSFR 1e-10/yr at 1e10 Msun;
             # the photometry's own line luminosities use each galaxy's.)
             gas_logu=float(
@@ -128,10 +128,10 @@ class SSPGrid:
 
 
 # Metallicity nodes (log Z/Zsun) that every galaxy's spectrum is linearly
-# interpolated between -- spanning SAGE26's stellar metallicities within
-# the MIST range (-2.5 to +0.5).
+# interpolated between -- spanning the metallicities of SAGE26's stars,
+# earliest included, within the MIST range (-2.5 to +0.5).
 METALLICITY_NODES = np.array(
-    [-2.0, -1.5, -1.0, -0.7, -0.4, -0.2, 0.0, 0.2, 0.4]
+    [-2.5, -2.0, -1.5, -1.0, -0.7, -0.4, -0.2, 0.0, 0.2, 0.4]
 )
 
 

@@ -295,7 +295,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
 - **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
 - **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (named by survey, blue to red; each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
-- **Mock images** — **Create mock image** in the Photometry tab draws the sky around a galaxy as SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would record it (each galaxy's disk and bulge at its size, inclination and colours; the survey's pixels, seeing and, optionally, its sky noise), saved as PNG and FITS (with WCS)
+- **Mock images** — **Create mock image**, under **Image** in the Photometry tab, draws the sky around a galaxy as SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would record it (each galaxy's disk and bulge at its size, inclination and colours; the survey's pixels, seeing and, optionally, its sky noise), saved as PNG and FITS (with WCS)
 - Reach it from Launch Mode (**Open in Lightcone view** after a build, LightSAGE's **Load existing**, or **Load a previous model**), the **Session Models** list (see below), or directly via `--lightcone`
 
 ![Example lightcone](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/lightcone.png)
@@ -324,6 +324,33 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 | microUchuu | 96 Mpc/h | 50 | lhalo_binary |
 
 Both supported automatically — point at the `.par` file and ViSAGE figures out the rest from the HDF5.
+
+## Citation
+
+If you use ViSAGE in published work, please cite it using [CITATION.cff](CITATION.cff), and the models it runs:
+
+- **SAGE26:** Bradley M., Croton D. J., Mostoghiu Paun R. A., Dutta Chowdhury D., Willingham J. 2026, *SAGE26 Paper I: Modelling the baryon cycle from cosmic dawn to the present day*, [arXiv:2610.09564](https://arxiv.org/abs/2610.09564)
+- **SAGE:** Croton D. J. et al. 2016, *ApJS* 222, 22, [doi:10.3847/0067-0049/222/2/22](https://doi.org/10.3847/0067-0049/222/2/22)
+
+LightSAGE's synthetic photometry, spectra and mock images build on the following. The full list is in [Lightcone Photometry](docs/physics/photometry.md#references).
+
+- **Stellar populations (FSPS):** Conroy C., Gunn J. E., White M. 2009, *ApJ* 699, 486; Conroy C., Gunn J. E. 2010, *ApJ* 712, 833
+- **Dust mass:** Triani D. P. et al. 2020, *MNRAS* 493, 2490 (Dusty SAGE)
+- **Dust attenuation:** Charlot S., Fall S. M. 2000, *ApJ* 539, 718; Trayford J. W. et al. 2020, *MNRAS* 491, 3937; Lagos C. d. P. et al. 2019, *MNRAS* 489, 4196 (Shark); Triani D. P. et al. 2023, *MNRAS* 519, 2500
+- **Dust emission:** Draine B. T., Li A. 2007, *ApJ* 657, 810
+- **Emission lines:** Gutkin J., Charlot S., Bruzual G. 2016, *MNRAS* 462, 1757; Feltre A., Charlot S., Gutkin J. 2016, *MNRAS* 456, 3354; Hirschmann M. et al. 2017, *MNRAS* 472, 2468
+- **AGN light curves:** Hopkins P. F., Hernquist L. 2009, *ApJ* 698, 1550
+- **AGN continuum:** Shen X. et al. 2020, *MNRAS* 495, 3252; Ueda Y. et al. 2014, *ApJ* 786, 104
+- **Intracluster stars:** Montes M., Trujillo I. 2019, *MNRAS* 482, 2838; Alonso Asensio I. et al. 2020, *MNRAS* 494, 1859; Duffy A. R. et al. 2008, *MNRAS* 390, L64; Bartelmann M. 1996, *A&A* 313, 697
+- **Measured PSFs:** the STDPSF library of J. Anderson, STScI (HST); Euclid Q1 MER PSF grids, IRSA; Perrin M. D. et al. 2014, *Proc. SPIE* 9143, 91433X (STPSF)
+- **Intergalactic absorption:** Madau P. 1995, *ApJ* 441, 18
+- **Mock spectroscopy:** Smee S. A. et al. 2013, *AJ* 146, 32; Balogh M. L. et al. 1999, *ApJ* 527, 54
+- **Group finding:** Van Kempen W. et al. 2024, arXiv:2410.15548; Van Kempen W. et al. 2025, arXiv:2508.12556; Lambert T. S. et al. 2020, *MNRAS* 497, 2954; Huchra J. P., Geller M. J. 1982, *ApJ* 257, 423; Robotham A. S. G. et al. 2011, *MNRAS* 416, 2640; Beers T. C., Flynn K., Gebhardt K. 1990, *AJ* 100, 32; Blanton M. R. et al. 2003, *ApJ* 592, 819
+- **Survey catalogues:** Strauss M. A. et al. 2002, *AJ* 124, 1810; Baldry I. K. et al. 2018, *MNRAS* 474, 3875
+- **Mock image display and PSF:** Lupton R. et al. 2004, *PASP* 116, 133; Trujillo I. et al. 2001, *MNRAS* 328, 977
+- **Mock image noise:** Nguyen H. T. et al. 2010, *A&A* 518, L5 (SPIRE confusion); Bagley M. B. et al. 2023, *ApJL* 946, L12 (CEERS depths); Abbott T. M. C. et al. 2018, *ApJS* 239, 18 (DES sky); Leinert C. et al. 1998, *A&AS* 127, 1 (zodiacal light)
+- **Mock image saturation:** York D. G. et al. 2000, *AJ* 120, 1579; Drlica-Wagner A. et al. 2022, *ApJS* 261, 38; LSST Science Collaboration 2009, arXiv:0912.0201
+- **Mock image stars:** Skrutskie M. F. et al. 2006, *AJ* 131, 1163 (2MASS); Almeida A. et al. 2023, *ApJS* 267, 44 (SDSS DR18); Jester S. et al. 2005, *AJ* 130, 873; Ballesteros F. J. 2012, *EPL* 97, 34008
 
 ## License
 

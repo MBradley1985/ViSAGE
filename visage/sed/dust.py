@@ -36,28 +36,21 @@ sputtered (Tsai & Mathews 1995, ApJ 448, 84) and its column is far below
 the disk's, so it isn't included in the attenuation.
 
 Attenuation, the two-component model of Charlot & Fall (2000, ApJ 539,
-718), as used in semi-analytic models (e.g. De Lucia & Blaizot 2007,
-MNRAS 375, 2):
-  diffuse ISM   face-on optical depth of the dust in front of the
-                starlight: the mean hydrogen column inside the stellar
-                half-light radius (1.68 R_d), with the molecular gas
-                following the stars (Leroy et al. 2008, AJ 136, 2782)
-                and the atomic gas in its own, more extended exponential
-                disk, sized by the HI size-mass relation (Wang et al.
-                2016, MNRAS 460, 2143: Sigma_HI = 1 Msun/pc^2 at D_HI/2);
-                tau_V = (A_V / N_H)_MW / 1.086 * N_H * (M_dust / M_H) /
-                (M_dust / M_H)_MW, A_V / N_H = 5.3e-22 mag cm^2 (Bohlin,
-                Savage & Drake 1978, R_V = 3.1), (M_dust / M_H)_MW =
-                0.010 (Draine & Li 2007, ApJ 657, 810);
-                tau_lambda = tau_V (lambda / 5500 A)^-0.7, mixed with the
-                stars in a slab seen at inclination i:
-                T = (1 - exp(-tau sec i)) / (tau sec i)
-  birth clouds  stars younger than 10 Myr are also behind their birth
-                cloud, tau_V^BC = tau_V (1 - mu) / mu with mu = 0.3,
-                tau_lambda^BC = tau_V^BC (lambda / 5500 A)^-1.3
-(Charlot & Fall used lambda^-0.7 for both; the steeper birth-cloud curve
-and mu = 0.3 are those of da Cunha, Charlot & Elbaz 2008, MNRAS 388, 1595,
-fitted to nearby galaxies' UV-to-IR SEDs.)
+718), as Dusty SAGE's default variant has it (Triani et al. 2023, after
+Lagos et al. 2019, MNRAS 489, 4196):
+  dust surface  Sigma_dust = M_dust / (2 pi r l), inside the gas half-mass
+  density       radius r = 1.68 R_d (as Lagos et al.; Dusty SAGE's own r is
+                set to match its galaxies), l = cos i (r - r / 7.3) + r / 7.3
+                the projected minor axis at the galaxy's own inclination
+  diffuse ISM   a screen, tau_lambda = tau_ISM (lambda / 5500 A)^eta_ISM,
+                both from Sigma_dust by the radiative-transfer results of
+                Trayford et al. (2020, MNRAS 491, 3937), median relations
+                as Lagos et al. digitised them
+  birth clouds  stars younger than 10 Myr are also behind a cloud of
+                tau_BC = (delta Sigma_cl) / (f_DTM,MW Z_sun Sigma_MW,cl),
+                tau_lambda = tau_BC (lambda / 5500 A)^-0.7, with
+                Sigma_cl = max(85 Msun/pc^2, the ISM's Sigma_gas), Z_sun =
+                0.0189, f_DTM,MW = 0.33, at least tau_ISM and at most 5
 """
 
 from __future__ import annotations
@@ -67,15 +60,94 @@ import numpy as np
 COND_EFFICIENCY = 0.2  # Popping et al. 2017; Dusty-SAGE delta_SN, delta_AGB
 ETA_SN = 0.1  # Asano et al. 2013; Dusty-SAGE
 TAU_ACC_MYR = 20.0  # Asano et al. 2013; Dusty-SAGE
-AV_PER_NH = 5.3e-22  # mag cm^2 (Bohlin et al. 1978, R_V = 3.1)
-DTG_MW = 0.010  # Draine & Li 2007: dust per hydrogen mass
-MU_ISM = 0.3  # da Cunha et al. 2008 (Charlot & Fall 2000 model)
 BC_AGE_GYR = 0.01  # birth clouds disperse after 10 Myr (Charlot & Fall)
-N_ISM, N_BC = 0.7, 1.3  # Charlot & Fall 2000; da Cunha et al. 2008
+N_BC = 0.7  # Charlot & Fall 2000, Dusty SAGE's default
+EDGE_ON_RATIO = 7.3  # disk length / height (Kregel et al. 2002)
+SIGMA_CL_MW = 85.0  # Msun/pc^2 (Lagos et al. 2019)
+Z_SUN_LAGOS = 0.0189
+F_DTM_MW = 0.33
+TAU_BC_MAX = 5.0
+# Trayford et al. (2020), medians digitised by Lagos et al. (2019).
+LOG_SIGMA_TAU = np.array(
+    (
+        4.10304,
+        4.35135,
+        4.58446,
+        4.82264,
+        5.06081,
+        5.28885,
+        5.52703,
+        5.76520,
+        6.00338,
+        6.23649,
+        6.46959,
+        6.70270,
+        6.94595,
+        7.17905,
+        7.41723,
+    )
+)  # log Msun/kpc^2
+TAU_ISM = np.array(
+    (
+        0.03606,
+        0.05048,
+        0.06490,
+        0.10096,
+        0.15144,
+        0.21635,
+        0.33894,
+        0.46875,
+        0.66346,
+        0.85096,
+        1.03125,
+        1.18269,
+        1.34856,
+        1.51442,
+        1.58654,
+    )
+)
+LOG_SIGMA_ETA = np.array(
+    (
+        4.58953,
+        4.82264,
+        5.05574,
+        5.29392,
+        5.53209,
+        5.76520,
+        6.00338,
+        6.23649,
+        6.46959,
+        6.70270,
+        6.94088,
+        7.17905,
+        7.42230,
+        7.64527,
+    )
+)
+ETA_ISM = np.array(
+    (
+        -1.35463,
+        -1.34361,
+        -1.27753,
+        -1.18392,
+        -1.04075,
+        -0.87555,
+        -0.74339,
+        -0.61674,
+        -0.52313,
+        -0.44053,
+        -0.39648,
+        -0.33590,
+        -0.26982,
+        -0.30837,
+    )
+)
+P0_LSUN_MSUN = 125.0  # L_dust / M_dust at U = 1 (Magdis et al. 2012)
+U_MIN_NODES = np.array([0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0])  # DL07
+# <U> / U_min for the Draine & Li (2007) U_min..1e6 power law, gamma = 0.01
+# (nearly constant across their range).
+MEAN_U_PER_UMIN = 1.13
 DISK_A = 1.68  # gas disk half-mass radius / scale length (De Lucia & Blaizot)
-M_P = 1.6726e-24  # g
-MSUN = 1.989e33  # g
-KPC = 3.0857e21  # cm
 
 
 def sn_per_mass_formed(m_lo=8.0, m_hi=40.0) -> float:
@@ -147,101 +219,117 @@ def cold_dust_ratio(
     return np.where(cold > 0, mu * z, 0.0)
 
 
-def _exp_scale_hi(m_hi, r1_pc):
-    """Scale length (pc) of an exponential HI disk of mass m_hi (Msun)
-    whose surface density falls to 1 Msun/pc^2 at radius r1_pc."""
-    lo = np.full_like(m_hi, 1.0)
-    hi = np.maximum(r1_pc, 2.0)
-    for _ in range(60):
-        h = 0.5 * (lo + hi)
-        sig = m_hi / (2 * np.pi * h * h) * np.exp(-r1_pc / h)
-        # Sigma(r1) rises with h up to h = r1/2; take the extended root.
-        grow = sig < 1.0
-        lo = np.where(grow, h, lo)
-        hi = np.where(grow, hi, h)
-    return 0.5 * (lo + hi)
+def _gas_radius_kpc(disk_radius_kpc):
+    return DISK_A * np.maximum(np.asarray(disk_radius_kpc, float), 0.05)
 
 
-def tau_v_ism(m_hi, m_h2, m_cold, disk_radius_kpc, delta) -> np.ndarray:
-    """Face-on V-band optical depth of the diffuse ISM in front of the
-    starlight (see the module docstring). Masses in Msun (HI and H2 as
-    hydrogen, cold gas total), radius in kpc."""
-    m_hi = np.maximum(np.asarray(m_hi, float), 0.0)
-    m_h2 = np.maximum(np.asarray(m_h2, float), 0.0)
-    rd = np.maximum(np.asarray(disk_radius_kpc, float), 0.05) * 1e3  # pc
-    r_half = DISK_A * rd
-    x = r_half / rd
-    f_star = 1.0 - (1.0 + x) * np.exp(-x)  # H2: the stars' profile
-    d_hi = 10 ** (0.506 * np.log10(np.maximum(m_hi, 1.0)) - 3.293) * 1e3
-    h_hi = np.where(m_hi > 1e6, _exp_scale_hi(m_hi, 0.5 * d_hi), rd)
-    xh = r_half / h_hi
-    f_hi = 1.0 - (1.0 + xh) * np.exp(-xh)
-    sigma_h = (f_star * m_h2 + f_hi * m_hi) / (np.pi * r_half**2)  # Msun/pc^2
-    n_h = sigma_h * MSUN / (M_P * (3.0857e18) ** 2)  # cm^-2
-    m_h = m_hi + m_h2
-    d_per_h = np.where(
-        m_h > 0,
-        np.asarray(delta, float)
-        * np.asarray(m_cold, float)
-        / np.maximum(m_h, 1.0),
-        0.0,
+def sigma_dust(m_dust, disk_radius_kpc, cos_i) -> np.ndarray:
+    """Dust surface density (Msun/kpc^2) seen at inclination `cos_i` (1 is
+    face-on; see the module docstring)."""
+    r = _gas_radius_kpc(disk_radius_kpc)
+    edge = r / EDGE_ON_RATIO
+    return np.asarray(m_dust, float) / (
+        2 * np.pi * r * (np.asarray(cos_i, float) * (r - edge) + edge)
     )
-    return AV_PER_NH / 1.086 * n_h * d_per_h / DTG_MW
+
+
+def tau_eta_ism(sig_dust) -> tuple[np.ndarray, np.ndarray]:
+    """V-band optical depth and slope of the ISM screen for dust surface
+    density `sig_dust` (Msun/kpc^2), proportional to it below the table."""
+    lg = np.log10(np.maximum(np.asarray(sig_dust, float), 1e-30))
+    tau = np.interp(lg, LOG_SIGMA_TAU, TAU_ISM)
+    tau = tau * 10.0 ** np.minimum(lg - LOG_SIGMA_TAU[0], 0.0)
+    return tau, np.interp(lg, LOG_SIGMA_ETA, ETA_ISM)
+
+
+def tau_bc(delta, m_cold, disk_radius_kpc, tau_ism) -> np.ndarray:
+    """V-band optical depth of the birth clouds (see the module docstring)
+    for dust-to-gas ratio `delta` and cold gas `m_cold` (Msun)."""
+    r_pc = _gas_radius_kpc(disk_radius_kpc) * 1e3
+    sig_gas = np.asarray(m_cold, float) / (2 * np.pi * r_pc**2)
+    sig_cl = np.maximum(sig_gas, SIGMA_CL_MW)
+    tau = (
+        np.asarray(delta, float)
+        * sig_cl
+        / (F_DTM_MW * Z_SUN_LAGOS * SIGMA_CL_MW)
+    )
+    return np.clip(np.maximum(tau, tau_ism), 0.0, TAU_BC_MAX)
 
 
 def cos_inclination(spin, los) -> np.ndarray:
-    """|cos i| between each galaxy's spin axis and the line of sight
-    (random orientation where the spin is zero)."""
+    """|cos i| between each galaxy's spin axis and the line of sight (for
+    a zero spin, a random orientation taken from the galaxy's position,
+    so that it doesn't depend on which rows are being computed)."""
     s = np.asarray(spin, float)
     los = np.asarray(los, float)
     ns = np.linalg.norm(s, axis=1)
     nl = np.linalg.norm(los, axis=1)
     c = np.abs(np.sum(s * los, axis=1)) / np.maximum(ns * nl, 1e-30)
-    rnd = np.random.default_rng(0).random(len(c))
+    rnd = np.modf(np.abs(los).sum(axis=1) * 1e3)[0]
     return np.where(ns > 0, c, rnd)
 
 
-def ism_transmission(wave, tau_v, cos_i) -> np.ndarray:
-    """(n, n_wave) diffuse-ISM transmission: dust mixed with the stars in
-    a slab (Charlot & Fall 2000 curve)."""
-    t = np.outer(tau_v / np.maximum(cos_i, 0.05), (wave / 5500.0) ** -N_ISM)
-    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        tr = np.where(
-            t > 1e-6, -np.expm1(-t) / np.maximum(t, 1e-30), 1.0 - 0.5 * t
-        )
-    return tr
+def ism_transmission(wave, tau_ism, eta_ism) -> np.ndarray:
+    """(n, n_wave) transmission of the diffuse ISM screen."""
+    x = np.asarray(wave, float)[None, :] / 5500.0
+    return np.exp(-np.asarray(tau_ism)[:, None] * x ** eta_ism[:, None])
 
 
-def bc_transmission(wave, tau_v) -> np.ndarray:
+def bc_transmission(wave, tau_birth) -> np.ndarray:
     """(n, n_wave) birth-cloud transmission (a screen)."""
-    tau_bc = tau_v * (1 - MU_ISM) / MU_ISM
-    return np.exp(-np.outer(tau_bc, (wave / 5500.0) ** -N_BC))
+    return np.exp(
+        -np.outer(tau_birth, (np.asarray(wave, float) / 5500.0) ** -N_BC)
+    )
 
 
 _EMISSION: dict = {}
 
 
-def emission_template(wave: np.ndarray) -> np.ndarray:
-    """Dust emission per unit absorbed luminosity (L_nu per L_sun, on
-    `wave`): the Draine & Li (2007) model as FSPS has it (U_min = 1,
-    q_PAH = 3.5%, gamma = 0.01), normalised to integrate to 1 over
-    frequency. Energy balance (da Cunha, Charlot & Elbaz 2008, MNRAS 388,
-    1595): each galaxy re-emits exactly what its dust absorbed."""
+def umin_from_luminosity(l_dust, m_dust) -> np.ndarray:
+    """Draine & Li (2007) U_min of dust of mass `m_dust` (Msun) re-emitting
+    `l_dust` (Lsun): L_dust = P0 <U> M_dust (Magdis et al. 2012, ApJ 760, 6),
+    within the models' range."""
+    m_dust = np.maximum(np.asarray(m_dust, float), 1e-30)
+    u = np.asarray(l_dust, float) / (P0_LSUN_MSUN * m_dust * MEAN_U_PER_UMIN)
+    return np.clip(u, U_MIN_NODES[0], U_MIN_NODES[-1])
+
+
+def emission_templates(wave: np.ndarray) -> np.ndarray:
+    """(n_U, n_wave) dust emission per unit absorbed luminosity (L_nu per
+    L_sun, on `wave`) at each of U_MIN_NODES: the Draine & Li (2007) model
+    as FSPS has it (q_PAH = 3.5%, gamma = 0.01), each normalised to
+    integrate to 1 over frequency. Energy balance (da Cunha, Charlot &
+    Elbaz 2008, MNRAS 388, 1595): each galaxy re-emits exactly what its
+    dust absorbed."""
     key = len(wave)
     if key not in _EMISSION:
         import fsps
 
         kw = dict(zcontinuous=1, sfh=0, imf_type=1, dust_type=2, dust2=1.0)
-        w, with_em = fsps.StellarPopulation(
-            add_dust_emission=True, **kw
-        ).get_spectrum(tage=0.1)
+        sp = fsps.StellarPopulation(add_dust_emission=True, **kw)
         _, without = fsps.StellarPopulation(
             add_dust_emission=False, **kw
         ).get_spectrum(tage=0.1)
-        em = np.clip(np.asarray(with_em) - np.asarray(without), 0.0, None)
-        em = np.interp(wave, np.asarray(w), em)
-        _EMISSION[key] = em / np.dot(em, frequency_weights(wave))
+        out = []
+        for u in U_MIN_NODES:
+            sp.params["duste_umin"] = float(u)
+            w, with_em = sp.get_spectrum(tage=0.1)
+            em = np.clip(np.asarray(with_em) - np.asarray(without), 0.0, None)
+            em = np.interp(wave, np.asarray(w), em)
+            out.append(em / np.dot(em, frequency_weights(wave)))
+        _EMISSION[key] = np.stack(out)
     return _EMISSION[key]
+
+
+def emission_spectra(wave: np.ndarray, u_min) -> np.ndarray:
+    """(n, n_wave) emission_templates at each galaxy's `u_min`, linear in
+    log U."""
+    t = emission_templates(wave)
+    lx = np.log(U_MIN_NODES)
+    lu = np.log(np.asarray(u_min, float))
+    j = np.clip(np.searchsorted(lx, lu) - 1, 0, len(lx) - 2)
+    f = ((lu - lx[j]) / (lx[j + 1] - lx[j]))[:, None]
+    return (1 - f) * t[j] + f * t[j + 1]
 
 
 def frequency_weights(wave: np.ndarray) -> np.ndarray:

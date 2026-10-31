@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math as _math
 import pathlib
+import time
 
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
@@ -3852,9 +3853,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.mock_fields = []
     state.mock_field = None
     state.mock_noisy = True
+    state.mock_patch = False
+    state.mock_subtract_sky = True
+    state.mock_stars = False
+    state.mock_ics = False
+    state.mock_ics_ok = "ics_mag_obs_sdss_r" in _lc_present
+    state.mock_format = "png"
     state.mock_has_depth = True
+    state.mock_backgrounds = []
+    state.mock_background = None
+    state.phot_view = "photometry"
     state.mock_busy = False
-    state.mock_note = ""
     state.mock_centre = ""
 
     @state.change("mock_survey")
@@ -3869,6 +3878,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if state.mock_field not in sizes:
             state.mock_field = 5 if 5 in sizes else sizes[len(sizes) // 2]
         state.mock_has_depth = bool(_mock.SURVEYS[mock_survey].depth)
+        path = getattr(scene.active_model, "path", None)
+        state.mock_backgrounds = (
+            _mock.background_cones(path, mock_survey) if path else []
+        )
+        if state.mock_background not in [
+            c["value"] for c in state.mock_backgrounds
+        ]:
+            state.mock_background = None
 
     @state.change("nav_gal_idx")
     def _on_mock_centre(nav_gal_idx=None, **_):
@@ -3884,55 +3901,26 @@ def build_navigation_panel(server, scene: Scene) -> None:
     _on_mock_survey(state.mock_survey)
     _on_mock_centre(None)
 
-    # HD+mock: galaxies big enough on the sky drawn from their HD models
-    # (visage.hd.sky); optical surveys only.
-    state.mock_hd = False
-    _hd_surveys = [
-        k
-        for k in _mock.HD_SURVEYS
-        if k in _mock.available_surveys(_lc_present)
-    ]
-    state.mock_hd_ok = bool(_hd_surveys)
-
-    def _hd_mock_stamps(gal):
-        """The mock image's hd_stamps callback for loaded galaxies."""
-        from visage.hd.sky import stamps_for_rows
-
-        def fn(rows, pixel, d_a):
-            try:
-                from visage.hd.group import pool
-
-                ex = pool()
-            except Exception:
-                ex = None
-            return stamps_for_rows(
-                gal,
-                scene._snap_table,
-                float(scene._cfg.hubble_h),
-                float(scene._cfg.omega),
-                rows,
-                pixel,
-                d_a,
-                executor=ex,
-            )
-
-        return fn
-
-    async def _make_mock(survey, field_am, hd: bool, label: str) -> None:
+    async def _make_mock(survey, field_am) -> None:
         model = scene.active_model
         path = getattr(model, "path", None)
         if path is None or survey not in _mock.SURVEYS:
             return
         _, gal = model.loader.get(model.current_snap)
+        patch = bool(state.mock_patch)
         row = None
-        if state.nav_gal_idx is not None:
+        if state.nav_gal_idx is not None and not patch:
             row = int(gal.sage_indices[int(state.nav_gal_idx)])
         noisy = bool(state.mock_noisy) and bool(_mock.SURVEYS[survey].depth)
+        background = state.mock_background
+        subtract_sky = bool(state.mock_subtract_sky)
+        stars = bool(state.mock_stars)
+        ics = bool(state.mock_ics) and bool(state.mock_ics_ok)
+        fmt = state.mock_format
+        seed = int(time.time()) if patch else 0  # a new patch each time
         state.mock_busy = True
-        state.mock_note = ""
         state.flush()
         loop = asyncio.get_running_loop()
-        stamps = _hd_mock_stamps(gal) if hd else None
         try:
             img = await loop.run_in_executor(
                 None,
@@ -3942,46 +3930,31 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     field_am,
                     centre_row=row,
                     noisy=noisy,
-                    hd_stamps=stamps,
+                    seed=seed,
+                    background=background,
+                    patch=patch,
+                    subtract_sky=subtract_sky,
+                    stars=stars,
+                    ics=ics,
                 ),
             )
             import datetime
 
             sess = _get_session_dir()
-            tag = "hdmock" if hd else "mock"
-            stem = f"{tag}_{survey}_{datetime.datetime.now():%H%M%S}"
-            png = sess / f"{stem}.png"
-            png.write_bytes(img.png_bytes())
-            fits_ok = await loop.run_in_executor(
+            stem = f"mock_{survey}_{datetime.datetime.now():%H%M%S}"
+            out = sess / f"{stem}.{'jpg' if fmt == 'jpeg' else fmt}"
+            out.write_bytes(img.image_bytes(fmt))
+            shown = out
+            if fmt == "pdf":  # the library can't show a PDF
+                shown = sess / f"{stem}.png"
+                shown.write_bytes(img.image_bytes("png"))
+            await loop.run_in_executor(
                 None, img.write_fits, sess / f"{stem}.fits"
             )
-            sv = _mock.SURVEYS[survey]
-            from visage.utils.group_info import galaxy_label
-
-            centre = (
-                f"Galaxy {galaxy_label(gal, int(state.nav_gal_idx))}"
-                if row is not None
-                else img.centre_label.split(" (")[0]
-            )
-            zmax = float(model._lc.redshift.max())
-            state.mock_note = (
-                f"{label}{sv.label}, {field_am:.2g}′ around {centre} "
-                f"({img.centre_label.split(' (', 1)[1]}; "
-                f"{sv.pixel:g}″ pixels, "
-                f"{'/'.join(dict.fromkeys(f'{x:g}' for x in sv.seeing))}″ "
-                "seeing, "
-                + (f"survey depth ({sv.ref})" if noisy else "noiseless")
-                + f". {img.n_galaxies} galaxies drawn"
-                + (f", {img.n_hd} from their HD models" if hd else "")
-                + f"; only this cone's galaxies (z < {zmax:.2f}) are in "
-                f"the sky. Saved {png.name}"
-                + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
-            )
-            on_library_open(str(png))
+            on_library_open(str(shown))
             state.library_files = _scan_library()
         except Exception as exc:
-            state.mock_note = f"Couldn't make the image: {exc!s}"
-            state.notice_text = state.mock_note
+            state.notice_text = f"Couldn't make the image: {exc!s}"
             state.notice_color = "error"
             state.notice_show = True
         finally:
@@ -3993,17 +3966,157 @@ def build_navigation_panel(server, scene: Scene) -> None:
         survey = state.mock_survey
         if state.mock_busy or survey not in _mock.SURVEYS:
             return
-        hd = bool(state.mock_hd) and survey in _mock.HD_SURVEYS
-        await _make_mock(
-            survey, float(state.mock_field or 5), hd, "HD+mock: " if hd else ""
-        )
+        await _make_mock(survey, float(state.mock_field or 5))
+
+    # ── Survey catalogues (Photometry tab) ──
+    # The galaxies a real survey would select from this cone, with Petrosian
+    # and fibre photometry (visage.sed.survey).
+    from visage.sed import groups as _groups
+    from visage.sed import survey as _survey
+
+    _sv_keys = _survey.available(_lc_present)
+    state.survey_items = [
+        {"title": _survey.SELECTIONS[k].label, "value": k} for k in _sv_keys
+    ]
+    state.survey_key = _sv_keys[0] if _sv_keys else None
+    state.survey_format = "fits"
+    state.survey_busy = False
+    state.survey_note = ""
+
+    @ctrl.set("export_survey")
+    async def on_export_survey():
+        key = state.survey_key
+        path = getattr(scene.active_model, "path", None)
+        if state.survey_busy or key is None or path is None:
+            return
+        fmt = state.survey_format
+        state.survey_busy = True
+        state.survey_note = ""
+        state.flush()
+
+        def build():
+            import datetime
+
+            cat = _survey.catalogue(path, key)
+            cat = _groups.add_groups(
+                cat,
+                _survey.SELECTIONS[key].limit,
+                _survey.hubble_h(path),
+            )
+            found = _groups.bijective(
+                cat["group"][~cat["fibre_collided"]],
+                cat["halo"][~cat["fibre_collided"]],
+                5,
+            )
+            stem = f"survey_{key}_{datetime.datetime.now():%H%M%S}"
+            out = _get_session_dir() / f"{stem}.{fmt}"
+            if fmt == "fits":
+                _survey.write_fits(cat, out, key)
+            else:
+                _survey.write_csv(cat, out)
+            return out, _survey.summary(cat, path, key) | found
+
+        try:
+            loop = asyncio.get_running_loop()
+            out, n = await loop.run_in_executor(None, build)
+            state.survey_note = (
+                f"{_survey.SELECTIONS[key].label} ("
+                f"{_survey.SELECTIONS[key].ref}): {n['n']:,} galaxies, "
+                f"{n['density']:.1f} per deg², median z = {n['z']:.3f}, "
+                f"r50 = {n['r50']:.1f}″, fibre − Petrosian = "
+                f"{n['fibre']:.2f} mag. This cone stops at z = "
+                f"{n['zmax']:.2f}, so a deeper survey's counts are a lower "
+                f"limit. Groups of 5 or more: {n['n_groups']} found against "
+                f"{n['n_haloes']} true haloes, purity {n['purity']:.0%}, "
+                f"completeness {n['completeness']:.0%}. Saved {out.name}."
+            )
+            state.library_files = _scan_library()
+        except Exception as exc:
+            state.survey_note = f"Couldn't make the catalogue: {exc!s}"
+        finally:
+            state.survey_busy = False
+            state.flush()
+
+    # Fibre spectra take minutes, and FSPS holds the GIL: a process of its
+    # own (visage.sed.spectroscopy), which procs stops with ViSAGE.
+    _fibre = {"proc": None, "cancelled": False}
+
+    @ctrl.set("make_fibre_spectra")
+    def on_make_fibre_spectra():
+        asyncio.ensure_future(_make_fibre_spectra())
+
+    def _fibre_percent(log) -> int:
+        """The run's last "PROGRESS n" line."""
+        try:
+            lines = log.read_text().splitlines()
+        except OSError:
+            return 0
+        for line in reversed(lines):
+            if line.startswith("PROGRESS "):
+                return int(line.split()[1])
+        return 0
+
+    async def _make_fibre_spectra():
+        import datetime
+        import subprocess
+        import sys
+
+        path = getattr(scene.active_model, "path", None)
+        if state.spec_busy or path is None:
+            return
+        sess = _get_session_dir()
+        stem = f"spectra_sdss_main_{datetime.datetime.now():%H%M%S}"
+        out, log = sess / f"{stem}.fits", sess / f"{stem}.log"
+        with open(log, "w") as handle:
+            proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-W",
+                    "ignore",
+                    "-m",
+                    "visage.sed.spectroscopy",
+                    "--input",
+                    str(path),
+                    "--survey",
+                    "sdss_main",
+                    "--output",
+                    str(out),
+                ],
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        _procs.track(proc)
+        _fibre.update(proc=proc, cancelled=False)
+        state.spec_busy = True
+        state.spec_title = "Making fibre spectra"
+        state.spec_progress = "SDSS Main sample, in a process of its own…"
+        state.spec_percent = 0
+        state.flush()
+        while proc.poll() is None:
+            await asyncio.sleep(1.0)
+            state.spec_percent = _fibre_percent(log)
+            state.flush()
+        _procs.untrack(proc)
+        if _fibre["cancelled"]:
+            out.unlink(missing_ok=True)
+            log.unlink(missing_ok=True)
+        elif proc.returncode == 0:
+            log.unlink(missing_ok=True)
+            state.library_files = _scan_library()
+        else:
+            state.notice_text = f"Couldn't make the spectra: see {log.name}."
+            state.notice_color = "error"
+            state.notice_show = True
+        _fibre["proc"] = None
+        state.spec_busy = False
+        state.flush()
 
     # ── Spectrum of the selected galaxy (Photometry tab) ──
     # Made as the cone's photometry was (visage.sed.spectrum); the plot
     # and its table go to sage_library/spectra/.
     state.spec_ok = "SFHMassDisk" in _lc_present
     state.spec_busy = False
-    state.spec_note = ""
     # The build card: what is happening and how far.
     state.spec_title = ""
     state.spec_progress = ""
@@ -4058,7 +4171,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         jid = worker.submit(path, row, label, png, csv)
         _spec_run["job"] = jid
         state.spec_busy = True
-        state.spec_note = ""
         state.spec_title = f"Building spectrum of Galaxy {label}"
         state.spec_progress = (
             "Starting the spectrum worker…" if fresh else "Reading the galaxy…"
@@ -4129,16 +4241,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if error is not None:
                 raise RuntimeError(error)
             state.spec_percent = 100
-            state.spec_note = (
-                f"Galaxy {label} at z = {result['z_obs']:.4f}, observed "
-                "frame, with the cone's own photometry marked on it. Saved "
-                f"{png.name} and its table (.csv) in sage_library/spectra."
-            )
             on_library_open(str(png))
             state.library_files = _scan_library()
         except Exception as exc:
-            state.spec_note = f"Couldn't make the spectrum: {exc!s}"
-            state.notice_text = state.spec_note
+            state.notice_text = f"Couldn't make the spectrum: {exc!s}"
             state.notice_color = "error"
             state.notice_show = True
         finally:
@@ -4152,13 +4258,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @ctrl.set("spectrum_cancel")
     def on_spectrum_cancel():
         """Stop the build (the worker goes, and the grids it built)."""
+        if _fibre["proc"] is not None:
+            _fibre["cancelled"] = True
+            _procs.stop_group(_fibre["proc"])
+            return
         if _spec_run["job"] is None:
             return
         _spec_run["job"] = None
         if _spec_run["worker"] is not None:
             _spec_run["worker"].stop()
         state.spec_busy = False
-        state.spec_note = "Spectrum cancelled."
         state.flush()
 
     @ctrl.set("library_rename")
@@ -6243,7 +6352,32 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v_show=("!has_sed_data",),
                     style="font-size:0.72rem;color:#9ca3af;line-height:1.4;",
                 )
-                with html.Div(v_show=("has_sed_data",)):
+                with v3.VBtnToggle(
+                    v_model=("phot_view",),
+                    mandatory=True,
+                    v_show=("has_sed_data",),
+                    density="compact",
+                    color="#7FDBFF",
+                    style=(
+                        "width:100%;height:auto;margin-bottom:8px;"
+                        "display:flex;flex-wrap:wrap;"
+                    ),
+                ):
+                    for label, value, basis in (
+                        ("Photometry", "photometry", "100%"),
+                        ("Image", "image", "50%"),
+                        ("Survey", "survey", "50%"),
+                    ):
+                        v3.VBtn(
+                            label,
+                            value=value,
+                            size="small",
+                            variant="tonal",
+                            style=f"flex:1 1 {basis};height:30px;",
+                        )
+                with html.Div(
+                    v_show=("has_sed_data && phot_view === 'photometry'",)
+                ):
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VCheckbox(
                             v_model=("photometry_visible",),
@@ -6300,9 +6434,110 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 style="font-size:0.62rem;color:#a3adbb;white-space:nowrap;",
                             )
 
+                    # Spectrum of the selected galaxy (visage.sed.spectrum).
+                    v3.VDivider(style="margin:14px 0 8px;")
+                    v3.VLabel(
+                        "SPECTRUM",
+                        style=(
+                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                        ),
+                    )
+                    html.Div(
+                        "This cone has no star-formation histories "
+                        "(SFHMassDisk/SFHMassBulge), which a spectrum needs.",
+                        v_show=("!spec_ok",),
+                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
+                    )
+                    with html.Div(v_show=("spec_ok",)):
+                        html.Div(
+                            "{{ nav_gal_idx === null ? 'Select a galaxy "
+                            "first.' : 'For ' + mock_centre + '.' }}",
+                            style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
+                        )
+                        v3.VBtn(
+                            "Make spectrum",
+                            prepend_icon="mdi-chart-bell-curve",
+                            block=True,
+                            color="#7FDBFF",
+                            variant="tonal",
+                            loading=("spec_busy",),
+                            disabled=("nav_gal_idx === null",),
+                            click=ctrl.create_spectrum,
+                            id="btn-spectrum",
+                        )
+
+                with html.Div(
+                    v_show=("has_sed_data && phot_view === 'survey'",)
+                ):
+                    v3.VLabel(
+                        "SURVEY CATALOGUE",
+                        style=(
+                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                        ),
+                    )
+                    html.Div(
+                        "This cone has no disk and bulge magnitudes in a "
+                        "survey's detection band.",
+                        v_show=("!survey_items.length",),
+                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
+                    )
+                    with html.Div(v_show=("survey_items.length",)):
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("survey_key",),
+                                items=("survey_items",),
+                                label="Selection",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("survey_format",),
+                                items=("['fits', 'csv']",),
+                                label="Catalogue format",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        v3.VBtn(
+                            "Export catalogue",
+                            prepend_icon="mdi-table-arrow-down",
+                            block=True,
+                            color="#7FDBFF",
+                            variant="tonal",
+                            loading=("survey_busy",),
+                            click=ctrl.export_survey,
+                            id="btn-survey",
+                        )
+                        html.Div(
+                            "{{ survey_note }}",
+                            v_show=("survey_note",),
+                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
+                        )
+                        with html.Div(
+                            v_show=("survey_key === 'sdss_main'",),
+                            style="padding-top:10px;",
+                        ):
+                            v3.VBtn(
+                                "Make fibre spectra",
+                                prepend_icon="mdi-chart-bell-curve",
+                                block=True,
+                                color="#7FDBFF",
+                                variant="tonal",
+                                loading=("spec_busy",),
+                                click=ctrl.make_fibre_spectra,
+                                id="btn-fibre",
+                            )
+                with html.Div(
+                    v_show=("has_sed_data && phot_view === 'image'",)
+                ):
                     # Mock survey image: the cone as a telescope would see
                     # it (visage.sed.mock_image).
-                    v3.VDivider(style="margin:14px 0 8px;")
                     v3.VLabel(
                         "MOCK IMAGE",
                         style=(
@@ -6347,17 +6582,57 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 density="compact",
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("mock_background",),
+                                items=("mock_backgrounds",),
+                                label="Galaxies beyond this cone",
+                                placeholder="None",
+                                persistent_placeholder=True,
+                                clearable=True,
+                                disabled=("!mock_backgrounds.length",),
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
+                        for model, label in (
+                            ("mock_patch", "Random patch of sky"),
+                            ("mock_subtract_sky", "Subtract sky brightness"),
+                            ("mock_stars", "Add real stars (not SAGE26)"),
+                        ):
+                            with v3.VSheet(color="transparent", style=_FIELD):
+                                v3.VCheckbox(
+                                    v_model=(model,),
+                                    label=label,
+                                    color="#7FDBFF",
+                                    hide_details=True,
+                                    density="compact",
+                                )
+                        with v3.VSheet(
+                            color="transparent",
+                            style=_FIELD,
+                            v_show=("mock_ics_ok",),
+                        ):
                             v3.VCheckbox(
-                                v_model=("mock_hd",),
-                                label="HD galaxies (resolved ones from "
-                                "their HD models; optical surveys)",
-                                disabled=("!mock_hd_ok",),
+                                v_model=("mock_ics",),
+                                label="Add intracluster stars",
                                 color="#7FDBFF",
                                 hide_details=True,
                                 density="compact",
                             )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("mock_format",),
+                                items=("['png', 'jpeg', 'pdf']",),
+                                label="Image format",
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
                         html.Div(
-                            "Centred on {{ mock_centre }}.",
+                            "Centred on {{ mock_patch ? "
+                            "'a random patch of sky' : mock_centre }}.",
                             style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
                         )
                         v3.VBtn(
@@ -6369,49 +6644,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             loading=("mock_busy",),
                             click=ctrl.create_mock_image,
                             id="btn-mock-image",
-                        )
-                        html.Div(
-                            "{{ mock_note }}",
-                            v_show=("mock_note",),
-                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
-                        )
-
-                    # Spectrum of the selected galaxy (visage.sed.spectrum).
-                    v3.VDivider(style="margin:14px 0 8px;")
-                    v3.VLabel(
-                        "SPECTRUM",
-                        style=(
-                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
-                        ),
-                    )
-                    html.Div(
-                        "This cone has no star-formation histories "
-                        "(SFHMassDisk/SFHMassBulge), which a spectrum needs.",
-                        v_show=("!spec_ok",),
-                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
-                    )
-                    with html.Div(v_show=("spec_ok",)):
-                        html.Div(
-                            "{{ nav_gal_idx === null ? 'Select a galaxy "
-                            "first.' : 'For ' + mock_centre + '.' }}",
-                            style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
-                        )
-                        v3.VBtn(
-                            "Make spectrum",
-                            prepend_icon="mdi-chart-bell-curve",
-                            block=True,
-                            color="#7FDBFF",
-                            variant="tonal",
-                            loading=("spec_busy",),
-                            disabled=("nav_gal_idx === null",),
-                            click=ctrl.create_spectrum,
-                            id="btn-spectrum",
-                        )
-                        html.Div(
-                            "{{ spec_note }}",
-                            v_show=("spec_note",),
-                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                         )
 
             # ── CONSOLE tab — multi-session REPL ────────────────────

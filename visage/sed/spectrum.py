@@ -10,8 +10,8 @@ through each filter, and the plot marks them on it as a check.
 Shown in the observed frame, as a telescope would see it:
 f_nu(lambda_obs) = (1 + z_obs) L_nu(lambda_obs / (1 + z_obs)) / (4 pi D_L^2),
 D_L = (1 + z_obs) D_C(z_cos) (as the photometry; Davis et al. 2011, ApJ
-741, 67). No intergalactic absorption is modelled, so it starts at the
-rest-frame Lyman limit (912 A).
+741, 67), and through the IGM (visage/sed/igm.py) when the cone's
+photometry was. It starts at the rest-frame Lyman limit (912 A).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from visage.sed import igm
 from visage.sed.cosmology import MPC_TO_CM, luminosity_distance_mpc
 from visage.sed.photometry import (
     L_SUN_ERG_S,
@@ -53,6 +54,8 @@ class GalaxySpectrum:
             * L_SUN_ERG_S
             / (4 * np.pi * self.d_l_cm**2)
         )
+        if "IGM" in self.settings:
+            f = f * igm.transmission(self.wave, self.z_obs)
         return f * 1e29  # erg/s/cm^2/Hz -> µJy
 
     @property
@@ -76,6 +79,7 @@ def run_settings(path: str | Path) -> tuple[dict, dict]:
         "use_metallicity": str(hdr.get("Metallicity", "")) != "solar",
         "lines": str(hdr.get("NebularEmission", "none")) != "none",
         "disk_bulge": disk_bulge,
+        "metal_history": "per SFH bin" in str(hdr.get("Metallicity", "")),
         "imf_type": {"Salpeter": 0, "Chabrier": 1, "Kroupa": 2}.get(
             str(hdr.get("IMF", "Chabrier")).split()[0], 1
         ),
@@ -132,7 +136,7 @@ def galaxy_spectrum(
 ) -> GalaxySpectrum:
     """Synthesise galaxy `row`'s spectrum as the cone's photometry was
     (``progress_cb`` as compute_photometry's: one call per metallicity
-    node, whose first use builds its FSPS grid)."""
+    node, which builds its FSPS grid, then per snapshot)."""
     path = Path(path)
     kw, hdr = run_settings(path)
     al = find_alist(path, alist)
@@ -190,12 +194,18 @@ def galaxy_spectrum(
             "sfr": one("SfrDisk", 0) + one("SfrBulge", 0),
             "bt": one("BulgeMass", 0) / max(one("StellarMass", 0), 1e-12),
         }
-    for k in ("TauV_ISM", "CosInclination", "LDust", "LineFlux_Halpha"):
+    for k in (
+        "TauV_ISM",
+        "CosInclination",
+        "LDust",
+        "DustUmin",
+        "LineFlux_Halpha",
+    ):
         if k in res:
             info[k] = float(res[k][0])
     lnu = {
         k: np.asarray(spec[k][0], dtype=np.float64)
-        for k in ("observed", "intrinsic", "disk", "bulge")
+        for k in ("observed", "intrinsic", "disk", "bulge", "agn")
         if k in spec
     }
     return GalaxySpectrum(
@@ -249,15 +259,19 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
                 label="stars, no dust",
                 zorder=2,
             )
-    for key, col in (("disk", "#1f77b4"), ("bulge", "#d62728")):
-        if key in s.lnu:
+    for key, col in (
+        ("disk", "#1f77b4"),
+        ("bulge", "#d62728"),
+        ("agn", "#2ca02c"),
+    ):
+        if key in s.lnu and np.any(s.lnu[key] > 0):
             ax.loglog(
                 x,
                 s.fnu_ujy(key)[keep],
                 color=col,
                 lw=0.7,
                 alpha=0.75,
-                label=key,
+                label="AGN lines" if key == "agn" else key,
                 zorder=2,
             )
     good = y_obs[np.isfinite(y_obs) & (y_obs > 0)]
@@ -295,7 +309,7 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
     )
     sec.set_xlabel("rest wavelength [µm]")
     ax.grid(True, which="major", color="0.9", lw=0.6)
-    ax.legend(fontsize=8, loc="lower center", ncol=5, frameon=False)
+    ax.legend(fontsize=8, loc="lower center", ncol=6, frameon=False)
     i = s.info
     ssfr = i["sfr"] / max(10 ** i["log_mstar"], 1.0)
     ax.set_title(
@@ -311,6 +325,8 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
         notes.append(f"|cos i| {i['CosInclination']:.2f}")
     if i.get("LDust", 0) > 0:
         notes.append(f"L$_{{dust}}$ {i['LDust']:.2e} L☉")
+    if "DustUmin" in i:
+        notes.append(f"U$_{{min}}$ {i['DustUmin']:.2g}")
     if np.isfinite(i.get("LineFlux_Halpha", np.nan)):
         notes.append(f"Hα {i['LineFlux_Halpha']:.2e} erg/s/cm²")
     if notes:

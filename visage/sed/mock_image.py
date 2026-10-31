@@ -9,14 +9,23 @@ by its inclination, axis ratio q = sqrt(cos^2 i + q0^2 sin^2 i), q0 = 0.2
 spin on the sky. Its disk and bulge fluxes come from its observed-frame
 disk_mag_obs_* and bulge_mag_obs_* magnitudes (total magnitudes split by
 bulge-to-total stellar mass when a cone has no disk/bulge photometry).
-The image is blurred by a Gaussian PSF of the survey's median seeing on
-its pixel grid. "Survey depth" adds sky noise so that a point source at
-the survey's quoted limit has that signal-to-noise. Colour images are
-asinh composites (Lupton et al. 2004, PASP 116, 133).
+SAGE26 gives bulges no shape, so their axis ratios are drawn from real SDSS
+early types. AGN are point sources at the galaxy's centre, and intracluster
+stars, as an option, follow a projected NFW profile with SAGE26's Rvir and
+Concentration, as it gives them no profile (visage/sed/components.py).
+The image is blurred by the survey's median seeing on its pixel grid: a
+Moffat profile for ground-based surveys, beta = 4.765 for Kolmogorov
+turbulence (Trujillo et al. 2001, MNRAS 328, 977), and the diffraction pattern
+of a simplified mirror where one is given. "Survey depth" adds sky noise, as
+measured per pixel in real data where we have it and otherwise so that a point
+source at the survey's quoted limit has that signal-to-noise, and the galaxies'
+own shot noise where the sky brightness is known: the sky's mean over its
+noise gives the electrons per nanomaggy. Colour images are asinh composites
+(Lupton et al. 2004, PASP 116, 133).
 
 Survey numbers (pixel scale, median seeing, depth):
 
-- SDSS: 0.396"/pixel, 1.4" in r (Gunn et al. 2006; Abazajian et al. 2009),
+- SDSS: 0.396"/pixel, 1.32" in r (SDSS DR15 imaging data quality),
   depth the DR7 95%-completeness limits for point sources, g 22.2,
   r 22.2, i 21.3 (Abazajian et al. 2009, ApJS 182, 543), taken as 5 sigma.
 - DES DR2 (DECam): 0.263"/pixel, seeing g 1.11", r 0.95", z 0.83", 10 sigma
@@ -34,23 +43,71 @@ Survey numbers (pixel scale, median seeing, depth):
   0.08, 0.11, 1 mJy in W1-W3 (Wright et al. 2010, AJ 140, 1868).
 - GALEX AIS: 1.5"/pixel, PSF FUV 4.2", NUV 5.3", 5 sigma FUV 19.9,
   NUV 20.8 (Morrissey et al. 2007, ApJS 173, 682).
-- JWST NIRCam: 0.031"/pixel, PSF F115W 0.040", F200W 0.066", F444W 0.145"
-  (JWST User Documentation); depth depends on the programme, so noiseless.
+- Euclid VIS: 0.1"/pixel, PSF 0.13", 5 sigma point source 26.2; NISP:
+  0.298"/pixel, PSF 1.10, 1.17, 1.19 pixels in Y, J, H, 5 sigma point
+  source 24.4 (Mellier et al. 2025, A&A 697, A1; Scaramella et al. 2022).
+- Roman High-Latitude Wide-Area Survey, medium tier: 0.11"/pixel, the
+  diffraction limit 1.03 lambda / D (D = 2.36 m), 5 sigma point sources
+  F106 26.5, F129 26.4, F158 26.4 (Roman community survey definition).
+- HST, CANDELS wide: mosaics at 0.06"/pixel, WFC3/IR 0.18", ACS the
+  diffraction limit (D = 2.4 m), 5 sigma point sources F160W 27.3, F814W
+  28.0, F606W 28.7 (Grogin et al. 2011; Koekemoer et al. 2011).
+- VISTA, VIKING: 0.34"/pixel, seeing the survey's limit of 1", 5 sigma Ks
+  21.2, J 22.1, Y 22.3 (Edge et al. 2013).
+- UKIDSS Large Area Survey: 0.4"/pixel, seeing the survey's limit of 1.2",
+  5 sigma K 20.09, J 20.49, Y 20.79 AB (Lawrence et al. 2007; Hill et al.
+  2010).
+- Spitzer, SWIRE: mosaics at 0.6"/pixel, beams 2.5", 2.05", 2.05", 5 sigma
+  32.5, 9.7, 7.3 uJy at 8.0, 4.5, 3.6 um (Lonsdale et al. 2003).
+- Herschel, H-ATLAS: SPIRE 6"/pixel, beams 35.2", 24", 17.8", 1 sigma
+  10.2, 9.4, 7.4 mJy with confusion at 500, 350, 250 um (Valiante et al.
+  2016; Maddox et al. 2018); PACS 3"/pixel, beams 13.7", 11.4", 49, 44 mJy
+  at 160, 100 um.
+- JWST NIRCam, CEERS: 0.031"/pixel, PSF F115W 0.040", F200W 0.066", F444W
+  0.145" (JWST User Documentation); noise measured in the CEERS mosaics
+  (Bagley et al. 2023).
 """
 
 from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from functools import lru_cache, cache
 from pathlib import Path
 
 import h5py
 import numpy as np
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, map_coordinates
+from scipy.signal import fftconvolve
+
+from visage.sed.filters import EFFECTIVE_WAVELENGTH_A
 
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
 MAX_PIXELS = 2400  # longest side of an image
-MARGIN = 200  # pixels beyond the field whose light can fall in it
+STAR_FILE = Path(__file__).parent / "data" / "sdss_stars.npz"
+REFERENCE_FILE = Path(__file__).parent / "data" / "reference_population.npz"
+# Measured PSFs on each survey's pixels, by "survey/band": real stars stacked
+# (SDSS, Pan-STARRS), the STDPSF library (HST), the MER PSF grid
+# (Euclid Q1), STPSF (JWST from in-flight wavefronts, Roman from models).
+PSF_FILE = Path(__file__).parent / "data" / "measured_psfs.npz"
+# Deciles of the axis ratio of SDSS early types, as SAGE26 gives bulges no
+# shape (deVAB_r of 757 red galaxies, fracDeV_r > 0.9, 14 < r < 16.5).
+BULGE_Q = (0.25, 0.377, 0.536, 0.623, 0.683, 0.725)
+BULGE_Q += (0.769, 0.815, 0.854, 0.893, 1.0)
+# Colour balance (reddest band first), from SDSS's own colour images: the
+# blue / red profiles of real and mock red galaxies.
+OPTICAL_WEIGHTS = (1.0, 1.1, 1.3)
+# What those weights give a bright red galaxy, red to blue: every other
+# survey's weights are set to show it the same way (a display choice).
+BALANCE = (1.0, 0.79, 0.475)
+MOFFAT_BETA = 4.765  # Kolmogorov turbulence (Trujillo et al. 2001)
+CUSP_SUB = 32  # oversampling of the pixels around a profile's centre
+# In the mean noise of the displayed channels, per pixel.
+STRETCH_SIGMA = 5.34  # asinh softening
+BLACK_SIGMA = 0.42  # black point above the mean sky
+SKY_SIGMA = 0.7  # sky left in: ~0.1 of full scale, as SDSS,
+# Legacy Survey and Pan-STARRS cutout services show it
+KNEE = 0.8  # display level above which bright cores roll off smoothly
 
 
 @dataclass(frozen=True)
@@ -63,9 +120,48 @@ class Survey:
     # or None for a PSF-fitted point source); empty = noiseless only.
     depth: tuple = ()
     ref: str = ""
-    # Colour balance per band; empty = each band scaled by its own noise
-    # (for surveys whose bands differ a lot in depth, like WISE).
+    # Colour balance per band; empty = from the cone's bright galaxies.
     weights: tuple[float, ...] = field(default=())
+    # Median sky per band, AB mag/arcsec^2; empty = no source shot noise.
+    sky: tuple[float, ...] = ()
+    ground: bool = True  # seen through the atmosphere
+    # Each band in its own noise units, where red starlight is no reference
+    # for colour: the UV, and the dust emission of the mid and far infrared.
+    by_noise: bool = False
+    # Galaxies bright in the bluest band come out white: stars set the
+    # colour, with dust standing out as red.
+    neutral: bool = False
+    # Bands in the colour image, by index; empty = all.
+    shown: tuple[int, ...] = ()
+    # Point source AB mag that fills a CCD pixel, per band, for bleed trails.
+    saturates: tuple[float, ...] = ()
+    # Measured sky noise per pixel, nanomaggies: the median of 11-18 fields
+    # for SDSS, DES and Pan-STARRS (30% field to field), one survey field
+    # otherwise. Resampling coadds smooths it below what `depth` gives.
+    # Images only, not catalogues.
+    pixel_noise: tuple[float, ...] = ()
+    # Telescope (diameter m, central obstruction m, support vanes, vane
+    # width m, hexagonal): the diffraction PSF and its spikes; none = none.
+    mirror: tuple = ()
+    # Maps smoothed by the beam (WISE Atlas, Herschel): noise is correlated
+    # on that scale, and a point source's peak is its signal-to-noise.
+    beam_noise: bool = False
+    # Confusion noise per band, mJy/beam: the same unresolved galaxies in
+    # every band, so this share of the noise is common to the bands.
+    confusion: tuple[float, ...] = ()
+
+
+def _zodi(bands: tuple[str, ...]) -> tuple[float, ...]:
+    """Sky in space, AB mag/arcsec^2: zodiacal light at its average V = 22.7
+    (ACS Instrument Handbook), scattered sunlight so a 5777 K blackbody."""
+
+    def sun(wave_a: float) -> float:
+        return (1 / wave_a) ** 3 / np.expm1(1.4388e8 / wave_a / 5777.0)
+
+    return tuple(
+        22.7 - 2.5 * np.log10(sun(EFFECTIVE_WAVELENGTH_A[b]) / sun(5500.0))
+        for b in bands
+    )
 
 
 def _ab_from_mjy(mjy: float) -> float:
@@ -77,10 +173,13 @@ SURVEYS: dict[str, Survey] = {
         "SDSS (gri)",
         ("sdss_i", "sdss_r", "sdss_g"),
         0.396,
-        (1.4, 1.4, 1.4),
+        (1.32, 1.32, 1.32),
         ((21.3, 5, None), (22.2, 5, None), (22.2, 5, None)),
         "Abazajian et al. 2009",
-        (1.0, 1.1, 1.4),
+        OPTICAL_WEIGHTS,
+        (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
+        pixel_noise=(0.0362, 0.0209, 0.0128),
+        saturates=(14.0, 14.0, 14.0),  # York et al. 2000
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -89,7 +188,9 @@ SURVEYS: dict[str, Survey] = {
         (0.83, 0.95, 1.11),
         ((23.1, 10, 1.95), (24.4, 10, 1.95), (24.7, 10, 1.95)),
         "Abbott et al. 2021",
-        (1.0, 1.1, 1.4),
+        sky=(18.72, 21.15, 22.01),  # Abbott et al. 2018
+        pixel_noise=(0.00776, 0.00243, 0.00173),
+        saturates=(15.5, 15.7, 15.2),  # 90 s: Drlica-Wagner et al. 2022
     ),
     "ps1": Survey(
         "Pan-STARRS1 3π (gri)",
@@ -98,7 +199,7 @@ SURVEYS: dict[str, Survey] = {
         (1.11, 1.19, 1.31),
         ((23.1, 5, None), (23.2, 5, None), (23.3, 5, None)),
         "Chambers et al. 2016",
-        (1.0, 1.1, 1.4),
+        pixel_noise=(0.01118, 0.01009, 0.00878),
     ),
     "lsst": Survey(
         "Rubin LSST 10-year (gri)",
@@ -107,7 +208,9 @@ SURVEYS: dict[str, Survey] = {
         (0.7, 0.7, 0.7),
         ((26.8, 5, None), (27.5, 5, None), (27.4, 5, None)),
         "Ivezić et al. 2019",
-        (1.0, 1.1, 1.4),
+        sky=(20.48, 21.20, 22.26),  # Ivezic et al. 2019, table 2
+        mirror=(8.4, 5.0, 4, 0.1, False),
+        saturates=(15.8, 15.8, 15.7),  # 15 s: LSST Science Book
     ),
     "2mass": Survey(
         "2MASS (JHKs)",
@@ -120,7 +223,8 @@ SURVEYS: dict[str, Survey] = {
             (15.8 + 0.91, 10, None),
         ),
         "Skrutskie et al. 2006",
-        (1.0, 1.0, 1.0),
+        beam_noise=True,  # Atlas images are interpolated
+        pixel_noise=(1.90, 1.64, 1.08),
     ),
     "wise": Survey(
         "WISE (W1-W3)",
@@ -133,6 +237,10 @@ SURVEYS: dict[str, Survey] = {
             (_ab_from_mjy(0.08), 5, None),
         ),
         "Wright et al. 2010",
+        ground=False,
+        neutral=True,
+        beam_noise=True,
+        shown=(1, 2),  # W3 is far shallower: W2, W1 as in unWISE images
     ),
     "galex": Survey(
         "GALEX AIS (FUV, NUV)",
@@ -141,25 +249,125 @@ SURVEYS: dict[str, Survey] = {
         (5.3, 4.2),
         ((20.8, 5, None), (19.9, 5, None)),
         "Morrissey et al. 2007",
+        ground=False,
+        by_noise=True,
+        pixel_noise=(0.0324, 0.0244),
+    ),
+    "euclid_vis": Survey(
+        "Euclid VIS",
+        ("euclid_vis",),
+        0.1,
+        (0.13,),
+        ((26.2, 5, None),),
+        "Mellier et al. 2025",
+        ground=False,
+        sky=_zodi(("euclid_vis",)),
+        pixel_noise=(0.00048,),
+    ),
+    "euclid": Survey(
+        "Euclid NISP (Y, J, H)",
+        ("euclid_h", "euclid_j", "euclid_y"),
+        0.298,
+        (0.355, 0.349, 0.328),
+        ((24.4, 5, None), (24.4, 5, None), (24.4, 5, None)),
+        "Mellier et al. 2025",
+        ground=False,
+        sky=_zodi(("euclid_h", "euclid_j", "euclid_y")),
+        pixel_noise=(0.0043, 0.0041, 0.0047),
+    ),
+    "roman": Survey(
+        "Roman HLWAS (F106, F129, F158)",
+        ("roman_f158", "roman_f129", "roman_f106"),
+        0.11,
+        (0.139, 0.117, 0.096),
+        ((26.4, 5, None), (26.4, 5, None), (26.5, 5, None)),
+        "Roman community survey definition",
+        ground=False,
+        sky=_zodi(("roman_f158", "roman_f129", "roman_f106")),
+    ),
+    "hst": Survey(
+        "HST CANDELS (F606W, F814W, F160W)",
+        ("wfc3_ir_f160w", "wfc_acs_f814w", "wfc_acs_f606w"),
+        0.06,
+        (0.18, 0.073, 0.054),
+        ((27.3, 5, None), (28.0, 5, None), (28.7, 5, None)),
+        "Grogin et al. 2011",
+        ground=False,
+        sky=_zodi(("wfc3_ir_f160w", "wfc_acs_f814w", "wfc_acs_f606w")),
+        pixel_noise=(0.00053, 0.00014, 0.000055),  # ACS: GOODS-S
+    ),
+    "vista": Survey(
+        "VISTA VIKING (Y, J, Ks)",
+        ("vista_k", "vista_j", "vista_y"),
+        0.34,
+        (1.0, 1.0, 1.0),
+        ((21.2, 5, None), (22.1, 5, None), (22.3, 5, None)),
+        "Edge et al. 2013",
+    ),
+    "ukidss": Survey(
+        "UKIDSS LAS (Y, J, K)",
+        ("wfcam_k", "wfcam_j", "wfcam_y"),
+        0.4,
+        (1.2, 1.2, 1.2),
+        ((20.09, 5, None), (20.49, 5, None), (20.79, 5, None)),
+        "Lawrence et al. 2007",
+    ),
+    "spitzer": Survey(
+        "Spitzer SWIRE (3.6, 4.5, 8.0 µm)",
+        ("irac_4", "irac_2", "irac_1"),
+        0.6,
+        (2.5, 2.05, 2.05),
+        (
+            (_ab_from_mjy(0.0325), 5, None),
+            (_ab_from_mjy(0.0097), 5, None),
+            (_ab_from_mjy(0.0073), 5, None),
+        ),
+        "Lonsdale et al. 2003",
+        ground=False,
+        neutral=True,
+        pixel_noise=(0.1305, 0.0292, 0.0210),
+    ),
+    "spire": Survey(
+        "Herschel H-ATLAS SPIRE (250-500 µm)",
+        ("spire_500", "spire_350", "spire_250"),
+        6.0,
+        (35.2, 24.0, 17.8),
+        (
+            (_ab_from_mjy(51.0), 5, None),
+            (_ab_from_mjy(47.0), 5, None),
+            (_ab_from_mjy(37.0), 5, None),
+        ),
+        "Valiante et al. 2016",
+        ground=False,
+        by_noise=True,
+        beam_noise=True,
+        confusion=(6.8, 6.3, 5.8),  # Nguyen et al. 2010
+        pixel_noise=(51.6, 105.0, 231.0),
+    ),
+    "pacs": Survey(
+        "Herschel H-ATLAS PACS (100, 160 µm)",
+        ("pacs_160", "pacs_100"),
+        3.0,
+        (13.7, 11.4),
+        ((_ab_from_mjy(245.0), 5, None), (_ab_from_mjy(220.0), 5, None)),
+        "Valiante et al. 2016",
+        ground=False,
+        by_noise=True,
+        beam_noise=True,
+        pixel_noise=(165.0, 393.0),
     ),
     "nircam": Survey(
-        "JWST NIRCam (F115W, F200W, F444W)",
+        "JWST CEERS (F115W, F200W, F444W)",
         ("jwst_f444w", "jwst_f200w", "jwst_f115w"),
         0.031,
         (0.145, 0.066, 0.040),
-        (),
-        "JWST User Documentation",
-        (1.0, 1.0, 1.0),
+        ((28.58, 5, None), (29.17, 5, None), (29.15, 5, None)),
+        "Bagley et al. 2023",
+        ground=False,
+        sky=_zodi(("jwst_f444w", "jwst_f200w", "jwst_f115w")),
+        pixel_noise=(3.3e-5, 3.4e-5, 3.4e-5),  # CEERS mosaics
     ),
 }
-
-# Surveys whose three optical bands HD's I, V, B channels can stand in for
-# (HD+mock images).
-HD_SURVEYS = ("sdss", "des", "ps1", "lsst")
-# Galaxies drawn from HD models in an HD+mock image: the centre galaxy and
-# up to this many more, the brightest whose disk or bulge is at least a
-# PSF across (smaller ones show no structure a model would add).
-HD_MAX = 12
 
 # Field sizes offered (arcmin), kept to those under MAX_PIXELS.
 FIELDS_ARCMIN = (0.5, 1, 2, 5, 10, 20, 30)
@@ -174,9 +382,55 @@ def available_surveys(present: set[str]) -> list[str]:
     ]
 
 
+def _box_size(f) -> float | None:
+    sim = f.get("SageOutputHeader/Simulation")
+    return None if sim is None else sim.attrs.get("box_size")
+
+
+def background_cones(path: str | Path, survey: str) -> list[dict]:
+    """Lightcones beside `path`, of the same simulation box, that reach
+    further and have `survey`'s bands, as {"title", "value"} for a background
+    (see make_mock_image)."""
+    path = Path(path).resolve()
+    bands = SURVEYS[survey].bands
+    with h5py.File(path, "r", locking=False) as f:
+        zmax = float(f["redshift_cosmological"][:].max())
+        box = _box_size(f)
+    found = []
+    for other in sorted(path.parent.parent.glob("*/*.h5")):
+        if other.resolve() == path:
+            continue
+        try:
+            with h5py.File(other, "r", locking=False) as f:
+                if (
+                    _box_size(f) == box
+                    and all(f"mag_obs_{b}" in f for b in bands)
+                    and float(f["redshift_cosmological"][:].max()) > zmax
+                ):
+                    found.append({"title": other.stem, "value": str(other)})
+        except (OSError, KeyError):
+            continue
+    return found
+
+
 def field_sizes(survey: str) -> list[float]:
     pix = SURVEYS[survey].pixel
     return [f for f in FIELDS_ARCMIN if f * 60 / pix <= MAX_PIXELS]
+
+
+def bulge_axis_ratio(index) -> np.ndarray:
+    """A bulge's axis ratio from its galaxy's id, so that it's the same in
+    every image and in HD."""
+    index = np.asarray(index, np.uint64)
+    phase = (index * np.uint64(2654435761)) % np.uint64(2**32)
+    return np.interp(phase / 2.0**32, np.linspace(0, 1, 11), BULGE_Q)
+
+
+def nfw_half_light(c: float) -> float:
+    """Radius holding half of the projected NFW light, in r_vir."""
+    x = np.linspace(1e-3, 1, 2000)
+    cum = np.cumsum(x * nfw_projected(x, c))
+    return float(x[np.searchsorted(cum, 0.5 * cum[-1])])
 
 
 def nmgy(mag: np.ndarray) -> np.ndarray:
@@ -189,38 +443,142 @@ def sersic_stamp(n, re_pix, q, pa, size, sub=5, off=(0.0, 0.0)):
     """Unit-flux Sersic profile on a size x size grid, oversampled, its
     centre `off` (x, y) pixels from the stamp's middle."""
     bn = 2 * n - 1 / 3 + 0.009876 / n
-    g = (np.arange(size * sub) + 0.5) / sub - size / 2
-    x, y = np.meshgrid(g, g)
-    x, y = x - off[0], y - off[1]
     c, s = np.cos(pa), np.sin(pa)
-    xr = x * c + y * s
-    yr = -x * s + y * c
-    r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
-    img = np.exp(-bn * ((r / max(re_pix, 0.05)) ** (1 / n) - 1))
-    # Fade the outer 30% of the stamp to zero, so a stretched image shows
-    # no edge where the stamp ends.
-    edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
-    img *= 0.5 * (1 + np.cos(np.pi * edge))
-    img = img.reshape(size, sub, size, sub).mean(axis=(1, 3))
+
+    def light(gx, gy):
+        x, y = np.meshgrid(gx, gy)
+        x, y = x - off[0], y - off[1]
+        xr = x * c + y * s
+        yr = -x * s + y * c
+        r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
+        img = np.exp(-bn * ((r / max(re_pix, 0.05)) ** (1 / n) - 1))
+        # Fade the outer 30% of the stamp to zero, so a stretched image
+        # shows no edge where the stamp ends.
+        edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
+        return img * 0.5 * (1 + np.cos(np.pi * edge))
+
+    g = (np.arange(size * sub) + 0.5) / sub - size / 2
+    img = light(g, g).reshape(size, sub, size, sub).mean(axis=(1, 3))
+    # The cusp is far narrower than a pixel, and a sample landing on it
+    # would hold most of the galaxy's light: integrate around it finely.
+    # (An even CUSP_SUB never samples a pixel's exact centre.)
+    (x0, x1), (y0, y1) = (
+        (max(k - 2, 0), min(k + 3, size))
+        for k in (int(np.floor(o + size / 2)) for o in off)
+    )
+    gx = (np.arange((x1 - x0) * CUSP_SUB) + 0.5) / CUSP_SUB + x0 - size / 2
+    gy = (np.arange((y1 - y0) * CUSP_SUB) + 0.5) / CUSP_SUB + y0 - size / 2
+    img[y0:y1, x0:x1] = (
+        light(gx, gy)
+        .reshape(y1 - y0, CUSP_SUB, x1 - x0, CUSP_SUB)
+        .mean(axis=(1, 3))
+    )
     tot = img.sum()
     return img / tot if tot > 0 else img
+
+
+def psf_kernel(fwhm_pix: float) -> np.ndarray:
+    """Unit-sum Moffat PSF of FWHM `fwhm_pix` pixels, out to 8 FWHM."""
+    half = int(np.ceil(8 * fwhm_pix))
+    y, x = np.mgrid[-half : half + 1, -half : half + 1]
+    alpha = fwhm_pix / (2 * np.sqrt(2 ** (1 / MOFFAT_BETA) - 1))
+    psf = (1 + (x**2 + y**2) / alpha**2) ** -MOFFAT_BETA
+    return psf / psf.sum()
+
+
+def mirror_psf(survey: Survey, i: int) -> np.ndarray:
+    """Diffraction PSF at the survey's pixels, from the mirror's shape and
+    support vanes: its core, rings and spikes. Sums to 1."""
+    diameter, inner, vanes, width, hexagon = survey.mirror
+    wave = EFFECTIVE_WAVELENGTH_A[survey.bands[i]] * 1e-10
+    n = 2048
+    step = 2 * diameter / n  # metres per pupil sample, so lambda / 2D pixels
+    y, x = (np.mgrid[:n, :n] - n / 2) * step
+    r = np.hypot(x, y)
+    if hexagon:
+        ang = np.arctan2(y, x) % (np.pi / 3) - np.pi / 6
+        pupil = r * np.cos(ang) < diameter / 2 * np.cos(np.pi / 6)
+    else:
+        pupil = r < diameter / 2
+    pupil = pupil & (r > inner / 2)
+    for k in range(vanes):
+        a = np.pi / 4 + 2 * np.pi * k / vanes
+        along = x * np.cos(a) + y * np.sin(a)
+        across = -x * np.sin(a) + y * np.cos(a)
+        pupil = pupil & ~((along > 0) & (np.abs(across) < width / 2))
+    psf = np.abs(np.fft.fftshift(np.fft.fft2(pupil.astype(float)))) ** 2
+    zoom = (wave / (2 * diameter) * 206265) / survey.pixel
+    if zoom < 1:  # average the fine samples into each survey pixel
+        psf = gaussian_filter(psf, 0.5 / zoom)
+    half = min(int(n / 2 * zoom) - 1, 256)
+    yy, xx = np.mgrid[-half : half + 1, -half : half + 1]
+    out = map_coordinates(
+        psf, [yy / zoom + n / 2, xx / zoom + n / 2], order=1, mode="constant"
+    )
+    edge = np.clip(np.hypot(xx, yy) / half, 0, 1)  # no edge to show
+    out = out * np.cos(np.pi / 2 * edge) ** 2
+    return out / out.sum()
+
+
+@cache
+def _measured() -> dict:
+    with np.load(PSF_FILE) as d:
+        return {k: d[k] for k in d.files}
+
+
+def _kernel(key: str, survey: Survey, i: int) -> np.ndarray:
+    """The PSF an image is convolved with: measured where we have one,
+    otherwise the seeing through the mirror's diffraction; empty where
+    only a width is known, in space."""
+    measured = _measured().get(f"{key}/{survey.bands[i]}")
+    if measured is not None:
+        return measured
+    fwhm = survey.seeing[i] / survey.pixel
+    if survey.mirror:
+        return fftconvolve(
+            mirror_psf(survey, i), psf_kernel(fwhm), mode="same"
+        )
+    return psf_kernel(fwhm) if survey.ground else np.array([])
 
 
 def noise_sigma(survey: Survey, i: int) -> float:
     """Sky noise per pixel (nanomaggies) for band i at the survey depth."""
     mag, snr, ap = survey.depth[i]
     flux = float(nmgy(mag))
-    if ap is None:  # PSF-fitted: effective area 4 pi sigma_psf^2
-        sig = survey.seeing[i] / 2.3548 / survey.pixel
-        n_pix = 4 * np.pi * sig**2
-    else:
+    if ap is not None:
         n_pix = np.pi * (ap / 2 / survey.pixel) ** 2
+    elif survey.ground:  # PSF-fitted: effective area 1 / sum(psf^2)
+        n_pix = 1.0 / np.sum(psf_kernel(survey.seeing[i] / survey.pixel) ** 2)
+    else:
+        n_pix = 4 * np.pi * (survey.seeing[i] / 2.3548 / survey.pixel) ** 2
     return flux / snr / np.sqrt(n_pix)
 
 
-def lupton_rgb(chans, stretch, q=8.0):
+def map_sigma(survey: Survey, i: int) -> float:
+    """Noise per pixel of the image: as measured in real cutouts where we
+    have them, noise_sigma, or for a beam-smoothed map the point-source
+    noise over the beam's peak area."""
+    if survey.pixel_noise:
+        return survey.pixel_noise[i]
+    if not survey.beam_noise:
+        return noise_sigma(survey, i)
+    s = survey.seeing[i] / 2.3548 / survey.pixel
+    return (
+        noise_sigma(survey, i) * np.sqrt(4 * np.pi * s**2) / (2 * np.pi * s**2)
+    )
+
+
+def electrons_per_nmgy(survey: Survey, i: int) -> float:
+    """Electrons per nanomaggy for band i: sky-limited noise means the
+    sky's variance in nanomaggies is its mean over this."""
+    sky = float(nmgy(survey.sky[i])) * survey.pixel**2  # nmgy / pixel
+    return sky / map_sigma(survey, i) ** 2
+
+
+def lupton_rgb(chans, stretch, q=8.0, black=0.0):
     """asinh colour composite (Lupton et al. 2004) of up to three images
-    (R, G, B); fewer than three are spread across the channels."""
+    (R, G, B); fewer than three are spread across the channels. `black` is
+    taken off their mean, not each channel, so colours are kept."""
     if len(chans) == 1:
         chans = [chans[0]] * 3
     elif len(chans) == 2:
@@ -229,10 +587,32 @@ def lupton_rgb(chans, stretch, q=8.0):
     i = (r + g + b) / 3
     # Faint (sky) pixels keep their brightness, not an amplified colour.
     i_safe = np.maximum(i, 1e-3 * stretch)
-    f = np.arcsinh(q * i_safe / stretch) / q / i_safe
+    i_b = np.maximum(i_safe - black, 0.0)
+    f = np.arcsinh(q * i_b / stretch) / q / i_safe
     rgb = np.stack([r * f, g * f, b * f], -1)
-    peak = np.maximum(rgb.max(-1, keepdims=True), 1.0)
-    return np.clip(rgb / peak, 0, 1)
+    # Bright cores roll off towards 1, not clip to a flat plateau.
+    peak = rgb.max(-1, keepdims=True)
+    soft = KNEE + (1 - KNEE) * -np.expm1(-(peak - KNEE) / (1 - KNEE))
+    soft = np.where(peak > KNEE, soft, peak)
+    return np.clip(rgb * soft / np.maximum(peak, 1e-30), 0, 1)
+
+
+def composite(
+    images, weights, sigma, black_point=True, sky_level=False
+) -> np.ndarray:
+    """Colour image of sky-subtracted bands (reddest first), used on mock and
+    real data alike: `sigma` is each band's sky noise per pixel. Stretch and
+    black point are calibrated on SDSS's own colour images, where summing
+    galaxies' pixels through the asinh stretch recovers their catalogue
+    fluxes at 0.38 nanomaggies, STRETCH_SIGMA of its noise."""
+    chans = [im * w for im, w in zip(images, weights, strict=True)]
+    noise = float(
+        np.mean([s * w for s, w in zip(sigma, weights, strict=True)])
+    )
+    if sky_level:
+        chans = [c + SKY_SIGMA * noise for c in chans]
+    black = BLACK_SIGMA * noise if black_point else 0.0
+    return lupton_rgb(chans, STRETCH_SIGMA * noise, black=black)
 
 
 @dataclass
@@ -247,14 +627,21 @@ class MockImage:
     n_galaxies: int
     centre_label: str
     noisy: bool
-    n_hd: int = 0  # galaxies drawn from HD models (HD+mock)
+    n_stars: int = 0
+    sky_subtracted: bool = True
 
-    def png_bytes(self) -> bytes:
+    def image_bytes(self, fmt: str = "png") -> bytes:
+        """The colour composite as `fmt`: png, jpeg or pdf."""
         from PIL import Image
 
         buf = io.BytesIO()
         img = (self.rgb[::-1] * 255).astype(np.uint8)  # north up
-        Image.fromarray(img).save(buf, "PNG")
+        options = {
+            "png": {},
+            "jpeg": {"quality": 95, "subsampling": 0},
+            "pdf": {"resolution": 150.0},
+        }
+        Image.fromarray(img).save(buf, fmt.upper(), **options[fmt])
         return buf.getvalue()
 
     def write_fits(self, path: Path) -> bool:
@@ -279,7 +666,9 @@ class MockImage:
         hdr["NOISE"] = (self.noisy, "sky noise at the survey depth")
         hdr["RA_CEN"] = (self.ra0, "centre RA, deg")
         hdr["DEC_CEN"] = (self.dec0, "centre Dec, deg")
-        hdr["Z_CEN"] = (self.z0, "redshift of the centre galaxy")
+        if np.isfinite(self.z0):
+            hdr["Z_CEN"] = (self.z0, "redshift of the centre galaxy")
+        hdr["NSTARS"] = (self.n_stars, "real stars added, not from SAGE26")
         hdr["ORIGIN"] = "ViSAGE mock image (visage.sed.mock_image)"
         for i, b in enumerate(s.bands):
             img = self.images[b]
@@ -321,12 +710,9 @@ def _read(path: Path, rows, bands):
             "BulgeMass",
         )
         d = {k: f[k][:] if rows is None else f[k][rows] for k in need}
-        if "CosInclination" in f:
-            d["CosInclination"] = (
-                f["CosInclination"][:]
-                if rows is None
-                else f["CosInclination"][rows]
-            )
+        for key in ("CosInclination", "GalaxyIndex"):
+            if key in f:
+                d[key] = f[key][:] if rows is None else f[key][rows]
         for b in bands:
             split = f"disk_mag_obs_{b}" in f and f"bulge_mag_obs_{b}" in f
             for comp in ("disk", "bulge"):
@@ -342,59 +728,49 @@ def _read(path: Path, rows, bands):
     return hub, d
 
 
-def make_mock_image(
-    path: str | Path,
-    survey: str,
-    field_arcmin: float,
-    centre_row: int | None = None,
-    noisy: bool = True,
-    seed: int = 0,
-    hd_stamps=None,
-) -> MockImage:
-    """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
-    in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
-    away from the cone's edges, if None).
+def _balance(s) -> tuple[float, ...]:
+    """Colour weights, which never depend on the cone, so that a model's
+    colours show as they are: a fixed old population (10 Gyr, solar, FSPS,
+    at z = 0.1) has the display colour of a red galaxy in SDSS images, or
+    is white with `neutral`. Surveys with `by_noise` show each band in its
+    own noise units, as old starlight is no reference for them."""
+    if s.by_noise:
+        return tuple(1 / map_sigma(s, i) for i in range(len(s.bands)))
+    with np.load(REFERENCE_FILE) as d:
+        mags = dict(zip(d["bands"].tolist(), d["mag"].tolist(), strict=True))
+    flux = [float(nmgy(mags[b])) for b in s.bands]
+    if s.neutral:
+        return tuple(flux[-1] / f for f in flux)
+    two = len(flux) == 2
+    return tuple(
+        (BALANCE[1] if two and i else BALANCE[i]) * flux[0] / f
+        for i, f in enumerate(flux)
+    )
 
-    `hd_stamps(rows, pixel_arcsec, d_a_kpc)` (an HD+mock image, optical
-    surveys only): {row: (n, n, 3) image} of those HDF5 rows' HD models on
-    the survey's pixels (visage.hd.sky); they replace the disk and bulge
-    profiles of the centre galaxy and the brightest resolved ones, each
-    band scaled to the galaxy's own flux in it."""
-    s = SURVEYS[survey]
-    path = Path(path)
-    if not s.depth:
-        noisy = False
+
+def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
+    """Add the galaxies of lightcone `path` beyond `zmin` around (ra0, dec0)
+    to `images`, as they'd fall on the survey's pixels; the number drawn."""
+    from visage.io.lightcone_reader import _read_hubble_h
+
     with h5py.File(path, "r") as f:
         ra_all = f["ra"][:]
         dec_all = f["dec"][:]
         z_all = f["redshift_cosmological"][:]
-        red = nmgy(f[f"mag_obs_{s.bands[0]}"][:])
-    half_deg = field_arcmin / 120
-    if centre_row is None:
-        inside = (
-            (ra_all > ra_all.min() + half_deg)
-            & (ra_all < ra_all.max() - half_deg)
-            & (dec_all > dec_all.min() + half_deg)
-            & (dec_all < dec_all.max() - half_deg)
-        )
-        cand = np.where(inside, red, -1.0)
-        centre_row = int(np.argmax(cand if inside.any() else red))
-        what = "the brightest galaxy"
-    else:
-        what = f"galaxy row {centre_row}"
-    ra0, dec0 = float(ra_all[centre_row]), float(dec_all[centre_row])
-    z0 = float(z_all[centre_row])
-    centre_label = f"{what} (RA {ra0:.4f}°, Dec {dec0:+.4f}°, z = {z0:.4f})"
-
-    npx = int(round(field_arcmin * 60 / s.pixel))
+        hub = _read_hubble_h(f)
+        d_a_all = np.maximum(f["distance"][:] / hub / (1 + z_all), 1e-6)
+        rd_all = f["DiskRadius"][:] / hub / d_a_all * 206265 / s.pixel
+        rb_all = f["BulgeRadius"][:] / hub / d_a_all * 206265 / s.pixel
     cosd = np.cos(np.deg2rad(dec0))
     dx_all = -(ra_all - ra0) * cosd * 3600 / s.pixel + npx / 2
     dy_all = (dec_all - dec0) * 3600 / s.pixel + npx / 2
+    # Every galaxy whose stamp (see below) or PSF can reach the field.
+    reach = np.minimum(np.maximum(16.78 * rd_all, 8 * rb_all), npx)
+    reach = reach + 3 * max(s.seeing) / s.pixel
     near = np.flatnonzero(
-        (dx_all > -MARGIN)
-        & (dx_all < npx + MARGIN)
-        & (dy_all > -MARGIN)
-        & (dy_all < npx + MARGIN)
+        (np.abs(dx_all - npx / 2) < npx / 2 + reach)
+        & (np.abs(dy_all - npx / 2) < npx / 2 + reach)
+        & (z_all > zmin)
     )
     hub, d = _read(path, near, s.bands)
     dx, dy = dx_all[near], dy_all[near]
@@ -420,30 +796,21 @@ def make_mock_image(
         sn = np.linalg.norm(spin, axis=1)
         cosi = np.abs(np.sum(spin * los, 1)) / np.maximum(sn, 1e-30)
     q_disk = np.sqrt(cosi**2 + Q0**2 * (1 - cosi**2))
+    # The same galaxy keeps its shape from image to image.
+    q_bulge = bulge_axis_ratio(d.get("GalaxyIndex", np.arange(len(near))))
 
     # Skip galaxies far below the noise in every band.
     if noisy:
-        floor = [0.05 * noise_sigma(s, i) for i in range(len(s.bands))]
+        floor = [0.05 * map_sigma(s, i) for i in range(len(s.bands))]
     else:
         floor = [float(nmgy(32.0))] * len(s.bands)
 
-    images = {b: np.zeros((npx, npx)) for b in s.bands}
     drawn = 0
-    hd = {}
-    if hd_stamps is not None and survey in HD_SURVEYS:
-        hd = _hd_stamps(
-            hd_stamps, s, near, centre_row, d, rd_pix, rb_pix, d_a, dx, dy, npx
-        )
-    n_hd = 0
     for k in range(len(near)):
-        if k in hd:
-            n_hd += _place_hd(images, s, hd[k], d, k, dx[k], dy[k], npx)
-            drawn += 1
-            continue
         hit = False
         for comp, n_s, re, q in (
             ("disk", 1.0, 1.678 * rd_pix[k], q_disk[k]),
-            ("bulge", 4.0, rb_pix[k], 0.8),
+            ("bulge", 4.0, rb_pix[k], q_bulge[k]),
         ):
             fl = [float(d[f"{comp}_{b}"][k]) for b in s.bands]
             if all(v <= fl0 for v, fl0 in zip(fl, floor, strict=True)):
@@ -473,29 +840,259 @@ def make_mock_image(
             hit = True
         drawn += hit
 
-    rng = np.random.default_rng(seed)
-    for i, b in enumerate(s.bands):
-        images[b] = gaussian_filter(images[b], s.seeing[i] / 2.3548 / s.pixel)
-        if noisy:
-            images[b] = images[b] + rng.normal(
-                0, noise_sigma(s, i), images[b].shape
-            )
+    return drawn
 
-    # Stretch: sky noise at survey depth a faint grain (1 sigma ~ 15%
-    # grey). A noiseless image is stretched 5x less, so the faint outer
-    # light of bright galaxies (below any survey's noise) doesn't wash
-    # over the field.
-    nb = len(s.bands)
-    if s.depth:
-        sig = np.array([noise_sigma(s, i) for i in range(nb)])
-        stretch = (6 if noisy else 30) * float(sig.mean())
-        w = s.weights or tuple(sig.mean() / sig)
+
+def nfw_projected(x, c: float) -> np.ndarray:
+    """Surface density of an NFW halo at R / r_vir = x, concentration c,
+    cut at r_vir and normalised so the area integral (in units of r_vir^2)
+    is 1 (Bartelmann 1996)."""
+    u = np.maximum(np.asarray(x, float) * c, 1e-3)
+    out = np.zeros_like(u)
+    low, high = u < 1 - 1e-6, u > 1 + 1e-6
+    out[low] = (1 - np.arccosh(1 / u[low]) / np.sqrt(1 - u[low] ** 2)) / (
+        u[low] ** 2 - 1
+    )
+    out[high] = (1 - np.arccos(1 / u[high]) / np.sqrt(u[high] ** 2 - 1)) / (
+        u[high] ** 2 - 1
+    )
+    out[~(low | high)] = 1 / 3
+    out[np.asarray(x) > 1] = 0.0
+    grid = np.linspace(1e-4, 1, 2000)
+    ug = grid * c
+    v = np.where(
+        ug < 1,
+        (
+            1
+            - np.arccosh(1 / np.minimum(ug, 1 - 1e-9))
+            / np.sqrt(np.maximum(1 - ug**2, 1e-18))
+        )
+        / (ug**2 - 1 - 1e-18),
+        (
+            1
+            - np.arccos(1 / np.maximum(ug, 1 + 1e-9))
+            / np.sqrt(np.maximum(ug**2 - 1, 1e-18))
+        )
+        / (ug**2 - 1 + 1e-18),
+    )
+    return out / np.trapezoid(2 * np.pi * grid * v, grid)
+
+
+def _concentration(c, mvir_msun_h) -> np.ndarray:
+    """SAGE26's concentration, or where it has none the mass relation of
+    Duffy et al. (2008) at z = 0."""
+    return np.where(c > 0, c, 5.71 * (mvir_msun_h / 2e12) ** -0.084)
+
+
+def _draw_agn_ics(images, path, s, npx, ra0, dec0, agn, ics) -> int:
+    """Add the point sources of AGN and, with `ics`, the intracluster stars
+    of the haloes reaching the field, spread as the dark matter (Montes &
+    Trujillo 2019; Alonso Asensio et al. 2020). The number of haloes."""
+    from visage.io.lightcone_reader import _read_hubble_h
+
+    bands = list(s.bands)
+    with h5py.File(path, "r") as f:
+        if f"agn_mag_obs_{bands[0]}" not in f:
+            return 0
+        hub = _read_hubble_h(f)
+        ra, dec = f["ra"][:], f["dec"][:]
+        cosd = np.cos(np.deg2rad(dec0))
+        dx = -(ra - ra0) * cosd * 3600 / s.pixel + npx / 2
+        dy = (dec - dec0) * 3600 / s.pixel + npx / 2
+        z = f["redshift_cosmological"][:]
+        d_a = np.maximum(f["distance"][:] / hub / (1 + z), 1e-6)
+        r_pix = f["Rvir"][:] / hub / d_a * 206265 / s.pixel
+        if agn:
+            flux = [nmgy(f[f"agn_mag_obs_{b}"][:]) for b in bands]
+            seen = np.isfinite(flux[0]) | np.isfinite(flux[-1])
+            inside = (dx >= 0) & (dx < npx) & (dy >= 0) & (dy < npx)
+            for k in np.flatnonzero(seen & inside):
+                y, x = int(dy[k]), int(dx[k])
+                for b, fl in zip(bands, flux, strict=True):
+                    if np.isfinite(fl[k]):
+                        images[b][y, x] += fl[k]
+        if not ics:
+            return 0
+        flux = [nmgy(f[f"ics_mag_obs_{b}"][:]) for b in bands]
+        reach = (np.abs(dx - npx / 2) < npx / 2 + r_pix) & (
+            np.abs(dy - npx / 2) < npx / 2 + r_pix
+        )
+        rows = np.flatnonzero(reach & np.isfinite(flux[0]))
+        conc = _concentration(
+            f["Concentration"][:][rows], f["Mvir"][:][rows] * 1e10
+        )
+    yy, xx = np.mgrid[:npx, :npx] + 0.5
+    for i, k in enumerate(rows):
+        x = np.hypot(xx - dx[k], yy - dy[k]) / r_pix[k]
+        sigma = nfw_projected(x, float(conc[i])) / r_pix[k] ** 2
+        for b, fl in zip(bands, flux, strict=True):
+            if np.isfinite(fl[k]):
+                images[b] += fl[k] * sigma
+    return len(rows)
+
+
+def _draw_background(images, path, s, npx, half_deg, zmin, noisy, rng) -> int:
+    """Add the galaxies of deeper lightcone `path` beyond `zmin`, around a
+    random point of it."""
+    with h5py.File(path, "r") as f:
+        ra, dec = f["ra"][:], f["dec"][:]
+    # (The patch's middle, if the field is wider than it.)
+    ra0 = rng.uniform(*sorted((ra.min() + half_deg, ra.max() - half_deg)))
+    dec0 = rng.uniform(*sorted((dec.min() + half_deg, dec.max() - half_deg)))
+    return _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin)
+
+
+def _star_temperature(g_r: np.ndarray) -> np.ndarray:
+    """Teff (K) from SDSS g-r: B-V from Jester et al. (2005), Teff from
+    Ballesteros (2012)."""
+    x = 0.92 * (0.98 * g_r + 0.22)
+    return 4600 * (1 / (x + 1.7) + 1 / (x + 0.62))
+
+
+def _planck(wave_a: float, teff: np.ndarray) -> np.ndarray:
+    """Blackbody f_nu, in arbitrary units."""
+    nu_t = 1.4388e8 / wave_a / teff  # h nu / k T
+    return (1 / wave_a) ** 3 / np.expm1(np.minimum(nu_t, 500.0))
+
+
+def _draw_stars(images, s, npx, rng) -> int:
+    """Add Milky Way stars, which SAGE26 doesn't model, as point sources:
+    a random draw from one square degree at b = 79 deg of 2MASS stars,
+    where SDSS saturates, and clean SDSS stars fainter than them (to
+    r = 22.5), blackbodies at their g-r temperature in other bands. The
+    number drawn."""
+    data = np.load(STAR_FILE)
+    g, r = data["g"], data["r"]
+    n = rng.poisson((npx * s.pixel / 3600) ** 2 * len(r))
+    pick = rng.integers(0, len(r), n)
+    teff = np.clip(_star_temperature(g[pick] - r[pick]), 2500, 12000)
+    x, y = rng.integers(0, npx, (2, n))
+    ref = _planck(EFFECTIVE_WAVELENGTH_A["sdss_r"], teff)
+    for b in s.bands:
+        wave = EFFECTIVE_WAVELENGTH_A[b]
+        np.add.at(images[b], (y, x), nmgy(r[pick]) * _planck(wave, teff) / ref)
+    return int(n)
+
+
+def _bleed(image: np.ndarray, full: float) -> np.ndarray:
+    """Charge above a pixel's full well runs along its CCD column."""
+    out = image.copy()
+    for x in np.flatnonzero((image > full).any(0)):
+        col = out[:, x]
+        over = col > full
+        run = int(np.clip(col[over].sum() / full - over.sum(), 0, len(col)))
+        y = np.flatnonzero(over)
+        lo, hi = max(y[0] - run // 2, 0), y[-1] + run // 2 + 1
+        col[lo:hi] = full
+    return out
+
+
+def make_mock_image(
+    path: str | Path,
+    survey: str,
+    field_arcmin: float,
+    centre_row: int | None = None,
+    noisy: bool = True,
+    seed: int = 0,
+    background: str | Path | None = None,
+    patch: bool = False,
+    subtract_sky: bool = True,
+    stars: bool = False,
+    ics: bool = False,
+) -> MockImage:
+    """A mock `survey` image `field_arcmin` on a side, centred on the galaxy
+    in HDF5 row `centre_row` (the brightest galaxy in the reddest band,
+    away from the cone's edges, if None). `background`, a deeper lightcone
+    with the same bands, adds the galaxies beyond this cone's redshift
+    from a random patch of it. `patch` centres on a random point of the
+    cone's sky, not a galaxy. `subtract_sky` False leaves the sky's level
+    in the colour composite (never in the images, which are sky-subtracted
+    like a survey's own). `stars` adds Milky Way stars (see _draw_stars).
+    `ics` adds intracluster stars. AGN are drawn where a cone has them."""
+    s = SURVEYS[survey]
+    path = Path(path)
+    with h5py.File(path, "r") as f:
+        ra_all = f["ra"][:]
+        dec_all = f["dec"][:]
+        z_all = f["redshift_cosmological"][:]
+        red = nmgy(f[f"mag_obs_{s.bands[0]}"][:])
+    half_deg = field_arcmin / 120
+    rng = np.random.default_rng(seed)
+    if patch:
+        ra0 = rng.uniform(
+            *sorted((ra_all.min() + half_deg, ra_all.max() - half_deg))
+        )
+        dec0 = rng.uniform(
+            *sorted((dec_all.min() + half_deg, dec_all.max() - half_deg))
+        )
+        z0 = float("nan")
+        centre_label = f"a random patch (RA {ra0:.4f}°, Dec {dec0:+.4f}°)"
+    elif centre_row is None:
+        inside = (
+            (ra_all > ra_all.min() + half_deg)
+            & (ra_all < ra_all.max() - half_deg)
+            & (dec_all > dec_all.min() + half_deg)
+            & (dec_all < dec_all.max() - half_deg)
+        )
+        cand = np.where(inside, red, -1.0)
+        centre_row = int(np.argmax(cand if inside.any() else red))
+        what = "the brightest galaxy"
     else:
-        tot = sum(images.values())
-        stretch = 0.02 * float(np.percentile(tot, 99.9) or 1.0)
-        w = s.weights or (1.0,) * nb
-    rgb = lupton_rgb(
-        [images[b] * wi for b, wi in zip(s.bands, w, strict=True)], stretch
+        what = f"galaxy row {centre_row}"
+    if not patch:
+        ra0, dec0 = float(ra_all[centre_row]), float(dec_all[centre_row])
+        z0 = float(z_all[centre_row])
+        centre_label = (
+            f"{what} (RA {ra0:.4f}°, Dec {dec0:+.4f}°, z = {z0:.4f})"
+        )
+
+    npx = int(round(field_arcmin * 60 / s.pixel))
+    images = {b: np.zeros((npx, npx)) for b in s.bands}
+    drawn = _draw_galaxies(images, path, s, npx, ra0, dec0, noisy)
+    if background is not None:
+        drawn += _draw_background(
+            images, Path(background), s, npx, half_deg, z_all.max(), noisy, rng
+        )
+    _draw_agn_ics(images, path, s, npx, ra0, dec0, True, ics)
+    n_stars = _draw_stars(images, s, npx, rng) if stars else 0
+    common = rng.normal(size=(npx, npx)) if s.confusion else None
+    for i, b in enumerate(s.bands):
+        fwhm = s.seeing[i] / s.pixel
+        kernel = _kernel(survey, s, i)
+        if kernel.size:
+            images[b] = np.clip(
+                fftconvolve(images[b], kernel, mode="same"), 0, None
+            )
+        else:
+            images[b] = gaussian_filter(images[b], fwhm / 2.3548)
+        if noisy:
+            var = map_sigma(s, i) ** 2
+            if s.sky:
+                var = var + np.clip(images[b], 0, None) / electrons_per_nmgy(
+                    s, i
+                )
+            noise = rng.normal(0, np.sqrt(var), images[b].shape)
+            if s.confusion:
+                # 5 sigma point-source depth, in mJy, gives the total noise.
+                total = 3.631e-3 * float(nmgy(s.depth[i][0])) / s.depth[i][1]
+                c = min(s.confusion[i] / total, 1.0)
+                noise = c * np.sqrt(var) * common + np.sqrt(1 - c**2) * noise
+            if s.beam_noise:
+                noise = gaussian_filter(noise, fwhm / 2.3548)
+                noise = noise * map_sigma(s, i) / noise.std()
+            images[b] = images[b] + noise
+        if stars and s.saturates:
+            full = float(nmgy(s.saturates[i])) * _kernel(survey, s, i).max()
+            images[b] = _bleed(images[b], full)
+
+    w = s.weights or _balance(s)
+    keep = s.shown or range(len(s.bands))
+    rgb = composite(
+        [images[s.bands[i]] for i in keep],
+        [w[i] for i in keep],
+        [map_sigma(s, i) for i in keep],
+        black_point=noisy and subtract_sky,
+        sky_level=not subtract_sky,
     )
     return MockImage(
         survey=survey,
@@ -508,53 +1105,6 @@ def make_mock_image(
         n_galaxies=drawn,
         centre_label=centre_label,
         noisy=noisy,
-        n_hd=n_hd,
+        n_stars=n_stars,
+        sky_subtracted=subtract_sky,
     )
-
-
-def _hd_stamps(fn, s, near, centre_row, d, rd_pix, rb_pix, d_a, dx, dy, npx):
-    """{index into `near`: HD stamp} for the centre galaxy and the
-    brightest others (HD_MAX) at least a PSF across, inside the field."""
-    fwhm = min(s.seeing) / s.pixel
-    size = np.maximum(1.678 * rd_pix, rb_pix)
-    red = d[f"disk_{s.bands[0]}"] + d[f"bulge_{s.bands[0]}"]
-    inside = (dx > 0) & (dx < npx) & (dy > 0) & (dy < npx)
-    cand = np.flatnonzero(inside & (size >= fwhm) & (red > 0))
-    cand = list(cand[np.argsort(-red[cand])][:HD_MAX])
-    centre = np.flatnonzero(near == centre_row)
-    if len(centre) and int(centre[0]) not in cand:
-        cand.insert(0, int(centre[0]))
-    if not cand:
-        return {}
-    rows = [int(near[k]) for k in cand]
-    got = fn(rows, s.pixel, [float(d_a[k]) * 1e3 for k in cand]) or {}
-    return {
-        k: got[r]
-        for k, r in zip(cand, rows, strict=True)
-        if got.get(r) is not None and np.sum(got[r]) > 0
-    }
-
-
-def _place_hd(images, s, stamp, d, k, x, y, npx) -> int:
-    """Add HD stamp (n, n, 3) of galaxy k to the band images at (x, y),
-    each band's channel (reddest first) scaled to its flux; 1 if drawn."""
-    from scipy.ndimage import shift
-
-    n = stamp.shape[0]
-    cx, cy = int(np.floor(x)), int(np.floor(y))
-    sub = shift(stamp, (y - cy - 0.5, x - cx - 0.5, 0), order=1)
-    x0, y0 = cx - n // 2, cy - n // 2
-    xs, ys = max(x0, 0), max(y0, 0)
-    xe, ye = min(x0 + n, npx), min(y0 + n, npx)
-    if xs >= xe or ys >= ye:
-        return 0
-    for i, b in enumerate(s.bands):
-        ch = sub[..., min(i, 2)]
-        tot = float(ch.sum())
-        if tot <= 0:
-            continue
-        flux = float(d[f"disk_{b}"][k] + d[f"bulge_{b}"][k])
-        images[b][ys:ye, xs:xe] += (
-            flux / tot * ch[ys - y0 : ye - y0, xs - x0 : xe - x0]
-        )
-    return 1

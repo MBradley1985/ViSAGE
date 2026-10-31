@@ -6,6 +6,82 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+## [2.14.0] — 2026-10-31
+
+### Added
+
+- HD on a lightcone takes its light from the photometry by component: disk, bulge, Halpha, AGN and intracluster stars, with SAGE26 radii.
+- AGN continuum (Shen et al. 2020) above 1% Eddington, as a point source in images and in spectra and survey catalogues.
+- Intracluster stars from SAGE26's own mass and metals, with an option in the Image view.
+- Mock images use measured PSFs, and sky noise from many real fields.
+- Mock SDSS fibre spectroscopy (**Make fibre spectra** in the Survey view, or `python -m visage.sed.spectroscopy`): disk and bulge light in the fibre, instrument resolution, real sky noise, and measured lines and Dn4000.
+- Redshift-space group finding after Van Kempen et al., with calibrated virial masses and scores against true haloes; exported catalogues carry each galaxy's group.
+- Survey sub-panel in the Photometry tab: SDSS Main and GAMA selections with Petrosian and fibre photometry, exported as FITS or CSV.
+- Mock images: random patch of sky, a sky brightness checkbox, optional SDSS stars, and JPEG and PDF output beside the default PNG.
+- **Intergalactic absorption** (Madau 1995) in observed-frame magnitudes
+  and spectra.
+- **Survey noise** (`--noise`, on by default in the LightSAGE flow):
+  `flux_obs_*` and `fluxerr_obs_*` in µJy, from each survey's depth and
+  the galaxy's size. `python -m visage.sed.noise` adds them to an
+  existing cone.
+- **Each star-formation bin has its own metallicity** in photometry and
+  spectra, from SAGE26's `MHMetalsDisk` and `MHMetalsBulge` (`SaveFullMH`).
+- **AGN luminosities follow a quasar light curve** (Hopkins & Hernquist
+  2009) from a burst placed uniformly in its step, in place of the mean
+  over the step.
+- **Moffat PSF** for ground-based mock images, in place of a Gaussian.
+- **Mock images can add galaxies beyond the cone** from a deeper lightcone,
+  in a new **Image** view of the Photometry tab.
+- **Mock images for every survey:** Euclid, Roman, HST, VISTA, UKIDSS,
+  Spitzer and Herschel join the others, each with its published depths.
+- **Survey catalogues** (`python -m visage.sed.survey`): Petrosian and fibre
+  magnitudes from each galaxy's disk and bulge, the SDSS Main Galaxy Sample
+  and GAMA selections with fibre collisions, written as FITS tables.
+- **Infrared SEDs follow each galaxy's dust temperature:** U_min comes
+  from its L_dust / M_dust, saved as `DustUmin`.
+- **Spectra show the AGN's narrow lines,** as `LineLumAGN_*` through the
+  dust.
+- **Source shot noise** in SDSS and LSST mock images.
+
+### Removed
+
+- HD models in mock images.
+
+### Fixed
+
+- Mock image colours no longer depend on the cone's own galaxies, so a model's colours show as they are.
+- Mock bulges take real SDSS axis ratios, not one fixed value. Saturation limits are per band, from published values.
+- SDSS Main selection uses its published bright cuts. GAMA has no bright limit.
+- Mock images: one colour renderer for mock and real data, WISE in W1 and W2, and bleed trails from saturated stars.
+- Mock images: sky noise per pixel measured from real SDSS, DECam, Pan-STARRS, Euclid, GALEX, Spitzer and H-ATLAS data.
+- Mock images: diffraction spikes from each mirror, shot noise in DES and space surveys, and real 2MASS stars at the bright end.
+- Mock images: stretch from the mean channel noise, beam-correlated noise in WISE and Herschel, shared SPIRE confusion noise, and starlight-balanced Spitzer colours.
+- Mock images: sky noise is drawn per pixel in every survey, not as one value per band; UV, mid and far-infrared surveys are shown in noise units; JWST has CEERS depths.
+- **Star-formation histories from current SAGE26:** since its snapshot-lag
+  fix, bin k holds the stars formed up to snapshot k. Photometry, spectra
+  and HD galaxies read it as the step after, so the newest stars were
+  taken to be 0.1 Myr old, far too bright and with huge emission lines.
+  Both layouts are now read correctly. Cones from such runs need their
+  photometry re-run.
+- **Lightcone builds stop on stale rank files** left by an earlier SAGE run
+  with more MPI ranks, which gave duplicated galaxies with empty new fields.
+- **Dust attenuation follows Dusty SAGE's default model:** a Trayford et
+  al. (2020) screen from each galaxy's dust surface density and birth
+  clouds from its dust and gas (Lagos et al. 2019), replacing the slab.
+  Hα and Hβ are far less over-attenuated. `TauV_BC` is new.
+- **AGN narrow lines need gas:** galaxies with no cold gas have none.
+- **Dust in the most HI-rich disks:** above log M_HI ≈ 10.3 the HI disk's
+  size jumped, dropping τ_V about fourfold. Cones need their photometry
+  re-run for this.
+- **Mock images:** a false bright spike at the centre of a selected
+  galaxy's bulge when the image was an odd number of pixels wide; galaxies
+  just outside fine-pixelled fields no longer lose their light; bright
+  cores keep a gradient; NIRCam colour balance.
+- Zero-spin galaxies keep the same random inclination in a spectrum as in
+  the cone. `disk_mag_*` and `bulge_mag_*` descriptions name their band.
+
 ## [2.13.0] — 2026-10-27
 
 ### Added

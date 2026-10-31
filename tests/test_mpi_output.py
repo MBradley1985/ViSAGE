@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from visage.io.galaxy_reader import load_galaxy_snapshot
-from visage.io.sage_files import galaxy_files, open_snapshot
+from visage.io.sage_files import (
+    galaxy_files,
+    main,
+    open_snapshot,
+    stale_rank_files,
+)
 
 ROWS = (5, 0, 7)  # galaxies per rank at Snap_63 — rank 1 found none
 N_SFH = 4
@@ -128,3 +133,15 @@ def test_serial_run_is_untouched(mini_hdf5_path):
     assert galaxy_files(mini_hdf5_path) == [mini_hdf5_path]
     with open_snapshot(mini_hdf5_path, 63) as g:
         assert isinstance(g, h5py.Group)
+
+
+def test_stale_rank_files_stop_a_lightcone_build(tmp_path):
+    for i in range(2):
+        _write_rank(tmp_path / f"model_{i}.hdf5", i, 3, num_cores=2)
+    main([str(tmp_path)])  # clean: no error
+    _write_rank(tmp_path / "model_2.hdf5", 2, 3, num_cores=4)
+    assert stale_rank_files(tmp_path / "model_0.hdf5") == [
+        tmp_path / "model_2.hdf5"
+    ]
+    with pytest.raises(SystemExit, match="model_2.hdf5"):
+        main([str(tmp_path)])

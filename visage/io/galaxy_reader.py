@@ -630,6 +630,15 @@ def _age_lcdm(
 SFH_AGE_EDGES = (0.0, 0.1, 0.5, 1.0, 3.0, 6.0, 10.0, 99.0)
 
 
+def sfh_step_offset(sfh: np.ndarray, snap_nums) -> int:
+    """How SAGE dated these (N, n_bins) histories: 1 if bin k holds the
+    stars formed from snapshot k-1 to k (SAGE26 since its snapshot-lag
+    fix), 0 if from k to k+1 (before it, and SAGE), told apart by whether
+    any galaxy has stars in the bin of its own snapshot."""
+    last = np.minimum(np.asarray(snap_nums), sfh.shape[1] - 1)
+    return int(np.any(sfh[np.arange(len(sfh)), last] > 0))
+
+
 def _sfh_age_bins(
     sfh_disk: np.ndarray | None,
     sfh_bulge: np.ndarray | None,
@@ -650,18 +659,23 @@ def _sfh_age_bins(
         or sfh_disk.ndim != 2
     ):
         return None
-    # SAGE stores the stars formed in the step from snapshot i to i+1 at
-    # index i (so index snap_num is still empty): date each by the middle
-    # of its step, and the last step (ending now) is the current star
-    # formation, the first bin.
+    # Each bin is dated by the middle of its step (sfh_step_offset), and
+    # the last step (ending now) is the current star formation, the first
+    # bin.
     n = min(sfh_disk.shape[1], len(scale_factors))
     snap = min(snap_num, n - 1)
     age = _age_lcdm(scale_factors[:n], hubble_h, omega_m, omega_l)
-    nxt = np.minimum(np.arange(n) + 1, snap)
-    lookback = np.maximum(age[snap] - 0.5 * (age + age[nxt]), 0.0)
+    shift = sfh_step_offset(
+        np.nan_to_num(np.asarray(sfh_disk[indices], np.float64))
+        + np.nan_to_num(np.asarray(sfh_bulge[indices], np.float64)),
+        np.full(len(indices), snap),
+    )
+    start = np.maximum(np.arange(n) - shift, 0)
+    end = np.minimum(start + 1, snap)
+    lookback = np.maximum(age[snap] - 0.5 * (age[start] + age[end]), 0.0)
     which = np.digitize(lookback, SFH_AGE_EDGES[1:-1])  # (n,)
-    if snap > 0:
-        which[snap - 1] = 0
+    if snap - 1 + shift >= 0:
+        which[snap - 1 + shift] = 0
     k = len(SFH_AGE_EDGES) - 1
     out = np.zeros((len(indices), 2, k), np.float32)
     for part, sfh in enumerate((sfh_disk, sfh_bulge)):

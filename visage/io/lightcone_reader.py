@@ -144,6 +144,8 @@ EXTRA_FIELDS = (
     "redshift_observed",
     # Dust and AGN from the photometry (visage.sed).
     "TauV_ISM",
+    "LineFlux_Halpha",
+    "AGNObscured",
     "CosInclination",
     "DustMassCold",
     "DustToGas",
@@ -377,7 +379,13 @@ def load_lightcone_snapshot(
         source_path=str(path),
         has_sfh=bool({"SFHMassDisk", "SFHMassBulge"} <= present),
         extra=LazyColumns(
-            path, idx, [n for n in present if n.lower() in _EXTRA_LOWER]
+            path,
+            idx,
+            [
+                n
+                for n in present
+                if n.lower() in _EXTRA_LOWER or n.startswith(_PART_PREFIXES)
+            ],
         ),
         sed_mags={
             name: values[idx].astype(np.float32)
@@ -537,6 +545,10 @@ def _build_halos(
 
 
 _EXTRA_LOWER = {n.lower() for n in EXTRA_FIELDS}
+# A galaxy's light by component, read when HD asks.
+_PART_PREFIXES = tuple(
+    f"{part}_mag_obs_" for part in ("disk", "bulge", "agn", "ics")
+)
 
 # Raw HDF5 field names we read (used for presence detection + bulk read).
 _RAW_FIELDS = (

@@ -235,7 +235,10 @@ def satellite_context(entries, hubble_h: float) -> dict:
 
 
 def display_luminosity(gal: SageGalaxy, kind: str) -> float:
-    """Relative brightness of a galaxy in a shared exposure."""
+    """Relative brightness of a galaxy in a shared exposure: from its
+    photometry on a lightcone, its stellar mass otherwise."""
+    if gal.lum_v > 0:
+        return float(gal.lum_v**LUM_POWER)
     if kind == "disk":
         ref = max(gal.stellar_mass - gal.bulge_mass, 1.0)
     else:

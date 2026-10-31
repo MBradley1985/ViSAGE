@@ -61,17 +61,18 @@ The Photometry tab only appears for lightcones that actually carry SED data
 
 ### Mock images
 
-**Create mock image** (in the Photometry tab) makes a survey image of the sky
+**Create mock image** (under **Image** in the Photometry tab) makes a survey image of the sky
 around the selected galaxy, or the cone's brightest galaxy if none is
-selected: what SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam
-would record. Only surveys whose filters the cone has are offered. Choose the
+selected: what any of the LightSAGE surveys would record. Only surveys whose filters the cone has are offered. Choose the
 field (½′ to 30′, kept under 2400 pixels a side) and whether to add the
 survey's sky noise. Each galaxy is drawn as its disk and bulge at its own size,
 inclination and colours, blurred by the survey's seeing on its pixel grid. The
 image opens in a Library card and is saved in the session folder as a PNG and
 a FITS file (one band per extension, in nanomaggies, with a WCS). Only the
 cone's own galaxies are on the sky, so a shallow cone looks sparser than the
-real sky. The method and survey numbers are in
+real sky. **Galaxies beyond this cone** adds those from a deeper cone in a
+neighbouring folder, with the same bands, built from the same box. There are
+no stars: SAGE26 doesn't make them. The method and survey numbers are in
 [Lightcone photometry → Mock images](../physics/photometry.md#mock-images).
 
 **HD galaxies** (a checkbox under the field size) draws galaxies big enough on the sky to show structure from
@@ -86,14 +87,14 @@ smaller than the same galaxy's profile, which uses SAGE's disk radius.
 
 ### Spectra
 
-**Make spectrum** (in the Photometry tab, under the mock image) makes the
+**Make spectrum** (in the Photometry tab) makes the
 selected galaxy's spectrum as it would be observed: f<sub>ν</sub> in µJy
 against observed wavelength, with rest wavelength along the top. It is made
 the way the cone's photometry was, with the same settings recorded in the
 file (IMF, recycling, metallicity, dust and its infrared glow, emission
 lines), so the catalogue's own magnitudes, marked as circles, sit on it. The
 stars' light without dust and the disk and bulge (when the cone has them) are
-drawn too. No intergalactic absorption is modelled, so the spectrum starts at
+drawn too. It passes through the intergalactic medium and starts at
 the rest-frame Lyman limit. The plot opens in a Library card and is saved in
 `sage_library/spectra/` as a PNG and a CSV table (rest and observed
 wavelength, the flux of each part, and the rest-frame L<sub>ν</sub>). A card
@@ -135,3 +136,29 @@ file, so a few Explore-mode features that assume a box don't apply:
 
 - Multi-model overlay / side-by-side comparison (a lightcone is always the sole loaded model)
 - The `.par`-derived cosmology display (cosmology is read from the lightcone's copied SAGE header instead)
+
+## Survey catalogues
+
+The **Survey** view in the Photometry tab selects the galaxies a real survey
+would from the cone, and exports them as FITS or CSV with Petrosian and fibre
+magnitudes in every band with disk and bulge photometry. `python -m
+visage.sed.survey` does the same from the command line. A cone that stops short
+of a survey's depth gives a lower limit on its counts: GAMA needs z ≈ 0.5.
+
+Exports also give each galaxy's `group` and `group_n`, from the group finder of
+Van Kempen et al. (2024, 2025), and the note scores those groups against the
+cone's true haloes.
+
+## Mock spectroscopy
+
+```
+python -m visage.sed.spectroscopy --input cone.h5 --survey sdss_main --output spectra.fits
+```
+
+**Make fibre spectra** in the Survey view runs the same thing in its own process.
+This writes SDSS Main fibre spectra and what's measured from them. The first
+extension is the catalogue; `FLUX`, `LOGLAM` and `SIGMA` hold the spectra. About
+2,000 galaxies take a few minutes. A fibre mixes SAGE26's disk and bulge, so it
+can't show gradients within either; noise comes from real faint SDSS spectra, sky
+lines included, without each galaxy's own shot noise; and Balmer lines aren't
+corrected for stellar absorption.

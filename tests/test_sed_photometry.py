@@ -244,12 +244,148 @@ def test_dust_equilibrium_and_attenuation():
         )[0]
         == 0
     )
-    # Slab transmission: 1 at zero depth, falls with depth and inclination,
-    # and is lower in the blue than the red.
+    # Screen transmission: 1 at zero depth, falls with depth, and is lower
+    # in the blue than the red.
     wave = np.array([3500.0, 5500.0, 8000.0])
     t = dust.ism_transmission(
-        wave, np.array([0.0, 1.0, 1.0]), np.array([1.0, 1.0, 0.2])
+        wave, np.array([0.0, 1.0, 2.0]), np.array([-0.7, -0.7, -0.7])
     )
     np.testing.assert_allclose(t[0], 1.0, atol=1e-6)
     assert (t[1] < 1).all() and (t[2] < t[1]).all()
     assert t[1, 0] < t[1, 2]
+
+
+def test_zero_spin_orientation_does_not_depend_on_rows():
+    from visage.sed import dust as dm
+
+    pos = np.array([[10.0, 2.0, 3.0], [4.0, 50.0, 6.0], [7.0, 8.0, 90.0]])
+    spin = np.zeros_like(pos)
+    full = dm.cos_inclination(spin, pos)
+    assert dm.cos_inclination(spin[2:], pos[2:])[0] == full[2]
+    assert np.all((full >= 0) & (full <= 1))
+
+
+@pytest.mark.parametrize("z", [3.0, 6.0])
+def test_igm_matches_fsps(z):
+    fsps = pytest.importorskip("fsps")
+    from visage.sed import igm
+
+    kw = dict(zcontinuous=1, sfh=1, tau=1.0, imf_type=1, dust_type=0)
+    on = fsps.StellarPopulation(add_igm_absorption=True, zred=z, **kw)
+    off = fsps.StellarPopulation(add_igm_absorption=False, zred=z, **kw)
+    w, a = on.get_spectrum(tage=0.5)
+    _, b = off.get_spectrum(tage=0.5)
+    m = (w > 600) & (w < 1300)
+    assert igm.transmission(w, z)[m] == pytest.approx((a / b)[m], abs=1e-3)
+    assert igm.transmission(np.array([1300.0]), z)[0] == 1.0
+
+
+def test_sfh_step_offset_reads_either_layout():
+    from visage.io.galaxy_reader import sfh_step_offset
+
+    old, new = np.zeros((2, 6)), np.zeros((2, 6))
+    old[:, 2], new[:, 3] = 1.0, 1.0  # the last step of galaxies at snap 3
+    assert sfh_step_offset(old, [3, 3]) == 0
+    assert sfh_step_offset(new, [3, 3]) == 1
+
+
+def test_umin_follows_the_light_per_dust_mass():
+    from visage.sed import dust as dm
+
+    u = dm.umin_from_luminosity(
+        np.array([1.0, 141.25, 1e6]), np.array([1.0, 1.0, 1.0])
+    )
+    assert u[0] == dm.U_MIN_NODES[0] and u[2] == dm.U_MIN_NODES[-1]
+    assert u[1] == pytest.approx(1.0, rel=1e-3)
+
+
+def test_warmer_dust_peaks_at_shorter_wavelengths():
+    pytest.importorskip("fsps")
+    from visage.sed import dust as dm
+
+    wave = np.logspace(3, 7.5, 3000)
+    cold, warm = dm.emission_spectra(wave, np.array([0.2, 20.0]))
+    w = dm.frequency_weights(wave)
+    assert cold @ w == pytest.approx(1.0, rel=1e-3)
+    assert warm @ w == pytest.approx(1.0, rel=1e-3)
+    fir = wave > 3e5
+    assert wave[fir][np.argmax(warm[fir])] < wave[fir][np.argmax(cold[fir])]
+
+
+def _metal_cone(path, alist, enriched):
+    """Two galaxies at snapshot 7 whose stars total Z = 0.01; `enriched`
+    gives their older bins Z = 0.002 and their later ones 0.018."""
+    import h5py
+
+    n_bins = 8
+    sfh = np.full((2, n_bins), 0.1)
+    z_bin = np.full(n_bins, 0.01)
+    if enriched:
+        z_bin = np.r_[np.full(4, 0.002), np.full(4, 0.018)]
+    with h5py.File(path, "w") as f:
+        f["StellarMass"] = sfh.sum(1).astype(np.float32)
+        f["MetalsStellarMass"] = (0.01 * sfh.sum(1)).astype(np.float32)
+        f["SFHMassDisk"] = sfh.astype(np.float32)
+        f["SFHMassBulge"] = np.zeros_like(sfh, dtype=np.float32)
+        f["MHMetalsDisk"] = (sfh * z_bin).astype(np.float32)
+        f["MHMetalsBulge"] = np.zeros_like(sfh, dtype=np.float32)
+        f["SnapNum"] = np.full(2, 7, dtype=np.int32)
+        f["redshift_cosmological"] = np.full(2, 0.05)
+        sim = f.create_group("SageOutputHeader/Simulation")
+        sim.attrs["hubble_h"] = 0.7
+        sim.attrs["omega_matter"] = 0.3
+        sim.attrs["omega_lambda"] = 0.7
+        sim.attrs["FileWithSnapList"] = str(alist)
+
+
+@pytest.mark.slow
+def test_metal_history_gives_each_bin_its_metallicity(tmp_path):
+    from visage.sed.photometry import compute_photometry
+
+    alist = tmp_path / "a.list"
+    np.savetxt(alist, np.linspace(0.1, 1.0, 8))
+    flat, rising = tmp_path / "flat.h5", tmp_path / "rising.h5"
+    _metal_cone(flat, alist, False)
+    _metal_cone(rising, alist, True)
+    bands = ("sdss_g", "sdss_r")
+
+    def run(path, **kw):
+        return compute_photometry(path, bands=bands, frame="rest", **kw)
+
+    # A flat history is the one metallicity it's the same as...
+    a, b = run(flat), run(flat, metal_history=False)
+    assert "per SFH bin" in a["_settings"]["Metallicity"]
+    assert "present-day" in b["_settings"]["Metallicity"]
+    np.testing.assert_allclose(
+        a["mag_rest_sdss_r"], b["mag_rest_sdss_r"], atol=1e-4
+    )
+    # ...and the same total metals spread over time isn't.
+    c = run(rising)
+    assert abs(c["mag_rest_sdss_g"][0] - a["mag_rest_sdss_g"][0]) > 0.005
+
+
+def test_ism_screen_follows_trayford():
+    from visage.sed import dust as dm
+
+    tau, eta = dm.tau_eta_ism(np.array([10**5.0576, 10**6.47, 10**4.0]))
+    assert tau[0] == pytest.approx(0.149, abs=0.01)
+    assert tau[1] == pytest.approx(1.03, abs=0.01)
+    assert 0 < tau[2] < 0.03  # thinner than the table: scales down
+    assert np.all(eta < 0)
+
+
+def test_birth_clouds_of_a_milky_way_like_disk():
+    from visage.sed import dust as dm
+
+    t = dm.tau_bc(0.33 * 0.0189, 1e9, 4.0, 0.1)
+    assert t == pytest.approx(1.0)  # Sigma_cl = 85: tau_BC,0
+    assert dm.tau_bc(0.33 * 0.0189, 1e9, 4.0, 2.0) == 2.0
+    assert dm.tau_bc(0.33 * 0.0189, 1e11, 2.0, 0.1) > 1.0  # dense ISM
+    assert dm.tau_bc(0.2, 1e11, 1.0, 0.1) == dm.TAU_BC_MAX
+
+
+def test_edge_on_disks_show_more_dust():
+    from visage.sed import dust as dm
+
+    face, edge = dm.sigma_dust(1e7, 4.0, np.array([1.0, 0.0]))
+    assert edge == pytest.approx(7.3 * face)
