@@ -28,6 +28,8 @@ import sys
 import time
 from pathlib import Path
 
+from visage.wizard.family import FAMILY
+
 from visage.wizard.screens import _ANSI
 
 _FSPS_REPO = "https://github.com/cconroy20/fsps"
@@ -142,11 +144,14 @@ class InstallMixin:
         self._set_flow(mode)
         self._inline_begin(mode, act)
         try:
-            ok, sub = await {
-                "sage26": self._install_sage26,
-                "sagelightcone": self._install_lightsage,
-                "sageswarm": self._install_sageswarm,
-            }[mode]()
+            if mode in FAMILY:
+                ok, sub = await self._install_family(mode)
+            else:
+                ok, sub = await {
+                    "sage26": self._install_sage26,
+                    "sagelightcone": self._install_lightsage,
+                    "sageswarm": self._install_sageswarm,
+                }[mode]()
         except Exception as exc:  # keep the screen usable
             ok, sub = False, f"Stopped: {exc}"
         await self._inline_end(ok, sub)
@@ -321,6 +326,7 @@ class InstallMixin:
             "sage26": "SAGE26",
             "sagelightcone": "LightSAGE",
             "sageswarm": "SAGEswarm",
+            **{m: FAMILY[m]["folder"] for m in FAMILY},
         }[mode]
         here = self._repo_of(mode)
         if here is not None:
@@ -342,6 +348,7 @@ class InstallMixin:
             "sage26": c._SAGE26_REPO,
             "sagelightcone": c._LIGHTSAGE_REPO,
             "sageswarm": c._SAGESWARM_REPO,
+            **{m: FAMILY[m]["repo"] for m in FAMILY},
         }[mode]
         try:
             moved = None
@@ -352,10 +359,15 @@ class InstallMixin:
             cmd = ["git", "clone", repo, target]
             if mode == "sagelightcone":  # as its README says
                 cmd.insert(2, "--recurse-submodules")
+            if mode in FAMILY and FAMILY[mode]["branch"]:
+                cmd[2:2] = ["--branch", FAMILY[mode]["branch"]]
             if await self._run_cmd(cmd, cwd=target.parent) != 0:
                 await self._inline_end(False, "Cloning failed")
                 return
-            if mode == "sage26":
+            if mode in FAMILY:
+                self._family_dirs[mode] = target
+                ok, sub = await self._install_family(mode)
+            elif mode == "sage26":
                 self._sage26_dir = target
                 ok, sub = await self._install_sage26()
             elif mode == "sagelightcone":

@@ -429,7 +429,7 @@ def _home_view(server) -> None:
     ):
         with html.Div(
             style=(
-                "display:grid;grid-template-columns:repeat(3,minmax(0,1fr));"
+                "display:grid;grid-template-columns:repeat(4,minmax(0,1fr));"
                 "gap:24px;"
             ),
         ):
@@ -481,6 +481,61 @@ def _home_view(server) -> None:
                         ": 'rgba(245,158,11,0.15)',"
                         "border: '1px solid ' + (c.ok ? 'rgba(34,197,94,0.55)' "
                         ": 'rgba(245,158,11,0.55)')}",
+                    ),
+                )
+            # DarkSAGE and DustySAGE share a card, split corner to corner.
+            with html.Div(
+                style=(
+                    "position:relative;height:min(66vh,560px);"
+                    "border-radius:20px;overflow:hidden;background:#000;"
+                    "border:1px solid rgba(255,255,255,0.16);"
+                ),
+            ):
+                with html.Button(
+                    v_for="(c, i) in wiz_home_split",
+                    key="c.value",
+                    type="button",
+                    classes="wiz-big",
+                    click=(choose, "[c.value]"),
+                    style=(
+                        "{position:'absolute',inset:0,border:'none',"
+                        "padding:'22px',display:'flex',flexDirection:'column',"
+                        "gap:'6px',color:'#fff',backgroundColor:'#000',"
+                        "justifyContent: i ? 'flex-end' : 'flex-start',"
+                        "alignItems: i ? 'flex-end' : 'flex-start',"
+                        "textAlign: i ? 'right' : 'left',"
+                        "clipPath: i ? 'polygon(100% 0, 100% 100%, 0 100%)' "
+                        ": 'polygon(0 0, 100% 0, 0 100%)',"
+                        "backgroundRepeat:'no-repeat',"
+                        "backgroundSize: i ? '92% auto' : '74% auto',"
+                        "backgroundPosition: i ? '130% 72%' : '-14% 22%',"
+                        "backgroundImage:'url(' + c.bg + ')'}",
+                    ),
+                ):
+                    html.Span(
+                        "{{ c.title }}",
+                        style="font-size:1.7rem;font-weight:700;line-height:1.1;",
+                    )
+                    html.Span(
+                        "{{ c.badge }}",
+                        style=(
+                            "{fontSize:'0.7rem',borderRadius:'999px',"
+                            "padding:'2px 9px',"
+                            "color: c.ok ? '#86efac' : '#fcd34d',"
+                            "background: c.ok ? 'rgba(34,197,94,0.15)' "
+                            ": 'rgba(245,158,11,0.15)',"
+                            "border: '1px solid ' + (c.ok ? "
+                            "'rgba(34,197,94,0.55)' : 'rgba(245,158,11,0.55)')}",
+                        ),
+                    )
+                html.Div(
+                    style=(
+                        "position:absolute;inset:0;pointer-events:none;"
+                        "background:linear-gradient(to bottom right,"
+                        "transparent calc(50% - 1px),"
+                        "rgba(255,255,255,0.55) calc(50% - 1px),"
+                        "rgba(255,255,255,0.55) calc(50% + 1px),"
+                        "transparent calc(50% + 1px));"
                     ),
                 )
         with html.Button(

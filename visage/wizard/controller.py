@@ -9,6 +9,7 @@ from pathlib import Path
 from visage import system
 from visage.utils import terminal
 from visage.wizard import toolchain as _toolchain
+from visage.wizard.family import FAMILY, FamilyMixin
 from visage.wizard.install import InstallMixin
 from visage.wizard.screens import SetupRunMixin
 
@@ -143,6 +144,24 @@ _MODE_META = {
         "accent": "#2dd4bf",
         "accent2": "#f59e0b",
     },
+    "darksage": {
+        "title": "DarkSAGE",
+        "desc": "Galaxies with radially resolved discs",
+        "bg": _wizard_image("darksage.png"),
+        "fit": "contain",
+        "icon": "mdi-hand-back-left",
+        "accent": "#b57bee",
+        "accent2": "#6a0dad",
+    },
+    "dustysage": {
+        "title": "DustySAGE",
+        "desc": "Galaxies with dust formed, grown and destroyed",
+        "bg": _wizard_image("dustysage.jpg"),
+        "fit": "cover",
+        "icon": "mdi-blur",
+        "accent": "#e8a93a",
+        "accent2": "#8a5a1a",
+    },
 }
 
 # Each mode screen's buttons -> the flow step they start.
@@ -166,6 +185,16 @@ _MODE_ACTIONS = {
         "install": "sw_install",
         "update": "check_update",
         "clone": "sw_clone",
+    },
+    **{
+        mode: {
+            "run": "family_run",
+            "load": "load",
+            "install": "family_install",
+            "update": "check_update",
+            "clone": "family_clone",
+        }
+        for mode in FAMILY
     },
 }
 
@@ -755,7 +784,7 @@ def _latest_per_constraint(plots: list[dict]) -> list[dict]:
     return [best[g] for g in sorted(best)]
 
 
-class WizardController(InstallMixin, SetupRunMixin):
+class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
     def __init__(
         self,
         server,
@@ -812,6 +841,7 @@ class WizardController(InstallMixin, SetupRunMixin):
         self._st.wiz_view = "home"  # "home" | "mode" | "term"
         self._st.wiz_mode = ""
         self._st.wiz_home_cards = []
+        self._st.wiz_home_split = []
         self._st.wiz_home_load = {}
         self._st.wiz_mode_info = {}
         self._st.wiz_tools_note = ""
@@ -1483,6 +1513,14 @@ class WizardController(InstallMixin, SetupRunMixin):
                     results.append(m)
         return results
 
+    def _family_models(self, mode: str) -> list[dict]:
+        from visage.utils.discover import find_models
+
+        d = self._family_dirs.get(mode)
+        if not d:
+            return []
+        return find_models(d / "output", par_dir=d / "input")
+
     def _find_par_files(self) -> list[Path]:
         pars: list[Path] = []
         if self._sage26_dir:
@@ -1537,6 +1575,13 @@ class WizardController(InstallMixin, SetupRunMixin):
                 "n": 0,
             },
         }
+        self._family_dirs = {m: self._find_family(m) for m in FAMILY}
+        for m in FAMILY:
+            self._status[m] = {
+                "dir": self._family_dirs[m],
+                "ready": self._family_built(m),
+                "n": len(self._family_models(m)),
+            }
         note = ""
         if self._tc.kind == "missing":
             note = (
@@ -1554,7 +1599,7 @@ class WizardController(InstallMixin, SetupRunMixin):
         st = self._status[mode]
         if not st["dir"]:
             return "Not installed", False
-        if mode == "sage26":
+        if mode == "sage26" or mode in FAMILY:
             return (
                 ("Installed", True) if st["ready"] else ("Not compiled", False)
             )
@@ -1573,7 +1618,8 @@ class WizardController(InstallMixin, SetupRunMixin):
             cards.append(
                 {**meta, "value": f"mode:{mode}", "badge": badge, "ok": ok}
             )
-        self._st.wiz_home_cards = cards
+        self._st.wiz_home_cards = cards[: -len(FAMILY)]
+        self._st.wiz_home_split = cards[-len(FAMILY) :]
         n = len(self._models) + self._status.get("sagelightcone", {}).get(
             "n", 0
         )
@@ -1590,7 +1636,7 @@ class WizardController(InstallMixin, SetupRunMixin):
         chips = []
         badge, ok = self._badge(mode)
         chips.append({"text": badge, "ok": ok})
-        if mode == "sage26":
+        if mode == "sage26" or mode in FAMILY:
             chips.append({"text": f"{st['n']} models", "ok": st["n"] > 0})
         elif mode == "sagelightcone":
             chips.append({"text": f"{st['n']} lightcones", "ok": st["n"] > 0})
@@ -1619,6 +1665,14 @@ class WizardController(InstallMixin, SetupRunMixin):
             "sageswarm": {
                 "run": "Configure and run a calibration",
                 "install": "Install its Python packages",
+            },
+            **{
+                m: {
+                    "run": "Run it on the mini-Millennium trees",
+                    "load": "Open a run you have already made",
+                    "install": "Compile it",
+                }
+                for m in FAMILY
             },
         }[mode]
         labels = {
@@ -1733,6 +1787,7 @@ class WizardController(InstallMixin, SetupRunMixin):
             "sage26": self._sage26_dir,
             "sagelightcone": self._lc_dir,
             "sageswarm": self._sw_dir,
+            **self._family_dirs,
         }[mode]
 
     async def _check_update_inline(self, mode: str) -> None:
@@ -1840,10 +1895,15 @@ class WizardController(InstallMixin, SetupRunMixin):
             _dt.datetime.fromtimestamp(when).strftime("%d %b %Y"),
         ]
 
-    def _model_items(self) -> list[dict]:
-        self._models = self._find_models()
+    def _model_items(self, models: list[dict] | None = None) -> list[dict]:
+        if models is None:
+            self._models = self._find_models()
+            # Runs of DarkSAGE and DustySAGE open like any other.
+            models = self._models + [
+                m for mode in FAMILY for m in self._family_models(mode)
+            ]
         items = []
-        for m in self._models:
+        for m in models:
             out = Path(m["hdf5"]).parent
             files = sorted(out.glob("model_*.hdf5")) or [Path(m["hdf5"])]
             chips = self._file_meta(files)
@@ -1886,7 +1946,12 @@ class WizardController(InstallMixin, SetupRunMixin):
     async def _show_pick(self, mode: str) -> None:
         """Big buttons for each model (SAGE26), lightcone (LightSAGE), or
         both ("all": the home screen's Load a previous model)."""
-        if mode == "sage26":
+        if mode in FAMILY:
+            items = self._model_items(self._family_models(mode))
+            title, empty = "Load a model", (
+                f"No {FAMILY[mode]['title']} runs found yet. Run it first."
+            )
+        elif mode == "sage26":
             items = self._model_items()
             title, empty = "Load a model", (
                 "No SAGE26 models found yet. Run SAGE26 first."
@@ -1955,6 +2020,8 @@ class WizardController(InstallMixin, SetupRunMixin):
                 await self._pull_inline(mode)
             elif act == "load":
                 await self._show_pick(mode)
+            elif act == "run" and mode in FAMILY:
+                await self._start_action(mode, act)
             elif act == "run":
                 await self._show_setup(mode)
             elif act == "install":
@@ -1993,6 +2060,9 @@ class WizardController(InstallMixin, SetupRunMixin):
             await self._step_install_linux_tools()
             return
 
+        if value == "family_run":
+            await self._run_family(self._flow)
+            return
         if value == "load":
             await self._step_select_model()
 
