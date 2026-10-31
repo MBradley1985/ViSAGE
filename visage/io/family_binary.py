@@ -31,6 +31,7 @@ RENAME = {
     "ICS": "IntraClusterStars",
     "MetalsICS": "MetalsIntraClusterStars",
 }
+MIN_PLOT_KPC = 0.1  # annuli inside this are too small to mean anything
 FIELD = re.compile(r"^\s*(long long|short|int|float|double)\s+(.+);\s*$")
 
 
@@ -139,26 +140,120 @@ def snapshot_files(directory: Path, name: str) -> dict:
 
 
 def _derived(gals: np.ndarray) -> dict:
-    """SAGE26's fields that DarkSAGE gives by radial bin or another name."""
+    """SAGE26's fields that a model gives another way, and the ratios its
+    extra physics is coloured by."""
     names = gals.dtype.names
-    if "ClassicalBulgeMass" not in names:
-        return {}
+    out = {}
+    if "ClassicalBulgeMass" in names:  # DarkSAGE: by radial bin or channel
 
-    def total(*fields):
-        return sum(gals[f].sum(axis=1) for f in fields)
+        def total(*fields):
+            return sum(gals[f].sum(axis=1) for f in fields)
 
-    return {
-        "BulgeMass": total("ClassicalBulgeMass", "SecularBulgeMass"),
-        "MetalsBulgeMass": total(
-            "ClassicalMetalsBulgeMass", "SecularMetalsBulgeMass"
-        ),
-        "SfrDisk": gals["DiscSFR"].sum(axis=1),
-        "SfrBulge": gals["SfrMerge"] + gals["SfrInstab"],
-        "H2gas": gals["DiscH2"].sum(axis=1),
-        "H1gas": gals["DiscHI"].sum(axis=1),
-        "TimeOfLastMajorMerger": gals["LastMajorMerger"],
-        "TimeOfLastMinorMerger": gals["LastMinorMerger"],
-    }
+        merger = total("ClassicalBulgeMass")
+        secular = total("SecularBulgeMass")
+        r_m = gals["HalfMassRadiusMergerBulge"]
+        r_i = gals["HalfMassRadiusInstabilityBulge"]
+        h2, hi = total("DiscH2"), total("DiscHI")
+        out = {
+            "BulgeMass": merger + secular,
+            "MergerBulgeMass": merger,
+            "InstabilityBulgeMass": secular,
+            "MergerBulgeRadius": r_m,
+            "InstabilityBulgeRadius": r_i,
+            "BulgeRadius": (merger * r_m + secular * r_i)
+            / np.maximum(merger + secular, 1e-30),
+            "MetalsBulgeMass": total(
+                "ClassicalMetalsBulgeMass", "SecularMetalsBulgeMass"
+            ),
+            "SfrDisk": total("DiscSFR"),
+            "SfrBulge": gals["SfrMerge"] + gals["SfrInstab"],
+            "H2gas": h2,
+            "H1gas": hi,
+            "H2Fraction": h2 / np.maximum(h2 + hi, 1e-30),
+            "TimeOfLastMajorMerger": gals["LastMajorMerger"],
+            "TimeOfLastMinorMerger": gals["LastMinorMerger"],
+        }
+    if "ColdDust" in names:  # DustySAGE
+        cold = gals["ColdGas"]
+        h2, hi = gals["f_H2"] * cold, gals["f_HI"] * cold
+        out = {
+            "H2gas": h2,
+            "H1gas": hi,
+            "H2Fraction": h2 / np.maximum(h2 + hi, 1e-30),
+            "DustToGas": gals["ColdDust"] / np.maximum(cold, 1e-30),
+            "InstabilityBulgeMass": gals["BulgeInstability"],
+            "MergerBulgeMass": gals["BulgeMass"] - gals["BulgeInstability"],
+        }
+    return out
+
+
+def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
+    """DarkSAGE's discs for galaxy rows of a converted run: "r" (kpc, annulus
+    middles) and surface densities (Msun/pc^2) of stars, gas, HI and H2, and
+    of star formation (Msun/yr/kpc^2)."""
+    rows = np.atleast_1d(rows)
+    with h5py.File(path, "r") as f:
+        g = f[f"Snap_{snap}"]
+        edges = g["DiscRadii"][rows].astype(float) * 1e3 / hubble_h  # kpc
+        mass = 1e10 / hubble_h
+        stars = g["DiscStars"][rows].astype(float)
+        if stars.ndim == 3:  # by age
+            stars = stars.sum(axis=2)
+        out = {
+            "stars": stars,
+            "gas": g["DiscGas"][rows].astype(float),
+            "hi": g["DiscHI"][rows].astype(float),
+            "h2": g["DiscH2"][rows].astype(float),
+        }
+        sfr = g["DiscSFR"][rows].astype(float)
+    area = np.maximum(np.pi * (edges[:, 1:] ** 2 - edges[:, :-1] ** 2), 1e-12)
+    res = {k: v * mass / (area * 1e6) for k, v in out.items()}
+    res["sfr"] = sfr / area
+    res["r"] = 0.5 * (edges[:, 1:] + edges[:, :-1])
+    return res
+
+
+def plot_profile(prof: dict, label: str) -> bytes:
+    """One galaxy's radial profiles as a PNG."""
+    import io
+
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(8.5, 4.6), dpi=130)
+    FigureCanvasAgg(fig)
+    a, b = fig.subplots(1, 2)
+    r = prof["r"][0]
+    for key, name, colour in (
+        ("stars", "Stars", "#d9622b"),
+        ("gas", "Cold gas", "#7a2fb0"),
+        ("hi", "HI", "#3aa655"),
+        ("h2", "H2", "#2a78b5"),
+    ):
+        v = prof[key][0]
+        keep = (v > 0) & (r > MIN_PLOT_KPC)
+        a.plot(r[keep], v[keep], label=name, color=colour, lw=2)
+    a.set(
+        xscale="log",
+        yscale="log",
+        xlabel="R (kpc)",
+        ylabel="Surface density (M☉ pc⁻²)",
+    )
+    a.legend(frameon=False)
+    s = prof["sfr"][0]
+    keep = (s > 0) & (r > MIN_PLOT_KPC)
+    b.plot(r[keep], s[keep], color="#17324d", lw=2)
+    b.set(
+        xscale="log",
+        yscale="log",
+        xlabel="R (kpc)",
+        ylabel="Star formation (M☉ yr⁻¹ kpc⁻²)",
+    )
+    fig.suptitle(f"Galaxy {label}: DarkSAGE discs")
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    return buf.getvalue()
 
 
 def _write_snapshot(group, gals: np.ndarray) -> None:

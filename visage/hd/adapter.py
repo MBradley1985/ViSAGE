@@ -231,7 +231,11 @@ def sage_galaxy_from_snapshot(
         bh_mass=_field(snap, "bh_mass", i),
         sfr_disk=_field(snap, "sfr_disk", i),
         sfr_bulge=_field(snap, "sfr_bulge", i),
-        disk_radius_kpc=_field(snap, "disk_radius", i) * kpc,
+        disk_radius_kpc=(
+            _extra(snap, "StellarDiscScaleRadius", i)
+            or _field(snap, "disk_radius", i)
+        )
+        * kpc,
         bulge_radius_kpc=_field(snap, "bulge_radius", i) * kpc,
         regime=int(_field(snap, "cgm_regime", i)),
         gtype=int(_field(snap, "gal_type", i)),
@@ -277,10 +281,11 @@ def sage_galaxy_from_snapshot(
         tff_gyr=_extra(snap, "tff", i),
         mdot_cool=_extra(snap, "mdot_cool", i),
         web=web_neighbours(snap, i),
-        tau_v_ism=_sed_tau(snap, i),
+        tau_v_ism=_sed_tau(snap, i, hubble_h),
         sed_ratio=_sed_ratio(snap, i),
         los=_los(snap, i),
         **_sed_parts(snap, i),
+        radial=_radial(snap, i, hubble_h),
         sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
         sfh_bulge=(
             () if sfh is None else tuple(float(v) * mass for v in sfh[1])
@@ -360,11 +365,43 @@ def _sed_parts(snap, i: int) -> dict:
     return {}
 
 
-def _sed_tau(snap, i: int) -> float:
+def _dusty_tau(snap, i: int, h: float) -> float:
+    """Face-on optical depth from DustySAGE's own cold dust, by the recipe
+    the photometry uses (visage.sed.dust). Masses and radii are raw."""
+    from visage.sed import dust
+
+    m_dust = _extra(snap, "ColdDust", i) * 1e10 / h
+    radius = _field(snap, "disk_radius", i) * 1e3 / h
+    if m_dust <= 0 or radius <= 0:
+        return 0.0
+    tau, _ = dust.tau_eta_ism(dust.sigma_dust(m_dust, radius, 1.0))
+    return float(tau)
+
+
+def _radial(snap, i: int, hubble_h: float) -> tuple:
+    """DarkSAGE's disc profiles for HD, () for any other run: radii (kpc)
+    and surface densities of stars, HI, H2 and star formation."""
+    path = getattr(snap, "source_path", "")
+    extra = getattr(snap, "extra", None) or {}
+    if not path or "StellarDiscScaleRadius" not in extra:
+        return ()
+    from visage.io.family_binary import radial_profiles
+
+    row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+    p = radial_profiles(path, int(snap.snap_num), row, hubble_h)
+    return tuple(
+        tuple(float(v) for v in p[k][0])
+        for k in ("r", "stars", "hi", "h2", "sfr")
+    )
+
+
+def _sed_tau(snap, i: int, hubble_h: float) -> float:
     """Face-on optical depth HD draws a lightcone galaxy's dust with: its
     photometry's own (Charlot & Fall), else -1 (HD's own estimate: no
     photometry, one screen for every galaxy, or photometry made without
     dust)."""
+    if "ColdDust" in (getattr(snap, "extra", None) or {}):
+        return _dusty_tau(snap, i, hubble_h)
     how = snap.sed_dust()[0] if hasattr(snap, "sed_dust") else None
     if how == "charlot_fall":
         tau = _extra(snap, "TauV_ISM", i, -1.0)

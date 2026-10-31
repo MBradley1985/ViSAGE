@@ -3983,6 +3983,34 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.survey_busy = False
     state.survey_note = ""
 
+    # DarkSAGE's radial discs of the selected galaxy, as a plot.
+    state.radial_ok = any(
+        f["key"] == "StellarDiscScaleRadius"
+        for f in getattr(scene.active_model, "extra_fields", []) or []
+    )
+
+    @ctrl.set("radial_profile")
+    def on_radial_profile():
+        from visage.io import family_binary as fb
+        from visage.utils.group_info import galaxy_label
+
+        model = scene.active_model
+        if state.nav_gal_idx is None:
+            return
+        _, gal = model.loader.get(model.current_snap)
+        idx = int(state.nav_gal_idx)
+        label = galaxy_label(gal, idx)
+        prof = fb.radial_profiles(
+            gal.source_path,
+            int(gal.snap_num),
+            int(gal.sage_indices[idx]),
+            float(scene._cfg.hubble_h),
+        )
+        out = _get_session_dir() / f"radial_{_safe_label(label)}.png"
+        out.write_bytes(fb.plot_profile(prof, label))
+        on_library_open(str(out))
+        state.library_files = _scan_library()
+
     @ctrl.set("export_survey")
     async def on_export_survey():
         key = state.survey_key

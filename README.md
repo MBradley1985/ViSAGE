@@ -332,6 +332,9 @@ If you use ViSAGE in published work, please cite it using [CITATION.cff](CITATIO
 - **SAGE26:** Bradley M., Croton D. J., Mostoghiu Paun R. A., Dutta Chowdhury D., Willingham J. 2026, *SAGE26 Paper I: Modelling the baryon cycle from cosmic dawn to the present day*, [arXiv:2610.09564](https://arxiv.org/abs/2610.09564)
 - **SAGE:** Croton D. J. et al. 2016, *ApJS* 222, 22, [doi:10.3847/0067-0049/222/2/22](https://doi.org/10.3847/0067-0049/222/2/22)
 
+- **DarkSAGE:** Stevens A. R. H., Croton D. J., Mutch S. J. 2016, *MNRAS* 461, 859
+- **DustySAGE:** Triani D. P. et al. 2020, *MNRAS* 493, 2490
+
 LightSAGE's synthetic photometry, spectra and mock images build on the following. The full list is in [Lightcone Photometry](docs/physics/photometry.md#references).
 
 - **Stellar populations (FSPS):** Conroy C., Gunn J. E., White M. 2009, *ApJ* 699, 486; Conroy C., Gunn J. E. 2010, *ApJ* 712, 833

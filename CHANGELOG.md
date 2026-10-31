@@ -8,6 +8,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- DarkSAGE and DustySAGE in Launch Mode, on a split card: clone, install, run and load, with their binary output converted for ViSAGE. Their code isn't changed.
+- A Radial profile plot for DarkSAGE galaxies, H2 fraction and dust-to-gas colouring.
+- LightSAGE refuses DarkSAGE and DustySAGE output.
+- HD draws DarkSAGE discs from their real radial profiles, and DustySAGE dust from its real dust mass.
+
 ## [2.14.0] — 2026-10-31
 
 ### Added

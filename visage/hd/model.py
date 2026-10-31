@@ -264,6 +264,9 @@ class SageGalaxy:
     ics_share: float = 0.0
     ha_share: float = 0.0
     lum_v: float = 0.0  # relative luminosity in V, 0 without photometry
+    # DarkSAGE's discs: radii (kpc), surface densities of stars, HI, H2 and
+    # star formation; () for any other model.
+    radial: tuple = ()
     sfh_disk: tuple = ()
     sfh_bulge: tuple = ()
     # The massive haloes around it (its cosmic web): (dx, dy, dz, weight)
@@ -339,6 +342,8 @@ class GalaxyRecipe:
     # its integrated colour to its synthetic photometry (lightcone); 1 =
     # HD's own colours.
     col_gain: tuple = (1.0, 1.0, 1.0)
+    # DarkSAGE's discs (model units): radii, then stars, HI, H2, SFR.
+    radial: tuple = ()
     lane: float = 1.0  # darkness of the arm dust lanes (dust column, log)
     hii_group: int = 4  # HII regions per star-forming complex (up to)
     hii_spread: float = 0.06  # a complex's size, Rd
@@ -408,7 +413,7 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     radius only nudges it (to the 1/4 power, at most ~+-30%).
     """
     m = max(g.stellar_mass, 1e7)
-    if g.los and g.disk_radius_kpc > 0:
+    if (g.los or g.radial) and g.disk_radius_kpc > 0:
         # On a lightcone: SAGE26's own radii, as its images and photometry.
         r50 = (
             g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 2.88e-6 * m**0.56
@@ -1041,6 +1046,11 @@ def recipe_from_sage(
         n_hii=n_hii,
         n_field=60000,
         notes=notes,
+        radial=(
+            ()
+            if not g.radial
+            else (tuple(x / rd for x in g.radial[0]), *g.radial[1:])
+        ),
         unit_kpc=float(rd),
     )
 
@@ -1196,6 +1206,25 @@ def _arm_field(rc, r, th, lnr0, tanp, wobble, shift, sharp):
     return 1 - out
 
 
+def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
+    """What turns an exponential map (`base` at radius r) into DarkSAGE's own
+    profile `which`, 1 at the disc's scale radius; 1 for any other model."""
+    if not rc.radial:
+        return 1.0
+    edge = np.asarray(rc.radial[0], float)
+    v = np.asarray(rc.radial[which], float)
+    ok = v > 0
+    if ok.sum() < 3:
+        return 1.0
+    lg = np.interp(
+        np.log(np.maximum(r, 1e-3)), np.log(edge[ok]), np.log(v[ok])
+    )
+    # Falls away beyond the last annulus with any of it.
+    lg = lg - 4.0 * np.clip(r - edge[ok].max(), 0, None)
+    want = np.exp(lg - np.interp(0.0, np.log(edge[ok]), np.log(v[ok])))
+    return want / np.maximum(base / np.mean(base[np.abs(r - 1) < 0.05]), 1e-6)
+
+
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     rng = np.random.default_rng(rc.seed)
     half = rc.extent * 1.6
@@ -1257,6 +1286,7 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 + rc.arm_old_amp * (arm_eff - arm_eff.mean()))
         * np.exp(0.08 * clumps)
     )
+    old = old * radial_scale(rc, 1, r, exp_d)
     if rc.bar_len > 0:
         # The bar is built from the inner disk: hollow it out to match.
         old *= 1 - 0.65 * np.exp(-((r / (0.8 * rc.bar_len)) ** 2))
@@ -1267,6 +1297,7 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * np.exp(0.6 * clumps - 0.18)
         * outer_cut
     )
+    young = young * radial_scale(rc, 4, r, np.exp(-r / 1.35))
     if rc.lopsided > 0:
         # A dwarf irregular: brighter on one side, its light and star
         # formation pushed off-centre (m = 1).
@@ -1338,6 +1369,8 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 - 0.7 * np.exp(-((r / 1.2) ** 2)))
         * (0.15 + arm_dust)
     )
+    h2 = h2 * radial_scale(rc, 3, r, np.exp(-r / 0.9))
+    hi = hi * radial_scale(rc, 2, r, np.exp(-r / rc.hi_scale))
     if rc.clumps:
         h2 = h2 + 1.5 * giant * np.exp(-r / 3.0)
     dust = (h2 + 0.35 * hi) * outer_cut * inner

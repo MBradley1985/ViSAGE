@@ -24,6 +24,8 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+LIGHTCONE_UNSUPPORTED = ("DarkSAGE", "DustySAGE")
+
 
 def galaxy_files(first: str | Path) -> list[Path]:
     """Every rank file of the run whose first file is ``first``.
@@ -217,9 +219,23 @@ def probe_snapshot(first: str | Path, preferred: int) -> int | None:
     return None
 
 
+def family_model(first: str | Path) -> str:
+    """The model that wrote a converted output (visage.io.family_binary),
+    "" for any other SAGE output."""
+    with h5py.File(first, "r") as f:
+        misc = f.get("Header/Misc")
+        version = misc.attrs.get("sage_version", "") if misc else ""
+    version = version.decode() if isinstance(version, bytes) else str(version)
+    return version if version in LIGHTCONE_UNSUPPORTED else ""
+
+
 def main(argv: list[str] | None = None) -> None:
-    """Stop with an error if a SAGE output folder holds stale rank files."""
+    """Stop with an error if LightSAGE can't use a SAGE output folder: it
+    holds stale rank files, or a model LightSAGE doesn't support."""
     folder = Path((argv if argv is not None else sys.argv[1:])[0])
+    for first in folder.glob("*_0.hdf5"):
+        if model := family_model(first):
+            sys.exit(f"LightSAGE doesn't work with {model}: {first}")
     stale = [p for f in folder.glob("*_0.hdf5") for p in stale_rank_files(f)]
     if stale:
         names = ", ".join(p.name for p in stale)

@@ -68,6 +68,7 @@ What **Install** does:
   star-formation histories are greyed out: they can't have photometry), how
   much sky and how deep (presets, or Custom), the surveys to observe it with,
   and the light: photometry, dust, infrared glow, emission lines, disk & bulge.
+  LightSAGE only takes SAGE26 output: a DarkSAGE or DustySAGE run is refused.
 - **SAGEswarm:** the observations to match (each constraint, grouped), how hard
   to search (particles × iterations, with the number of SAGE26 runs that
   means), and the free parameters from its space file.

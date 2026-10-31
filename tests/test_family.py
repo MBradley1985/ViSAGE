@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import h5py
 import numpy as np
+import pytest
 
 from visage.io import family_binary as fb
+from visage.io import sage_files
 
 HEADER = """
 #define N_BINS 3
@@ -109,9 +111,70 @@ def test_derived_fields_close_on_darksage_arrays():
                 "SfrInstab",
                 "LastMajorMerger",
                 "LastMinorMerger",
+                "HalfMassRadiusMergerBulge",
+                "HalfMassRadiusInstabilityBulge",
             )
         ]
     )
     g = np.zeros(1, dtype)
     g["ClassicalBulgeMass"], g["SecularBulgeMass"] = (1, 2), (3, 4)
     assert fb._derived(g)["BulgeMass"][0] == 10
+
+
+def test_dusty_ratios_and_masses():
+    dtype = np.dtype(
+        [
+            (n, "f4")
+            for n in (
+                "ColdGas",
+                "ColdDust",
+                "f_H2",
+                "f_HI",
+                "BulgeMass",
+                "BulgeInstability",
+            )
+        ]
+    )
+    g = np.zeros(1, dtype)
+    g["ColdGas"], g["ColdDust"] = 2.0, 0.02
+    g["f_H2"], g["f_HI"] = 0.25, 0.25
+    out = fb._derived(g)
+    assert out["H2gas"][0] == 0.5
+    assert np.isclose(out["DustToGas"][0], 0.01)
+    assert out["H2Fraction"][0] == 0.5
+
+
+def test_profile_conserves_the_annulus_mass(tmp_path):
+    p = tmp_path / "m.hdf5"
+    with h5py.File(p, "w") as f:
+        g = f.create_group("Snap_1")
+        g["DiscRadii"] = np.array([[0.0, 1e-3, 2e-3]])
+        for k in ("DiscGas", "DiscHI", "DiscH2", "DiscStars", "DiscSFR"):
+            g[k] = np.array([[1.0, 1.0]])
+    out = fb.radial_profiles(p, 1, 0, 1.0)
+    area = np.pi * np.array([1.0, 3.0]) * 1e6  # pc^2
+    assert np.allclose(out["gas"][0] * area, 1e10)
+    assert np.allclose(out["r"][0], [0.5, 1.5])
+
+
+def test_other_models_have_no_radial_scale():
+    from types import SimpleNamespace
+
+    from visage.hd.model import radial_scale
+
+    rc = SimpleNamespace(radial=())
+    assert radial_scale(rc, 1, np.ones(3), np.ones(3)) == 1.0
+
+
+@pytest.mark.parametrize("model", ["DarkSAGE", "DustySAGE"])
+def test_lightsage_refuses_family_output(tmp_path, model):
+    with h5py.File(tmp_path / "model_0.hdf5", "w") as f:
+        f.create_group("Header/Misc").attrs["sage_version"] = model
+    with pytest.raises(SystemExit, match=model):
+        sage_files.main([str(tmp_path)])
+
+
+def test_lightsage_takes_sage26_output(tmp_path):
+    with h5py.File(tmp_path / "model_0.hdf5", "w") as f:
+        f.create_group("Header/Misc").attrs["sage_version"] = "SAGE26"
+    sage_files.main([str(tmp_path)])
