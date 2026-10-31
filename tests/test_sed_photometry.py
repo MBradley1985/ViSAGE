@@ -389,3 +389,93 @@ def test_edge_on_disks_show_more_dust():
 
     face, edge = dm.sigma_dust(1e7, 4.0, np.array([1.0, 0.0]))
     assert edge == pytest.approx(7.3 * face)
+
+
+def test_annuli_of_one_depth_are_one_screen():
+    from visage.sed import dust as dm
+
+    wave = np.array([3000.0, 5500.0, 9000.0])
+    tau, eta = np.full((1, 3), 0.4), np.full((1, 3), -1.0)
+    shares = np.array([[0.2, 0.3, 0.5]])
+    np.testing.assert_allclose(
+        dm.annuli_transmission(wave, tau, eta, shares),
+        dm.ism_transmission(wave, tau[:, 0], eta[:, 0]),
+    )
+
+
+def test_annulus_shares_sum_to_one_and_hold_the_bulge_near_the_centre():
+    from visage.sed import dust as dm
+
+    edges = np.array([[0.0, 1.0, 5.0, 20.0]])
+    disc = np.array([[0.0, 1.0, 1.0]])
+    s = dm.annulus_shares(disc, np.array([0.0]), np.array([1.0]), edges)
+    np.testing.assert_allclose(s, [[0, 0.5, 0.5]])
+    s = dm.annulus_shares(disc, np.array([100.0]), np.array([1.0]), edges)
+    assert s.sum() == pytest.approx(1.0)
+    assert s[0, 0] > 0.1
+    # Nothing there: an even share, not lost light.
+    s = dm.annulus_shares(disc * 0, np.array([0.0]), np.array([1.0]), edges)
+    np.testing.assert_allclose(s, 1 / 3)
+
+
+def test_annulus_depth_follows_dust_and_tilt():
+    from visage.sed import dust as dm
+
+    edges = np.array([[0.0, 2.0, 8.0, 30.0]])
+    dust = np.array([[1e7, 1e7, 0.0]])
+    tau, _ = dm.annulus_tau(dust, edges, np.array([1.0]))
+    assert tau[0, 0] > tau[0, 1] > tau[0, 2]
+    assert tau[0, 2] < 1e-6
+    # Face-on depth rises with tilt.
+    assert dm.annulus_tau(dust, edges, np.array([0.1]))[0][0, 0] > tau[0, 0]
+
+
+@pytest.mark.slow
+def test_photometry_prefers_the_runs_dust(tmp_path):
+    import h5py
+
+    from visage.sed.photometry import compute_photometry
+
+    alist = tmp_path / "a.list"
+    np.savetxt(alist, np.linspace(0.1, 1.0, 8))
+    p = tmp_path / "c.h5"
+    _metal_cone(p, alist, False)
+    with h5py.File(p, "a") as f:
+        for k, v in (
+            ("ColdGas", 0.05),
+            ("MetalsColdGas", 0.001),
+            ("H2gas", 0.01),
+            ("DiskRadius", 0.003),
+            ("SfrDisk", 1.0),
+            ("SfrBulge", 0.0),
+            ("Spinx", 0.0),
+            ("Spiny", 0.0),
+            ("Spinz", 1.0),
+            ("Posx", 1.0),
+            ("Posy", 2.0),
+            ("Posz", 3.0),
+        ):
+            f[k] = np.full(2, v, dtype=np.float32)
+
+    def run():
+        return compute_photometry(
+            p, bands=("sdss_r",), frame="rest", dust_model="charlot_fall"
+        )
+
+    bare = run()
+    with h5py.File(p, "a") as f:
+        f["ColdDust"] = np.full(2, 2e-4, dtype=np.float32)
+    own = run()
+    assert own["DustMassCold"][0] == pytest.approx(2e-4 * 1e10 / 0.7, rel=1e-5)
+    assert own["DustMassCold"][0] != pytest.approx(bare["DustMassCold"][0])
+    with h5py.File(p, "a") as f:
+        edges = np.tile(np.linspace(0, 0.02, 31), (2, 1))
+        f["DiscRadii"] = edges.astype(np.float32)
+        f["DiscDust"] = np.full((2, 30), 2e-4 / 30, dtype=np.float32)
+        f["DiscStars"] = np.full((2, 30), 0.8 / 30, dtype=np.float32)
+        f["DiscSFR"] = np.full((2, 30), 1 / 30, dtype=np.float32)
+    ann = run()
+    assert ann["mag_rest_sdss_r"][0] != pytest.approx(
+        own["mag_rest_sdss_r"][0], abs=1e-3
+    )
+    assert np.isfinite(ann["mag_rest_sdss_r"]).all()

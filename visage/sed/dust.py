@@ -51,6 +51,14 @@ Lagos et al. 2019, MNRAS 489, 4196):
                 tau_lambda = tau_BC (lambda / 5500 A)^-0.7, with
                 Sigma_cl = max(85 Msun/pc^2, the ISM's Sigma_gas), Z_sun =
                 0.0189, f_DTM,MW = 0.33, at least tau_ISM and at most 5
+
+Runs with SAGE26's DustySAGEMode carry their own dust: ColdDust replaces the
+steady state. With DarkSAGEMode as well, each of the 30 annuli has its own
+screen from DiscDust, and stars see the screen of the annulus they're in: new
+stars placed by DiscSFR, the rest by DiscStars, the bulge near the centre.
+Trayford et al. measured their relation on whole galaxies, so using it for
+one annulus is an extrapolation, and a screen can't show stars mixed in with
+the dust.
 """
 
 from __future__ import annotations
@@ -273,6 +281,45 @@ def ism_transmission(wave, tau_ism, eta_ism) -> np.ndarray:
     """(n, n_wave) transmission of the diffuse ISM screen."""
     x = np.asarray(wave, float)[None, :] / 5500.0
     return np.exp(-np.asarray(tau_ism)[:, None] * x ** eta_ism[:, None])
+
+
+def annulus_tau(disc_dust, edges_kpc, cos_i) -> tuple:
+    """(n, 30) V-band depths and slopes of each annulus's screen, for its
+    dust (Msun) and (n, 31) edges, seen at `cos_i`."""
+    area = np.maximum(
+        np.pi * np.diff(np.asarray(edges_kpc) ** 2, axis=1), 1e-12
+    )
+    edge = 1.0 / EDGE_ON_RATIO
+    tilt = np.asarray(cos_i, float)[:, None] * (1 - edge) + edge
+    return tau_eta_ism(np.asarray(disc_dust, float) / area / tilt)
+
+
+def annulus_shares(disc, bulge, bulge_r_kpc, edges_kpc) -> np.ndarray:
+    """(n, 30) share of some light in each annulus: `disc` there, `bulge`
+    falling off exponentially from the centre over `bulge_r_kpc`. Anything
+    without either is shared evenly."""
+    edges = np.asarray(edges_kpc, float)
+    area = np.diff(edges**2, axis=1)
+    mid = 0.5 * (edges[:, 1:] + edges[:, :-1])
+    rb = np.maximum(np.asarray(bulge_r_kpc, float), 0.05)[:, None]
+    shape = area * np.exp(-mid / rb)
+    shape = shape / np.maximum(shape.sum(axis=1, keepdims=True), 1e-30)
+    light = np.asarray(disc, float) + np.asarray(bulge, float)[:, None] * shape
+    total = light.sum(axis=1, keepdims=True)
+    return np.where(
+        total > 0, light / np.maximum(total, 1e-30), 1.0 / light.shape[1]
+    )
+
+
+def annuli_transmission(wave, tau, eta, shares) -> np.ndarray:
+    """(n, n_wave) light through the annuli's screens."""
+    x = np.asarray(wave, float) / 5500.0
+    out = np.zeros((len(tau), len(x)))
+    for k in range(tau.shape[1]):
+        out += shares[:, k, None] * np.exp(
+            -tau[:, k, None] * x ** eta[:, k, None]
+        )
+    return out
 
 
 def bc_transmission(wave, tau_birth) -> np.ndarray:

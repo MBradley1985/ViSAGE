@@ -373,6 +373,12 @@ def compute_photometry(
             h2 = get("H2gas")
             spin = np.column_stack([get(f"Spin{c}") for c in "xyz"])
             pos = np.column_stack([get(f"Pos{c}") for c in "xyz"])
+            cold_dust = get("ColdDust")  # DustySAGEMode
+            discs = {
+                k: get(k)
+                for k in ("DiscDust", "DiscRadii", "DiscStars", "DiscSFR")
+            }
+            bulge_r = get("BulgeRadius")
 
         # From the file, not `rows`: a quiescent galaxy alone can't tell.
         first = slice(0, 20_000)
@@ -450,27 +456,80 @@ def compute_photometry(
         from visage.sed import dust as dm
 
         cold_m = cold.astype(np.float64) * mfac
-        delta = dm.cold_dust_ratio(
-            cold_m,
-            metals_cold.astype(np.float64) * mfac,
-            h2.astype(np.float64) * mfac,
-            sfr_now,
-            recycle=recycle_fraction,
-            yield_=yield_,
-        )
+        if cold_dust is None:
+            delta = dm.cold_dust_ratio(
+                cold_m,
+                metals_cold.astype(np.float64) * mfac,
+                h2.astype(np.float64) * mfac,
+                sfr_now,
+                recycle=recycle_fraction,
+                yield_=yield_,
+            )
+        else:
+            delta = (
+                cold_dust.astype(np.float64) * mfac / np.maximum(cold_m, 1e-30)
+            )
         dust_mass = delta * cold_m
         cos_i = dm.cos_inclination(spin, pos)
         radius_kpc = disk_r * 1e3 / hubble_h
         tau_v, eta_v = dm.tau_eta_ism(
             dm.sigma_dust(dust_mass, radius_kpc, cos_i)
         )
+        tau_face = dm.tau_eta_ism(dm.sigma_dust(dust_mass, radius_kpc, 1.0))[0]
+        annuli = None
+        if cold_dust is not None and all(
+            v is not None for v in discs.values()
+        ):
+            edges = discs["DiscRadii"].astype(np.float64) * 1e3 / hubble_h
+            disc_dust = discs["DiscDust"].astype(np.float64) * mfac
+            rb = (
+                bulge_r * 1e3 / hubble_h
+                if bulge_r is not None
+                else np.zeros(n)
+            )
+            bulge_m = (
+                bulge_mass.astype(np.float64) * mfac
+                if bulge_mass is not None
+                else np.zeros(n)
+            )
+            old = dm.annulus_shares(
+                discs["DiscStars"].astype(np.float64) * mfac,
+                bulge_m,
+                rb,
+                edges,
+            )
+            new = dm.annulus_shares(
+                discs["DiscSFR"].astype(np.float64),
+                sfr_parts["SfrBulge"],
+                rb,
+                edges,
+            )
+            # New stars without any star formation now sit with the old.
+            no_sfr = sfr_now <= 0
+            new[no_sfr] = old[no_sfr]
+            tau_a, eta_a = dm.annulus_tau(disc_dust, edges, cos_i)
+            annuli = (tau_a, eta_a, old, new)
+            # One number for the star-weighted screen, at either tilt.
+            tau_v = -np.log((old * np.exp(-tau_a)).sum(axis=1))
+            face = dm.annulus_tau(disc_dust, edges, np.ones(n))[0]
+            tau_face = -np.log((old * np.exp(-face)).sum(axis=1))
+
+        def screens(w, gals):
+            """Transmission (old stars, new stars) of galaxies `gals`."""
+            if annuli is None:
+                t = dm.ism_transmission(w, tau_v[gals], eta_v[gals])
+                return t, t
+            tau_a, eta_a, old, new = annuli
+            return tuple(
+                dm.annuli_transmission(w, tau_a[gals], eta_a[gals], s[gals])
+                for s in (old, new)
+            )
+
         tau_birth = dm.tau_bc(delta, cold_m, radius_kpc, tau_v)
         dust_info = {
             "DustMassCold": dust_mass.astype(np.float32),
             "DustToGas": delta.astype(np.float32),
-            "TauV_ISM": dm.tau_eta_ism(
-                dm.sigma_dust(dust_mass, radius_kpc, 1.0)
-            )[0].astype(np.float32),
+            "TauV_ISM": tau_face.astype(np.float32),
             "TauV_BC": tau_birth.astype(np.float32),
             "CosInclination": cos_i.astype(np.float32),
         }
@@ -673,10 +732,10 @@ def compute_photometry(
                         young[use] += y
                 parts[pre] = (older, young)
             if cf:
-                t_ism = dm.ism_transmission(wave, tau_v[ci], eta_v[ci])
+                t_old, t_new = screens(wave, ci)
                 t_bc = dm.bc_transmission(wave, tau_birth[ci])
                 spectra = {
-                    pre: t_ism * (o + y * t_bc)
+                    pre: t_old * o + t_new * y * t_bc
                     for pre, (o, y) in parts.items()
                 }
                 unseen = {
@@ -717,7 +776,7 @@ def compute_photometry(
                 if cf:
                     seen = (
                         intr
-                        * dm.ism_transmission(line_wave, tau_v[ci], eta_v[ci])
+                        * screens(line_wave, ci)[1]
                         * dm.bc_transmission(line_wave, tau_birth[ci])
                     )
                 line_intr[ci] = intr
