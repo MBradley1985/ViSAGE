@@ -455,6 +455,8 @@ SED_LINES_ENABLED=1
 # fluxerr_obs_*), for bands of surveys with a quoted depth.
 SED_NOISE_ENABLED=1
 {survey_flags}
+"{python_exe}" -m visage.io.sage_files "$SAGE_OUTPUT_DIR"
+
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
   -s "$SAGE_OUTPUT_DIR" \\
@@ -3227,6 +3229,7 @@ class WizardController(InstallMixin, SetupRunMixin):
             "SURVEY_SDSS_ENABLED" in text
             and "--alist" in text
             and "SED_DUST_MODEL" in text
+            and "visage.io.sage_files" in text
         ):
             return text
 

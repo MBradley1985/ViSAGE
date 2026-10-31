@@ -42,6 +42,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   taken to be 0.1 Myr old, far too bright and with huge emission lines.
   Both layouts are now read correctly. Cones from such runs need their
   photometry re-run.
+- **Lightcone builds stop on stale rank files** left by an earlier SAGE run
+  with more MPI ranks, which gave duplicated galaxies with empty new fields.
 - **Dust attenuation follows Dusty SAGE's default model:** a Trayford et
   al. (2020) screen from each galaxy's dust surface density and birth
   clouds from its dust and gas (Lagos et al. 2019), replacing the slab.

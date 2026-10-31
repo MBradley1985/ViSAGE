@@ -17,6 +17,7 @@ therefore its position in that concatenation.
 from __future__ import annotations
 
 import re
+import sys
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -156,6 +157,28 @@ class MergedGroup:
         return len(self._cols)
 
 
+def stale_rank_files(first: str | Path) -> list[Path]:
+    """Rank files left beside ``first`` by an earlier run with more ranks.
+
+    ViSAGE ignores them (see ``galaxy_files``), but LightSAGE's sage2kdtree
+    reads every file in the folder, giving a cone with duplicated galaxies
+    whose newer fields are zero."""
+    first = Path(first)
+    m = re.match(r"^(.*)_0$", first.stem)
+    if not m:
+        return []
+    n = len(galaxy_files(first))
+    ranks = (
+        re.match(rf"^{re.escape(m.group(1))}_(\d+)$", f.stem)
+        for f in first.parent.glob(f"{m.group(1)}_*{first.suffix}")
+    )
+    return sorted(
+        first.with_name(f"{r.group(0)}{first.suffix}")
+        for r in ranks
+        if r and int(r.group(1)) >= n
+    )
+
+
 def is_dataset(obj) -> bool:
     """True for an HDF5 dataset or a MergedDataset."""
     return isinstance(obj, (h5py.Dataset, MergedDataset))
@@ -192,3 +215,20 @@ def probe_snapshot(first: str | Path, preferred: int) -> int | None:
     except OSError:
         pass
     return None
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Stop with an error if a SAGE output folder holds stale rank files."""
+    folder = Path((argv if argv is not None else sys.argv[1:])[0])
+    stale = [p for f in folder.glob("*_0.hdf5") for p in stale_rank_files(f)]
+    if stale:
+        names = ", ".join(p.name for p in stale)
+        sys.exit(
+            f"Stale files from an earlier run with more MPI ranks in {folder}"
+            f": {names}. Delete them, and any KD-tree built with them, or "
+            "the lightcone will hold duplicated galaxies."
+        )
+
+
+if __name__ == "__main__":
+    main()
