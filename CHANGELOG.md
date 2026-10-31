@@ -22,7 +22,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   2009) from a burst placed uniformly in its step, in place of the mean
   over the step.
 - **Moffat PSF** for ground-based mock images, in place of a Gaussian.
-- **Mock images can add galaxies beyond the cone** from a deeper lightcone.
+- **Mock images can add galaxies beyond the cone** from a deeper lightcone,
+  in a new **Image** view of the Photometry tab.
 - **Infrared SEDs follow each galaxy's dust temperature:** U_min comes
   from its L_dust / M_dust, saved as `DustUmin`.
 - **Spectra show the AGN's narrow lines,** as `LineLumAGN_*` through the

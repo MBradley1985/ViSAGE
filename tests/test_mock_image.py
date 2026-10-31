@@ -207,3 +207,13 @@ def test_moffat_psf_has_the_fwhm_and_wings():
     assert k[c, c + 2] / k[c, c] == pytest.approx(0.5, abs=0.01)
     gauss = np.exp(-4 * np.log(2) * (12.0 / 4.0) ** 2)
     assert k[c, c + 12] / k[c, c] > 50 * gauss
+
+
+def test_background_cones_are_deeper_and_have_the_bands(tmp_path):
+    for name, z in (("cone", 0.05), ("deep", 0.5), ("shallow", 0.01)):
+        (tmp_path / name).mkdir()
+        _cone(tmp_path / name / f"{name}.h5")
+        with h5py.File(tmp_path / name / f"{name}.h5", "a") as f:
+            f["redshift_cosmological"][...] = z
+    got = mi.background_cones(tmp_path / "cone" / "cone.h5", "sdss")
+    assert [c["title"] for c in got] == ["deep"]

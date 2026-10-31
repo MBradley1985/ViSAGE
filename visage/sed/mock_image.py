@@ -188,6 +188,37 @@ def available_surveys(present: set[str]) -> list[str]:
     ]
 
 
+def _box_size(f) -> float | None:
+    sim = f.get("SageOutputHeader/Simulation")
+    return None if sim is None else sim.attrs.get("box_size")
+
+
+def background_cones(path: str | Path, survey: str) -> list[dict]:
+    """Lightcones beside `path`, of the same simulation box, that reach
+    further and have `survey`'s bands, as {"title", "value"} for a background
+    (see make_mock_image)."""
+    path = Path(path).resolve()
+    bands = SURVEYS[survey].bands
+    with h5py.File(path, "r", locking=False) as f:
+        zmax = float(f["redshift_cosmological"][:].max())
+        box = _box_size(f)
+    found = []
+    for other in sorted(path.parent.parent.glob("*/*.h5")):
+        if other.resolve() == path:
+            continue
+        try:
+            with h5py.File(other, "r", locking=False) as f:
+                if (
+                    _box_size(f) == box
+                    and all(f"mag_obs_{b}" in f for b in bands)
+                    and float(f["redshift_cosmological"][:].max()) > zmax
+                ):
+                    found.append({"title": other.stem, "value": str(other)})
+        except (OSError, KeyError):
+            continue
+    return found
+
+
 def field_sizes(survey: str) -> list[float]:
     pix = SURVEYS[survey].pixel
     return [f for f in FIELDS_ARCMIN if f * 60 / pix <= MAX_PIXELS]

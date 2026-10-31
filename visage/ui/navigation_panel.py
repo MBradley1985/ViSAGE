@@ -3853,6 +3853,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.mock_field = None
     state.mock_noisy = True
     state.mock_has_depth = True
+    state.mock_backgrounds = []
+    state.mock_background = None
+    state.phot_view = "photometry"
     state.mock_busy = False
     state.mock_note = ""
     state.mock_centre = ""
@@ -3869,6 +3872,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if state.mock_field not in sizes:
             state.mock_field = 5 if 5 in sizes else sizes[len(sizes) // 2]
         state.mock_has_depth = bool(_mock.SURVEYS[mock_survey].depth)
+        path = getattr(scene.active_model, "path", None)
+        state.mock_backgrounds = (
+            _mock.background_cones(path, mock_survey) if path else []
+        )
+        if state.mock_background not in [
+            c["value"] for c in state.mock_backgrounds
+        ]:
+            state.mock_background = None
 
     @state.change("nav_gal_idx")
     def _on_mock_centre(nav_gal_idx=None, **_):
@@ -3894,6 +3905,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if state.nav_gal_idx is not None:
             row = int(gal.sage_indices[int(state.nav_gal_idx)])
         noisy = bool(state.mock_noisy) and bool(_mock.SURVEYS[survey].depth)
+        background = state.mock_background
         state.mock_busy = True
         state.mock_note = ""
         state.flush()
@@ -3907,6 +3919,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     field_am,
                     centre_row=row,
                     noisy=noisy,
+                    background=background,
                 ),
             )
             import datetime
@@ -3935,8 +3948,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "seeing, "
                 + (f"survey depth ({sv.ref})" if noisy else "noiseless")
                 + f". {img.n_galaxies} galaxies drawn"
-                + f"; only this cone's galaxies (z < {zmax:.2f}) are in "
-                f"the sky. Saved {png.name}"
+                + (
+                    f"; beyond z = {zmax:.2f} from {pathlib.Path(background).stem}"
+                    if background
+                    else f"; only this cone's galaxies (z < {zmax:.2f}) are "
+                    "in the sky"
+                )
+                + f". Saved {png.name}"
                 + (" and .fits (nanomaggies, with WCS)." if fits_ok else ".")
             )
             on_library_open(str(png))
@@ -6202,7 +6220,28 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v_show=("!has_sed_data",),
                     style="font-size:0.72rem;color:#9ca3af;line-height:1.4;",
                 )
-                with html.Div(v_show=("has_sed_data",)):
+                with v3.VBtnToggle(
+                    v_model=("phot_view",),
+                    mandatory=True,
+                    v_show=("has_sed_data",),
+                    density="compact",
+                    color="#7FDBFF",
+                    style="width:100%;margin-bottom:8px;",
+                ):
+                    for label, value in (
+                        ("Photometry", "photometry"),
+                        ("Image", "image"),
+                    ):
+                        v3.VBtn(
+                            label,
+                            value=value,
+                            size="small",
+                            variant="tonal",
+                            style="flex:1;",
+                        )
+                with html.Div(
+                    v_show=("has_sed_data && phot_view === 'photometry'",)
+                ):
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VCheckbox(
                             v_model=("photometry_visible",),
@@ -6259,9 +6298,49 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 style="font-size:0.62rem;color:#a3adbb;white-space:nowrap;",
                             )
 
+                    # Spectrum of the selected galaxy (visage.sed.spectrum).
+                    v3.VDivider(style="margin:14px 0 8px;")
+                    v3.VLabel(
+                        "SPECTRUM",
+                        style=(
+                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
+                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                        ),
+                    )
+                    html.Div(
+                        "This cone has no star-formation histories "
+                        "(SFHMassDisk/SFHMassBulge), which a spectrum needs.",
+                        v_show=("!spec_ok",),
+                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
+                    )
+                    with html.Div(v_show=("spec_ok",)):
+                        html.Div(
+                            "{{ nav_gal_idx === null ? 'Select a galaxy "
+                            "first.' : 'For ' + mock_centre + '.' }}",
+                            style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
+                        )
+                        v3.VBtn(
+                            "Make spectrum",
+                            prepend_icon="mdi-chart-bell-curve",
+                            block=True,
+                            color="#7FDBFF",
+                            variant="tonal",
+                            loading=("spec_busy",),
+                            disabled=("nav_gal_idx === null",),
+                            click=ctrl.create_spectrum,
+                            id="btn-spectrum",
+                        )
+                        html.Div(
+                            "{{ spec_note }}",
+                            v_show=("spec_note",),
+                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
+                        )
+
+                with html.Div(
+                    v_show=("has_sed_data && phot_view === 'image'",)
+                ):
                     # Mock survey image: the cone as a telescope would see
                     # it (visage.sed.mock_image).
-                    v3.VDivider(style="margin:14px 0 8px;")
                     v3.VLabel(
                         "MOCK IMAGE",
                         style=(
@@ -6305,6 +6384,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 hide_details=True,
                                 density="compact",
                             )
+                        with v3.VSheet(color="transparent", style=_FIELD):
+                            v3.VSelect(
+                                v_model=("mock_background",),
+                                items=("mock_backgrounds",),
+                                label="Galaxies beyond this cone",
+                                placeholder="None",
+                                persistent_placeholder=True,
+                                clearable=True,
+                                disabled=("!mock_backgrounds.length",),
+                                hide_details=True,
+                                variant="outlined",
+                                color="#7FDBFF",
+                                density="compact",
+                            )
                         html.Div(
                             "Centred on {{ mock_centre }}.",
                             style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
@@ -6322,44 +6415,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         html.Div(
                             "{{ mock_note }}",
                             v_show=("mock_note",),
-                            style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
-                        )
-
-                    # Spectrum of the selected galaxy (visage.sed.spectrum).
-                    v3.VDivider(style="margin:14px 0 8px;")
-                    v3.VLabel(
-                        "SPECTRUM",
-                        style=(
-                            "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
-                        ),
-                    )
-                    html.Div(
-                        "This cone has no star-formation histories "
-                        "(SFHMassDisk/SFHMassBulge), which a spectrum needs.",
-                        v_show=("!spec_ok",),
-                        style="font-size:0.7rem;color:#9ca3af;line-height:1.4;",
-                    )
-                    with html.Div(v_show=("spec_ok",)):
-                        html.Div(
-                            "{{ nav_gal_idx === null ? 'Select a galaxy "
-                            "first.' : 'For ' + mock_centre + '.' }}",
-                            style="font-size:0.68rem;color:#a3adbb;padding:2px 0 8px;",
-                        )
-                        v3.VBtn(
-                            "Make spectrum",
-                            prepend_icon="mdi-chart-bell-curve",
-                            block=True,
-                            color="#7FDBFF",
-                            variant="tonal",
-                            loading=("spec_busy",),
-                            disabled=("nav_gal_idx === null",),
-                            click=ctrl.create_spectrum,
-                            id="btn-spectrum",
-                        )
-                        html.Div(
-                            "{{ spec_note }}",
-                            v_show=("spec_note",),
                             style="font-size:0.66rem;color:#a3adbb;padding:8px 0 0;line-height:1.4;",
                         )
 
