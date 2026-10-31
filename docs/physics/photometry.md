@@ -121,9 +121,12 @@ extension per band in nanomaggies, with a TAN WCS centred on the chosen
 galaxy, or on a random point of the cone's sky with **Random patch of sky**.
 The image is saved as PNG (default), JPEG or PDF.
 
+The colour image shows the same sky noise in R, G and B, however the bands'
+depths differ, as measured on SDSS, Legacy Survey, Pan-STARRS and HSC cutouts.
+That applies to the composite only: the FITS bands keep their true noise.
+
 Colour uses one rule per kind of survey. Optical and near-infrared bands are
-balanced on the cone's bright galaxies. Spitzer makes galaxies bright at
-3.6 µm white, so stars set the colour and dust shows as red. GALEX, WISE and
+balanced on the cone's bright galaxies. Spitzer and WISE make galaxies bright in their bluest band white, so stars set the colour and dust shows as red. GALEX and
 Herschel show each band in its own noise units. The stretch comes from the
 mean noise of the displayed channels, calibrated on SDSS.
 

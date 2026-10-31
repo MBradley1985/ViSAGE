@@ -42,6 +42,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Mock images: equal sky noise in each colour channel, and display stretch set per survey from real cutouts.
 - Mock images: stretch from the mean channel noise, beam-correlated noise in WISE and Herschel, shared SPIRE confusion noise, and starlight-balanced Spitzer colours.
 - Mock images: sky noise is drawn per pixel in every survey, not as one value per band; UV, mid and far-infrared surveys are shown in noise units; JWST has CEERS depths.
 - **Star-formation histories from current SAGE26:** since its snapshot-lag

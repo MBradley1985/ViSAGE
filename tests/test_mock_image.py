@@ -303,3 +303,13 @@ def test_confusion_noise_is_shared_between_bands(tmp_path, monkeypatch):
     m = mi.make_mock_image(p, "sdss", 2, seed=1)
     r, g = m.images["sdss_r"][:60, :60], m.images["sdss_g"][:60, :60]
     assert np.corrcoef(r.ravel(), g.ravel())[0, 1] > 0.9
+
+
+def test_displayed_sky_noise_is_equal_in_each_channel(tmp_path):
+    p = tmp_path / "cone.h5"
+    _cone(p)
+    m = mi.make_mock_image(p, "sdss", 2, seed=1, subtract_sky=False)
+    sky = m.rgb[:60, :60].reshape(-1, 3).std(0)
+    assert sky.max() / sky.min() < 1.1
+    a = mi.make_mock_image(p, "sdss", 2, seed=1)
+    assert a.images["sdss_i"].std() > 1.5 * a.images["sdss_r"].std()

@@ -120,6 +120,9 @@ class Survey:
     # Maps smoothed by the beam (WISE Atlas, Herschel): noise is correlated
     # on that scale, and a point source's peak is its signal-to-noise.
     beam_noise: bool = False
+    # Asinh softening relative to SDSS's own colour images: archive viewers
+    # show sources harder. Display only, the images keep their fluxes.
+    soften: float = 1.0
     # Confusion noise per band, mJy/beam: the same unresolved galaxies in
     # every band, so this share of the noise is common to the bands.
     confusion: tuple[float, ...] = ()
@@ -139,6 +142,7 @@ SURVEYS: dict[str, Survey] = {
         "Abazajian et al. 2009",
         OPTICAL_WEIGHTS,
         (20.16, 20.84, 21.84),  # SDSS DR15 imaging data quality
+        soften=0.7,
     ),
     "des": Survey(
         "DES DR2 (DECam grz)",
@@ -189,7 +193,7 @@ SURVEYS: dict[str, Survey] = {
         ),
         "Wright et al. 2010",
         ground=False,
-        by_noise=True,
+        neutral=True,
         beam_noise=True,
     ),
     "galex": Survey(
@@ -201,6 +205,7 @@ SURVEYS: dict[str, Survey] = {
         "Morrissey et al. 2007",
         ground=False,
         by_noise=True,
+        soften=0.25,
     ),
     "euclid_vis": Survey(
         "Euclid VIS",
@@ -797,6 +802,7 @@ def make_mock_image(
         )
     n_stars = _draw_stars(images, s, npx, rng) if stars else 0
     common = rng.normal(size=(npx, npx)) if s.confusion else None
+    drawn_noise = {}
     for i, b in enumerate(s.bands):
         fwhm = s.seeing[i] / s.pixel
         if s.ground:
@@ -821,6 +827,7 @@ def make_mock_image(
                 noise = gaussian_filter(noise, fwhm / 2.3548)
                 noise = noise * map_sigma(s, i) / noise.std()
             images[b] = images[b] + noise
+            drawn_noise[b] = noise
 
     # Stretch and black point: calibrated on SDSS's own colour images, where
     # summing galaxies' pixels through the asinh stretch recovers their
@@ -829,9 +836,15 @@ def make_mock_image(
     w = s.weights or _balance(path, s)
     chans = [images[b] * wi for b, wi in zip(s.bands, w, strict=True)]
     noise = float(np.mean([map_sigma(s, i) * wi for i, wi in enumerate(w)]))
+    # Colour images have the same sky noise in R, G and B, whatever the
+    # bands' depths (measured on SDSS, Legacy Survey, PS1 and HSC cutouts).
+    for i, b in enumerate(s.bands):
+        if b in drawn_noise:
+            even = noise / map_sigma(s, i) - w[i]
+            chans[i] = chans[i] + drawn_noise[b] * even
     if s.beam_noise:
         noise *= BEAM_DISPLAY
-    stretch = STRETCH_SIGMA * noise
+    stretch = STRETCH_SIGMA * noise * s.soften
     black = BLACK_SIGMA * noise if noisy else 0.0
     if not subtract_sky:
         chans = [c + SKY_SIGMA * noise for c in chans]
