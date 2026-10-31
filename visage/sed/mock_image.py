@@ -283,6 +283,7 @@ SURVEYS: dict[str, Survey] = {
         ground=False,
         mirror=(2.4, 0.79, 4, 0.04, False),
         sky=_zodi(("wfc3_ir_f160w", "wfc_acs_f814w", "wfc_acs_f606w")),
+        pixel_noise=(0.00053, 0.00014, 0.000055),  # ACS: GOODS-S
     ),
     "vista": Survey(
         "VISTA VIKING (Y, J, Ks)",
