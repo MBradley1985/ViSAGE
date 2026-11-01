@@ -21,6 +21,8 @@ STAR_FORMING = 2e-11  # sSFR, /yr
 BULGE_ONLY = 0.7  # B/T above which a galaxy has no disc to draw
 Q0 = 0.15  # edge-on axis ratio
 DISC_SIZE = 0.6  # of the splat's radius
+UNDER_COLOURS = 0.7  # strength of the usual splats beneath the discs
+DISC_LIGHT = 0.5  # the discs' own, so the two add without clipping
 _MASS_RANGE = (8.0, 11.5)  # log10 Msun, faint to full
 _DUST_RANGE = (5.5, 9.0)  # log10 Msun
 

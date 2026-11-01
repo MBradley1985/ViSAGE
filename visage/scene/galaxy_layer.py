@@ -569,6 +569,11 @@ class GalaxyLayer:
         if spins is None:
             self._render_structure(snap, radii, eff_pos)
         else:
+            # The discs sit over the usual colours, turned down.
+            full = self._opacity
+            self._opacity = full * disc_sprites.UNDER_COLOURS
+            self._render_structure(snap, radii, eff_pos)
+            self._opacity = full
             self._render_discs(snap, radii, eff_pos, spins)
         if self._dust_glow:
             self._render_dust(snap, radii, eff_pos)
@@ -612,6 +617,7 @@ class GalaxyLayer:
             ds.scaled(stars, *ds._MASS_RANGE) ** 0.6
             * dim
             * self._glow_strength
+            * ds.DISC_LIGHT
         )
         size = np.maximum(radii * ds.DISC_SIZE, 0.02)
         gas_r = snap.extra.get("GasDiscHalfMassRadius")
