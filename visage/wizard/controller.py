@@ -350,9 +350,11 @@ git --version >/dev/null 2>&1 || PATH="/usr/bin:$PATH"
 # ViSAGE's fixes to the tools: in for the build, out again afterwards.
 APPLIED=()
 unpatch() {{
+    local status=$?
     for ((i=${{#APPLIED[@]}}-1; i>=0; i--)); do
         git apply -R "${{APPLIED[$i]}}" && echo "==> Removed ViSAGE patch: $(basename "${{APPLIED[$i]}}")"
     done
+    exit "$status"
 }}
 trap unpatch EXIT
 for P in "$PATCH_DIR"/*.patch; do

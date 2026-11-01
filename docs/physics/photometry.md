@@ -46,6 +46,8 @@ Metal-poor gas ends near μ = δ<sub>c</sub> and metal-rich gas near ½, the cri
 
 **The fibre and the HI line.** With annuli, `FibreLight` is the share of V-band light inside a 3 arcsec fibre, and `W50_HI` the width of the HI line at half its peak as inclined: each annulus's HI at its circular speed, with 11 km/s of its own (Stevens et al. 2024). SAGE26's discs follow its own `DiskRadius`, which the annuli don't set in `DarkSAGEMode` 1.
 
+**Light by annulus.** `AnnulusLight_<band>` holds each annulus's share of the disc's light in that band: stars under 300 Myr old placed by `DiscSFR`, older ones by `DiscStars`, through the annulus's dust. Mock images draw the disc from these, band by band, in place of an exponential, stretched to `DiskRadius`, so their colour gradients are that placement's. Metallicity doesn't vary with radius in them.
+
 ## Disk and bulge (`--disk-bulge`)
 
 `disk_mag_*` and `bulge_mag_*` are built from each component's own star-formation history and current SFR, through the same dust. In current SAGE26 outputs `SFHMassBulge` adds up to `BulgeMass`. In older ones it holds only the stars formed in bulge starbursts, with the disk stars that mergers and disk instabilities moved into the bulge still in `SFHMassDisk`; there, the share of the disk's history that makes the bulge's total equal its `BulgeMass` is moved into the bulge, taking those stars to have the disk's age mix.

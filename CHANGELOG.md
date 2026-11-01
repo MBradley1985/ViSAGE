@@ -15,7 +15,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Dust plots (mass function, dust-to-gas, dust-to-metals, reservoirs, cosmic density, made and destroyed) and Discs plots (half-mass radii, stacked profiles, gas metallicity gradient), with Beeston+18, Rémy-Ruyer+14 and Lange+15.
 - A 2x2 Radial profile with dust, metals, rotation and dispersion, a Rotation map of stars and gas, and the run's dust on the card.
 - HD from annuli: dust by radius, disc height from `VelDispStars`, arms that fade where Toomre Q says the disc is stable, and a faint HI glow with Gas.
-- On a lightcone with annuli: inclination from the stellar disc, the light inside a 3 arcsec fibre, HI line widths and an HI Tully-Fisher plot.
+- On a lightcone with annuli: inclination from the stellar disc, the light inside a 3 arcsec fibre, HI line widths, an HI Tully-Fisher plot, and mock images drawn from each annulus's light in each band.
 
 ### Changed
 
@@ -25,6 +25,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - The `.par` template had tags SAGE26 no longer reads, so a new `.par` stopped at startup.
 - Patches to LightSAGE were skipped, reported as not fitting, when `git` wouldn't run from bash.
+- The LightSAGE build script reports a failed build as one.
 - A patch rotates `SpinGas` and `SpinStars` with the box tiling.
 
 ## [2.15.0] — 2026-11-01
