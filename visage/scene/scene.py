@@ -10,6 +10,7 @@ from visage.scene.camera import CameraController
 from visage.scene.galaxy_layer import GalaxyLayer
 from visage.scene.halo_layer import HaloLayer
 from visage.scene.model import Model
+from visage.utils import regions
 
 # Gap between adjacent boxes as a fraction of the primary box size.
 _BOX_GAP_FRACTION = 0.30
@@ -619,11 +620,12 @@ class Scene:
         )
         active = self.active_model
         halos, galaxies = active.loader.get(active.current_snap)
+        off = active.offset.astype(np.float32)
         self._apply_focus_masks_for_layer(
             active.halo_layer,
             active.galaxy_layer,
-            halos.positions,
-            galaxies.positions,
+            halos.positions + off,
+            galaxies.positions + off,
         )
         self._refit_clipping()
 
@@ -643,6 +645,27 @@ class Scene:
             galaxies.positions + off,
         )
         self._refit_clipping()
+
+    def set_focus_region(self, region: dict, grey: bool = False) -> None:
+        """Show a region (visage.utils.regions) alone, or with `grey` the
+        galaxies outside it dimmed instead of hidden."""
+        self._focus_region = dict(type="region", region=region, grey=grey)
+        active = self.active_model
+        halos, galaxies = active.loader.get(active.current_snap)
+        off = active.offset.astype(np.float32)
+        self._apply_focus_masks_for_layer(
+            active.halo_layer,
+            active.galaxy_layer,
+            halos.positions + off,
+            galaxies.positions + off,
+        )
+        self._refit_clipping()
+
+    def region_mask(self, region: dict, galaxies, positions) -> np.ndarray:
+        """Which galaxies of the active model's `galaxies` are in `region`."""
+        size = None if self.is_lightcone else self.active_model.box_size
+        ids = regions.identity(galaxies)
+        return regions.mask(region, positions, size, ids)
 
     def set_focus_indices(
         self,
@@ -678,6 +701,7 @@ class Scene:
         self._focus_region = None
         for m in self._models.values():
             m.halo_layer.set_mask(None)
+            m.galaxy_layer.set_outside(None)
             m.galaxy_layer.set_mask(None)
         self._refit_clipping()
 
@@ -717,6 +741,29 @@ class Scene:
 
             halo_layer.set_mask(_box_mask(halo_pos))
             gal_layer.set_mask(_box_mask(gal_pos))
+        elif r["type"] == "region":
+            region = r["region"]
+            model = next(
+                (
+                    m
+                    for m in self._models.values()
+                    if m.galaxy_layer is gal_layer
+                ),
+                self.active_model,
+            )
+            _, galaxies = model.loader.get(model.current_snap)
+            keep = self.region_mask(region, galaxies, gal_pos)
+            halo_layer.set_mask(
+                np.zeros(len(halo_pos), bool)
+                if region["kind"] == "selection"
+                else regions.mask(
+                    region,
+                    halo_pos,
+                    None if self.is_lightcone else model.box_size,
+                )
+            )
+            gal_layer.set_outside(keep if r["grey"] else None)
+            gal_layer.set_mask(None if r["grey"] else keep)
         elif r["type"] == "indices":
 
             def _index_mask(pos, idxs):

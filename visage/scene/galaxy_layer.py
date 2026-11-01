@@ -46,6 +46,7 @@ _SPLAT_SHADER = (
 # (isolated galaxies and pairs) are left as they are.  At a power of 1 the piled-up light would be held at
 # that level; below 1 a dense region still reads brighter than a sparse
 # one, without clipping.
+GREYED = 0.12  # brightness of galaxies outside a greyed region
 _CROWD_FREE = 1.5
 _CROWD_POWER = 0.7
 
@@ -242,6 +243,7 @@ class GalaxyLayer:
         # — the lightcone enables these so galaxies look more defined.
         self._show_inner_layers: bool = False
         # Disc shapes and dust glow, for runs that have them.
+        self._outside: np.ndarray | None = None
         self._disc_shapes: bool = False
         self._dust_glow: bool = False
         self._spin_cache: dict = {}
@@ -402,6 +404,10 @@ class GalaxyLayer:
         if self._snapshot is not None:
             self._redraw()
 
+    def set_outside(self, inside: np.ndarray | None) -> None:
+        """Dim the galaxies where `inside` is False; None dims none."""
+        self._outside = inside
+
     def set_filter_mask(self, mask: np.ndarray | None) -> None:
         """Property filter mask (from Filters tab). None = no filtering."""
         self._filter_mask = mask
@@ -561,6 +567,12 @@ class GalaxyLayer:
                 self._render_sed_stack(eff_pos, rgb, radii)
             return
         self._dim = self._crowd_dimming(snap, radii)
+        if self._outside is not None:
+            shown = self._combined_mask()
+            kept = self._outside if shown is None else self._outside[shown]
+            if len(kept) == snap.count:
+                base = 1.0 if self._dim is None else self._dim
+                self._dim = base * np.where(kept, 1.0, GREYED)
         spins = (
             disc_sprites.read_spins(snap, self._spin_cache)
             if self._disc_shapes and self._color_mode == "structure"

@@ -10,6 +10,7 @@ from trame.widgets import vuetify3 as v3
 
 from visage.scene.scene import Scene
 from visage.ui import plotting
+from visage.ui import regions as _regions
 from visage.utils.filters import galaxy_mask
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
@@ -341,9 +342,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.nav_x = round(scene._cfg.box_size / 2, 2)
     state.nav_y = round(scene._cfg.box_size / 2, 2)
     state.nav_z = round(scene._cfg.box_size / 2, 2)
-    state.nav_distance = 10.0  # Coords sphere radius / standoff
+    state.nav_distance = 10.0  # Regions sphere radius
     # Target / Environment halo standoff: its own value, so drawing or
-    # filling the Coords sphere doesn't change where Go takes you.
+    # filling the Regions sphere doesn't change where Go takes you.
     state.nav_halo_distance = 10.0  # 10 Mpc/h
     state.nav_box_xmin = 0.0
     state.nav_box_xmax = round(scene._cfg.box_size / 2, 2)
@@ -379,8 +380,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.hd_available = True
         state.hd_unavailable = ""
     state.nav_active_tab = "layers"
-    state.draw_sphere_active = False  # interactive sphere widget in Coords tab
-    state.draw_box_active = False  # interactive box widget in Box tab
+    state.draw_sphere_active = (
+        False  # interactive sphere widget in Regions tab
+    )
+    state.draw_box_active = False  # interactive box widget in Regions tab
 
     # Console — supports multiple parallel sessions. The state vars
     # below always reflect the *active* console; switching consoles
@@ -686,6 +689,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.sed_legend = _sed_legend(state.sed_galaxy_bands)
 
     def _push():
+        focus = scene._focus_region
+        state.region_on = focus is not None and focus["type"] == "region"
         if hasattr(server.controller, "view_update"):
             server.controller.view_update()
 
@@ -1408,8 +1413,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         {"title": "Current Filters", "value": "filters"},
         {"title": "Selected Galaxy", "value": "target"},
         {"title": "Group Members", "value": "group"},
-        {"title": "Coords Sphere", "value": "coords"},
-        {"title": "Box Region", "value": "box"},
+        {"title": "Active region", "value": "region"},
     ]
     state.export_format = "csv"  # csv|hdf5|fits|txt
     state.export_filename = ""  # optional custom stem
@@ -1475,53 +1479,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             }
             return members.astype(np.int64), bounds
 
-        if scope == "coords":
-            cx, cy, cz = (
-                float(state.nav_x),
-                float(state.nav_y),
-                float(state.nav_z),
-            )
-            r = float(state.nav_distance)
-            d2 = np.sum(
-                (galaxies.positions - np.array([cx, cy, cz])) ** 2, axis=1
-            )
-            mask = d2 <= r * r
-            if not mask.any():
-                raise ValueError(
-                    f"No galaxies within {r} Mpc/h of ({cx:.1f},{cy:.1f},{cz:.1f})."
-                )
-            bounds = {
-                "sphere_center_x_Mpch": cx,
-                "sphere_center_y_Mpch": cy,
-                "sphere_center_z_Mpch": cz,
-                "sphere_radius_Mpch": r,
-            }
-            return np.where(mask)[0].astype(np.int64), bounds
-
-        if scope == "box":
-            pos = galaxies.positions
-            xmin, xmax = float(state.nav_box_xmin), float(state.nav_box_xmax)
-            ymin, ymax = float(state.nav_box_ymin), float(state.nav_box_ymax)
-            zmin, zmax = float(state.nav_box_zmin), float(state.nav_box_zmax)
-            mask = (
-                (pos[:, 0] >= xmin)
-                & (pos[:, 0] <= xmax)
-                & (pos[:, 1] >= ymin)
-                & (pos[:, 1] <= ymax)
-                & (pos[:, 2] >= zmin)
-                & (pos[:, 2] <= zmax)
-            )
-            if not mask.any():
-                raise ValueError("No galaxies within the current box bounds.")
-            bounds = {
-                "box_xmin_Mpch": xmin,
-                "box_xmax_Mpch": xmax,
-                "box_ymin_Mpch": ymin,
-                "box_ymax_Mpch": ymax,
-                "box_zmin_Mpch": zmin,
-                "box_zmax_Mpch": zmax,
-            }
-            return np.where(mask)[0].astype(np.int64), bounds
+        if scope == "region":
+            return ctrl.region_rows()
 
         # default: "filters" — use the active filter mask on the galaxy layer
         fmask = scene.galaxy_layer._filter_mask
@@ -1539,8 +1498,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         "filters": "Current Filters",
         "target": "Selected Galaxy",
         "group": "Group Members",
-        "coords": "Coords Sphere",
-        "box": "Box Region",
+        "region": "Active region",
     }
 
     @ctrl.set("do_export")
@@ -2688,33 +2646,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         threading.Thread(target=_do_finalize, daemon=True).start()
 
-    @ctrl.set("go_to_coords")
-    def on_go_to_coords():
-        # Clear any active draw widget — its final position is already in the fields.
-        if bool(state.draw_sphere_active):
-            try:
-                scene.plotter.clear_sphere_widgets()
-            except Exception:
-                pass
-            _draw_sphere_widget[0] = None
-            _remove_sphere_actor()
-            state.draw_sphere_active = False
-        x, y, z, d = (
-            float(state.nav_x),
-            float(state.nav_y),
-            float(state.nav_z),
-            float(state.nav_distance),
-        )
-        scene.camera.zoom_to_radius((x, y, z), d)
-        # Always engage focus on Go
-        scene.set_focus_sphere((x, y, z), d)
-        state.focus_active = True
-        state.isolate_active = False
-        _push()
-
     @ctrl.set("toggle_draw_sphere")
     def on_toggle_draw_sphere():
-        """Toggle the interactive sphere widget in the Coords tab.
+        """Show or hide the interactive sphere widget of the Regions tab.
 
         First click places a draggable sphere in the 3D view; dragging its
         handles updates the X/Y/Z and Standoff fields in real time.
@@ -2730,33 +2664,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _remove_sphere_actor()
             state.draw_sphere_active = False
             state.flush()
-            on_go_to_coords()
+            _push()
         else:
             # Start — place two draggable handle balls:
             #   index 0 = center ball  (translates the sphere)
             #   index 1 = edge ball    (resizes: distance from centre = radius)
-            # A custom 5-ring mesh (identical to the Coords indicator sphere)
+            # A custom 5-ring mesh (identical to the sphere indicator)
             # is drawn between them and rebuilt whenever either ball moves.
-            import numpy as _np_ds
-
-            _cam_ds = scene.plotter.camera
-            _fp_ds = _cam_ds.focal_point
-            cx, cy, cz = float(_fp_ds[0]), float(_fp_ds[1]), float(_fp_ds[2])
-            _cam_d_ds = float(
-                _np_ds.linalg.norm(
-                    _np_ds.array(_cam_ds.position) - _np_ds.array(_fp_ds)
-                )
+            cx, cy, cz = (
+                float(state.nav_x),
+                float(state.nav_y),
+                float(state.nav_z),
             )
-            r = max(
-                0.5,
-                _cam_d_ds
-                * float(_np_ds.tan(_np_ds.deg2rad(_cam_ds.view_angle) / 2.0))
-                * 0.25,
-            )
-            state.nav_x = round(cx, 3)
-            state.nav_y = round(cy, 3)
-            state.nav_z = round(cz, 3)
-            state.nav_distance = round(r, 3)
+            r = float(state.nav_distance)
 
             # Mutable centre/radius shared by the callback closure.
             _sc = [cx, cy, cz]
@@ -2809,70 +2729,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
             state.flush()
             _push()
 
-    @ctrl.set("populate_coords_from_camera")
-    def on_populate_coords_from_camera():
-        """Fill the Coords fields with the current camera focal point + standoff."""
-        import numpy as _np
-
-        cam = scene.plotter.camera
-        fp = _np.array(cam.focal_point, dtype=_np.float64)
-        pos = _np.array(cam.position, dtype=_np.float64)
-        d = float(_np.linalg.norm(pos - fp))
-        state.nav_x = round(float(fp[0]), 3)
-        state.nav_y = round(float(fp[1]), 3)
-        state.nav_z = round(float(fp[2]), 3)
-        # Standoff matches the current camera distance from the focal point.
-        state.nav_distance = (
-            round(d, 3) if d > 0 else float(state.nav_distance)
-        )
-        state.flush()
-
-    @ctrl.set("populate_box_from_camera")
-    def on_populate_box_from_camera():
-        """Fill the Box fields with the axis-aligned bounding region currently in view."""
-        import numpy as _np
-
-        cam = scene.plotter.camera
-        fp = _np.array(cam.focal_point, dtype=_np.float64)
-        pos = _np.array(cam.position, dtype=_np.float64)
-        d = float(_np.linalg.norm(pos - fp))
-        # Half-extent at the focal plane = d * tan(FOV/2). Use that as the
-        # cube half-width so the box roughly matches what's on screen.
-        fov_rad = _np.deg2rad(cam.view_angle)
-        half = max(d * _np.tan(fov_rad / 2.0), 0.1)
-        state.nav_box_xmin = round(float(fp[0] - half), 3)
-        state.nav_box_xmax = round(float(fp[0] + half), 3)
-        state.nav_box_ymin = round(float(fp[1] - half), 3)
-        state.nav_box_ymax = round(float(fp[1] + half), 3)
-        state.nav_box_zmin = round(float(fp[2] - half), 3)
-        state.nav_box_zmax = round(float(fp[2] + half), 3)
-        state.flush()
-
-    @ctrl.set("zoom_to_box")
-    def on_zoom_to_box():
-        # Clear any active draw widget — its final bounds are already in the fields.
-        if bool(state.draw_box_active):
-            try:
-                scene.plotter.clear_box_widgets()
-            except Exception:
-                pass
-            _detach_box_cam_observer()
-            _draw_box_widget[0] = None
-            state.draw_box_active = False
-        xmin, xmax = float(state.nav_box_xmin), float(state.nav_box_xmax)
-        ymin, ymax = float(state.nav_box_ymin), float(state.nav_box_ymax)
-        zmin, zmax = float(state.nav_box_zmin), float(state.nav_box_zmax)
-        scene.camera.zoom_to_box(xmin, xmax, ymin, ymax, zmin, zmax)
-        # Always engage focus on Zoom — matches Target / Environment /
-        # Coords behaviour. User can toggle it off via the focus button.
-        scene.set_focus_box(xmin, xmax, ymin, ymax, zmin, zmax)
-        state.focus_active = True
-        state.isolate_active = False
-        _push()
-
     @ctrl.set("toggle_draw_box")
     def on_toggle_draw_box():
-        """Toggle the interactive box widget in the Box tab.
+        """Show or hide the interactive box widget of the Regions tab.
 
         First click places a draggable, resizable box in the 3D view; moving
         its handles updates the six min/max bound fields in real time.
@@ -2888,38 +2747,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _draw_box_widget[0] = None
             state.draw_box_active = False
             state.flush()
-            on_zoom_to_box()
+            _push()
         else:
             # Start — place an interactive box centred on the current view.
-            import numpy as _np_db
-
-            _cam_db = scene.plotter.camera
-            _fp_db = _cam_db.focal_point
-            _cx, _cy, _cz = (
-                float(_fp_db[0]),
-                float(_fp_db[1]),
-                float(_fp_db[2]),
-            )
-            _cam_d_db = float(
-                _np_db.linalg.norm(
-                    _np_db.array(_cam_db.position) - _np_db.array(_fp_db)
-                )
-            )
-            _h = max(
-                1.0,
-                _cam_d_db
-                * float(_np_db.tan(_np_db.deg2rad(_cam_db.view_angle) / 2.0))
-                * 0.5,
-            )
-            xmin, xmax = _cx - _h, _cx + _h
-            ymin, ymax = _cy - _h, _cy + _h
-            zmin, zmax = _cz - _h, _cz + _h
-            state.nav_box_xmin = round(xmin, 3)
-            state.nav_box_xmax = round(xmax, 3)
-            state.nav_box_ymin = round(ymin, 3)
-            state.nav_box_ymax = round(ymax, 3)
-            state.nav_box_zmin = round(zmin, 3)
-            state.nav_box_zmax = round(zmax, 3)
+            xmin, xmax = float(state.nav_box_xmin), float(state.nav_box_xmax)
+            ymin, ymax = float(state.nav_box_ymin), float(state.nav_box_ymax)
+            zmin, zmax = float(state.nav_box_zmin), float(state.nav_box_zmax)
 
             def _box_cb(planes):
                 pts = planes.GetPoints()
@@ -2995,41 +2828,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
             state.flush()
             _push()
 
-    @ctrl.set("clear_draw_sphere")
-    def on_clear_draw_sphere():
-        """Cancel any active Draw Sphere widget, clear the zoom indicator, and undo focus."""
-        if bool(state.draw_sphere_active):
-            try:
-                scene.plotter.clear_sphere_widgets()
-            except Exception:
-                pass
-            _draw_sphere_widget[0] = None
-            _remove_sphere_actor()
-            state.draw_sphere_active = False
-        scene.camera._clear_indicator()
-        scene.clear_focus()
-        state.focus_active = False
-        state.isolate_active = False
-        state.flush()
-        _push()
-
-    @ctrl.set("clear_draw_box")
-    def on_clear_draw_box():
-        """Cancel any active Draw Box widget, clear the zoom indicator, and undo focus."""
-        if bool(state.draw_box_active):
-            try:
-                scene.plotter.clear_box_widgets()
-            except Exception:
-                pass
-            _detach_box_cam_observer()
-            _draw_box_widget[0] = None
-            state.draw_box_active = False
-        scene.camera._clear_indicator()
-        scene.clear_focus()
-        state.focus_active = False
-        state.isolate_active = False
-        state.flush()
-        _push()
+    _regions.setup(
+        server, scene, on_toggle_draw_sphere, on_toggle_draw_box, _push
+    )
 
     @ctrl.set("reset_camera")
     def on_reset():
@@ -4219,7 +4020,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             str(state.sel_kind) == "halo" if state.has("sel_kind") else False
         )
         if (
-            tab not in ("coords", "box")
+            tab != "coords"
             and halo_context
             and isinstance(state.nav_halo_idx, int)
         ):
@@ -4236,9 +4037,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     state.isolate_active = False
             except Exception:
                 pass
-        elif tab not in ("coords", "box") and isinstance(
-            state.nav_gal_idx, int
-        ):
+        elif tab != "coords" and isinstance(state.nav_gal_idx, int):
             try:
                 idx = int(state.nav_gal_idx)
                 radius = float(state.nav_gal_last_radius)
@@ -4252,36 +4051,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     state.isolate_active = False
             except Exception:
                 pass
-        elif tab == "box":
-            try:
-                xmin, xmax = (
-                    float(state.nav_box_xmin),
-                    float(state.nav_box_xmax),
-                )
-                ymin, ymax = (
-                    float(state.nav_box_ymin),
-                    float(state.nav_box_ymax),
-                )
-                zmin, zmax = (
-                    float(state.nav_box_zmin),
-                    float(state.nav_box_zmax),
-                )
-                scene.set_focus_box(xmin, xmax, ymin, ymax, zmin, zmax)
-                state.focus_active = True
-                state.isolate_active = False
-            except Exception:
-                pass
         elif tab == "coords":
-            try:
-                x = float(state.nav_x)
-                y = float(state.nav_y)
-                z = float(state.nav_z)
-                d = float(state.nav_distance)
-                scene.set_focus_sphere((x, y, z), d)
-                state.focus_active = True
-                state.isolate_active = False
-            except Exception:
-                pass
+            ctrl.region_show()
         else:
             # Other tabs (Structure, Filters, Record, Console, Library) —
             # re-apply whatever focus region was last set, if any.
@@ -5546,104 +5317,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # UI helper
     # ------------------------------------------------------------------
 
-    def _box_controls():
-        """Box bounds, Draw / Lock Box, Use Current View, Zoom, Clear: the
-        Box tab of a SAGE26 box, the top of the Coords tab of a lightcone
-        (boxes and slices; a slice is a thin box)."""
-        for label, key in [
-            ("X min", "nav_box_xmin"),
-            ("X max", "nav_box_xmax"),
-            ("Y min", "nav_box_ymin"),
-            ("Y max", "nav_box_ymax"),
-            ("Z min", "nav_box_zmin"),
-            ("Z max", "nav_box_zmax"),
-        ]:
-            with v3.VSheet(color="transparent", style=_FIELD):
-                _tf(
-                    key,
-                    label,
-                    on_enter=ctrl.zoom_to_box,
-                    target_id="btn-box-zoom",
-                )
-        with v3.VSheet(color="transparent", style=_BTN):
-            v3.VBtn(
-                "{{ draw_box_active ? 'Lock Box' : 'Draw Box' }}",
-                block=True,
-                variant="outlined",
-                color=("draw_box_active ? 'orange' : 'cyan'",),
-                density="compact",
-                prepend_icon=(
-                    "draw_box_active ? 'mdi-lock-outline' : 'mdi-cube-outline'",
-                ),
-                click=ctrl.toggle_draw_box,
-                title=(
-                    "draw_box_active "
-                    "? 'Lock this box and apply as focus region' "
-                    ": 'Place an interactive box you can drag to resize'"
-                ),
-                style="margin-bottom:6px;",
-            )
-            v3.VBtn(
-                "Use Current View",
-                block=True,
-                variant="outlined",
-                color="cyan",
-                density="compact",
-                prepend_icon="mdi-crosshairs-gps",
-                click=ctrl.populate_box_from_camera,
-                style="margin-bottom:6px;",
-            )
-            v3.VBtn(
-                "Zoom",
-                block=True,
-                color="cyan",
-                density="compact",
-                click=ctrl.zoom_to_box,
-                id="btn-box-zoom",
-                style="margin-bottom:6px;",
-            )
-            v3.VBtn(
-                "Clear",
-                block=True,
-                variant="outlined",
-                color="#ef4444",
-                density="compact",
-                prepend_icon="mdi-close-circle-outline",
-                click=ctrl.clear_draw_box,
-                title="Clear box widget, zoom indicator and focus region",
-                v_show=("draw_box_active || focus_active",),
-            )
-
-    _COORDS_HEAD = (
-        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-        "color:#7FDBFF;padding:2px 0 6px;"
-    )
-
-    def _tf(v_model, label, on_enter=None, target_id=None):
-        """Number-input helper. Enter binds via `target_id` (the id of
-        an action button to simulate-click via the global JS handler);
-        legacy callers can still pass `on_enter` and we'll keep that
-        wired as a defensive backup."""
-        kwargs = dict(
-            v_model=(v_model,),
-            label=label,
-            type="number",
-            hide_details=True,
-            variant="outlined",
-            bg_color="#1a1a2e",
-            density="compact",
-        )
-        if on_enter is not None:
-            kwargs["keydown_enter"] = on_enter
-        if target_id is not None:
-            with html.Div(
-                raw_attrs=[f'data-enter-click="{target_id}"'],
-                style="display:contents;",
-            ):
-                v3.VTextField(**kwargs)
-        else:
-            v3.VTextField(**kwargs)
-
     # ------------------------------------------------------------------
     # Layout
     # ------------------------------------------------------------------
@@ -5765,18 +5438,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "height:auto;min-height:0;padding-bottom:4px;"
             ),
         ):
-            # A lightcone has no periodic box to zoom to, but it does have
-            # synthetic photometry — so swap the Box tab for a Photometry tab.
-            _box_or_phot = (
-                ("Photometry", "photometry")
-                if scene.is_lightcone
-                else ("Box", "box")
+            # Synthetic photometry is a lightcone's alone.
+            _phot = (
+                [("Photometry", "photometry")] if scene.is_lightcone else []
             )
             for label, value in [
                 ("Structure", "layers"),
                 ("Filters", "filters"),
-                _box_or_phot,
-                ("Coords", "coords"),
+                *_phot,
+                ("Regions", "coords"),
                 ("Record", "record"),
                 ("Console", "console"),
                 ("Library", "library"),
@@ -6075,89 +5745,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style="margin-top:8px;",
                 )
 
-            # Coords
+            # Regions
             with v3.VSheet(
                 color="transparent",
                 v_show=("nav_active_tab === 'coords'",),
             ):
-                if scene.is_lightcone:
-                    html.Div("BOX / SLICE", style=_COORDS_HEAD)
-                    _box_controls()
-                    html.Div(
-                        "SPHERE",
-                        style=_COORDS_HEAD + "margin-top:14px;",
-                    )
-                for label, key in [
-                    ("X (Mpc/h)", "nav_x"),
-                    ("Y (Mpc/h)", "nav_y"),
-                    ("Z (Mpc/h)", "nav_z"),
-                    ("Standoff", "nav_distance"),
-                ]:
-                    with v3.VSheet(color="transparent", style=_FIELD):
-                        _tf(
-                            key,
-                            label,
-                            on_enter=ctrl.go_to_coords,
-                            target_id="btn-coords-go",
-                        )
-                with v3.VSheet(color="transparent", style=_BTN):
-                    v3.VBtn(
-                        "{{ draw_sphere_active ? 'Lock Sphere' : 'Draw Sphere' }}",
-                        block=True,
-                        variant="outlined",
-                        color=("draw_sphere_active ? 'orange' : 'cyan'",),
-                        density="compact",
-                        prepend_icon=(
-                            "draw_sphere_active ? 'mdi-lock-outline' : 'mdi-sphere'",
-                        ),
-                        click=ctrl.toggle_draw_sphere,
-                        title=(
-                            "draw_sphere_active "
-                            "? 'Lock this sphere and apply as focus region' "
-                            ": 'Place an interactive sphere you can drag to size'"
-                        ),
-                        style="margin-bottom:6px;",
-                    )
-                    v3.VBtn(
-                        "Use Current Position",
-                        block=True,
-                        variant="outlined",
-                        color="cyan",
-                        density="compact",
-                        prepend_icon="mdi-crosshairs-gps",
-                        click=ctrl.populate_coords_from_camera,
-                        style="margin-bottom:6px;",
-                    )
-                    v3.VBtn(
-                        "Zoom",
-                        block=True,
-                        color="cyan",
-                        density="compact",
-                        click=ctrl.go_to_coords,
-                        id="btn-coords-go",
-                        style="margin-bottom:6px;",
-                    )
-                    v3.VBtn(
-                        "Clear",
-                        block=True,
-                        variant="outlined",
-                        color="#ef4444",
-                        density="compact",
-                        prepend_icon="mdi-close-circle-outline",
-                        click=ctrl.clear_draw_sphere,
-                        title="Clear sphere widget, zoom indicator and focus region",
-                        v_show=("draw_sphere_active || focus_active",),
-                    )
+                _regions.tab(ctrl)
 
-            # Box (a lightcone has it at the top of Coords instead)
-            if not scene.is_lightcone:
-                with v3.VSheet(
-                    color="transparent",
-                    v_show=("nav_active_tab === 'box'",),
-                ):
-                    _box_controls()
-
-            # Photometry (Lightcone Mode only — replaces the Box tab). Its own
+            # Photometry (Lightcone Mode only). Its own
             # independent splat layer: a false-colour image built from the
             # ticked filter/M-L stack, shown on top of (or instead of) the
             # normal galaxies.

@@ -414,8 +414,7 @@ def create_app(
         ("Structure", "layers"),
         ("Filters", "filters"),
         ("Record", "record"),
-        ("Coords", "coords"),
-        ("Box", "box"),
+        ("Regions", "coords"),
         ("Console", "console"),
         ("Library", "library"),
     ]
@@ -1522,6 +1521,14 @@ def create_app(
 
                     # Components: labels on the HD galaxy's parts, drawn by
                     # visage.js from hd_labels (an SVG over the view).
+                    html.Div(
+                        id="region-draw",
+                        v_show=("region_tool",),
+                        style=(
+                            "position:absolute;inset:0;z-index:4;"
+                            "cursor:crosshair;"
+                        ),
+                    )
                     html.Div(
                         id="hd-labels",
                         style=(

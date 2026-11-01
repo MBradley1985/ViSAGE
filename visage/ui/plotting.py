@@ -18,6 +18,7 @@ from trame.widgets import vuetify3 as v3
 from visage import procs
 from visage.io.sage_files import open_snapshot
 from visage.plots import history, local, observed  # noqa: F401
+from visage.utils import regions
 from visage.plots.base import COLOUR_LABELS, PLOTS
 from visage.plots.style import FORMATS
 
@@ -83,7 +84,7 @@ def plot_groups(scene) -> list:
 
 def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
     """The tab's state and handlers.  `region_indices(scope)`: galaxies of
-    a region ("coords", "box", "group"), `open_image(path)` shows a plot,
+    a region ("region", "group"), `open_image(path)` shows a plot,
     `refresh()` updates the Library."""
     state, ctrl = server.state, server.controller
     state.plot_groups = plot_groups(scene)
@@ -94,8 +95,7 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
             "title": "Whole lightcone" if scene.is_lightcone else "Whole box",
             "value": "whole",
         },
-        {"title": "Coords sphere", "value": "coords"},
-        {"title": "Box region", "value": "box"},
+        {"title": "Active region", "value": "region"},
         {"title": "Selected group", "value": "group"},
     ]
     state.plot_filters = True
@@ -139,20 +139,12 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
 
     def region_spec(h: float) -> tuple:
         """The region for other snapshots, and its volume in Mpc^3."""
-        if state.plot_region == "coords":
-            r = float(state.nav_distance)
-            centre = [
-                float(state.nav_x),
-                float(state.nav_y),
-                float(state.nav_z),
-            ]
-            spec = {"kind": "sphere", "centre": centre, "radius": r}
-            return spec, 4.0 / 3.0 * math.pi * (r / h) ** 3
-        if state.plot_region == "box":
-            lo = [float(state[f"nav_box_{a}min"]) for a in "xyz"]
-            hi = [float(state[f"nav_box_{a}max"]) for a in "xyz"]
-            size = np.subtract(hi, lo) / h
-            return {"kind": "box", "lo": lo, "hi": hi}, float(np.prod(size))
+        if state.plot_region == "region":
+            region = ctrl.region_now()
+            size = None if scene.is_lightcone else scene.active_model.box_size
+            vol = regions.volume(region, size)
+            spec = dict(region, box_size=size)
+            return spec, None if vol is None else vol / h**3
         return {}, None
 
     def request(rows_path: Path) -> dict:

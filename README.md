@@ -182,8 +182,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 |---|---|
 | Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); environment filter, Show info (selection card) |
 | Filters    | Range sliders for halo and galaxy properties; Find presets |
-| Box        | Zoom to axis-aligned sub-box — "Use Current View" populates from camera; **Draw Box** places a resizable interactive box; **Lock Box** commits it as the focus region. *In Lightcone Mode this tab becomes **Photometry**: a separate false-colour image layer built from a stack of synthetic-photometry filters (own Visible/Opacity, independent of the galaxies)* |
-| Coords     | Fly to arbitrary (x, y, z) — "Use Current Position" populates from camera; **Draw Sphere** places an interactive two-handle sphere (drag centre ball to translate, drag edge ball to resize); **Lock Sphere** commits it as the focus region |
+| Regions    | Spheres, boxes, slices and selections, with live counts, drag handles and saved regions; the active region feeds Plotting and Export |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
 | Library    | Browse stored screenshots / movies; double-click a row to open as a movable, resizable floating card over the viewport (multiple items open simultaneously); per-row delete button removes the file from disk immediately |
@@ -227,8 +226,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - Continuous camera rotation (CW / CCW at 15° / 30° / 60° per second)
 - Reset / Centre / Focus buttons
 - Fly to halo, galaxy, coordinates, or sub-box (with focus mode that masks everything outside)
-- **Draw Sphere** (Coords tab): place a live two-handle sphere in the viewport — drag the centre ball to translate, drag the edge ball to resize; **Lock Sphere** commits it as the active focus region
-- **Draw Box** (Box tab): place a live resizable box widget — drag any face or corner handle; **Lock Box** commits it; **Clear** on both tabs cancels the widget without navigating
+- **Regions tab**: **Sphere**, **Box**, **Slice** and **Selection**. Drag handles move a sphere or box, a slice can sweep through the volume, and a selection is drawn by lasso, rectangle or click; regions wrap around a periodic box and save with their model
 - Switching models always lands at z=0 of the new model; slider and snap chip update immediately
 - Camera bookmarks (save, restore, delete)
 
@@ -238,7 +236,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
 - **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it and fly there
 - **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
-- **Enter to run** in every input field — Coords X/Y/Z, Box bounds, Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Zoom / Run / Take Screenshot button
+- **Enter to run** in every input field — Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Run / Take Screenshot button
 
 ![Filters in action](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/filters.gif)
 
@@ -255,7 +253,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 ### Side-by-side multi-box comparison
 - Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the hamburger menu
 - Each box is fully independent: its own snapshot, filters, colormaps, opacity, and visibility settings
-- A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Coords, Console, …) then controls that box
+- A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Regions, Console, …) then controls that box
 - Active box label is **green**; idle boxes are **white**
 - Play, step, and the snapshot slider advance only the active box's snapshot
 - Rotation is disabled in multi-box mode (all boxes share one camera; independent rotation is not supported)
@@ -303,7 +301,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - Reads every SAGE field carried in the flat lightcone file into a full galaxy snapshot, plus host haloes built from the `Type == 0` centrals
 - The snapshot slider becomes a **redshift/time cut**: it only spans the snapshots actually present in the cone, and moving it removes the near (lower-redshift) side of the cone, keeping the far side — the full cone shows at the slider's maximum
 - **Camera** — reset frames the cone zoomed-in, horizontal and centred, end to end; the go-to-centre button stands you at the observer (coordinate origin) looking outward along the cone
-- **Photometry tab** (replaces the Box tab) — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (named by survey, blue to red; each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
+- **Photometry tab** — if the cone carries synthetic photometry, a separate, independent splat layer that builds a **false-colour image** from a stack of the ticked filters (named by survey, blue to red; each tinted its representative colour; mass-to-light stackable too). Own Visible/Opacity; show it with the galaxies on, off, or on its own
 - **Mock images** — **Create mock image**, under **Image** in the Photometry tab, draws the sky around a galaxy as SDSS, DES, Pan-STARRS1, LSST, 2MASS, WISE, GALEX or JWST NIRCam would record it (each galaxy's disk and bulge at its size, inclination and colours; the survey's pixels, seeing and, optionally, its sky noise), saved as PNG and FITS (with WCS)
 - Reach it from Launch Mode (**Open in Lightcone view** after a build, LightSAGE's **Load existing**, or **Load a previous model**), the **Session Models** list (see below), or directly via `--lightcone`
 

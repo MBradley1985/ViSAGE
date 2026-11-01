@@ -248,7 +248,7 @@ def test_go_and_isolate_go_3_mpc_from_the_galaxy(hd_panel):
     assert state.isolate_active
     assert _cam_dist(scene) == pytest.approx(d_go)
     ctrl.toggle_isolate()
-    state.nav_distance = 0.5  # e.g. a drawn Coords sphere
+    state.nav_distance = 0.5  # e.g. a drawn Regions sphere
     assert state.nav_halo_distance == 10.0
 
 

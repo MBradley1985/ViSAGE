@@ -7,8 +7,8 @@ models, LightSAGE lightcones and DarkSAGE and DustySAGE runs.
 
 ## Choosing the galaxies
 
-- **Galaxies:** the whole box or lightcone, the Coords sphere, the Box
-  region or the selected galaxy's group.
+- **Galaxies:** the whole box or lightcone, the active region on the
+  Regions tab, or the selected galaxy's group.
 - **Use Filters and Environments:** applies the Filters tab and the
   Environment checkboxes in the Structure tab as well, so a plot shows what
   the viewer shows.

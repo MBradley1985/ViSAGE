@@ -19,6 +19,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Added
 
 - The card lists a galaxy's ICS mass.
+- A Regions tab, the same in box and lightcone modes, in place of Coords and Box: spheres, boxes, slices that can sweep through the volume, and selections by lasso, rectangle or click, with live counts, drag handles and named regions saved with each model.
 
 ### Changed
 

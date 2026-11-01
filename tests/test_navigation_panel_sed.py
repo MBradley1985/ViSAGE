@@ -187,9 +187,9 @@ def test_band_colours_are_representative():
         assert c[2] > c[1]  # blue channel over green
 
 
-def test_lightcone_coords_tab_has_box_and_slice_controls(sed_panel):
-    """A lightcone has no Box tab: its box (and slice) controls are at the
-    top of Coords, and zooming to a thin box focuses on that slice."""
+def test_lightcone_regions_start_at_the_cone_and_cut_to_a_thin_box(sed_panel):
+    """A lightcone's box starts at its own extent, and showing a thin box
+    focuses on that slice."""
     state, ctrl = sed_panel.state, sed_panel.ctrl
     # Defaults: the cone's own extent, not a box from the origin.
     lo, hi = sed_panel.scene.active_model.bounds
@@ -199,5 +199,6 @@ def test_lightcone_coords_tab_has_box_and_slice_controls(sed_panel):
     state.nav_box_xmin, state.nav_box_xmax = 0.0, 100.0
     state.nav_box_ymin, state.nav_box_ymax = 0.0, 100.0
     state.nav_box_zmin, state.nav_box_zmax = 40.0, 45.0  # a 5 Mpc/h slice
-    ctrl.zoom_to_box()
+    state.region_shape = "box"
+    ctrl.region_show()
     assert state.focus_active

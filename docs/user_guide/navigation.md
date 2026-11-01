@@ -79,15 +79,18 @@ The **Environment filter** at the end of the Structure tab shows only galaxies i
 
 The list updates as the snapshot changes.
 
-## Coords tab
+## Regions tab
 
-Enter **X, Y, Z** in Mpc/h and a standoff distance, press **Go** to point the camera at that location.
+Pick a **Sphere**, **Box**, **Slice** or **Selection**. What is on the tab is the active region: the count below it, and **Active region** in Plotting and Export, all use it. In a periodic box, regions wrap around the edges.
 
-## Box tab
+- **Show only this region** cuts the view to it; **Grey out the rest** dims the galaxies outside it instead (haloes outside are still hidden).
+- **Drag handles in the view** moves a sphere or box with the mouse.
+- **Frame camera** only moves the camera.
+- **Slice:** face X, Y, Z or the camera, then set the depth and thickness. **Sweep through the volume** moves it for you.
+- **Selection:** draw a lasso or rectangle over the view, or click galaxies, and Add, Remove or Replace. A drawn shape takes everything through the depth; **Only what I can see** keeps the nearest in each part of the screen. **Filtered**, **Group** and **Region** take those galaxies. In a box, a selection follows its galaxies through snapshots.
+- **Save** keeps a region with its model. Click a saved name to bring it back.
 
-Enter an axis-aligned bounding box (Xmin, Xmax, Ymin, Ymax, Zmin, Zmax) in Mpc/h. Press **Zoom** to frame that region. With Focus active, the box also defines the masked region.
-
-> In **Lightcone Mode** the Box tab is replaced by a **Photometry** tab (a lightcone has no periodic sub-box to zoom to) — see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).
+Box mode and Lightcone Mode have the same tab. A lightcone also has a **Photometry** tab: see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).
 
 ## Cam (camera bookmarks)
 

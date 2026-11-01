@@ -31,11 +31,7 @@ Drag it inward from the maximum to peel away the near side of the cone and see w
 ## Synthetic photometry (SED)
 
 If the lightcone was built with photometry (see
-[Launch Mode → Setting up a run](launch_mode.md#setting-up-a-run)), Lightcone Mode
-replaces the **Box** tab with a **Photometry** tab (the box and slice controls
-move to the top of the **Coords** tab: X/Y/Z bounds, **Draw Box**, **Use
-Current View**, **Zoom**; a thin box makes a slice, and the bounds start at the
-cone's own extent) — a false-colour **image builder**.
+[Launch Mode → Setting up a run](launch_mode.md#setting-up-a-run)), Lightcone Mode adds a **Photometry** tab — a false-colour **image builder**.
 
 Photometry is its **own independent layer**, separate from the galaxies, with
 its own **Visible** checkbox and **Opacity** slider. It's hidden by default;

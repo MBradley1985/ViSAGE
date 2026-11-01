@@ -16,6 +16,7 @@ import numpy as np
 from visage.plots import catalogue as cat
 from visage.plots import history, local, observed, style  # noqa: F401
 from visage.plots.base import PLOTS, Options, Plot
+from visage.utils import regions
 
 
 def box_rows(req: dict, snap: int) -> np.ndarray:
@@ -42,12 +43,13 @@ def box_rows(req: dict, snap: int) -> np.ndarray:
             gal, req["fields"], SimpleNamespace(**req["filters"])
         )
     region = req["region"]
-    if region.get("kind") == "sphere":
-        d = gal.positions - np.array(region["centre"])
-        mask &= np.sum(d**2, axis=1) <= region["radius"] ** 2
-    elif region.get("kind") == "box":
-        lo, hi = np.array(region["lo"]), np.array(region["hi"])
-        mask &= np.all((gal.positions >= lo) & (gal.positions <= hi), axis=1)
+    if region:
+        mask &= regions.mask(
+            region,
+            gal.positions,
+            region.get("box_size"),
+            regions.identity(gal),
+        )
     return np.asarray(gal.sage_indices)[mask]
 
 
