@@ -328,6 +328,16 @@ def selection_card(server) -> None:
                 click=ctrl.radial_profile,
                 style="margin:4px 0;",
             )
+            v3.VBtn(
+                "Rotation",
+                v_show=("rotation_ok",),
+                size="x-small",
+                variant="text",
+                color="cyan",
+                click=ctrl.rotation_view,
+                title="Stars and gas as line-of-sight velocity maps",
+                style="margin:4px 0;",
+            )
             with html.Div(v_show=("sel_info_open",)):
                 with html.Div(
                     v_for="(p, i) in sel_info_items",

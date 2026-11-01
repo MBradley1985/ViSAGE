@@ -233,6 +233,8 @@ def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
             sigma = read("VelDispStars")
             if sigma.ndim == 2:
                 extra["sigma"] = sigma
+        if have("SpinGas") and have("SpinStars"):
+            extra["spin_dot"] = (read("SpinGas") * read("SpinStars")).sum(1)
     area = np.maximum(np.pi * (edges[:, 1:] ** 2 - edges[:, :-1] ** 2), 1e-12)
     res = {k: v * mass / (area * 1e6) for k, v in out.items()}
     res.update(extra)
@@ -327,6 +329,67 @@ def plot_profile(prof: dict, label: str) -> bytes:
         d.axis("off")
     fig.suptitle(f"Galaxy {label}: discs")
     fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    return buf.getvalue()
+
+
+def plot_rotation(prof: dict, label: str, inclination: float = 55.0) -> bytes:
+    """One galaxy's stars and gas as line-of-sight velocity maps, side by
+    side, from the rotation curve of its annuli; a PNG. Gas turning against
+    the stars has its velocities flipped."""
+    import io
+
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+    from matplotlib.figure import Figure
+
+    r = prof["r"][0]
+    edges = prof["edges"][0]
+    v = prof["vcirc"][0]
+    gas = np.maximum(prof["gas"][0], 1e-12)
+    half = 1.3 * edges[1:][np.cumsum(gas * np.diff(edges**2))
+                           <= 0.95 * np.sum(gas * np.diff(edges**2))].max(
+        initial=edges[-1] * 0.2
+    )  # fmt: skip
+    grid = np.linspace(-half, half, 400)
+    x, y = np.meshgrid(grid, grid)
+    cos_i = np.cos(np.radians(inclination))
+    rr = np.maximum(np.hypot(x, y / cos_i), 1e-4)
+    los = np.interp(rr, edges, v) * np.sin(np.radians(inclination)) * x / rr
+    top = max(float(np.percentile(np.abs(los), 98)), 1.0)
+    spin = float(prof["spin_dot"][0]) if "spin_dot" in prof else 1.0
+    fig = Figure(figsize=(9.5, 4.6), dpi=130)
+    FigureCanvasAgg(fig)
+    axes = fig.subplots(1, 2, sharey=True)
+    norm = Normalize(-top, top)
+    for ax, key, name, sign in (
+        (axes[0], "stars", "Stars", 1.0),
+        (axes[1], "gas", "Gas", 1.0 if spin >= 0 else -1.0),
+    ):
+        surface = np.log10(np.maximum(prof[key][0], 1e-6))
+        here = np.interp(np.log(rr), np.log(np.maximum(r, 1e-4)), surface)
+        shade = np.clip((here - (surface.max() - 3)) / 3, 0, 1)[..., None]
+        rgb = ScalarMappable(norm, "RdBu_r").to_rgba(sign * los)[..., :3]
+        ax.imshow(
+            rgb * shade,
+            extent=(-half, half, -half, half),
+            origin="lower",
+        )
+        ax.set(title=name, xlabel="kpc")
+    axes[0].set_ylabel("kpc")
+    fig.colorbar(
+        ScalarMappable(norm, "RdBu_r"),
+        ax=axes,
+        label="Line-of-sight velocity (km/s)",
+        shrink=0.85,
+    )
+    angle = np.degrees(np.arccos(np.clip(spin, -1, 1)))
+    note = f"gas {angle:.0f}° from stars, seen at {inclination:.0f}°"
+    if spin < -0.5:
+        note += "; counter-rotating gas is a model prediction"
+    fig.suptitle(f"Galaxy {label}: {note}")
     buf = io.BytesIO()
     fig.savefig(buf, format="png")
     return buf.getvalue()

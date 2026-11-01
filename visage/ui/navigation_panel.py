@@ -3701,14 +3701,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.survey_busy = False
     state.survey_note = ""
 
-    # DarkSAGE's radial discs of the selected galaxy, as a plot.
-    state.radial_ok = any(
-        f["key"] == "StellarDiscScaleRadius"
-        for f in getattr(scene.active_model, "extra_fields", []) or []
-    )
+    # The radial discs of the selected galaxy, as plots.
+    fields = {
+        f["key"] for f in getattr(scene.active_model, "extra_fields", []) or []
+    }
+    state.radial_ok = "StellarDiscScaleRadius" in fields
+    state.rotation_ok = state.radial_ok and "VelDispBulge" in fields
 
-    @ctrl.set("radial_profile")
-    def on_radial_profile():
+    def _disc_plot(kind: str) -> None:
         from visage.io import family_binary as fb
         from visage.utils.group_info import galaxy_label
 
@@ -3724,10 +3724,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
             int(gal.sage_indices[idx]),
             float(scene._cfg.hubble_h),
         )
-        out = _get_session_dir() / f"radial_{_safe_label(label)}.png"
-        out.write_bytes(fb.plot_profile(prof, label))
+        out = _get_session_dir() / f"{kind}_{_safe_label(label)}.png"
+        draw = fb.plot_profile if kind == "radial" else fb.plot_rotation
+        out.write_bytes(draw(prof, label))
         on_library_open(str(out))
         state.library_files = _scan_library()
+
+    @ctrl.set("radial_profile")
+    def on_radial_profile():
+        _disc_plot("radial")
+
+    @ctrl.set("rotation_view")
+    def on_rotation_view():
+        _disc_plot("rotation")
 
     @ctrl.set("export_survey")
     async def on_export_survey():
