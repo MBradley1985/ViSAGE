@@ -110,6 +110,10 @@ The terminal is never narrower than 140 columns (SAGE26 redraws its banner
 and progress bar in place, up to 138 columns wide); in a narrow window its
 font shrinks, and long lines are cut off at the edge rather than wrapped.
 
+## SAGE26's radial discs and dust
+
+**Radial discs** and **Dust** turn on `DarkSAGEMode` and `DustySAGEMode` at 1, where every other output stays as it is. Their other values are typed in **All settings**, under Discs & dust, with `SaveFullMH` and the yields. Older `.par` files gain the lines when you turn them on.
+
 ## Opening a model
 
 Opening a model or lightcone, from any of these pages or from the Launch Mode
@@ -186,6 +190,8 @@ LightSAGE already includes is skipped.
 |---|---|
 | Rotate spins with the box tiling | When a lightcone tiles copies of the box, each copy's axes are permuted. Positions and velocities were permuted but galaxy spins weren't, so each galaxy's orientation to the observer (its inclination) was wrong. Spins now get the same permutation, with the sign flip an axial vector takes when two axes swap (a mirror). |
 | Sort iterator for newer compilers | Newer C++ standard libraries (Xcode / Command Line Tools 27) sort through `it[n]`, which LightSAGE's sort iterator didn't support, so the tools no longer compiled. |
+
+A third patch rotates `SpinGas` and `SpinStars` with the box tiling too.
 
 ## Closing
 

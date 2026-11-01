@@ -303,7 +303,7 @@ def compute_photometry(
     its emission and any AGN's lines), "intrinsic" (the stars alone), with
     ``disk_bulge`` "disk" and "bulge", and with ``lines`` "agn" -- for a few ``rows`` only (n x 6000 floats each).
     ``dust_model``: "none", "calzetti" (the ``dust``/``dust2`` screen) or
-    "charlot_fall": each galaxy's own dust (Dusty-SAGE equilibrium) in
+    "charlot_fall": each galaxy's own dust (the run's, or a steady state) in
     birth clouds and a diffuse ISM slab at its inclination (see
     visage/sed/dust.py). Default: "calzetti" if ``dust`` else "none".
 
@@ -959,8 +959,13 @@ def compute_photometry(
         "IGM": "Madau 1995",
         "Dust": (
             "Charlot & Fall 2000 as Dusty SAGE (Lagos+19 birth clouds, "
-            "Trayford+20 ISM) at each galaxy's inclination; cold dust from "
-            "Dusty-SAGE (Triani+20) equilibrium"
+            "Trayford+20 ISM) at each galaxy's inclination; cold dust "
+            + (
+                "steady state after Dusty-SAGE (Triani+20)"
+                if cold_dust is None
+                else "the run's ColdDust"
+                + ("" if annuli is None else ", a screen per annulus")
+            )
             + (
                 "; re-emitted in the IR (Draine & Li 2007, energy balance, "
                 "U_min from L_dust/M_dust)"
@@ -1076,7 +1081,7 @@ def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
                 continue
             if name in _DUST_FIELDS:
                 ds.attrs["Description"], ds.attrs["Units"] = _DUST_FIELDS[name]
-                ds.attrs["Source"] = "ViSAGE dust (Dusty-SAGE equilibrium)"
+                ds.attrs["Source"] = "ViSAGE dust"
                 continue
             band = name.split("mag_", 1)[1].split("_", 1)[1]
             frame_word = (

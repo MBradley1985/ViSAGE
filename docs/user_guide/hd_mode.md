@@ -28,6 +28,8 @@ On a DarkSAGE run the disc follows the model's own radial profiles, and on a Dus
 
 The full list of components, the SAGE26 fields each one uses and how, is in [HD Galaxy Components](../physics/hd_components.md).
 
+Every disc is drawn at the model's own `DiskRadius`. With SAGE26's `DarkSAGEMode` the annuli set the shape of its light, star formation and dust, its height comes from `VelDispStars` (σ² / πGΣ at the half-mass radius), and spiral arms fade between Toomre Q of 1 and 2, where the disc is stable. Q decides where arms end, not whether a galaxy has them.
+
 ## Groups and clusters
 
 In **Halo + group** context, HD draws every member of the FOF group at its own position and spin:
@@ -77,6 +79,8 @@ The card's **Gas** button adds the halo gas: every member of the group gets its 
 | Radio jets | Heating |
 
 Gas is a shader switch: turning it on or off doesn't rebuild anything.
+
+With annuli, Gas also shows the HI as a faint blue glow, reaching well past the stars. It's smooth because annuli have no structure round the disc. The card's **Rotation** button opens maps of the stars and gas as line-of-sight velocities. Counter-rotating gas is what the model predicts, and can only be seen there.
 
 ## Building
 
