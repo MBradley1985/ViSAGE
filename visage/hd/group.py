@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-from visage.hd.layer import HDGalaxyLayer, magnification
+from visage.hd.layer import HDGalaxyLayer
 from visage.hd.model import (
     CGM_RGB,
     HOT_GAS_RGB,
@@ -161,8 +161,23 @@ def ram_pressure(
 # infall), "stars" (stellar mass lost) or "both" (the stronger).
 STRIP_MODE = "dm"
 
+# A member's glow is gone once its model is this many pixels across: at real
+# size most never reach more, and a bright glow would hide them.
+GLOW_UNTIL_PX = 2.0
+
+# How much of a shared exposure's dimming a member gets back: a group stays
+# in proportion, but a satellite beside a bright central keeps its detail.
+SATELLITE_LIFT = 0.4
+
 # Cap on a jellyfish tail's exposure compensation.
 TAIL_GAIN_MAX = 10.0
+
+
+def shared_white(white: float, base: float) -> float:
+    """A member's white level in a group: `white` is its share of the
+    group's exposure, `base` its own, with SATELLITE_LIFT of the dimming
+    between them taken back so its detail still shows."""
+    return base * max(white / base, 1.0) ** (1.0 - SATELLITE_LIFT)
 
 
 def tail_gains(entries, sat_ctx) -> dict:
@@ -185,7 +200,8 @@ def tail_gains(entries, sat_ctx) -> dict:
         if "ram" not in ctx or not e.get("prep"):
             continue
         lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
-        f = (w_common / lum) / max(e["prep"]["exposure"].base, 1e-12)
+        base = max(e["prep"]["exposure"].base, 1e-12)
+        f = shared_white(w_common / lum, base) / base
         if f > 1.15:
             out[k] = float(min(f, TAIL_GAIN_MAX))
     return out
@@ -402,8 +418,8 @@ class HDGroupLayer:
 
     def show(self, entries, hubble_h: float, gas: bool = False):
         """Draw the group.  `entries`: dicts with gal, center, spin, prep
-        (None for a glow), "role" ("member" / "neighbour") and "magnify"
-        (bool); the central first."""
+        (None for a glow) and "role" ("member" / "neighbour"); the central
+        first."""
         self.clear()
         ren = self._pl.renderer
         self._fxaa = bool(ren.GetUseFXAA())
@@ -442,11 +458,6 @@ class HDGroupLayer:
         lay = HDGalaxyLayer(self._pl)
         member = e.get("role", "member") == "member"
         lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
-        mag = (
-            magnification(e["gal"], e["prep"]["rc"], self._hubble_h)
-            if e.get("magnify", True)
-            else 1.0
-        )
         lay.show(
             e["gal"],
             e["center"],
@@ -454,11 +465,12 @@ class HDGroupLayer:
             self._hubble_h,
             gas=self._gas and member,
             prep=e["prep"],
-            white=self._w_common / lum,
+            white=shared_white(
+                self._w_common / lum, e["prep"]["exposure"].base
+            ),
             halo=member,
             icl=icl,
             manage_fxaa=False,
-            magnify=mag,
         )
         (self.members if member else self.neighbours).append(lay)
         e["layer"] = lay
@@ -535,8 +547,8 @@ class HDGroupLayer:
         self._cloud = cloud
 
     def _update_glows(self, *_):
-        """Per frame: each glow at least ~2.5 px across, faded out once the
-        member's HD model is ~8 px across."""
+        """Per frame: each glow at least ~2.5 px across, faded out as the
+        member's HD model reaches GLOW_UNTIL_PX across."""
         d = self._glow_data
         if d is None or self._glow is None:
             return
@@ -552,7 +564,7 @@ class HDGroupLayer:
         for k, lay in enumerate(d["hd"]):
             if lay is not None:
                 size_px = lay.radius_world / px_world[k]
-                w[k] = float(np.clip(1.0 - (size_px - 3.0) / 5.0, 0.0, 1.0))
+                w[k] = float(np.clip(GLOW_UNTIL_PX - size_px, 0.0, 1.0))
         self._cloud["radius"] = rad.astype(np.float32)
         self._cloud["rgb"] = (d["rgb"] * w[:, None]).astype(np.float32)
 

@@ -6,6 +6,56 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [2.17.0] — 2026-11-02
+
+### Fixed
+
+- Load existing finds a run whose `.par` has a different name from its output folder, by the `.par`'s `OutputDir`.
+- Dusty and Dark 'n Dusty, Radial profile and Rotation appear on lightcones that have the fields.
+- The HD HI glow no longer shows as a flat square where a disc's annuli end above its threshold.
+- HD discs fade softly instead of ending at a rim.
+- Lightcone luminosities in erg/s (`LAGN`, `LineLum*`) keep their values; they overflowed to infinity when read.
+- Reset Camera puts everything back to default, leaving HD and Isolate, and clearing filters, selection and regions.
+- HD group members are drawn at their real size, in true proportion to each other.
+- HD group members keep more of their detail next to a bright central.
+- HD group members show as galaxies at a distance, not as bright dots.
+- HD jellyfish tails are clumps of young stars streaking off the disc over a faint glow, each set by the galaxy's cold gas, sSFR, gas fraction, ram pressure and time since infall.
+
+### Added
+
+- The card lists a galaxy's ICS mass.
+- Find has a Galaxy ID option: type a GalaxyIndex and Go.
+- A Regions tab, the same in box and lightcone modes, in place of Coords and Box: spheres, boxes, slices that can sweep through the volume, and selections by lasso, rectangle or click, with live counts, a Go button and named regions saved with each model.
+
+### Changed
+
+- Rotation shows stars and gas as velocity maps above the rotation curve, each map framed on its own, with Gaia-style colours, contours and orbit streaks.
+- The dark background switch is now Dark mode, in the Plotting tab above Make plot, on by default. It also sets radial, rotation and spectrum figures.
+- Tighter spacing for the galaxy and mock-image checkboxes.
+- The selection card and pop-outs have a new glass look, matching Launch Mode.
+- Tabs moved to an icon rail on the right, opening a floating glass panel that a second click closes. Rail and panel float over the view.
+- The top bar has Export, Fly-through and updates beside playback.
+- ViSAGE opens with the side panel closed and the box or lightcone centred in full view. The view moves over when the panel opens.
+- Reset keeps the tab you are on.
+- Drawn boxes, spheres and slices have a move icon at their centre. Drag a box's face or a sphere's rim to resize; what you drag lights up.
+- Structure and Filters dropdowns show the chosen value in the haloes' or galaxies' colour.
+- Show info is gone from the Structure tab: use Info on the icon rail.
+- Structure heads the galaxy Colour by list, ruled off from the properties.
+- Dusty and Dark 'n Dusty take the top and bottom halves of plasma.
+- Go, Info, Focus, Isolate and Box Centre sit at the bottom of the icon rail. Go is new there, and flies to the selection.
+- A new look throughout: pill dropdowns and switches.
+- Masses and units are typeset with subscripts and superscripts, in the app and on its figures.
+- The Plotting tab has dividers between its steps, and file formats are switches.
+- The Filters tab gives the Galaxy type dropdowns less room and the sliders more.
+- Properties have one name, symbol and unit everywhere: Colour by lists, Filters, the card, plots and axis labels. Units are written as km s⁻¹, M☉ yr⁻¹ and h⁻¹ Mpc.
+- The Plotting tab runs in steps: choose plots, choose galaxies, set the look, make.
+- Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.
+- The Isolate backdrop uses the mock images' real stars, with their own colours and brightnesses.
+
 ## [2.16.0] — 2026-11-01
 
 ### Added

@@ -31,7 +31,7 @@ _PICK_PX = 28.0  # how close (pixels) a double-click must be to a galaxy
 
 def _init_state(state) -> None:
     for k, v in {
-        "sel_show": False,  # the card is open (Show info)
+        "sel_show": False,  # the card is open (Info)
         "sel_active": False,  # something is selected
         "sel_title": "",
         "sel_sub": "",
@@ -45,6 +45,7 @@ def _init_state(state) -> None:
         "sel_info_items": [],
         "sel_rings": True,  # the indicator on (the card's Clear / Show)
         "sel_halo": "",
+        "sel_badge": "",
         "sel_group": "",
         "sel_q_gal": "",
         "sel_q_halo": "",
@@ -55,6 +56,7 @@ def _init_state(state) -> None:
         "sel_can_fwd": False,
         "find_preset": None,
         "find_results": [],
+        "find_id": "",
         "find_note": "",
         "hd_available": True,
         "hd_unavailable": "",
@@ -87,34 +89,40 @@ def selection_card(server) -> None:
             "position:absolute;top:32px;left:24px;"
             "width:330px;max-height:calc(100% - 56px);"
             "display:flex;flex-direction:column;"
-            "background:rgba(17,24,39,0.88);backdrop-filter:blur(6px);"
-            "border:1px solid #0e7490;color:#e2e8f0;z-index:5;"
+            "color:#e2e8f0;z-index:5;"
         ),
-        elevation=8,
+        elevation=0,
     ):
         with html.Div(
-            classes="sage-popout-handle",
+            classes="sage-popout-handle sel-hero",
             style=(
-                "display:flex;align-items:flex-start;padding:10px 12px 6px;"
+                "display:flex;align-items:flex-start;padding:16px 12px 8px 16px;"
                 "cursor:move;user-select:none;flex-shrink:0;"
-                "border-bottom:1px solid #1f2937;"
             ),
         ):
             with html.Div(style="flex:1;min-width:0;"):
                 html.Div(
                     "{{ sel_title }}",
-                    style="font-size:0.95rem;font-weight:700;color:#22d3ee;",
+                    style=(
+                        "font-size:1.3rem;font-weight:700;color:#fff;"
+                        "letter-spacing:-0.01em;overflow-wrap:anywhere;"
+                    ),
                 )
                 html.Div(
                     "{{ sel_sub }}",
-                    style="font-size:0.75rem;color:#9ca3af;margin-top:2px;",
+                    style="font-size:0.78rem;color:#9ca3af;margin-top:2px;",
+                )
+                html.Span(
+                    "{{ sel_badge }}",
+                    v_show=("sel_badge",),
+                    classes="sel-badge",
                 )
             v3.VBtn(
                 icon="mdi-close",
                 size="x-small",
                 variant="text",
                 click=ctrl.sel_close,
-                title="Hide (Show info brings it back)",
+                title="Hide (Info brings it back)",
             )
         html.Div(
             "{{ sel_note }}",
@@ -122,7 +130,9 @@ def selection_card(server) -> None:
             style=("font-size:0.75rem;color:#fbbf24;padding:6px 12px 0;"),
         )
         # Galaxy or its halo: what Go, Isolate and Focus act on.
-        with html.Div(style="padding:8px 12px 0;flex-shrink:0;"):
+        with html.Div(
+            classes="sel-pills", style="padding:6px 16px 0;flex-shrink:0;"
+        ):
             with v3.VBtnToggle(
                 v_model=("sel_kind",),
                 mandatory=True,
@@ -147,28 +157,32 @@ def selection_card(server) -> None:
                 )
         # Actions.
         with html.Div(
-            style="display:flex;flex-wrap:wrap;gap:5px;padding:8px 12px;flex-shrink:0;"
+            classes="sel-actions",
+            style=(
+                "display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px;"
+                "flex-shrink:0;"
+            ),
         ):
             v3.VBtn(
                 "Go",
                 size="small",
-                variant="outlined",
-                color="#FFD700",
+                variant="tonal",
+                color="cyan",
                 click=ctrl.sel_go,
-                title="Fly to it (10 Mpc/h; in HD, to it in close-up)",
+                title="Fly to it (10 h^-1 Mpc; in HD, to it in close-up)",
             )
             v3.VBtn(
                 "Isolate",
                 size="small",
                 variant=("isolate_active ? 'flat' : 'outlined'",),
-                color="cyan",
+                color=("isolate_active ? 'cyan' : '#cbd5e1'",),
                 click=ctrl.toggle_isolate,
             )
             v3.VBtn(
                 "HD",
                 size="small",
                 variant=("hd_active ? 'flat' : 'outlined'",),
-                color=("hd_active ? 'cyan' : '#FFD700'",),
+                color=("hd_active ? 'cyan' : '#cbd5e1'",),
                 loading=("hd_building",),
                 disabled=("!hd_available",),
                 click=ctrl.toggle_hd,
@@ -178,7 +192,7 @@ def selection_card(server) -> None:
                 "Gas",
                 size="small",
                 variant=("hd_gas ? 'flat' : 'outlined'",),
-                color="#a3e635",
+                color=("hd_gas ? '#a3e635' : '#cbd5e1'",),
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
             )
@@ -255,7 +269,7 @@ def selection_card(server) -> None:
                 "font-size:0.72rem;color:#9ca3af;flex-shrink:0;"
             ),
         ):
-            html.Span("Zoom (Mpc/h)", style="margin-right:4px;")
+            html.Span("Zoom (h^-1 Mpc)", style="margin-right:4px;")
             for label, fn in (
                 ("3", ctrl.go_to_galaxy_1),
                 ("5", ctrl.go_to_galaxy_3),
@@ -265,13 +279,13 @@ def selection_card(server) -> None:
                     label,
                     size="x-small",
                     variant="outlined",
-                    color="#FFD700",
+                    color="#cbd5e1",
                     click=fn,
                     style="min-width:0;",
                 )
             html.Div(style="flex:1;")
             v3.VBtn(
-                "{{ sel_rings ? 'Clear indicator' : 'Show indicator' }}",
+                "{{ sel_rings ? 'Hide rings' : 'Show rings' }}",
                 size="x-small",
                 variant="text",
                 color="#9ca3af",
@@ -295,7 +309,7 @@ def selection_card(server) -> None:
                 variant="outlined",
                 color="#c084fc",
                 click=ctrl.sel_go_halo,
-                title="Fly to the host halo (10 Mpc/h standoff)",
+                title="Fly to the host halo (10 h^-1 Mpc standoff)",
             )
         with html.Div(style="overflow-y:auto;padding:0 12px 10px;"):
             # Key properties.
@@ -309,7 +323,7 @@ def selection_card(server) -> None:
                 ),
             ):
                 html.Span("{{ p.label }}", style="color:#9ca3af;")
-                html.Span("{{ p.value }}", style="font-family:monospace;")
+                html.Span("{{ p.value }}")
             # Every property, on demand.
             v3.VBtn(
                 "{{ sel_info_open ? 'Fewer properties' : 'All properties' }}",
@@ -518,6 +532,7 @@ def build_selection(server, scene) -> None:
         from visage.utils.group_info import (
             classify_members,
             galaxy_label,
+            halo_label,
             group_summary,
             host_mass,
         )
@@ -528,33 +543,30 @@ def build_selection(server, scene) -> None:
             else host_mass(galaxies, mem, h)
         )
         kind = classify_members(galaxies, mem, host_mass(galaxies, mem, h))
+        state.sel_badge = kind + (f" of {len(mem)}" if len(mem) > 1 else "")
+        halo_name = "" if host is None else halo_label(galaxies, lead, host)
         state.sel_has_halo = host is not None
         halo_ctx = state.sel_kind == "halo" and host is not None
         if state.sel_kind == "halo" and host is None:
             state.sel_kind = "galaxy"
         sel["host"] = host
         if halo_ctx:
-            state.sel_title = f"Halo {host}"
-            state.sel_sub = (
-                f"{kind}"
-                + (f" of {len(mem)}" if len(mem) > 1 else "")
-                + f" · central galaxy {galaxy_label(galaxies, lead)}"
-            )
+            state.sel_title = f"Halo {halo_name}"
+            state.sel_sub = f"Central galaxy {galaxy_label(galaxies, lead)}"
         else:
             state.sel_title = f"Galaxy {galaxy_label(galaxies, i)}"
-            state.sel_sub = f"{role} · log M* {lm:.2f} · {kind}" + (
-                f" of {len(mem)}" if len(mem) > 1 else ""
-            )
+            state.sel_sub = f"{role.title()} · log M* {lm:.2f}"
         sfr = float(galaxies.sfr[i])
         props = [
             ("Stellar mass", _fmt(ms, " M☉")),
-            ("SFR", f"{sfr:.2f} M☉/yr"),
-            ("sSFR", _fmt(float(galaxies.ssfr[i]), " /yr")),
+            ("SFR", f"{sfr:.2f} M☉ yr^-1"),
+            ("sSFR", _fmt(float(galaxies.ssfr[i]), " yr^-1")),
             ("B/T", f"{galaxies.bulge_mass[i] / max(ms, 1.0):.2f}"),
             ("Cold gas", _fmt(float(galaxies.cold_gas[i]), " M☉")),
+            ("ICS", _fmt(float(galaxies.ics_mass[i]), " M☉")),
         ]
         state.sel_halo = (
-            f"Host halo {host} · {_fmt(mvir_host, ' M☉')}"
+            f"Host halo {halo_name} · {_fmt(mvir_host, ' M☉')}"
             if host is not None
             else "Host halo below the halo mass cut"
         )
@@ -595,7 +607,7 @@ def build_selection(server, scene) -> None:
         ):
             note = "Hidden by the redshift slider's cut."
         state.sel_note = note
-        state.sel_active = True  # (the card opens on Show info)
+        state.sel_active = True  # (the card opens on Info)
         if state.sel_info_open:
             _fill_info(i, snap)
         marker = scene.camera.marker
@@ -767,7 +779,7 @@ def build_selection(server, scene) -> None:
         from visage.utils.find import find
 
         preset = preset or state.find_preset
-        if not preset:
+        if not preset or preset == "id":
             state.find_results = []
             state.find_note = ""
             return
@@ -790,6 +802,17 @@ def build_selection(server, scene) -> None:
     @state.change("find_preset")
     def _on_find_preset(find_preset=None, **_):
         _find(find_preset)
+
+    @ctrl.set("find_id_go")
+    def _find_id_go():
+        """Fly to the galaxy with the GalaxyIndex in Find's box."""
+        typed = str(state.find_id or "").strip()
+        row = _row_for_id(typed) if typed.isdigit() else None
+        if row is None:
+            state.find_note = f"No galaxy with ID {typed} here."
+            return
+        state.find_note = ""
+        _find_select(row)
 
     @ctrl.set("find_select")
     def _find_select(idx):
@@ -956,11 +979,31 @@ def build_selection(server, scene) -> None:
                 _sel_refresh()
             state.nav_gal_idx = k
         else:
+            # (Typed as SimulationHaloIndex.)
+            k = _halo_row_for_id(k)
+            if k is None:
+                state.sel_note = "No halo with that number here."
+                return
             sel["halo_echo"] = None
             if _int(state.nav_halo_idx) == k:
                 _on_halo(nav_halo_idx=k)
             state.nav_halo_idx = k
         state.flush()
+
+    @ctrl.set("halo_row_for_id")
+    def _halo_row_for_id(number):
+        """The loaded row of halo `number` (None if not here), or `number`
+        itself for a catalogue without SimulationHaloIndex."""
+        from visage.utils.group_info import central_of_halo, halo_ids
+
+        halos, galaxies = _snap()
+        if halo_ids(galaxies) is None:
+            return number
+        row = central_of_halo(galaxies, number)
+        if row is None:
+            return None
+        pos = galaxies.positions[row] + scene.active_model.offset
+        return _host_halo(halos, pos, scene.active_model.current_snap)
 
     def _row_for_id(gid):
         from visage.utils.group_info import row_for_galaxy_index
@@ -1008,8 +1051,7 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_toggle_card")
     def _sel_toggle_card():
-        """Show info / Hide info (the header's i button and the
-        Structure tab's button)."""
+        """The icon rail's Info button."""
         if not state.sel_active:
             state.notice_text = "Double-click a galaxy to select it first."
             state.notice_color = "info"

@@ -86,7 +86,7 @@ def build_info_panel(server, scene: Scene) -> None:
         active = scene.active_model
         halos, galaxies = active.loader.get(active.current_snap)
         off = active.offset.astype(np.float64)
-        lines = [f"({point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}) Mpc/h"]
+        lines = [f"({point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}) h^-1 Mpc"]
 
         # ── Galaxy selection ──────────────────────────────────────────────
         # Respect environment checkboxes and all other filters via _combined_mask.

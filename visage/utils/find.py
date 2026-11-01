@@ -84,7 +84,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
             rows.append((float(np.linalg.norm(d)), big))
         rows.sort()
         pick = np.array([k for _, k in rows], int)
-        detail = {k: f"{1000 * d:.0f} kpc/h apart" for d, k in rows[:n]}
+        detail = {k: f"{1000 * d:.0f} h^-1 kpc apart" for d, k in rows[:n]}
     elif preset == "merging":
         mt = (getattr(galaxies, "extra", None) or {}).get("mergeType")
         if mt is None:
@@ -102,7 +102,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
     elif preset == "starburst":
         c = np.flatnonzero(ok & (ms > 1e9))
         pick = c[np.argsort(-ssfr[c])]
-        detail = {int(k): f"sSFR {ssfr[k]:.1e}/yr" for k in pick[:n]}
+        detail = {int(k): f"sSFR {ssfr[k]:.1e} yr^-1" for k in pick[:n]}
     elif preset == "quenched":
         c = np.flatnonzero(ok & cen & (ssfr < 1e-11))
         pick = c[np.argsort(-ms[c])]

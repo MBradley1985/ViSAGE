@@ -5,6 +5,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from visage.utils import labels
 from visage.io.sage_files import open_snapshot, probe_snapshot
 import pyvista as pv
 
@@ -133,7 +134,8 @@ class Model:
         import re
 
         spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name.replace("_", " "))
-        return " ".join(w[:1].upper() + w[1:] for w in spaced.split())
+        words = [w if w.isupper() else w.lower() for w in spaced.split()]
+        return " ".join(words)[:1].upper() + " ".join(words)[1:]
 
     def _detect_extra_fields(self) -> list[dict]:
         """Describe every per-galaxy dataset with no named field of its own.
@@ -184,10 +186,13 @@ class Model:
                             hi = math.ceil(hi / q) * q
                     if hi <= lo:
                         hi = lo + 1.0
+                    known = labels.discovered(name, log)
+                    plain = self._pretty_label(name)
                     out.append(
                         {
                             "key": name,
-                            "label": self._pretty_label(name),
+                            "label": known[0] if known else plain,
+                            "slider": known[1] if known else None,
                             "log": log,
                             "min": lo,
                             "max": hi,

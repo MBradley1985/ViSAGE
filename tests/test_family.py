@@ -200,7 +200,7 @@ def test_the_card_shows_a_runs_own_dust_and_hides_zeros():
     assert "Dust (hot)" not in d
     assert d["Dust-to-gas"] == "1.00e-02"
     assert d["Dust-to-metals"] == "0.50"
-    assert d["Dust grown"] == "1.2 Msun/yr"
+    assert d["Dust grown"] == "1.2 Msun yr^-1"
     assert dust_details(SimpleNamespace(extra={}), 0, 1.0) == {}
 
 
@@ -266,6 +266,15 @@ def test_hi_glow_follows_the_annuli():
     assert hi_texture(((1.0, 2.0, 3.0), (), (0.0, 0.0, 0.0)))[0] is None
 
 
+def test_hi_glow_is_round_even_where_annuli_end_above_its_threshold():
+    from visage.hd.layer import hi_texture
+
+    r = (0.1, 1.0, 5.0, 9.0)
+    img, half = hi_texture((r, (), (50.0, 20.0, 5.0, 2.0)), n=64)
+    assert img[0, 0, 3] == 0 and img[0, 32, 3] == 0
+    assert img[32, 32, 3] > 0
+
+
 def test_rotation_map_flips_counter_rotating_gas(tmp_path):
     prof = {
         "r": np.array([[1.0, 3.0, 6.0]]),
@@ -275,6 +284,9 @@ def test_rotation_map_flips_counter_rotating_gas(tmp_path):
         "gas": np.array([[1.0, 5.0, 5.0]]),
         "spin_dot": np.array([-0.99]),
     }
+    assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
+    assert fb.plot_rotation(prof, "1", dark=True)[:4] == b"\x89PNG"
+    prof["gas"] = np.zeros((1, 3))
     assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
 
 

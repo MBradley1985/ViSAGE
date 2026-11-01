@@ -298,28 +298,27 @@ def create_app(
     # with the renderer for the CPU.
     frame_delivery.on_frame.append(lambda: hold_background(0.3))
 
-    # A lightcone is framed to the window's shape, which is only known once
-    # the browser sends its first frame size: frame it again then (once).
-    if scene.is_lightcone:
-        _fit_size = [tuple(scene.plotter.ren_win.GetSize()[:2])]
+    # The first view is framed to the window's shape, which is only known
+    # once the browser sends its first frame size: frame it again then (once).
+    _fit_size = [tuple(scene.plotter.ren_win.GetSize()[:2])]
 
-        def _refit_lightcone() -> None:
-            size = tuple(scene.plotter.ren_win.GetSize()[:2])
-            if _fit_size[0] is None or size == _fit_size[0]:
-                return
-            _fit_size[0] = None
+    def _refit_view() -> None:
+        size = tuple(scene.plotter.ren_win.GetSize()[:2])
+        if _fit_size[0] is None or size == _fit_size[0]:
+            return
+        _fit_size[0] = None
 
-            def _go() -> None:
-                scene.camera.reset()
-                if hasattr(server.controller, "view_update"):
-                    server.controller.view_update()
+        def _go() -> None:
+            scene.camera.reset()
+            if hasattr(server.controller, "view_update"):
+                server.controller.view_update()
 
-            try:
-                asyncio.get_running_loop().call_soon(_go)
-            except RuntimeError:
-                pass
+        try:
+            asyncio.get_running_loop().call_soon(_go)
+        except RuntimeError:
+            pass
 
-        frame_delivery.on_frame.append(_refit_lightcone)
+    frame_delivery.on_frame.append(_refit_view)
     if perf:
         from visage.utils import perf as _perf
 
@@ -409,16 +408,6 @@ def create_app(
     }
     # Story Mode player + reactive state / controllers.
     init_story_mode(server, scene)
-
-    _NAV_TABS = [
-        ("Structure", "layers"),
-        ("Filters", "filters"),
-        ("Record", "record"),
-        ("Coords", "coords"),
-        ("Box", "box"),
-        ("Console", "console"),
-        ("Library", "library"),
-    ]
 
     # ---- Model discovery ------------------------------------------------
     # We list models by scanning the SAGE OUTPUT directory (each subfolder
@@ -1035,13 +1024,24 @@ def create_app(
                         density="compact",
                         v_bind="props",
                         title="Launch Mode",
-                        style="padding:2px 4px;min-width:36px;",
+                        classes="sage-brand",
+                        style=(
+                            "padding:2px 10px 2px 4px;min-width:36px;"
+                            "text-transform:none;letter-spacing:0;"
+                        ),
                     ):
                         html.Img(
                             src="/sage_static/SAGElogo.jpg",
                             style=(
-                                "height:30px;width:30px;"
+                                "height:30px;width:30px;margin-right:8px;"
                                 "object-fit:cover;border-radius:50%;"
+                            ),
+                        )
+                        html.Span(
+                            "ViSAGE",
+                            style=(
+                                "font-size:1.05rem;font-weight:700;"
+                                "color:#fff;"
                             ),
                         )
                 with v3.VList(density="compact", bg_color="transparent"):
@@ -1209,28 +1209,6 @@ def create_app(
                         density="compact",
                     )
 
-            # ── Explore Mode menu (hamburger) — tabs.  Sits right next to the
-            #    Launch Mode button. ─────────────────────────────────────────
-            with v3.VMenu(close_on_content_click=True):
-                with v3.Template(v_slot_activator="{ props }"):
-                    v3.VBtn(
-                        icon="mdi-menu",
-                        variant="text",
-                        density="compact",
-                        v_bind="props",
-                        title="Tabs",
-                        style="margin-left:2px;",
-                    )
-                with v3.VList(density="compact", bg_color="transparent"):
-                    for label, value in _NAV_TABS:
-                        v3.VListItem(
-                            title=label,
-                            value=value,
-                            click=f"nav_active_tab = '{value}'",
-                            active=(f"nav_active_tab === '{value}'",),
-                            color="cyan",
-                        )
-
             # ── SAGE26 setup button — the box (opens the SAGE26 setup
             #    wizard). ─────────────────────────────────────────────────
             v3.VBtn(
@@ -1240,18 +1218,6 @@ def create_app(
                 color="white",
                 title="SAGE26 Setup",
                 click=server.controller.open_sage26_wizard,
-                style="margin-left:2px;",
-            )
-
-            # ── SAGEswarm button — opens the wizard straight into the PSO
-            #    calibration flow. ───────────────────────────────────────────
-            v3.VBtn(
-                icon="mdi-chart-scatter-plot",
-                variant="text",
-                density="compact",
-                color="white",
-                title="SAGEswarm — PSO Calibration",
-                click=server.controller.open_sageswarm_wizard,
                 style="margin-left:2px;",
             )
 
@@ -1267,48 +1233,51 @@ def create_app(
                 style="margin-left:2px;",
             )
 
-            # ── Export catalogue button ────────────────────────────────────
+            # ── SAGEswarm button — opens the wizard straight into the PSO
+            #    calibration flow. ───────────────────────────────────────────
             v3.VBtn(
-                icon="mdi-database-export-outline",
+                icon="mdi-chart-scatter-plot",
                 variant="text",
                 density="compact",
                 color="white",
-                title="Export galaxy catalogue",
-                click="export_dialog_show = true",
-                style="margin-left:4px;",
-            )
-
-            # ── Fly-through button ─────────────────────────────────────────
-            v3.VBtn(
-                icon="mdi-rotate-orbit",
-                variant="text",
-                density="compact",
-                color=("flythrough_active ? 'cyan' : 'white'",),
-                title="Fly-through: approach box then orbit (click to stop)",
-                click=server.controller.toggle_flythrough,
+                title="SAGEswarm — PSO Calibration",
+                click=server.controller.open_sageswarm_wizard,
                 style="margin-left:2px;",
             )
 
             # ── Story Mode button + dropdown ───────────────────────────────
             build_story_button(server)
 
-            # ── Check / install updates ────────────────────────────────────
-            v3.VBtn(
-                icon="mdi-update",
-                variant="text",
-                density="compact",
-                color="white",
-                title="Check for updates",
-                loading=("update_checking",),
-                click=server.controller.check_for_updates,
-                style="margin-left:2px;",
-            )
-
-            # Title
-            v3.VToolbarTitle(
-                "ViSAGE",
-                style="padding-left:4px;",
-            )
+            # ── Export, Fly-through, updates ───────────────────────────────
+            for icon, tip, click, colour in (
+                (
+                    "mdi-database-export-outline",
+                    "Export galaxy catalogue",
+                    "export_dialog_show = true",
+                    "white",
+                ),
+                (
+                    "mdi-rotate-orbit",
+                    "Fly-through: approach box then orbit (click to stop)",
+                    server.controller.toggle_flythrough,
+                    ("flythrough_active ? 'cyan' : 'white'",),
+                ),
+                (
+                    "mdi-update",
+                    "Check for updates",
+                    server.controller.check_for_updates,
+                    "white",
+                ),
+            ):
+                v3.VBtn(
+                    icon=icon,
+                    variant="text",
+                    density="compact",
+                    color=colour,
+                    title=tip,
+                    click=click,
+                    style="margin-left:2px;",
+                )
 
             build_toolbar(server, scene)
 
@@ -1744,9 +1713,6 @@ def create_app(
                             "position:absolute;left:24px;bottom:24px;"
                             "width:560px;min-width:240px;"
                             "height:360px;min-height:160px;"
-                            "background:rgba(13,13,26,0.92);"
-                            "border:1px solid #06b6d4;"
-                            "box-shadow:0 0 18px rgba(6,182,212,0.30);"
                             "display:flex;flex-direction:column;"
                             "z-index:10;color:#e2e8f0;"
                             "resize:both;overflow:hidden;"
@@ -1872,9 +1838,6 @@ def create_app(
                             "height:380px;min-height:200px;"
                             "display:flex;flex-direction:column;"
                             "resize:both;overflow:hidden;"
-                            "background:rgba(17,24,39,0.92);"
-                            "backdrop-filter:blur(6px);"
-                            "border:1px solid #374151;"
                             "color:#e2e8f0;"
                             # In Story Mode, lift library cards above the story
                             # overlay layer (z40) + HUD (z50) so opened items sit
@@ -2040,15 +2003,14 @@ def create_app(
                                 ),
                             )
 
-                # Right panel — layers + navigation tabs. Fixed 300px flex
-                # child. v_show lets a Story Mode scene hide it
+                # The icon rail, and the panel it opens over the view.
+                # v_show lets a Story Mode scene hide them
                 # (chrome.hide_panel); there is no general-use toggle.
                 with v3.VSheet(
                     v_show=("!panels_hidden",),
                     style=(
-                        "width:300px;min-width:300px;max-width:300px;"
-                        "flex:0 0 300px;"
-                        "height:100%;box-sizing:border-box;overflow:hidden;"
+                        "width:0;min-width:0;flex:0 0 0;"
+                        "position:relative;z-index:6;height:100%;"
                     ),
                     color="#000000",
                     rounded=False,

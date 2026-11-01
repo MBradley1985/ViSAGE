@@ -156,7 +156,7 @@ def test_hd_and_card_any_photometry(tmp_path, case):
     if how is None:
         assert "A_V (dust)" not in rows
     info = build_galaxy_info(lc.galaxies, {"central_id": True}, 0, st, H)
-    assert info["Approx Age"].endswith("Gyr")
+    assert info["Approximate age"].endswith("Gyr")
     if how != "charlot_fall":
         # (Dust columns left by another run aren't this photometry's.)
         assert "Dust mass (cold ISM)" not in info

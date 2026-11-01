@@ -59,7 +59,7 @@ def test_group_summary_describes_the_group():
     assert rows["Type"] == "Cluster"
     assert rows["Members"].startswith("6 (3 with")
     assert rows["Quenched"].startswith("50%")
-    assert "σ_v (1D)" in rows
+    assert "Velocity dispersion (σ, 1D)" in rows
     assert rows["M* gap (1st/2nd)"] == "0.30 dex"
 
 

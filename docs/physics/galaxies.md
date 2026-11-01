@@ -8,10 +8,10 @@ Galaxy data is read from the SAGE HDF5 output file (`model_0.hdf5`). The file is
 
 | HDF5 field | Type | Raw units | Viewer units |
 |---|---|---|---|
-| `Posx`, `Posy`, `Posz` | float32 | Mpc/h | Mpc/h |
-| `StellarMass` | float32 | 10¹⁰ Msun/h | Msun (×1e10/h) |
-| `Mvir` | float32 | 10¹⁰ Msun/h | kept raw for masking |
-| `SfrDisk` + `SfrBulge` | float32 | Msun/yr | summed → total SFR |
+| `Posx`, `Posy`, `Posz` | float32 | h⁻¹ Mpc | h⁻¹ Mpc |
+| `StellarMass` | float32 | 10¹⁰ M☉/h | M☉ (×1e10/h) |
+| `Mvir` | float32 | 10¹⁰ M☉/h | kept raw for masking |
+| `SfrDisk` + `SfrBulge` | float32 | M☉ yr⁻¹ | summed → total SFR |
 | `Type` | int32 | — | 0=central, 1+=satellite |
 
 Derived quantity: `sSFR = (SfrDisk + SfrBulge) / StellarMass` in yr⁻¹.

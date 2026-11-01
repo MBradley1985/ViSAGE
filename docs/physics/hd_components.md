@@ -67,7 +67,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| CGM and cold streams | `CGMgas`, `MetalsCGMgas`, `mdot_stream`, redshift, neighbouring haloes | Cold-regime haloes. Three curling streams plus filaments out to Rvir, brighter with log CGMgas (or the stream rate), tinted by metallicity. The streams follow the cosmic web: two come in from opposite sides along the direction of the biggest halo within 4 Mpc/h (the filament the galaxy sits in), the third from the next biggest, each brighter the bigger its halo. At high z they are narrower, brighter and reach in to the galaxy (×(1 + 0.15z), width / (1 + 0.35z)). |
+| CGM and cold streams | `CGMgas`, `MetalsCGMgas`, `mdot_stream`, redshift, neighbouring haloes | Cold-regime haloes. Three curling streams plus filaments out to Rvir, brighter with log CGMgas (or the stream rate), tinted by metallicity. The streams follow the cosmic web: two come in from opposite sides along the direction of the biggest halo within 4 h⁻¹ Mpc (the filament the galaxy sits in), the third from the next biggest, each brighter the bigger its halo. At high z they are narrower, brighter and reach in to the galaxy (×(1 + 0.15z), width / (1 + 0.35z)). |
 | Cold streams into a hot halo | `mdot_stream`, `HotGas` | Hot haloes still fed by cold streams draw them by mdot_stream, aimed and scaled with redshift as above. |
 | Hot halo / intracluster medium | `HotGas`, `Mvir`, `Concentration`, `MetalsHotGas`, `Rvir`, redshift | A textured atmosphere to Rvir. Its opacity rises with log HotGas, with the hot gas's share of the halo's baryons, and with redshift (denser haloes). Its core is 1.5 Rvir / c, so concentrated haloes are peakier. Its colour follows the virial temperature (Mvir, hotter at high z): magenta in small haloes, violet in groups, ice-blue in rich clusters, tinted by metallicity. |
 | X-ray cavities | `Heating`, `r_heat`, `Regime`, `HotGas` | Bubbles at the radio-heating radius r_heat, along the jet axis, in hot haloes with radio heating. |
@@ -79,7 +79,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Group members | `CentralGalaxyIndex`, `Type`, `Pos*` | Every member of the FOF group is drawn at its own position, magnified to its normal-view size (at most 5×). A galaxy alone in its halo is drawn at true size. |
+| Group members | `CentralGalaxyIndex`, `Type`, `Pos*` | Every member of the FOF group is drawn at its own position and real size. |
 | Spin and orientation | `Spinx`, `Spiny`, `Spinz` | Each disk's plane is set by its spin vector. |
 | Tidal bridges and tails | `Pos*`, `StellarMass`, `Vel*`, `Spin*` | Group members within 100 kpc of each other with mass ratio above 1:10 raise tidal features. These are stronger the closer and more massive the companion, and weaker (×0.6) for retrograde encounters. |
 | Merger about to happen | `mergeType` | A galaxy SAGE merges before the next snapshot interacts with the nearest more massive galaxy, at a strength set by the merger type. |

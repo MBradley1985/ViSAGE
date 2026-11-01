@@ -169,6 +169,11 @@ EXTRA_FIELDS = (
 )
 
 
+def _fits_float32(col: np.ndarray) -> bool:
+    finite = np.abs(col[np.isfinite(col)])
+    return not len(finite) or finite.max() <= np.finfo(np.float32).max
+
+
 class LazyColumns(dict):
     """`GalaxySnapshot.extra` for a lightcone: each field is read from the
     file (the kept rows) the first time it is asked for, so a cone of
@@ -193,7 +198,8 @@ class LazyColumns(dict):
             return None
         if col.ndim != 1:
             return None
-        if col.dtype.kind == "f":
+        # (Luminosities in erg/s pass float32's range: those stay float64.)
+        if col.dtype.kind == "f" and _fits_float32(col):
             col = col.astype(np.float32)
         dict.__setitem__(self, name, col)
         return col

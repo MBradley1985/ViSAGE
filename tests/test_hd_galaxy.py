@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import gc
 
 import numpy as np
@@ -65,6 +66,28 @@ def test_disk_recipe_has_every_starlight_component():
     assert {"clusters", "hii", "field"} <= names
     assert rc.bar_len > 0  # instability bulge of 12% of M* makes a bar
     assert maps.dust.max() > 0
+
+
+def test_a_shared_exposure_gives_a_satellite_back_part_of_its_dimming():
+    from visage.hd.group import SATELLITE_LIFT, shared_white
+
+    assert shared_white(1.0, 1.0) == 1.0
+    assert shared_white(0.5, 1.0) == 1.0  # never brighter than its own
+    assert shared_white(10.0, 1.0) == pytest.approx(10 ** (1 - SATELLITE_LIFT))
+
+
+def test_a_jellyfish_tail_is_set_by_the_galaxy():
+    from visage.hd.model import jelly_look, jelly_points
+
+    rich = dataclasses.replace(_disk(), cold_gas=2e10, t_since_infall_gyr=4.0)
+    poor = dataclasses.replace(_disk(), cold_gas=3e8, t_since_infall_gyr=0.5)
+    assert jelly_look(rich, 0.5)["clumps"] > jelly_look(poor, 0.5)["clumps"]
+    assert jelly_look(rich, 0.5)["length"] > jelly_look(poor, 0.5)["length"]
+    rc = recipe_from_sage(rich)
+    many = jelly_points(rc, rich, (1, 0, 0), 0.5, 1)[1]
+    few = jelly_points(recipe_from_sage(poor), poor, (1, 0, 0), 0.5, 1)[1]
+    assert len(many.lum) > len(few.lum)
+    assert many.pos[:, 0].mean() > 0  # it trails along the direction given
 
 
 def test_elliptical_recipe():
@@ -195,13 +218,16 @@ def hd_panel(mini_par_path, tmp_path):
 
     from visage.scene.scene import Scene
     from visage.ui.navigation_panel import build_navigation_panel
+    from visage.ui.selection import build_selection, selection_card
 
     scene = Scene(str(mini_par_path), off_screen=True)
     server = get_server(f"test_hd_panel_{tmp_path.name}", client_type="vue3")
     server.controller.view_update = lambda *a, **k: None
     with SinglePageLayout(server) as layout:
         with layout.content:
+            selection_card(server)
             build_navigation_panel(server, scene)
+            build_selection(server, scene)
     server.state.ready()
     yield server, scene
     scene.plotter.close()
@@ -248,8 +274,24 @@ def test_go_and_isolate_go_3_mpc_from_the_galaxy(hd_panel):
     assert state.isolate_active
     assert _cam_dist(scene) == pytest.approx(d_go)
     ctrl.toggle_isolate()
-    state.nav_distance = 0.5  # e.g. a drawn Coords sphere
+    state.nav_distance = 0.5  # e.g. a drawn Regions sphere
     assert state.nav_halo_distance == 10.0
+
+
+def test_reset_camera_leaves_hd_for_the_opening_view(hd_panel):
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    state.galaxy_color_mode = "sfr"
+    state.nav_gal_idx = 0
+    ctrl.toggle_hd()
+    state.flush()
+    assert state.hd_active
+    ctrl.reset_camera()
+    state.flush()
+    assert not state.hd_active and not state.isolate_active
+    assert scene._focus_region is None
+    assert state.galaxy_color_mode == "structure"
+    assert state.nav_gal_idx is None
 
 
 def test_dropping_isolate_removes_the_hd_model(hd_panel):
@@ -541,7 +583,6 @@ def test_no_halo_haze_with_gas_off(plotter):
         "spin": None,
         "prep": HDGalaxyLayer.prepare(g, "lite"),
         "role": "member",
-        "magnify": False,
         "idx": 0,
     }
     grp.show([entry], 0.73, gas=False)

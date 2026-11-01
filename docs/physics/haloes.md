@@ -11,8 +11,8 @@ Halo data is read from the same merger tree files SAGE26 consumes at runtime, in
 
 | Field | Type | Units (raw) | Units (viewer) |
 |---|---|---|---|
-| `Pos[3]` | float32 | Mpc/h | Mpc/h (unchanged) |
-| `Mvir` | float32 | 10¹⁰ Msun/h | Msun (×1e10/h) |
+| `Pos[3]` | float32 | h⁻¹ Mpc | h⁻¹ Mpc (unchanged) |
+| `Mvir` | float32 | 10¹⁰ M☉/h | M☉ (×1e10/h) |
 | `SnapNum` | int32 | — | — |
 
 Only `Pos` and `Mvir` are used for rendering. All other fields in the struct (`Vel`, `Spin`, `VelDisp`, `Vmax`, etc.) are read but discarded after the per-snapshot filter.
@@ -32,7 +32,7 @@ The load line names the column whenever it isn't `Mvir`:
 Haloes: 79,890 loaded (halo mass from Group_M_Crit200)
 ```
 
-`Rvir`, `Vvir`, the mass floor, colouring and filtering all follow the column that was chosen. Positions and masses in HDF5 trees are likewise resolved by alias (`SubhaloPos`, `SubhaloVMax`, …), and positions stored in kpc/h are converted to Mpc/h automatically — detected by comparing against `BoxSize`.
+`Rvir`, `Vvir`, the mass floor, colouring and filtering all follow the column that was chosen. Positions and masses in HDF5 trees are likewise resolved by alias (`SubhaloPos`, `SubhaloVMax`, …), and positions stored in kpc/h are converted to h⁻¹ Mpc automatically — detected by comparing against `BoxSize`.
 
 !!! note "Host haloes only"
     ViSAGE renders FOF centrals. In lhalo_binary trees satellites carry `Mvir = 0`, so the mass floor excludes them on its own; in HDF5 trees the mass columns are populated for satellites too, so centrals are selected explicitly via `FirstHaloInFOFGroup`. For The300 at z=0 this gives 79,890 host haloes — exactly the number of `Type == 0` galaxies SAGE writes for that snapshot.

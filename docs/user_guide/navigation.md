@@ -12,18 +12,19 @@ PyVista's standard trackball controls apply inside the render window:
 | **Double-click** | Select the galaxy under the cursor (the most massive one, if several) — on any tab, and inside HD |
 | Single click | Nothing — pure camera interaction (no selection state change) |
 
-## Persistent header controls
+## View controls
 
-Six buttons sit above the tab panel and work no matter which tab is active:
+These work no matter which tab is active. **HD** and **Reset** are in the top bar; the rest are at the bottom of the icon rail. Go, Info and Isolate need a selection.
 
 | Button | Action |
 |---|---|
-| Reset Camera | Returns to a full-box view from outside the box |
-| Info (i) | Opens or closes the selection card |
-| Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
-| Centre (✛ crosshair icon) | Places the camera AT the box centre, looking out |
-| Isolate (🔍 magnifier icon) | Shows only the selection, 3 Mpc/h away as Go: the galaxy, or in halo context its halo and whole group |
+| Reset | Puts everything back to default and shows the whole run |
 | HD | Detailed 3D model of the selection and its group — see [HD Mode](hd_mode.md) |
+| Go | Flies to the selection: the galaxy, or in halo context its halo and group |
+| Info | Opens or closes the selection card |
+| Focus | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
+| Isolate | Shows only the selection, 3 h⁻¹ Mpc away as Go: the galaxy, or in halo context its halo and whole group |
+| Box Centre | Places the camera AT the box centre, looking out. In a lightcone this is **Observer**, at the observer looking along the cone |
 
 ## Selecting a galaxy
 
@@ -33,22 +34,22 @@ The Console also selects (`go to halo 42` selects that halo's central), and so d
 
 ### The selection card
 
-The **i** button in the header (or **Show info** at the end of the Structure tab) opens the card:
+The rail's **Info** button opens the card:
 
 | Part | What it does |
 |---|---|
 | Galaxy / Halo + group | What the actions apply to: the galaxy, or its host halo with the whole group |
-| Go | Fly to it, 3 Mpc/h away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 Mpc/h focus sphere |
-| Isolate, HD | As the header buttons. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
+| Go | Fly to it, 3 h⁻¹ Mpc away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 h⁻¹ Mpc focus sphere |
+| Isolate, HD | As the rail's Isolate and the header's HD. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
 | Gas | HD's halo gas on or off |
 | ← → | Back and forward through what you've selected |
 | ‹ › | Previous / next member of the group, flying to it (the card keeps its Galaxy / Halo + group context) |
 | ☆ | Up to the group's central |
 | Nearest | Hop to the nearest galaxy and fly there; amber rings mark the next nearest (the next hop larger). Hopping again carries on to the nearest not yet visited, so it never bounces back |
-| Zoom 3 / 5 / 10 | Fly in at that radius (Mpc/h), with focus |
+| Zoom 3 / 5 / 10 | Fly in at that radius (h⁻¹ Mpc), with focus |
 | Clear / Show indicator | Rings off or on. The galaxy stays selected, and the choice holds through HD, Gas and new selections |
 | Host halo · Go to halo | The halo the central sits on, and a flight to it |
-| Properties | Key properties; **All properties** lists every field (Approx Age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
+| Properties | Key properties; **All properties** lists every field (Approximate age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
 | Group | Every member (central first); click one to select it and fly there |
 
 ### Keys
@@ -79,15 +80,17 @@ The **Environment filter** at the end of the Structure tab shows only galaxies i
 
 The list updates as the snapshot changes.
 
-## Coords tab
+## Regions tab
 
-Enter **X, Y, Z** in Mpc/h and a standoff distance, press **Go** to point the camera at that location.
+Pick a **Sphere**, **Box** or **Slice**. What is on the tab is the active region: the count below it, and **Active region** in Plotting and Export, all use it. In a periodic box, regions wrap around the edges.
 
-## Box tab
+- **Fit sphere to view** and **Fit box to view** centre the shape on the view and size it to what the view shows. Pressing Enter in a field is the same as **Go**.
+- **Go** isolates the region and frames it; **Clear** puts the view back. **Dim outside the region** dims the galaxies outside it (haloes outside are still hidden).
+- **Create sphere**, **Create box** and **Create slice** show it in the view: drag the move icon at its centre to move it, a box's face or a sphere's rim to size it. What you drag lights up. A slice moves along its direction, and its thickness is set on the tab.
+- **Slice:** pick an axis or the current view, then set the position and thickness. **Animate through the volume** moves it through the volume.
+- **Save** keeps a region with its model. Click a saved name to bring it back.
 
-Enter an axis-aligned bounding box (Xmin, Xmax, Ymin, Ymax, Zmin, Zmax) in Mpc/h. Press **Zoom** to frame that region. With Focus active, the box also defines the masked region.
-
-> In **Lightcone Mode** the Box tab is replaced by a **Photometry** tab (a lightcone has no periodic sub-box to zoom to) — see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).
+Box mode and Lightcone Mode have the same tab. A lightcone also has a **Photometry** tab: see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).
 
 ## Cam (camera bookmarks)
 

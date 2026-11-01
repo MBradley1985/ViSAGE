@@ -23,7 +23,7 @@ ViSAGE's browser UI has three main regions and a number of overlays that appear 
 
 | Control | Action |
 |---|---|
-| ☰ (hamburger) | Open the dropdown: switch tabs, switch primary model, toggle overlay models |
+| ViSAGE / Launch | Open the menu: Launch Mode tools, switch primary model, toggle overlay models |
 | Reverse | Play backwards in time |
 | Play / Pause / Stop | Snapshot transport. Stop returns to z = 0 |
 | Loop | Continue playback past the endpoints |
@@ -38,20 +38,19 @@ Eight tabs in two rows of four:
 
 | Tab | Purpose |
 |---|---|
-| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter and **Show info** (the selection card) |
+| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter |
 | Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime); **Find** presets |
-| Box         | Zoom to axis-aligned sub-box; **Draw Box** for interactive focus region |
-| Coords      | Fly to arbitrary (x, y, z); **Draw Sphere** for interactive focus region |
+| Regions     | Spheres, boxes and slices, with live counts and saved regions |
 | Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 | Plotting    | SAGE26's diagnostic plots, with observations, for the whole catalogue or any selection (see [Plotting](plotting.md)) |
 
-Above the tabs sit **Reset Camera**, **Info (i)**, **Focus**, **Centre**, **Isolate** and **HD**, which work regardless of which tab is active (see [Navigation](navigation.md)).
+The tabs are icons on the right; clicking one opens its panel over the view, and clicking it again closes it. The bottom of the rail has **Go**, **Info**, **Focus**, **Isolate** and **Box Centre**, and the top bar has **HD** and **Reset**, which all work whichever tab is open (see [Navigation](navigation.md)). The top bar also has Export, Fly-through, updates and Close.
 
 ## Multi-box strip
 
-When two or more SAGE models are loaded side-by-side (via `+SBS` in the hamburger menu), a **box strip** appears at the bottom of the viewport. Each box is shown as a labelled chip:
+When two or more SAGE models are loaded side-by-side (via `+SBS` in the Launch menu), a **box strip** appears at the bottom of the viewport. Each box is shown as a labelled chip:
 
 - Click any chip to make that box **active** (label turns green)
 - All right-panel tab controls then target the active box
@@ -66,7 +65,7 @@ The box strip is hidden in single-model mode.
 | Loading spinner   | Dimmed cover while a new model loads from disk |
 | Warning snackbar  | Top of the render view; appears when an overlay attempt is rejected (e.g. incompatible box size) |
 | Selection rings   | A cyan ring on the selected galaxy, smaller rings on the rest of its group (merged where they would pile up) |
-| Selection card    | Top-left, draggable; opened by the header's **i** button or **Show info** — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
+| Selection card    | Top-left, draggable; opened by the rail's **Info** button — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
 | HD build card     | Centre, while an HD model builds: progress and **Cancel** (or Esc) |
 
 ## Info bar (bottom)

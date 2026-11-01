@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from visage.utils import labels
 from visage.plots import obs
 from visage.plots.base import density, log_edges, plot
 from visage.plots.local import M_STAR
@@ -29,7 +30,7 @@ def nz(p):
     z = p.s(Z)
     ax.hist(z, bins=40, histtype="step", color=p.ink, lw=2, label="Model")
     ax.set_xlabel(r"Redshift $z$")
-    ax.set_ylabel(r"$N$")
+    ax.set_ylabel(r"Number $N$")
     p.finish()
     return fig
 
@@ -72,7 +73,7 @@ def counts(p):
         keep = n > 0
         ax.plot(centres[keep], n[keep], color=colour, label=band.split("_")[1])
     ax.set(yscale="log", xlabel="Apparent magnitude (AB)")
-    ax.set_ylabel(r"$N\ ({\rm mag}^{-1}\,{\rm deg}^{-2})$")
+    ax.set_ylabel(r"Number counts $N$ (${\rm mag}^{-1}\,{\rm deg}^{-2}$)")
     p.finish("upper left", "lower right")
     return fig
 
@@ -97,8 +98,8 @@ def colour_magnitude(p):
     g, r = p.s("mag_rest_sdss_g"), p.s("mag_rest_sdss_r")
     _density_panel(p, ax, r, g - r)
     ax.invert_xaxis()
-    ax.set_xlabel(r"$M_r$ (AB)")
-    ax.set_ylabel(r"$g-r$")
+    ax.set_xlabel(r"Absolute magnitude $M_r$ (AB)")
+    ax.set_ylabel(r"Colour $g-r$")
     p.finish()
     return fig
 
@@ -119,8 +120,8 @@ def colour_colour(p):
         s("mag_rest_2mass_j"),
     )
     _density_panel(p, ax, r - j, u - r)
-    ax.set_xlabel(r"$r-J$")
-    ax.set_ylabel(r"$u-r$")
+    ax.set_xlabel(r"Colour $r-J$")
+    ax.set_ylabel(r"Colour $u-r$")
     p.finish()
     return fig
 
@@ -160,7 +161,7 @@ def lf(p):
             )
     ax.set(yscale="log", xlim=(-14, -27), xlabel="Absolute magnitude (AB)")
     ax.set_ylabel(
-        r"$\phi\ ({\rm Mpc}^{-3}\,{\rm mag}^{-1})$"
+        r"Number density $\phi$ (${\rm Mpc}^{-3}\,{\rm mag}^{-1}$)"
         if s.volume
         else r"$N\ ({\rm mag}^{-1})$"
     )
@@ -184,7 +185,9 @@ def halpha_lf(p):
         ax, s("LineLum_Halpha"), log_edges(38.0, 44.0, 0.2), "Through dust"
     )
     ax.set_xscale("log")
-    ax.set_xlabel(r"$L_{{\rm H}\alpha}\ ({\rm erg\,s}^{-1})$")
+    ax.set_xlabel(
+        r"H$\alpha$ luminosity $L_{{\rm H}\alpha}$ (${\rm erg\,s}^{-1}$)"
+    )
     p.phi_label(ax)
     p.finish()
     return fig
@@ -241,8 +244,8 @@ def tully_fisher(p):
     p.relation(
         ax, s("W50_HI") / sin_i, s("StellarMass"), log_edges(1.5, 3.0, 0.1), ok
     )
-    ax.set(xscale="log", yscale="log", ylabel=r"$M_\star\ (M_\odot)$")
-    ax.set_xlabel(r"$W_{50} / \sin i\ ({\rm km\,s^{-1}})$")
+    ax.set(xscale="log", yscale="log", ylabel=labels.axis("stellar_mass"))
+    ax.set_xlabel(r"Line width $W_{50} / \sin i$ (${\rm km\,s}^{-1}$)")
     p.finish("upper left")
     return fig
 
@@ -260,6 +263,6 @@ def attenuation(p):
     a_v = 1.086 * s("TauV_ISM")
     p.relation(ax, s("StellarMass"), a_v, log_edges(8.0, 12.2, 0.2))
     ax.set(xscale="log", yscale="log", xlabel=M_STAR)
-    ax.set_ylabel(r"$A_V$ (face-on, mag)")
+    ax.set_ylabel(r"Attenuation $A_V$ (face-on, mag)")
     p.finish("upper left")
     return fig

@@ -1049,6 +1049,22 @@ def _draw_stars(images, s, npx, rng) -> int:
     return int(n)
 
 
+def star_field(n: int, rng) -> np.ndarray:
+    """(n, 3) rgb, 0 to 1, of stars drawn from the same catalogue: each its
+    blackbody colour (softened for the eye), as bright as its r magnitude
+    on a black sky."""
+    data = np.load(STAR_FILE)
+    good = np.isfinite(data["g"]) & np.isfinite(data["r"])
+    pick = rng.choice(np.flatnonzero(good), n)
+    g, r = data["g"][pick], data["r"][pick]
+    teff = np.clip(_star_temperature(g - r), 2500, 12000)
+    rgb = np.c_[
+        [_planck(wave, teff) * wave**-2 for wave in (6100, 5300, 4500)]
+    ]
+    rgb = (rgb.T / rgb.max(axis=0)[:, None]) ** 0.6
+    return rgb * -np.expm1(-5.0 * 10 ** (-0.4 * (r - 16.0)))[:, None]
+
+
 def _bleed(image: np.ndarray, full: float) -> np.ndarray:
     """Charge above a pixel's full well runs along its CCD column."""
     out = image.copy()

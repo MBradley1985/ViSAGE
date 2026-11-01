@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from visage.plots import style
+from visage.utils import labels
 
 SSFR_CUT = -11.0  # log10 /yr, between star-forming and quiescent
 MAX_POINTS = 30000  # drawn in a scatter
@@ -47,12 +48,12 @@ class Options:
 
 
 COLOUR_LABELS = {
-    "StellarMass": r"$M_\star\ (M_\odot)$",
-    "Mvir": r"$M_{\rm vir}\ (M_\odot)$",
-    "ColdGas": r"$M_{\rm cold}\ (M_\odot)$",
-    "BlackHoleMass": r"$M_{\rm BH}\ (M_\odot)$",
-    "SFR": r"${\rm SFR}\ (M_\odot\,{\rm yr}^{-1})$",
-    "sSFR": r"$s{\rm SFR}\ ({\rm yr}^{-1})$",
+    "StellarMass": labels.axis("stellar_mass"),
+    "Mvir": labels.axis("mvir"),
+    "ColdGas": labels.axis("cold_gas"),
+    "BlackHoleMass": labels.axis("bh_mass"),
+    "SFR": labels.axis("sfr"),
+    "sSFR": labels.axis("ssfr"),
     "redshift": r"$z$",
 }
 
@@ -170,9 +171,9 @@ class Plot:
         s = s or self.s
         ax.set_yscale("log")
         ax.set_ylabel(
-            r"$\phi\ ({\rm Mpc}^{-3}\,{\rm dex}^{-1})$"
+            r"Number density $\phi$ (${\rm Mpc}^{-3}\,{\rm dex}^{-1}$)"
             if s.volume
-            else r"$N\ ({\rm dex}^{-1})$"
+            else r"Number $N$ (${\rm dex}^{-1}$)"
         )
 
     def finish(self, model_loc="upper right", obs_loc="lower left") -> None:

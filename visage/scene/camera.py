@@ -8,6 +8,10 @@ from visage.utils.kdtree import NearestHaloIndex
 _INDICATOR_COLOR = "#888888"
 _INDICATOR_OPACITY = 0.35
 _INDICATOR_WIDTH = 1.5
+# Window pixels the open side panel and the icon rail cover (sage_theme.css).
+_PANEL_PX = 390
+_RAIL_PX = 82
+_FILL = 0.92  # of the clear view's height or width
 
 
 class CameraController:
@@ -19,6 +23,7 @@ class CameraController:
     def __init__(self, plotter: pv.Plotter, box_size: float = 62.5) -> None:
         self._pl = plotter
         self._box_size = box_size
+        self._panel_open = False
         self._halo_index: NearestHaloIndex = NearestHaloIndex()
         self._galaxy_positions: np.ndarray | None = None
         self._indicator_actor = None
@@ -89,30 +94,13 @@ class CameraController:
             self._pl.remove_actor(a, render=False)
         self._sparkle_actors.clear()
 
-    # Stellar colours by spectral class: O/B blue, A white-blue, F white,
-    # G yellow-white, K orange, M red.
-    _STAR_COLORS = np.array(
-        [
-            [155, 176, 255],  # O/B  blue
-            [202, 215, 255],  # A    blue-white
-            [248, 247, 255],  # F    white
-            [255, 244, 234],  # G    yellow-white
-            [255, 204, 140],  # K    orange
-            [255, 156, 84],  # M    deep orange
-            [255, 108, 72],  # M    red
-            [246, 74, 60],  # M    deep red
-        ],
-        dtype=np.uint8,
-    )
-    _STAR_WEIGHTS = np.array([0.06, 0.10, 0.15, 0.18, 0.17, 0.14, 0.12, 0.08])
-
     def add_sparkles(
         self,
         center: tuple[float, float, float],
         radius: float,
         n_stars: int = 90_000,
         seed: int = 12345,
-        point_size: float = 2.0,
+        point_size: float = 3.0,
     ) -> None:
         """A star backdrop behind the isolated object.
 
@@ -139,13 +127,11 @@ class CameraController:
         # A little depth variation so the field doesn't look like a decal.
         spread = 1.0 + 0.35 * rng.random(n_stars)
 
-        # Colours down the spectral sequence, O/B through M, with the
-        # white/yellow middle most common — real stars, not a rainbow.
-        colors = self._STAR_COLORS[
-            rng.choice(
-                len(self._STAR_COLORS), size=n_stars, p=self._STAR_WEIGHTS
-            )
-        ]
+        # Real stars, as the mock images have them: their own colours, and
+        # a few bright among many faint.
+        from visage.sed.mock_image import star_field
+
+        colors = (star_field(n_stars, rng) * 255).astype(np.uint8)
         cloud = pv.PolyData(np.zeros((n_stars, 3)))
 
         self._sparkle_state = {
@@ -231,8 +217,8 @@ class CameraController:
             # Tight: the object itself, then full sky just beyond it.  A
             # wide ramp dims most of the frame at the isolate framing,
             # where the object already subtends a good part of the view.
-            inner = np.arctan2(st["radius"] * 1.0, obj_dist)
-            outer = np.arctan2(st["radius"] * 2.2, obj_dist)
+            inner = np.arctan2(st["radius"] * 0.4, obj_dist)
+            outer = np.arctan2(st["radius"] * 0.9, obj_dist)
             # Element-wise rather than a matmul: Accelerate raises a
             # spurious divide-by-zero warning for this shape, and this
             # runs on every camera move.
@@ -568,39 +554,43 @@ class CameraController:
         a cube) with an isometric 3/4 view instead of the box math."""
         self._clear_indicator()
         if self._lc_bounds is not None:
-            # Lay the cone out horizontally, centred in the viewport: look
-            # straight down -Z so the long radial (X) axis is horizontal and
-            # the observer→distance direction reads left→right, then fit.
-            b = self._lc_bounds
-            cx, cy, cz = (b[0] + b[1]) / 2.0
-            span = float(np.max(b[1] - b[0])) or 1.0
-            self._pl.camera_position = [
-                (cx, cy, cz + span * 2.0),  # camera on +Z, looking down -Z
-                (cx, cy, cz),  # focus at cone centre
-                (0.0, 1.0, 0.0),  # +Y up  → X axis horizontal
-            ]
-            self._pl.reset_camera()
-            # reset_camera fits the bounding SPHERE (radius ~ span/2) to the
-            # viewport's SHORTER axis. A lightcone is long and thin, so that
-            # leaves it a tiny sliver ringed by empty margin. Zoom so the
-            # cone's widest extent fills the viewport WIDTH instead — properly
-            # zoomed-in and centred, still showing the cone end to end.
-            try:
-                w, h = self._pl.window_size
-                if w and h:
-                    self._pl.camera.zoom(max(1.0, (w / h) * 0.9))
-                else:
-                    self._pl.camera.zoom(1.5)
-            except Exception:
-                self._pl.camera.zoom(1.5)
-            self._pl.renderer.ResetCameraClippingRange()
+            # Lay the cone out horizontally: look straight down -Z so the
+            # long radial (X) axis is horizontal and the observer→distance
+            # direction reads left→right.
+            self._frame(*self._lc_bounds)
             return
-        half = self._box_size / 2.0
+        self._frame(np.zeros(3), np.full(3, float(self._box_size)))
+
+    def _frame(self, lo, hi) -> None:
+        """Look down -Z at everything between two corners, the near face
+        filling the view that the side panel or rail leaves clear."""
+        lo, hi = np.asarray(lo, float), np.asarray(hi, float)
+        w, h = self._pl.window_size
+        cover = _PANEL_PX if self._panel_open else 2 * _RAIL_PX
+        free_w = max(w - cover, w / 2)
+        t = float(np.tan(np.radians(self._pl.camera.view_angle / 2.0)))
+        cx, cy, cz = (lo + hi) / 2.0
+        dx, dy = (hi - lo)[:2] / 2.0 / _FILL
+        d = max(dx / free_w, dy / h) * h / t + hi[2] - cz
         self._pl.camera_position = [
-            (half, half, self._box_size * 2.2),
-            (half, half, half),
+            (cx, cy, cz + d),
+            (cx, cy, cz),
             (0.0, 1.0, 0.0),
         ]
+        self._set_view_shift()
+        self._pl.renderer.ResetCameraClippingRange()
+
+    def _set_view_shift(self) -> None:
+        """Centre the picture in the clear view. The camera stays put, so
+        everything still turns about what it is looking at."""
+        w = self._pl.window_size[0]
+        cover = _PANEL_PX if self._panel_open else 0
+        self._pl.camera.SetWindowCenter(cover / w, 0.0)
+
+    def set_panel(self, is_open: bool) -> None:
+        """The side panel opened or closed."""
+        self._panel_open = is_open
+        self._set_view_shift()
 
     def focus_on_boxes(
         self,
@@ -619,15 +609,7 @@ class CameraController:
         ymax = max(oy + bs for ox, oy, oz, bs in regions)
         zmin = min(oz for ox, oy, oz, bs in regions)
         zmax = max(oz + bs for ox, oy, oz, bs in regions)
-        cx = (xmin + xmax) / 2
-        cy = (ymin + ymax) / 2
-        cz = (zmin + zmax) / 2
-        span = max(xmax - xmin, ymax - ymin, zmax - zmin)
-        self._pl.camera_position = [
-            (cx, cy, cz + span * 1.7),
-            (cx, cy, cz),
-            (0.0, 1.0, 0.0),
-        ]
+        self._frame((xmin, ymin, zmin), (xmax, ymax, zmax))
 
     def go_to_lightcone_observer(self) -> None:
         """Place the camera AT the observer (coordinate origin) looking

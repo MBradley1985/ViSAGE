@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import numpy as np
 
+from visage.utils import labels
 from visage.plots import obs
 from visage.plots.base import F_BARYON, SSFR_CUT, log_edges, plot
 from visage.plots.style import GROUPS, observed, plasma
 
 Z_FIELD = "redshift_cosmological"
-M_STAR = r"$M_\star\ (M_\odot)$"
-M_VIR = r"$M_{\rm vir}\ (M_\odot)$"
+M_STAR = labels.axis("stellar_mass")
+M_VIR = labels.axis("mvir")
 M_EDGES = log_edges(8.0, 12.2, 0.1)
 HALO_EDGES = log_edges(10.0, 15.0, 0.1)
 RESERVOIRS = (
@@ -51,7 +52,7 @@ def smf(p):
             ax,
             10 ** gama[ok, 0],
             10 ** gama[ok, 7],
-            "GAMA discs",
+            "GAMA disks",
             dark=p.o.dark,
         )
         ok = np.isfinite(gama[:, 1])
@@ -109,7 +110,7 @@ def bmf(p):
             dark=p.o.dark,
         )
     ax.set(xscale="log", xlim=(1e8, 10**12.2))
-    ax.set_xlabel(r"$M_{\rm bar}\ (M_\odot)$")
+    ax.set_xlabel(labels.axis("baryon_mass"))
     p.phi_label(ax)
     ax.set_ylim(1e-6, 1e-1) if s.volume else None
     p.finish()
@@ -130,11 +131,11 @@ def gmf(p):
     c = plasma(2, p.o.dark)
     p.mass_function(ax, s("ColdGas")[central], edges, "Cold gas")
     p.mass_function(ax, s("H2gas")[central], edges, r"H$_2$", c[0])
-    p.mass_function(ax, s("H1gas")[central], edges, "HI", c[1])
+    p.mass_function(ax, s("H1gas")[central], edges, r"H$_1$", c[1])
     if s.volume:
         for name, data in (
             ("Obreschkow and Rawlings 09 (cold)", obs.OBRESCHKOW09_COLD),
-            ("Zwaan+05 (HI)", obs.ZWAAN05_HI),
+            (r"Zwaan+05 (H$_1$)", obs.ZWAAN05_HI),
             ("Obreschkow and Rawlings 09 (H$_2$)", obs.OBRESCHKOW09_H2),
         ):
             observed(
@@ -145,7 +146,7 @@ def gmf(p):
                 dark=p.o.dark,
             )
     ax.set(xscale="log", xlim=(1e8, 10**11.5))
-    ax.set_xlabel(r"$M_{\rm X}\ (M_\odot)$")
+    ax.set_xlabel(r"Mass $M_{\rm X}$ ($M_\odot$)")
     p.phi_label(ax)
     ax.set_ylim(1e-6, 1e-1) if s.volume else None
     p.finish()
@@ -189,8 +190,8 @@ def btf(p):
         xlim=(10**1.4, 10**2.9),
         ylim=(10**7.5, 1e12),
     )
-    ax.set_xlabel(r"$V_{\rm max}\ ({\rm km\,s}^{-1})$")
-    ax.set_ylabel(r"$M_{\rm bar}\ (M_\odot)$")
+    ax.set_xlabel(labels.axis("vmax"))
+    ax.set_ylabel(labels.axis("baryon_mass"))
     p.finish("upper left", "lower right")
     return fig
 
@@ -213,7 +214,7 @@ def ssfr(p):
         ylim=(1e-16, 1e-8),
         xlabel=M_STAR,
     )
-    ax.set_ylabel(r"$s{\rm SFR}\ ({\rm yr}^{-1})$")
+    ax.set_ylabel(labels.axis("ssfr"))
     p.finish("lower left")
     return fig
 
@@ -268,7 +269,7 @@ def ssfr_density(p):
         ylim=(1e-13, 1e-8),
         xlabel=M_STAR,
     )
-    ax.set_ylabel(r"$s{\rm SFR}\ ({\rm yr}^{-1})$")
+    ax.set_ylabel(labels.axis("ssfr"))
     p.finish()
     return fig
 
@@ -290,7 +291,7 @@ def sfr(p):
         ylim=(1e-5, 1e3),
         xlabel=M_STAR,
     )
-    ax.set_ylabel(r"${\rm SFR}\ (M_\odot\,{\rm yr}^{-1})$")
+    ax.set_ylabel(labels.axis("sfr"))
     p.finish("upper left")
     return fig
 
@@ -318,7 +319,7 @@ def gas_fraction(p):
         log_y=False,
     )
     ax.set(xscale="log", xlim=(1e8, 1e12), ylim=(0, 1), xlabel=M_STAR)
-    ax.set_ylabel(r"$M_{\rm cold}\,/\,(M_{\rm cold}+M_\star)$")
+    ax.set_ylabel(r"Gas fraction $M_{\rm cold}\,/\,(M_{\rm cold}+M_\star)$")
     p.finish()
     return fig
 
@@ -370,7 +371,7 @@ def metallicity(p):
         ax, 10 ** g[:, 0], g[:, 1] + 8.69, "Gallazzi+05 (stellar)", dark=d
     )
     ax.set(xscale="log", xlim=(1e8, 1e12), ylim=(8.0, 9.5), xlabel=M_STAR)
-    ax.set_ylabel(r"$12+\log_{10}({\rm O/H})$")
+    ax.set_ylabel(labels.axis("metallicity"))
     p.finish("upper left", "lower right")
     return fig
 
@@ -412,8 +413,8 @@ def bh_bulge(p):
             dark=d,
         )
     ax.set(xscale="log", yscale="log", xlim=(1e8, 1e12), ylim=(1e6, 1e10))
-    ax.set_xlabel(r"$M_{\rm bulge}\ (M_\odot)$")
-    ax.set_ylabel(r"$M_{\rm BH}\ (M_\odot)$")
+    ax.set_xlabel(labels.axis("bulge_mass"))
+    ax.set_ylabel(labels.axis("bh_mass"))
     p.finish("lower right", "upper left")
     return fig
 
@@ -467,7 +468,7 @@ def quiescent(p):
 @plot(
     "Structure",
     "bulge_fraction",
-    "Bulge and disc mass fractions",
+    "Bulge and disk mass fractions",
     ("StellarMass", "BulgeMass"),
 )
 def bulge_fraction(p):
@@ -479,7 +480,7 @@ def bulge_fraction(p):
     edges = log_edges(8.25, 12.75, 0.5)
     c = plasma(1, p.o.dark)[0]
     p.relation(ax, mass, b_t, edges, label="Bulge", colour=c, log_y=False)
-    p.relation(ax, mass, 1 - b_t, edges, label="Disc", log_y=False)
+    p.relation(ax, mass, 1 - b_t, edges, label="Disk", log_y=False)
     ax.set(
         xscale="log",
         xlim=(edges[0], edges[-1]),
@@ -532,7 +533,7 @@ def bulge_to_total(p):
     ax.set(
         xscale="log", xlim=(10**8.5, 10**12.5), ylim=(0, 1.05), xlabel=M_STAR
     )
-    ax.set_ylabel(r"$M_{\rm bulge}\,/\,M_\star$")
+    ax.set_ylabel(r"Bulge-to-total ratio $M_{\rm bulge}\,/\,M_\star$")
     p.finish("upper left", "lower right")
     return fig
 
@@ -604,7 +605,7 @@ def reservoirs(p):
         xlim=(1e10, 1e15),
         ylim=(10**7.5, 1e14),
         xlabel=M_VIR,
-        ylabel=r"Mass $(M_\odot)$",
+        ylabel=r"Mass ($M_\odot$)",
     )
     p.finish("upper left")
     return fig
@@ -635,7 +636,7 @@ def dust_mf(p):
     ax.set(
         xscale="log",
         ylim=(1e-5, 0.1),
-        xlabel=r"$M_{\rm dust}\ (M_\odot)$",
+        xlabel=labels.axis("dust_mass"),
     )
     p.phi_label(ax)
     p.finish()
@@ -671,8 +672,8 @@ def dust_gas(p):
         yscale="log",
         xlim=(7.0, 9.6),
         ylim=(1e-6, 0.1),
-        xlabel=r"$12 + \log_{10}({\rm O/H})$",
-        ylabel=r"$M_{\rm dust} / M_{\rm cold}$",
+        xlabel=labels.axis("metallicity"),
+        ylabel=r"Dust-to-gas ratio $M_{\rm dust} / M_{\rm cold}$",
     )
     p.finish("upper left", "lower right")
     return fig
@@ -700,7 +701,7 @@ def dust_metals(p):
         xlim=(1e8, 1e12),
         ylim=(0, 1),
         xlabel=M_STAR,
-        ylabel=r"$M_{\rm dust} / M_{Z,\rm cold}$",
+        ylabel=r"Dust-to-metal ratio $M_{\rm dust} / M_{Z,\rm cold}$",
     )
     p.finish("lower right")
     return fig
@@ -725,16 +726,16 @@ def dust_reservoirs(p):
         xlim=(1e10, 1e15),
         ylim=(1e2, 1e10),
         xlabel=M_VIR,
-        ylabel=r"Dust $(M_\odot)$",
+        ylabel=r"Dust mass ($M_\odot$)",
     )
     p.finish("upper left")
     return fig
 
 
 @plot(
-    "Discs",
+    "Disks",
     "disc_sizes",
-    "Disc half-mass radii",
+    "Disk half-mass radii",
     ("StellarDiscHalfMassRadius", "GasDiscHalfMassRadius", "StellarMass"),
 )
 def disc_sizes(p):
@@ -742,8 +743,8 @@ def disc_sizes(p):
     s = p.s
     mass = s("StellarMass")
     for label, field, colour in (
-        ("Stellar disc", "StellarDiscHalfMassRadius", GROUPS[0]),
-        ("Gas disc", "GasDiscHalfMassRadius", GROUPS[1]),
+        ("Stellar disk", "StellarDiscHalfMassRadius", GROUPS[0]),
+        ("Gas disk", "GasDiscHalfMassRadius", GROUPS[1]),
     ):
         p.relation(
             ax, mass, s(field) * 1e3 / s.h, M_EDGES, mass > 0, label, colour
@@ -762,7 +763,7 @@ def disc_sizes(p):
         xlim=(1e8, 1e12),
         ylim=(0.3, 100),
         xlabel=M_STAR,
-        ylabel=r"$r_{50}\ ({\rm kpc})$",
+        ylabel=r"Half-light radius $r_{50}$ (kpc)",
     )
     p.finish("upper left", "lower right")
     return fig
@@ -787,9 +788,9 @@ def _stack(p, values):
 
 
 @plot(
-    "Discs",
+    "Disks",
     "disc_profiles",
-    "Stacked disc profiles",
+    "Stacked disk profiles",
     ("DiscRadii", "DiscStars", "DiscHI", "DiscH2", "StellarMass", "BulgeMass"),
 )
 def disc_profiles(p):
@@ -797,7 +798,7 @@ def disc_profiles(p):
     s = p.s
     fields = [
         ("Stars", "DiscStars", 1),
-        ("HI", "DiscHI", 1),
+        (r"H$_1$", "DiscHI", 1),
         ("H2", "DiscH2", 1),
     ]
     if s.has("DiscDust"):
@@ -818,15 +819,15 @@ def disc_profiles(p):
         xscale="log",
         yscale="log",
         ylim=(1e-3, 1e4),
-        xlabel=r"$R\ ({\rm kpc})$",
-        ylabel=r"$\Sigma\ (M_\odot\,{\rm pc}^{-2})$",
+        xlabel=r"Radius $R$ (kpc)",
+        ylabel=r"Surface density $\Sigma$ ($M_\odot\,{\rm pc}^{-2}$)",
     )
     p.finish()
     return fig
 
 
 @plot(
-    "Discs",
+    "Disks",
     "disc_metals",
     "Gas metallicity gradient",
     ("DiscRadii", "DiscGas", "DiscGasMetals", "StellarMass", "BulgeMass"),
@@ -846,8 +847,8 @@ def disc_metals(p):
     ax.plot(r, obs.oh_from_z(med), color=p.ink, label="Model")
     ax.set(
         xscale="log",
-        xlabel=r"$R\ ({\rm kpc})$",
-        ylabel=r"$12 + \log_{10}({\rm O/H})$",
+        xlabel=r"Radius $R$ (kpc)",
+        ylabel=labels.axis("metallicity"),
     )
     p.finish()
     return fig
@@ -890,8 +891,8 @@ def spatial(p):
             rasterized=True,
         )
         ax.set_aspect("equal")
-        ax.set_xlabel(rf"${la}\ ({{\rm Mpc}}\,h^{{-1}})$")
-        ax.set_ylabel(rf"${lb}\ ({{\rm Mpc}}\,h^{{-1}})$")
+        ax.set_xlabel(rf"${la}$ ($h^{{-1}}\,{{\rm Mpc}}$)")
+        ax.set_ylabel(rf"${lb}$ ($h^{{-1}}\,{{\rm Mpc}}$)")
     p.finish()
     return fig
 
@@ -915,9 +916,9 @@ def spatial_3d(p):
     ax.scatter(x, y, z, c=_density_colour(x, y), cmap="plasma", s=0.8, lw=0)
     ax.set_box_aspect((1, 1, 1))
     ax.grid(False)
-    ax.set_xlabel(r"$x\ ({\rm Mpc}\,h^{-1})$")
-    ax.set_ylabel(r"$y\ ({\rm Mpc}\,h^{-1})$")
-    ax.set_zlabel(r"$z\ ({\rm Mpc}\,h^{-1})$")
+    ax.set_xlabel(r"$x$ ($h^{-1}\,{\rm Mpc}$)")
+    ax.set_ylabel(r"$y$ ($h^{-1}\,{\rm Mpc}$)")
+    ax.set_zlabel(r"$z$ ($h^{-1}\,{\rm Mpc}$)")
     return fig
 
 
@@ -965,8 +966,8 @@ def mass_loading(p):
     )
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel(r"$V_{\rm vir}\ ({\rm km\,s}^{-1})$")
-    ax.set_ylabel(r"$\eta_{\rm reheat}$")
+    ax.set_xlabel(labels.axis("vvir"))
+    ax.set_ylabel(r"Reheating mass loading $\eta_{\rm reheat}$")
     p.finish()
     return fig
 
@@ -1035,8 +1036,10 @@ def sfr_accretion(p):
     r = np.array([1.0, 1e4])
     ax.plot(r, r, color=p.ink, ls="--", lw=1.2, label="SFR = accretion")
     ax.set(xscale="log", yscale="log", xlim=(1, 1e4), ylim=(1e-6, 1e4))
-    ax.set_xlabel(r"$\dot{M}_{\rm acc}\ (M_\odot\,{\rm yr}^{-1})$")
-    ax.set_ylabel(r"${\rm SFR}\ (M_\odot\,{\rm yr}^{-1})$")
+    ax.set_xlabel(
+        r"Accretion rate $\dot{M}_{\rm acc}$ ($M_\odot\,{\rm yr}^{-1}$)"
+    )
+    ax.set_ylabel(labels.axis("sfr"))
     p.finish("upper left")
     return fig
 
@@ -1057,7 +1060,7 @@ def tcool(p):
     p.relation(ax, mvir, rate, edges, ok & (regime == 0), "CGM regime", c[0])
     p.relation(ax, mvir, rate, edges, ok & (regime == 1), "Hot regime", c[1])
     ax.set(xscale="log", yscale="log", xlabel=M_VIR)
-    ax.set_ylabel(r"Cooling rate $(M_\odot\,{\rm Gyr}^{-1})$")
+    ax.set_ylabel(r"Cooling rate ($M_\odot\,{\rm Gyr}^{-1}$)")
     p.finish("upper left")
     return fig
 
@@ -1076,7 +1079,7 @@ def cgm_fraction(p):
         frac = s("CGMgas") / (F_BARYON * mvir)
     p.relation(ax, mvir, frac, log_edges(10.0, 12.0, 0.1))
     ax.set(xscale="log", yscale="log", xlim=(1e10, 1e12), xlabel=M_VIR)
-    ax.set_ylabel(r"$M_{\rm CGM}\,/\,(f_b\,M_{\rm vir})$")
+    ax.set_ylabel(r"CGM gas fraction $M_{\rm CGM}\,/\,(f_b\,M_{\rm vir})$")
     p.finish()
     return fig
 
@@ -1101,7 +1104,7 @@ def ejection(p):
     ok = (rate > 0) & (load > 0) & (v > 0) & (s("Mvir") > 0)
     p.relation(ax, v, efficiency, log_edges(1.0, 3.0, 0.1), ok)
     ax.set(xscale="log", yscale="log")
-    ax.set_xlabel(r"$V_{\rm vir}\ ({\rm km\,s}^{-1})$")
+    ax.set_xlabel(labels.axis("vvir"))
     ax.set_ylabel("Ejection efficiency")
     p.finish()
     return fig
@@ -1110,7 +1113,7 @@ def ejection(p):
 @plot(
     "Structure",
     "disk_radius",
-    "Disc radius vs Rvir",
+    "Disk radius vs Rvir",
     ("DiskRadius", "StellarMass", "Rvir"),
 )
 def disk_radius(p):
@@ -1133,8 +1136,8 @@ def disk_radius(p):
         grid = np.geomspace(rvir[ok].min(), rvir[ok].max(), 8)
         observed(ax, grid, ratio * grid, "Somerville+18", dark=p.o.dark)
     ax.set(xscale="log", yscale="log", ylim=(1e-2, 1e2))
-    ax.set_xlabel(r"$R_{\rm vir}\ ({\rm kpc})$")
-    ax.set_ylabel(r"$R_{\rm e,disc}\ ({\rm kpc})$")
+    ax.set_xlabel(labels.axis("rvir", labels.KPC))
+    ax.set_ylabel(r"Disk radius $R_{\rm e,disk}$ (kpc)")
     p.finish("upper left", "lower right")
     return fig
 
@@ -1157,6 +1160,6 @@ def half_mass(p):
     ok = (mass > 1e8) & ((disk_r > 0) | (bulge_r > 0))
     p.relation(ax, mass, r50, log_edges(8.0, 12.2, 0.2), ok)
     ax.set(xscale="log", yscale="log", xlabel=M_STAR)
-    ax.set_ylabel(r"$R_{50}\ ({\rm kpc})$")
+    ax.set_ylabel(r"Half-light radius $R_{50}$ (kpc)")
     p.finish("upper left")
     return fig

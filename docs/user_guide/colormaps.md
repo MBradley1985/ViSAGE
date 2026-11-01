@@ -6,22 +6,22 @@ Selectable from the Structure tab:
 
 | Mode | Scalar | Range |
 |---|---|---|
-| Mvir | log₁₀(Mvir / Msun)   | 10 – 15 |
-| Rvir | log₁₀(Rvir / Mpc/h)  | -1.5 – 0.5 |
+| Mvir | log₁₀(Mvir / M☉)   | 10 – 15 |
+| Rvir | log₁₀(Rvir / h⁻¹ Mpc)  | -1.5 – 0.5 |
 | Vvir | log₁₀(Vvir / km s⁻¹) | 1.5 – 3 |
 
 ## Galaxy colour modes
 
 | Mode | Scalar | Range |
 |---|---|---|
-| Stellar Mass | log₁₀(M★ / Msun)     | 8 – 12.5 |
+| Stellar Mass | log₁₀(M★ / M☉)     | 8 – 12.5 |
 | sSFR         | log₁₀(sSFR / yr⁻¹)   | −14 – −8 |
-| SFR          | log₁₀(SFR / Msun yr⁻¹) | −3 – 2 |
-| Cold Gas     | log₁₀(M_gas / Msun)  | 7 – 11.5 |
-| Bulge Mass   | log₁₀(M_bulge / Msun)| 7 – 12 |
+| SFR          | log₁₀(SFR / M☉ yr⁻¹) | −3 – 2 |
+| Cold Gas     | log₁₀(M_gas / M☉)  | 7 – 11.5 |
+| Bulge Mass   | log₁₀(M_bulge / M☉)| 7 – 12 |
 | B / T        | bulge_mass ÷ stellar_mass | 0 – 1 |
-| BH Mass      | log₁₀(M_BH / Msun)   | 4 – 10 |
-| ICS Mass     | log₁₀(M_ICS / Msun)  | 6 – 12 |
+| BH Mass      | log₁₀(M_BH / M☉)   | 4 – 10 |
+| ICS Mass     | log₁₀(M_ICS / M☉)  | 6 – 12 |
 | Age          | mass-weighted stellar age | 0 – 14 Gyr |
 | Density      | KDE local density (categorical / per-snapshot normalised) | — |
 | Type         | Central (Blues cmap) / Satellite (Reds cmap) | — |
@@ -56,7 +56,7 @@ All layers stay within the standard galaxy splat-radius scaling so the overall o
 
 ## Point sizing
 
-Splats are rendered in **world coordinates** (Mpc/h) via `vtkPointGaussianMapper`'s per-point scale array — so when the camera zooms in they grow on screen, and when it zooms out they shrink. The radii are scaled by the underlying mass:
+Splats are rendered in **world coordinates** (h⁻¹ Mpc) via `vtkPointGaussianMapper`'s per-point scale array — so when the camera zooms in they grow on screen, and when it zooms out they shrink. The radii are scaled by the underlying mass:
 
-* Haloes: 0.15 – 1.5 Mpc/h (log₁₀ Mvir 10 – 15)
-* Galaxies: 0.025 – 0.35 Mpc/h (log₁₀ M★ 8 – 12.5)
+* Haloes: 0.15 – 1.5 h⁻¹ Mpc (log₁₀ Mvir 10 – 15)
+* Galaxies: 0.025 – 0.35 h⁻¹ Mpc (log₁₀ M★ 8 – 12.5)

@@ -7,9 +7,11 @@ models, LightSAGE lightcones and DarkSAGE and DustySAGE runs.
 
 ## Choosing the galaxies
 
-- **Galaxies:** the whole box or lightcone, the Coords sphere, the Box
-  region or the selected galaxy's group.
-- **Use Filters and Environments:** applies the Filters tab and the
+The tab runs in steps: choose plots, choose galaxies, set the look, make.
+
+- **Galaxies:** the whole box or lightcone, the active region on the
+  Regions tab, or the selected galaxy's group.
+- **Use the Filters tab:** applies the Filters tab and the
   Environment checkboxes in the Structure tab as well, so a plot shows what
   the viewer shows.
 - **Local z** (lightcones): the redshift slice for the Local and Observed
@@ -36,7 +38,7 @@ A group doesn't exist across snapshots, so they are unavailable for a group.
 
 Plots a model has no fields for are greyed out.
 
-Runs with `DustySAGEMode` and `DarkSAGEMode` add **Dust** and **Discs** sections, which other runs don't show at all. Observations are there to test against: Beeston et al. (2018) on the dust mass function, Rémy-Ruyer et al. (2014) on dust-to-gas, and Lange et al. (2015) on disc sizes. Lange's are half-light radii of whole late-type galaxies, and the model's half-mass radii of discs.
+Runs with `DustySAGEMode` and `DarkSAGEMode` add **Dust** and **Disks** sections, which other runs don't show at all. Observations are there to test against: Beeston et al. (2018) on the dust mass function, Rémy-Ruyer et al. (2014) on dust-to-gas, and Lange et al. (2015) on disc sizes. Lange's are half-light radii of whole late-type galaxies, and the model's half-mass radii of discs.
 
 ## Options
 

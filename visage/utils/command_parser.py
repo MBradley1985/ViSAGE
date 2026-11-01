@@ -176,7 +176,11 @@ def _h_type_filter(m, ctx) -> str:
 
 def _h_goto_halo(m, ctx) -> str:
     n = int(m.group("idx"))
-    ctx.state.nav_halo_idx = n
+    find = getattr(ctx.ctrl, "halo_row_for_id", None)
+    row = find(n) if find is not None else n
+    if row is None:
+        return f"No halo {n} in this snapshot."
+    ctx.state.nav_halo_idx = int(row)
     ctx.state.flush()
     ctx.ctrl.go_to_halo()
     return f"Flying to halo {n}."

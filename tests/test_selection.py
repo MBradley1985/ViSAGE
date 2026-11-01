@@ -54,7 +54,7 @@ def test_selecting_a_galaxy_fills_the_card_and_marks_it(panel):
     ctrl.sel_toggle_card()
     assert state.sel_show
     assert state.sel_title == "Galaxy row 6"
-    assert "satellite" in state.sel_sub
+    assert "Satellite" in state.sel_sub
     # Group list: central first, the selected one flagged.
     assert state.sel_members[0]["idx"] == 4
     assert [m["idx"] for m in state.sel_members if m["current"]] == [6]
@@ -168,7 +168,7 @@ def test_isolate_follows_the_galaxy_or_halo_context(panel):
     state.nav_halo_idx = 0
     state.flush()
     assert state.nav_gal_idx == 4 and state.sel_kind == "halo"
-    assert state.sel_title == "Halo 0"
+    assert state.sel_title == "Halo row 0"
     ctrl.toggle_isolate()
     state.flush()
     assert sorted(np.flatnonzero(gl._focus_mask)) == [2, 4, 6]
@@ -184,7 +184,7 @@ def test_isolate_follows_the_galaxy_or_halo_context(panel):
     # The card's switch back to the halo.
     state.sel_kind = "halo"
     state.flush()
-    assert state.sel_title == "Halo 0"
+    assert state.sel_title == "Halo row 0"
 
 
 def test_hd_frames_the_selected_galaxy_not_the_central(panel):
@@ -462,3 +462,41 @@ def test_moving_through_the_group_flies_to_each_member(panel):
     assert state.nav_gal_idx == 6 and at(6)
     ctrl.sel_central()
     assert state.nav_gal_idx == 4 and at(4)
+
+
+def test_find_by_galaxy_id_flies_to_it_and_says_when_it_is_not_here(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    state.find_preset = "id"
+    state.flush()
+    assert state.find_results == []
+    wanted = int(galaxies.galaxy_id[1])
+    state.find_id = str(wanted)
+    ctrl.find_id_go()
+    state.flush()
+    assert state.nav_gal_idx == ctrl.galaxy_row_for_id(wanted)
+    row = state.nav_gal_idx
+    state.find_id = "999999999999"
+    ctrl.find_id_go()
+    assert "999999999999" in state.find_note
+    state.find_id = "not a number"
+    ctrl.find_id_go()
+    assert state.nav_gal_idx == row
+
+
+def test_haloes_go_by_their_simulation_index(monkeypatch):
+    from types import SimpleNamespace
+
+    from visage.utils import group_info
+
+    gal = SimpleNamespace(gal_type=np.array([1, 0, 0]))
+    monkeypatch.setattr(
+        group_info, "halo_ids", lambda _: np.array([9, 9, 123456])
+    )
+    assert group_info.central_of_halo(gal, 9) == 1
+    assert group_info.central_of_halo(gal, 7) is None
+    assert group_info.halo_label(gal, 2, 40) == "123456"
+    assert group_info.halo_label(gal, 0, 40) == "row 40"
+    monkeypatch.setattr(group_info, "halo_ids", lambda _: None)
+    assert group_info.halo_label(gal, 2, 40) == "row 40"

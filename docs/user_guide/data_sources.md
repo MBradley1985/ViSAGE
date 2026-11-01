@@ -2,7 +2,7 @@
 
 ## miniMillennium
 
-- Box size: 62.5 Mpc/h
+- Box size: 62.5 h⁻¹ Mpc
 - Snapshots: 64 (z ≈ 127 → 0)
 - Tree format: lhalo_binary (`trees_063.0` – `trees_063.7`)
 - Scale factor file: `millennium.a_list`
@@ -16,7 +16,7 @@ visage --par input/millennium.par
 
 ## microUchuu
 
-- Box size: 96 Mpc/h
+- Box size: 96 h⁻¹ Mpc
 - Snapshots: 50 (z ≈ 13.9 → 0)
 - Tree format: lhalo_binary (`tree_0_0_0.dat`)
 - Scale factor file: `Uchuu100_scalefactor.txt`
@@ -33,7 +33,7 @@ A [LightSAGE](https://github.com/sage-home/sage-lightcone) `cli_lightcone` run p
 
 - Pass-through SAGE fields keep their original CamelCase names — `Posx`/`Posy`/`Posz`, `StellarMass`, `SnapNum`, `Type`, `Mvir`, `Rvir`, `SfrDisk`/`SfrBulge`, …
 - Computed fields are lowercase — `ra`, `dec`, `distance`, `redshift_cosmological`, `redshift_observed`, `sfr`
-- Mass fields are in `10^10 Msun/h` (same convention as SAGE HDF5 output); positions are observer-frame comoving Mpc/h
+- Mass fields are in `10^10 M☉/h` (same convention as SAGE HDF5 output); positions are observer-frame comoving h⁻¹ Mpc
 - Cosmology and provenance are recorded in the `SageOutputHeader` and `LightconeOutputHeader` groups
 
 Launch:

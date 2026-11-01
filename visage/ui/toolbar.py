@@ -1051,6 +1051,7 @@ def build_toolbar(server, scene: Scene) -> None:
         items=(_SPEED_ITEMS,),
         density="compact",
         hide_details=True,
+        variant="outlined",
         style="max-width:90px;",
     )
 
@@ -1060,20 +1061,51 @@ def build_toolbar(server, scene: Scene) -> None:
         items=(_ROTATE_ITEMS,),
         density="compact",
         hide_details=True,
-        style="max-width:120px;",
+        label="Rotate",
+        variant="outlined",
+        style="max-width:150px;",
         disabled=("box_strip_items && box_strip_items.length > 1",),
         title="Rotation disabled in multi-box mode",
     )
 
-    # Close application button
+    # The view: HD, Reset.
     v3.VBtn(
-        icon="mdi-close-thick",
+        "HD",
+        variant=("hd_active ? 'flat' : 'outlined'",),
+        density="compact",
+        click=ctrl.toggle_hd,
+        color=("hd_active ? 'cyan' : 'white'",),
+        loading=("hd_building",),
+        disabled=(
+            "hd_building || !hd_available "
+            "|| nav_gal_idx === null || nav_gal_idx < 0",
+        ),
+        classes="sage-bar-btn",
+        title=(
+            "hd_available ? 'HD: the selected galaxy (its whole pair, group "
+            "or cluster, with its surroundings) as detailed 3D models built "
+            "from its SAGE properties' : hd_unavailable",
+        ),
+        id="btn-hd-galaxy",
+    )
+    v3.VBtn(
+        "Reset",
+        variant="outlined",
+        density="compact",
+        color="white",
+        click=ctrl.reset_camera,
+        classes="sage-bar-btn",
+        title="Back to the default view",
+    )
+
+    v3.VBtn(
+        icon="mdi-close",
         variant="text",
         density="compact",
         color="#ef4444",
         title="Close ViSAGE",
         click=ctrl.close_app,
-        style="margin-left:8px;margin-right:4px;",
+        classes="sage-close",
     )
 
     @ctrl.set("close_app")
