@@ -514,6 +514,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Layer state
     state.halos_visible = True
     state.galaxies_visible = True
+    state.dust_glow = False
+    state.disc_shapes = False
     scene.halo_layer.opacity = _HALO_OPACITY
     scene.galaxy_layer.opacity = 1.0
     state.halo_opacity = scene.halo_layer.opacity
@@ -915,6 +917,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @state.change("halos_visible")
     def on_halo_toggle(halos_visible, **_):
         scene.halo_layer.visible = bool(halos_visible)
+        _push()
+
+    @state.change("dust_glow")
+    def on_dust_glow(dust_glow, **_):
+        scene.galaxy_layer.set_dust_glow(bool(dust_glow))
+        _push()
+
+    @state.change("disc_shapes")
+    def on_disc_shapes(disc_shapes, **_):
+        scene.galaxy_layer.set_disc_shapes(bool(disc_shapes))
         _push()
 
     @state.change("galaxies_visible")
@@ -3706,6 +3718,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         f["key"] for f in getattr(scene.active_model, "extra_fields", []) or []
     }
     state.radial_ok = "StellarDiscScaleRadius" in fields
+    # These appear only for runs with the toggles that make them.
+    state.dust_glow_ok = "ColdDust" in fields
+    state.disc_shapes_ok = state.radial_ok
 
     def _rotation_in_file() -> bool:
         """The run's rotation curves, which only 2D fields hold."""
@@ -5874,6 +5889,30 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("galaxies_visible",),
                         label="Visible",
+                        color="#FFD700",
+                        hide_details=True,
+                        density="compact",
+                    )
+                with v3.VSheet(
+                    v_show=("dust_glow_ok",),
+                    color="transparent",
+                    style=_FIELD,
+                ):
+                    v3.VCheckbox(
+                        v_model=("dust_glow",),
+                        label="Dust glow",
+                        color="#FFD700",
+                        hide_details=True,
+                        density="compact",
+                    )
+                with v3.VSheet(
+                    v_show=("disc_shapes_ok",),
+                    color="transparent",
+                    style=_FIELD,
+                ):
+                    v3.VCheckbox(
+                        v_model=("disc_shapes",),
+                        label="Disc shapes",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",

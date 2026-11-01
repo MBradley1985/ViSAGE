@@ -6,6 +6,7 @@ import numpy as np
 import pyvista as pv
 
 from visage.io.galaxy_reader import GalaxySnapshot
+from visage.scene import disc_sprites
 from visage.utils.colormap import normalize_log, scalars_to_rgba
 from visage.utils.sizing import galaxy_world_radii_rvir, glow_crowding
 
@@ -240,6 +241,12 @@ class GalaxyLayer:
         # Always render the disk/bulge inner stellar layers (normally focus-only)
         # — the lightcone enables these so galaxies look more defined.
         self._show_inner_layers: bool = False
+        # Disc shapes and dust glow, for runs that have them.
+        self._disc_shapes: bool = False
+        self._dust_glow: bool = False
+        self._spin_cache: dict = {}
+        self._disc_actors: list = []
+        self._view_tag = None
         # Synthetic-photometry stack (lightcone SED): the ordered list of
         # sed_mags keys the "sedstack" colour mode composites into a false-
         # colour image (each band tinted its representative colour, summed).
@@ -365,6 +372,18 @@ class GalaxyLayer:
         if self._snapshot is not None:
             self._redraw()
 
+    def set_disc_shapes(self, on: bool) -> None:
+        """Draw galaxies as tilted discs, where the run has spins."""
+        if self._disc_shapes != bool(on):
+            self._disc_shapes = bool(on)
+            self._redraw()
+
+    def set_dust_glow(self, on: bool) -> None:
+        """Add a glow of each galaxy's dust."""
+        if self._dust_glow != bool(on):
+            self._dust_glow = bool(on)
+            self._redraw()
+
     def set_show_inner_layers(self, on: bool) -> None:
         """Always draw the disk/bulge inner stellar layers (otherwise only
         shown inside a focus region).  Used by the lightcone for more definition.
@@ -482,6 +501,7 @@ class GalaxyLayer:
         for actor in self._actors:
             self._pl.remove_actor(actor, render=False)
         self._actors.clear()
+        self._disc_actors = []
         self._opacity_terms.clear()
         self._opacity_baked = False
 
@@ -541,7 +561,17 @@ class GalaxyLayer:
                 self._render_sed_stack(eff_pos, rgb, radii)
             return
         self._dim = self._crowd_dimming(snap, radii)
-        self._render_structure(snap, radii, eff_pos)
+        spins = (
+            disc_sprites.read_spins(snap, self._spin_cache)
+            if self._disc_shapes and self._color_mode == "structure"
+            else None
+        )
+        if spins is None:
+            self._render_structure(snap, radii, eff_pos)
+        else:
+            self._render_discs(snap, radii, eff_pos, spins)
+        if self._dust_glow:
+            self._render_dust(snap, radii, eff_pos)
         if self._color_mode == "type":
             mass_colors = normalize_log(
                 snap.stellar_mass, *_RANGES["stellar_mass"]
@@ -564,6 +594,112 @@ class GalaxyLayer:
             self._render_outer_property(
                 eff_pos, colors, radii, self._colormap, self._dim
             )
+
+    def _add_sprite(self, actor) -> None:
+        if not self._visible:
+            actor.SetVisibility(False)
+        self._actors.append(actor)
+
+    def _render_discs(self, snap, radii, pos, spins) -> None:
+        """Each galaxy's stars and gas as tilted ellipses, gas at its real
+        size against the stars, and a bulge core sized by B/T."""
+        ds = disc_sprites
+        stars = np.maximum(snap.stellar_mass, 1.0)
+        bt = np.clip(snap.bulge_mass / stars, 0.0, 1.0)
+        ssfr = (snap.sfr_disk + snap.sfr_bulge) / stars
+        dim = 1.0 if self._dim is None else self._dim
+        light = (
+            ds.scaled(stars, *ds._MASS_RANGE) ** 0.6
+            * dim
+            * self._glow_strength
+        )
+        size = np.maximum(radii * ds.DISC_SIZE, 0.02)
+        gas_r = snap.extra.get("GasDiscHalfMassRadius")
+        star_r = snap.extra.get("StellarDiscHalfMassRadius")
+        disc = bt < ds.BULGE_ONLY
+        made = []
+        if gas_r is not None and star_r is not None:
+            ratio = np.clip(gas_r / np.maximum(star_r, 1e-6), 1.0, 7.0)
+            gas = disc & (gas_r > 0)
+            if gas.any():
+                made.append(
+                    ds.discs(
+                        self._pl,
+                        pos[gas],
+                        spins[gas],
+                        (size * (0.35 + 0.2 * ratio))[gas],
+                        (0.25 * light * np.ones(len(pos)))[gas],
+                        ds.BLUE,
+                    )
+                )
+        star_forming = ssfr > ds.STAR_FORMING
+        for keep, colour in (
+            (disc & star_forming, ds.BLUE),
+            (disc & ~star_forming, ds.AMBER),
+        ):
+            if keep.any():
+                made.append(
+                    ds.discs(
+                        self._pl,
+                        pos[keep],
+                        spins[keep],
+                        size[keep],
+                        (0.5 * light * np.ones(len(pos)))[keep],
+                        colour,
+                    )
+                )
+        ball = bt > 0.02
+        if ball.any():
+            self._add_sprite(
+                ds.glow(
+                    self._pl,
+                    pos[ball],
+                    (size * (0.25 + 0.55 * bt))[ball],
+                    (0.22 * light * np.ones(len(pos)))[ball],
+                    ds.CORE,
+                    2.5,
+                )
+            )
+        for actor in made:
+            self._add_sprite(actor)
+        self._disc_actors = made
+        self._watch_camera()
+
+    def _render_dust(self, snap, radii, pos) -> None:
+        """A glow of each galaxy's dust, of every reservoir."""
+        ds = disc_sprites
+        total = np.zeros(snap.count)
+        for name in ("ColdDust", "HotDust", "CGMDust"):
+            col = snap.extra.get(name)
+            if col is not None:
+                total = total + col
+        have = total > 0
+        if not have.any():
+            return
+        amount = ds.scaled(total[have] * 1e10, *ds._DUST_RANGE)
+        dim = 1.0 if self._dim is None else self._dim
+        self._add_sprite(
+            ds.glow(
+                self._pl,
+                pos[have],
+                radii[have] * (0.5 + 0.6 * amount),
+                0.25 * amount**1.2 * (dim * np.ones(snap.count))[have],
+                ds.DUST,
+                0.9,
+            )
+        )
+
+    def _watch_camera(self) -> None:
+        """Keep the discs turned to the camera, frame by frame."""
+        ren = self._pl.renderer
+        if self._view_tag is None:
+            self._view_tag = ren.AddObserver(
+                "StartEvent",
+                lambda *_: disc_sprites.set_view(
+                    self._disc_actors, self._pl.camera
+                ),
+            )
+        disc_sprites.set_view(self._disc_actors, self._pl.camera)
 
     def _crowd_dimming(
         self, snap: GalaxySnapshot, radii: np.ndarray

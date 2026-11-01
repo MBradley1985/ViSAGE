@@ -80,3 +80,7 @@ Double-click any point in the render window to select the galaxy there. The info
 The galaxy is then selected: ringed, with its card a click away (the header's **i** button).
 
 Single clicks (no double) are treated as pure camera interactions — they don't move selection and don't trigger any overlays.
+
+## Dust glow and Disc shapes
+
+Under Galaxies in the Structure tab, on runs with SAGE26's `DustySAGEMode` and `DarkSAGEMode`. **Dust glow** adds a warm glow of each galaxy's cold, hot and CGM dust. **Disc shapes** replaces the round splats with ellipses tilted to each galaxy's stellar spin, blue if it's forming stars and amber if not, with a core sized by its bulge and its gas disc at the real size against its stars. It applies with Colour by on Structure.
