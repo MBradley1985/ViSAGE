@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.17.0] — 2026-11-02
+
 ### Fixed
 
 - Load existing finds a run whose `.par` has a different name from its output folder, by the `.par`'s `OutputDir`.
@@ -50,7 +54,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Properties have one name, symbol and unit everywhere: Colour by lists, Filters, the card, plots and axis labels. Units are written as km s⁻¹, M☉ yr⁻¹ and h⁻¹ Mpc.
 - The Plotting tab runs in steps: choose plots, choose galaxies, set the look, make.
 - Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.
-- Drag tools are thin white lines with small grips, and chosen galaxies stand out by dimming the rest.
 - The Isolate backdrop uses the mock images' real stars, with their own colours and brightnesses.
 
 ## [2.16.0] — 2026-11-01

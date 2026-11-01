@@ -200,7 +200,7 @@ def test_the_card_shows_a_runs_own_dust_and_hides_zeros():
     assert "Dust (hot)" not in d
     assert d["Dust-to-gas"] == "1.00e-02"
     assert d["Dust-to-metals"] == "0.50"
-    assert d["Dust grown"] == "1.2 Msun/yr"
+    assert d["Dust grown"] == "1.2 Msun yr^-1"
     assert dust_details(SimpleNamespace(extra={}), 0, 1.0) == {}
 
 

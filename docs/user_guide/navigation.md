@@ -49,7 +49,7 @@ The rail's **Info** button opens the card:
 | Zoom 3 / 5 / 10 | Fly in at that radius (h⁻¹ Mpc), with focus |
 | Clear / Show indicator | Rings off or on. The galaxy stays selected, and the choice holds through HD, Gas and new selections |
 | Host halo · Go to halo | The halo the central sits on, and a flight to it |
-| Properties | Key properties; **All properties** lists every field (Approx Age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
+| Properties | Key properties; **All properties** lists every field (Approximate age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |
 | Group | Every member (central first); click one to select it and fly there |
 
 ### Keys
