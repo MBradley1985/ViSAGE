@@ -344,6 +344,9 @@ LC_DIR="{lc_dir}"
 PATCH_DIR="{patch_dir}"
 cd "$LC_DIR"
 
+# A git that doesn't run here would look like a patch that doesn't fit.
+git --version >/dev/null 2>&1 || PATH="/usr/bin:$PATH"
+
 # ViSAGE's fixes to the tools: in for the build, out again afterwards.
 APPLIED=()
 unpatch() {{

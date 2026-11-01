@@ -242,6 +242,17 @@ def test_stable_annuli_lose_their_arms():
     assert arm_reach(SimpleNamespace(radial=()), np.ones(2)) == 1.0
 
 
+def test_profiles_read_a_flat_lightcone(tmp_path):
+    p = tmp_path / "cone.h5"
+    with h5py.File(p, "w") as f:
+        f["StellarMass"] = np.array([1.0, 1.0])
+        f["DiscRadii"] = np.array([[0.0, 1e-3, 2e-3]] * 2)
+        for k in ("DiscGas", "DiscHI", "DiscH2", "DiscStars", "DiscSFR"):
+            f[k] = np.array([[1.0, 1.0]] * 2)
+    out = fb.radial_profiles(p, 0, 1, 1.0)
+    assert np.allclose(out["r"][0], [0.5, 1.5])
+
+
 def test_hi_glow_follows_the_annuli():
     from visage.hd.layer import hi_texture
 

@@ -189,6 +189,13 @@ def _derived(gals: np.ndarray) -> dict:
     return out
 
 
+def _disc_group(path, snap: int):
+    """Where the annuli are: a snapshot of a run, or a flat lightcone."""
+    with h5py.File(path, "r") as f:
+        flat = "StellarMass" in f
+    return h5py.File(path, "r") if flat else open_snapshot(path, snap)
+
+
 def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
     """The discs of galaxy rows of a run with annuli: "r" (kpc, annulus
     middles), surface densities (Msun/pc^2) of stars, gas, HI and H2, and of
@@ -196,7 +203,7 @@ def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
     "z_gas" and "z_stars" (metal mass fractions), "vcirc" (km/s, at "edges",
     kpc) and "sigma" (km/s)."""
     rows = np.atleast_1d(rows)
-    with open_snapshot(path, snap) as g:
+    with _disc_group(path, snap) as g:
 
         def read(name):
             return np.asarray(g[name][rows]).astype(float)
@@ -234,7 +241,8 @@ def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
             if sigma.ndim == 2:
                 extra["sigma"] = sigma
         if have("SpinGas") and have("SpinStars"):
-            extra["spin_dot"] = (read("SpinGas") * read("SpinStars")).sum(1)
+            extra["spin_stars"] = read("SpinStars")
+            extra["spin_dot"] = (read("SpinGas") * extra["spin_stars"]).sum(1)
     area = np.maximum(np.pi * (edges[:, 1:] ** 2 - edges[:, :-1] ** 2), 1e-12)
     res = {k: v * mass / (area * 1e6) for k, v in out.items()}
     res.update(extra)

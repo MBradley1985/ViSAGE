@@ -464,7 +464,17 @@ def _los(snap, i: int) -> tuple:
 
 
 def spin_vector(snap, i: int) -> np.ndarray | None:
-    """Unit spin axis from Spinx/y/z, or None if the output has none."""
+    """Unit spin axis: the stellar disc's with annuli, else from
+    Spinx/y/z, or None if the output has none."""
+    extra = getattr(snap, "extra", None) or {}
+    if getattr(snap, "source_path", "") and "StellarDiscScaleRadius" in extra:
+        from visage.io.family_binary import radial_profiles
+
+        row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+        p = radial_profiles(snap.source_path, int(snap.snap_num), row, 1.0)
+        v = p["spin_stars"][0] if "spin_stars" in p else np.zeros(3)
+        if np.linalg.norm(v) > 0:
+            return v / np.linalg.norm(v)
     v = np.array([_extra(snap, f"Spin{c}", i) for c in "xyz"])
     norm = np.linalg.norm(v)
     return v / norm if norm > 0 else None

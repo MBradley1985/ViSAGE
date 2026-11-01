@@ -372,6 +372,10 @@ def compute_photometry(
         if cf:
             h2 = get("H2gas")
             spin = np.column_stack([get(f"Spin{c}") for c in "xyz"])
+            disc_spin = get("SpinStars")  # the disc's own, with annuli
+            if disc_spin is not None:
+                has = (disc_spin != 0).any(axis=1)
+                spin = np.where(has[:, None], disc_spin, spin)
             pos = np.column_stack([get(f"Pos{c}") for c in "xyz"])
             cold_dust = get("ColdDust")  # DustySAGEMode
             discs = {

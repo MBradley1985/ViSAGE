@@ -16,6 +16,7 @@ def test_patches_ship_and_build_script_applies_then_removes_them():
     names = [p.name for p in patches]
     assert "0001-rotate-spins-with-box-tiling.patch" in names
     assert "0002-sort-iterator-for-new-libcxx.patch" in names
+    assert "0003-rotate-disc-spins-with-box-tiling.patch" in names
     for p in patches:
         text = p.read_text()
         assert text.startswith("diff --git a/") and "\n+" in text
