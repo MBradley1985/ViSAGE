@@ -844,9 +844,9 @@ def recipe_from_sage(
     if barred:
         bar_mass = min(g.instability_bulge_mass, 0.08 * g.stellar_mass)
         bar_frac = bar_mass / max(g.stellar_mass, 1.0)
-        bar_len = float(np.clip(0.9 + 10.0 * bar_frac, 0.9, 1.8))
+        bar_len = BAR_LENGTH * float(np.clip(0.9 + 10.0 * bar_frac, 0.9, 1.8))
         # Stronger bars are thinner.
-        bar_axis = float(np.clip(0.36 - 1.5 * bar_frac, 0.22, 0.36))
+        bar_axis = BAR_AXIS * float(np.clip(0.36 - 1.5 * bar_frac, 0.22, 0.36))
         l_bar = 1.8 * OLD_LIGHT * bar_mass / max(disk_mass, 1.0)
         notes.append(
             f"instability bulge {ib_frac:.2f} of M* -> bar {bar_frac:.2f} of M*, "
@@ -1022,10 +1022,7 @@ def recipe_from_sage(
         l_pseudo=float(l_pseudo),
         pseudo_a=pseudo_a,
         bar_axis=bar_axis,
-        # Bars buckle into a peanut once the disk is gas-poor.
-        peanut=float(
-            np.clip(1.3 - 2.0 * gas_frac, 0.4, 1.0) if bar_len > 0 else 0.0
-        ),
+        peanut=0.0,
         # Pseudo-bulges are flatter in colder (rotation-dominated) disks.
         pseudo_q=float(
             np.clip(0.25 + 0.2 * (g.vel_disp / g.vmax), 0.25, 0.5)
@@ -1236,6 +1233,12 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
     lg = lg - 4.0 * np.clip(r - edge[ok].max(), 0, None)
     want = np.exp(lg - np.interp(0.0, np.log(edge[ok]), np.log(v[ok])))
     return want / np.maximum(base / np.mean(base[np.abs(r - 1) < 0.05]), 1e-6)
+
+
+# Bars' half-length relative to the recipe, and axis ratio relative to it:
+# longer and thinner reads as a strip of light across the disc.
+BAR_LENGTH = 0.75
+BAR_AXIS = 2.0
 
 
 def arm_reach(rc, r) -> np.ndarray | float:
