@@ -215,6 +215,10 @@ def _bin_spectra(grid, age_lo, age_hi, dt_y, width, bc_age) -> dict:
     }
 
 
+# Stars younger than this follow DiscSFR in the annuli, not DiscStars.
+RECENT_GYR = 0.3
+
+
 def _stars(wts_in, sfr, spec, last, dt_y):
     """Rest-frame light (chunk, n_wave, L_sun/Hz) of stars formed as
     `wts_in` (Msun per bin), the youngest of bin `last` (if any) from the
@@ -754,6 +758,8 @@ def compute_photometry(
         for start in range(0, len(idx), step):
             ci = idx[start : start + step]
             parts = {}
+            recent = np.zeros((len(ci), len(wave)))
+            ring_part = "disk_" if disk_bulge else ""
             for pre, (mass, sfr, log_z_c) in components.items():
                 older = np.zeros((len(ci), len(wave)))
                 young = np.zeros_like(older) if cf else None
@@ -775,6 +781,18 @@ def compute_photometry(
                     older[use] += o
                     if cf:
                         young[use] += y
+                    if annuli is not None and pre == ring_part:
+                        # The stars DiscSFR places: under RECENT_GYR old.
+                        recent[use] += _stars(
+                            mass[ci[use]]
+                            * share[use]
+                            * (age_hi <= RECENT_GYR),
+                            sfr[ci[use]]
+                            * (share[use, last] if has_last else 0),
+                            specs[zi],
+                            None,
+                            dt_y,
+                        )[0]
                 parts[pre] = (older, young)
             if cf:
                 t_old, t_new = screens(wave, ci)
@@ -791,12 +809,13 @@ def compute_photometry(
                 unseen = spectra
             zg = z_obs[ci]
             if annuli is not None:
-                d_old, d_new = parts["disk_" if disk_bulge else ""]
+                d_old, d_clouds = parts[ring_part]
                 for band in bands:
                     ring_light[band][ci] = dm.annulus_band_shares(
                         wave,
-                        d_old,
-                        d_new,
+                        np.maximum(d_old - recent, 0.0),
+                        recent,
+                        d_clouds,
                         pivots[band] / (1 + (zg if want_obs else 0 * zg)),
                         annuli[0][ci],
                         annuli[1][ci],

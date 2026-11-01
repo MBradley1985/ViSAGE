@@ -511,14 +511,33 @@ def test_new_stars_make_outer_annuli_bluer():
     wave = np.array([4000.0, 7000.0])
     old = np.array([[0.5, 1.0], [0.5, 1.0]])  # red
     new = np.array([[3.0, 1.0], [3.0, 1.0]])  # blue
+    clouds = np.zeros((2, 2))
     s_old = np.array([[0.8, 0.2], [0.8, 0.2]])
     s_new = np.array([[0.1, 0.9], [0.1, 0.9]])
     tau, eta = np.zeros((2, 2)), np.full((2, 2), -1.0)
     blue = dm.annulus_band_shares(
-        wave, old, new, np.full(2, 4000.0), tau, eta, s_old, s_new, np.zeros(2)
+        wave,
+        old,
+        new,
+        clouds,
+        np.full(2, 4000.0),
+        tau,
+        eta,
+        s_old,
+        s_new,
+        np.zeros(2),
     )
     red = dm.annulus_band_shares(
-        wave, old, new, np.full(2, 7000.0), tau, eta, s_old, s_new, np.zeros(2)
+        wave,
+        old,
+        new,
+        clouds,
+        np.full(2, 7000.0),
+        tau,
+        eta,
+        s_old,
+        s_new,
+        np.zeros(2),
     )
     np.testing.assert_allclose(blue.sum(axis=1), 1.0)
     assert blue[0, 1] > red[0, 1]  # more of the blue light is outside
