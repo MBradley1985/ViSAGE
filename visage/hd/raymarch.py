@@ -198,13 +198,8 @@ def render(
                     )
                 if bar_ax > 0:
                     ax_, ay_ = bar_ax, bar_ax * rc.bar_axis
-                    bar = np.exp(
-                        -(
-                            (np.abs(xg) / ax_) ** 2.4
-                            + (np.abs(yg) / ay_) ** 2.4
-                        )
-                    )
-                    bar *= sech2(zg, 0.12) / (np.pi * ax_ * ay_ * 0.92)
+                    bar = np.exp(-1.6 * np.hypot(xg / ax_, yg / ay_))
+                    bar *= sech2(zg, 0.12) / (2.4544 * ax_ * ay_)
                     e_bul = e_bul + rc.l_bar * bar
                 kappa = (
                     maps.sample("dust", xg, yg) * sech2(zg, 0.045)

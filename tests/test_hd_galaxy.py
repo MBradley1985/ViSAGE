@@ -722,3 +722,13 @@ def test_hd_follows_the_galaxy_to_another_snapshot(hd_panel):
     state.flush()
     assert state.hd_active  # back at 63 it is found again
     ctrl.toggle_hd()
+
+
+def test_bar_light_is_an_ellipse_of_unit_flux():
+    """Exp(-1.6 r) over an ellipse: 2 pi a b / 1.6^2 = 2.4544 a b."""
+    a, b = 1.7, 0.5
+    g = np.linspace(-30, 30, 3001)
+    d = (g[1] - g[0]) ** 2
+    x, y = np.meshgrid(g, g)
+    light = np.exp(-1.6 * np.hypot(x / a, y / (b))) / (2.4544 * a * b)
+    assert float(light.sum() * d) == pytest.approx(1.0, rel=0.01)

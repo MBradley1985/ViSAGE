@@ -23,6 +23,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- HD bars fade smoothly from the centre, where they read as a lit rectangle.
 - The `.par` template had tags SAGE26 no longer reads, so a new `.par` stopped at startup.
 - Patches to LightSAGE were skipped, reported as not fitting, when `git` wouldn't run from bash.
 - The LightSAGE build script reports a failed build as one.
