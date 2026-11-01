@@ -462,3 +462,24 @@ def test_moving_through_the_group_flies_to_each_member(panel):
     assert state.nav_gal_idx == 6 and at(6)
     ctrl.sel_central()
     assert state.nav_gal_idx == 4 and at(4)
+
+
+def test_find_by_galaxy_id_flies_to_it_and_says_when_it_is_not_here(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    state.find_preset = "id"
+    state.flush()
+    assert state.find_results == []
+    wanted = int(galaxies.galaxy_id[1])
+    state.find_id = str(wanted)
+    ctrl.find_id_go()
+    state.flush()
+    assert state.nav_gal_idx == ctrl.galaxy_row_for_id(wanted)
+    row = state.nav_gal_idx
+    state.find_id = "999999999999"
+    ctrl.find_id_go()
+    assert "999999999999" in state.find_note
+    state.find_id = "not a number"
+    ctrl.find_id_go()
+    assert state.nav_gal_idx == row

@@ -1210,8 +1210,8 @@
       svg.setAttribute('preserveAspectRatio', 'none');
       svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;' +
         'pointer-events:none;';
-      svg.innerHTML = '<polygon fill="rgba(34,211,238,.12)" stroke="#22d3ee" ' +
-        'stroke-width="1.5" vector-effect="non-scaling-stroke"/>';
+      svg.innerHTML = '<polygon fill="none" stroke="#fff" stroke-opacity=".55" ' +
+        'stroke-width="1" vector-effect="non-scaling-stroke"/>';
       host.appendChild(svg);
     }
     var p = pts || [];

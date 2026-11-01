@@ -55,6 +55,7 @@ def _init_state(state) -> None:
         "sel_can_fwd": False,
         "find_preset": None,
         "find_results": [],
+        "find_id": "",
         "find_note": "",
         "hd_available": True,
         "hd_unavailable": "",
@@ -768,7 +769,7 @@ def build_selection(server, scene) -> None:
         from visage.utils.find import find
 
         preset = preset or state.find_preset
-        if not preset:
+        if not preset or preset == "id":
             state.find_results = []
             state.find_note = ""
             return
@@ -791,6 +792,17 @@ def build_selection(server, scene) -> None:
     @state.change("find_preset")
     def _on_find_preset(find_preset=None, **_):
         _find(find_preset)
+
+    @ctrl.set("find_id_go")
+    def _find_id_go():
+        """Fly to the galaxy with the GalaxyIndex in Find's box."""
+        typed = str(state.find_id or "").strip()
+        row = _row_for_id(typed) if typed.isdigit() else None
+        if row is None:
+            state.find_note = f"No galaxy with ID {typed} here."
+            return
+        state.find_note = ""
+        _find_select(row)
 
     @ctrl.set("find_select")
     def _find_select(idx):

@@ -195,13 +195,16 @@ def hd_panel(mini_par_path, tmp_path):
 
     from visage.scene.scene import Scene
     from visage.ui.navigation_panel import build_navigation_panel
+    from visage.ui.selection import build_selection, selection_card
 
     scene = Scene(str(mini_par_path), off_screen=True)
     server = get_server(f"test_hd_panel_{tmp_path.name}", client_type="vue3")
     server.controller.view_update = lambda *a, **k: None
     with SinglePageLayout(server) as layout:
         with layout.content:
+            selection_card(server)
             build_navigation_panel(server, scene)
+            build_selection(server, scene)
     server.state.ready()
     yield server, scene
     scene.plotter.close()
@@ -250,6 +253,22 @@ def test_go_and_isolate_go_3_mpc_from_the_galaxy(hd_panel):
     ctrl.toggle_isolate()
     state.nav_distance = 0.5  # e.g. a drawn Regions sphere
     assert state.nav_halo_distance == 10.0
+
+
+def test_reset_camera_leaves_hd_for_the_opening_view(hd_panel):
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    state.galaxy_color_mode = "sfr"
+    state.nav_gal_idx = 0
+    ctrl.toggle_hd()
+    state.flush()
+    assert state.hd_active
+    ctrl.reset_camera()
+    state.flush()
+    assert not state.hd_active and not state.isolate_active
+    assert scene._focus_region is None
+    assert state.galaxy_color_mode == "structure"
+    assert state.nav_gal_idx is None
 
 
 def test_dropping_isolate_removes_the_hd_model(hd_panel):

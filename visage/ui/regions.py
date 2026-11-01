@@ -71,7 +71,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
     state.region_front = False
     picked: set = set()
     held: dict = {"normal": (0.0, 0.0, 1.0), "geometry": "sphere"}
-    marks: list = [None]
     sweep: list = [None]
 
     def number(key) -> float:
@@ -139,27 +138,16 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         vol = regions.volume(region, size)
         return text if vol is None else f"{text} · {vol:.3g} (Mpc/h)³"
 
-    def show_marks() -> None:
-        """Mark the chosen galaxies, unless the view is cut to them."""
-        if marks[0] is not None:
-            scene.plotter.remove_actor(marks[0], render=False)
-            marks[0] = None
-        if not picked or state.region_on:
+    def show_chosen() -> None:
+        """While choosing, dim everything but the chosen galaxies."""
+        focus = scene._focus_region
+        marking = focus is not None and focus.get("marking", False)
+        if state.region_on:
             return
-        region = current("selection")
-        keep = rows(region)
-        if keep.any():
-            _, pos = _active(scene)
-            marks[0] = scene.plotter.add_points(
-                np.asarray(pos[keep], float),
-                color="#ffd54a",
-                point_size=5,
-                render_points_as_spheres=True,
-                lighting=False,
-                pickable=False,
-                reset_camera=False,
-                render=False,
-            )
+        if picked and state.region_shape == "selection":
+            scene.set_focus_region(current("selection"), True, True)
+        elif marking:
+            scene.clear_focus()
 
     def apply() -> None:
         region = current()
@@ -168,7 +156,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             scene.set_focus_region(region, bool(state.region_grey))
             state.focus_active = True
             state.isolate_active = False
-        show_marks()
+        show_chosen()
         push()
 
     def stop_handles() -> None:
@@ -213,12 +201,13 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
     def on_show(region_on, **_):
         region = scene._focus_region
         mine = region is not None and region["type"] == "region"
+        mine = mine and not region["marking"]
         if region_on:
             apply()
         elif mine:
             scene.clear_focus()
             state.focus_active = False
-            show_marks()
+            show_chosen()
             push()
 
     @state.change("region_handles")
@@ -502,7 +491,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
 
     def on_snap(_snap) -> None:
         state.region_note = count_note(current())
-        show_marks()
 
     scene.register_snap_change_callback(on_snap)
     state.region_note = count_note(current())

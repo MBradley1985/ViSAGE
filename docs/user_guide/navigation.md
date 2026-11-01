@@ -87,7 +87,7 @@ Pick a **Sphere**, **Box**, **Slice** or **Selection**. What is on the tab is th
 - **Drag handles in the view** moves a sphere or box with the mouse.
 - **Frame camera** only moves the camera.
 - **Slice:** face X, Y, Z or the camera, then set the depth and thickness. **Sweep through the volume** moves it for you.
-- **Selection:** draw a lasso or rectangle over the view, or click galaxies, and Add, Remove or Replace. A drawn shape takes everything through the depth; **Only what I can see** keeps the nearest in each part of the screen. **Filtered**, **Group** and **Region** take those galaxies. In a box, a selection follows its galaxies through snapshots.
+- **Selection:** draw a lasso or rectangle over the view, or click galaxies, and Add, Remove or Replace. While you choose, everything else is dimmed. A drawn shape takes everything through the depth; **Only what I can see** keeps the nearest in each part of the screen. **Filtered**, **Group** and **Region** take those galaxies. In a box, a selection follows its galaxies through snapshots.
 - **Save** keeps a region with its model. Click a saved name to bring it back.
 
 Box mode and Lightcone Mode have the same tab. A lightcone also has a **Photometry** tab: see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).

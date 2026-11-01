@@ -646,10 +646,15 @@ class Scene:
         )
         self._refit_clipping()
 
-    def set_focus_region(self, region: dict, grey: bool = False) -> None:
+    def set_focus_region(
+        self, region: dict, grey: bool = False, marking: bool = False
+    ) -> None:
         """Show a region (visage.utils.regions) alone, or with `grey` the
-        galaxies outside it dimmed instead of hidden."""
-        self._focus_region = dict(type="region", region=region, grey=grey)
+        galaxies outside it dimmed instead of hidden. `marking`: this only
+        marks a selection being made, so it isn't the view's cut."""
+        self._focus_region = dict(
+            type="region", region=region, grey=grey, marking=marking
+        )
         active = self.active_model
         halos, galaxies = active.loader.get(active.current_snap)
         off = active.offset.astype(np.float32)

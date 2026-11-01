@@ -74,3 +74,26 @@ def test_saved_regions_are_kept_by_model(tmp_path, monkeypatch):
     regions.save("m", [entry])
     regions.save("n", [])
     assert regions.saved("m") == [entry]
+
+
+def test_luminosities_keep_their_values_past_float32(tmp_path):
+    import h5py
+
+    from visage.io.lightcone_reader import LazyColumns
+
+    path = tmp_path / "cone.h5"
+    with h5py.File(path, "w") as f:
+        f["Bright"] = np.array([1.0, 3e42], dtype=np.float64)
+        f["Plain"] = np.array([1.0, 2.0], dtype=np.float64)
+    columns = LazyColumns(path, np.array([0, 1]), ["Bright", "Plain"])
+    assert columns["Bright"][1] == 3e42
+    assert columns["Plain"].dtype == np.float32
+
+
+def test_real_star_field_runs_from_a_few_bright_to_many_faint():
+    from visage.sed.mock_image import star_field
+
+    rgb = star_field(5000, np.random.default_rng(1))
+    level = rgb.max(axis=1)
+    assert rgb.shape == (5000, 3) and rgb.min() >= 0 and level.max() <= 1
+    assert np.median(level) < 0.2 < level.max()

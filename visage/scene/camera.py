@@ -89,30 +89,13 @@ class CameraController:
             self._pl.remove_actor(a, render=False)
         self._sparkle_actors.clear()
 
-    # Stellar colours by spectral class: O/B blue, A white-blue, F white,
-    # G yellow-white, K orange, M red.
-    _STAR_COLORS = np.array(
-        [
-            [155, 176, 255],  # O/B  blue
-            [202, 215, 255],  # A    blue-white
-            [248, 247, 255],  # F    white
-            [255, 244, 234],  # G    yellow-white
-            [255, 204, 140],  # K    orange
-            [255, 156, 84],  # M    deep orange
-            [255, 108, 72],  # M    red
-            [246, 74, 60],  # M    deep red
-        ],
-        dtype=np.uint8,
-    )
-    _STAR_WEIGHTS = np.array([0.06, 0.10, 0.15, 0.18, 0.17, 0.14, 0.12, 0.08])
-
     def add_sparkles(
         self,
         center: tuple[float, float, float],
         radius: float,
         n_stars: int = 90_000,
         seed: int = 12345,
-        point_size: float = 2.0,
+        point_size: float = 3.0,
     ) -> None:
         """A star backdrop behind the isolated object.
 
@@ -139,13 +122,11 @@ class CameraController:
         # A little depth variation so the field doesn't look like a decal.
         spread = 1.0 + 0.35 * rng.random(n_stars)
 
-        # Colours down the spectral sequence, O/B through M, with the
-        # white/yellow middle most common — real stars, not a rainbow.
-        colors = self._STAR_COLORS[
-            rng.choice(
-                len(self._STAR_COLORS), size=n_stars, p=self._STAR_WEIGHTS
-            )
-        ]
+        # Real stars, as the mock images have them: their own colours, and
+        # a few bright among many faint.
+        from visage.sed.mock_image import star_field
+
+        colors = (star_field(n_stars, rng) * 255).astype(np.uint8)
         cloud = pv.PolyData(np.zeros((n_stars, 3)))
 
         self._sparkle_state = {
@@ -231,8 +212,8 @@ class CameraController:
             # Tight: the object itself, then full sky just beyond it.  A
             # wide ramp dims most of the frame at the isolate framing,
             # where the object already subtends a good part of the view.
-            inner = np.arctan2(st["radius"] * 1.0, obj_dist)
-            outer = np.arctan2(st["radius"] * 2.2, obj_dist)
+            inner = np.arctan2(st["radius"] * 0.4, obj_dist)
+            outer = np.arctan2(st["radius"] * 0.9, obj_dist)
             # Element-wise rather than a matmul: Accelerate raises a
             # spurious divide-by-zero warning for this shape, and this
             # runs on every camera move.

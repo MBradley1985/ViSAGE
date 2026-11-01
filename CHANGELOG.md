@@ -14,11 +14,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Dusty and Dark 'n Dusty, Radial profile and Rotation appear on lightcones that have the fields.
 - The HD HI glow no longer shows as a flat square where a disc's annuli end above its threshold.
 - HD discs fade softly instead of ending at a rim.
+- Lightcone luminosities in erg/s (`LAGN`, `LineLum*`) keep their values; they overflowed to infinity when read.
+- Reset Camera puts everything back to default, leaving HD and Isolate, and clearing filters, selection and regions.
 - HD group members are drawn at their real size, in true proportion to each other.
 
 ### Added
 
 - The card lists a galaxy's ICS mass.
+- Find has a Galaxy ID option: type a GalaxyIndex and Go.
 - A Regions tab, the same in box and lightcone modes, in place of Coords and Box: spheres, boxes, slices that can sweep through the volume, and selections by lasso, rectangle or click, with live counts, drag handles and named regions saved with each model.
 
 ### Changed
@@ -26,6 +29,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Rotation shows stars and gas as velocity maps above the rotation curve, each map framed on its own, with Gaia-style colours, contours and orbit streaks.
 - The dark background switch moved to the bottom of the Structure tab and now also sets radial, rotation and spectrum figures.
 - Tighter spacing for the galaxy and mock-image checkboxes.
+- Drag tools are thin white lines with small grips, and chosen galaxies stand out by dimming the rest.
+- The Isolate backdrop uses the mock images' real stars, with their own colours and brightnesses.
 
 ## [2.16.0] — 2026-11-01
 

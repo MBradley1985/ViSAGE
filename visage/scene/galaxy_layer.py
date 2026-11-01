@@ -46,7 +46,7 @@ _SPLAT_SHADER = (
 # (isolated galaxies and pairs) are left as they are.  At a power of 1 the piled-up light would be held at
 # that level; below 1 a dense region still reads brighter than a sparse
 # one, without clipping.
-GREYED = 0.12  # brightness of galaxies outside a greyed region
+GREYED = 0.22  # brightness of galaxies outside a greyed region
 _CROWD_FREE = 1.5
 _CROWD_POWER = 0.7
 

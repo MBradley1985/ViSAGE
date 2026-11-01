@@ -536,6 +536,28 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Reverse boxes beside the colormap menus (matplotlib's "<name>_r").
     state.halo_cmap_reverse = False
     state.galaxy_cmap_reverse = False
+    _view_defaults = {
+        k: state[k]
+        for k in (
+            "halos_visible",
+            "galaxies_visible",
+            "halo_opacity",
+            "galaxy_opacity",
+            "halo_color_mode",
+            "galaxy_color_mode",
+            "halo_colormap",
+            "galaxy_colormap",
+            "halo_cmap_reverse",
+            "galaxy_cmap_reverse",
+        )
+    }
+    _view_defaults.update(
+        dust_glow=False,
+        disc_shapes=False,
+        photometry_visible=False,
+        find_preset=None,
+        find_id="",
+    )
 
     # ── Synthetic Photometry — its OWN independent layer (scene.sed_layer),
     #    shown in a dedicated Photometry tab (Lightcone Mode only). Completely
@@ -690,7 +712,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     def _push():
         focus = scene._focus_region
-        state.region_on = focus is not None and focus["type"] == "region"
+        state.region_on = (
+            focus is not None
+            and focus["type"] == "region"
+            and not focus["marking"]
+        )
         if hasattr(server.controller, "view_update"):
             server.controller.view_update()
 
@@ -1102,6 +1128,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # ModifiedEvent observer covers zoom changes for the same reason.
     # ------------------------------------------------------------------
 
+    def _hairline_box(widget) -> None:
+        """Thin white lines, without the cross through the box's middle."""
+        widget.OutlineCursorWiresOff()
+        for prop in (
+            widget.GetOutlineProperty(),
+            widget.GetSelectedOutlineProperty(),
+        ):
+            prop.SetColor(1.0, 1.0, 1.0)
+            prop.SetOpacity(0.55)
+            prop.SetLineWidth(1.0)
+        widget.GetHandleProperty().SetColor(1.0, 1.0, 1.0)
+        widget.GetSelectedHandleProperty().SetColor(1.0, 1.0, 1.0)
+
     def _rescale_box_handles(*_) -> None:
         r = _handle_world_r[0]
         sources = _box_handle_sources[0]
@@ -1136,7 +1175,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _box_handle_sources[0] = []
 
     def _rebuild_sphere_rings(center, radius: float) -> None:
-        """Draw 5 great-circle rings identical to _add_sphere_indicator."""
+        """Draw the sphere as three thin rings."""
         import numpy as _np2
         import pyvista as _pv2
 
@@ -1150,7 +1189,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         rings = [
             _np2.column_stack([cx2 + c2, cy2 + s2, _np2.full_like(c2, cz2)])
         ]
-        for deg in (0.0, 45.0, 90.0, 135.0):
+        for deg in (0.0, 90.0):
             ca, sa = _np2.cos(_np2.deg2rad(deg)), _np2.sin(_np2.deg2rad(deg))
             rings.append(
                 _np2.column_stack([cx2 + c2 * ca, cy2 + c2 * sa, cz2 + s2])
@@ -1167,9 +1206,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         poly.lines = _np2.array(lines, dtype=_np2.int64)
         _draw_sphere_actor[0] = scene.plotter.add_mesh(
             poly,
-            color="cyan",
-            opacity=0.9,
-            line_width=2,
+            color="white",
+            opacity=0.55,
+            line_width=1,
             style="wireframe",
             render_points_as_spheres=False,
             point_size=0,
@@ -2711,13 +2750,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _rebuild_sphere_rings(_sc, _sr[0])
                 state.flush()
 
-            handle_r = max(0.3, r * 0.12)
+            handle_r = r * 0.04
             try:
                 _draw_sphere_widget[0] = scene.plotter.add_sphere_widget(
                     _sphere_cb,
                     center=[(cx, cy, cz), (cx + r, cy, cz)],
                     radius=handle_r,
-                    color="cyan",
+                    color="white",
                     style="surface",
                     pass_widget=True,
                     interaction_event="always",
@@ -2797,10 +2836,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _draw_box_widget[0] = scene.plotter.add_box_widget(
                     _box_cb,
                     bounds=[xmin, xmax, ymin, ymax, zmin, zmax],
-                    color="cyan",
+                    color="white",
                     rotation_enabled=False,
                 )
                 state.draw_box_active = True
+                _hairline_box(_draw_box_widget[0])
 
                 # Capture the new sphere sources (= handle spheres)
                 _new_srcs = []
@@ -2820,8 +2860,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             _new_srcs.append(_s2)
                 _box_handle_sources[0] = _new_srcs
                 _handle_world_r[0] = (
-                    _new_srcs[0].GetRadius() if _new_srcs else None
+                    _new_srcs[0].GetRadius() * 0.35 if _new_srcs else None
                 )
+                _rescale_box_handles()
                 _attach_box_cam_observer(_draw_box_widget[0])
             except Exception:
                 pass
@@ -2834,7 +2875,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("reset_camera")
     def on_reset():
+        """Back to how the app opened (the snapshot aside): out of HD and
+        Isolate, nothing selected or filtered, the usual layers and colours,
+        and the whole run in frame."""
+        _hd_cancel()
+        _stop_hd()
+        _stop_sparkles()
         _clear_draw_widgets()
+        ctrl.region_clear()
+        ctrl.sel_reset()
+        scene.camera._clear_member_indicators()
+        on_reset_filters()
+        state.hd_gas = False
+        state.update(_view_defaults)
+        state.flush()
         scene.camera._clear_indicator()
         if scene.is_lightcone:
             # A lightcone isn't a cube at the origin — frame its actual
@@ -7358,7 +7412,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 v3.VSelect(
                     v_model=("find_preset",),
                     items=(
-                        [{"title": t, "value": k} for k, t in PRESETS.items()],
+                        [
+                            {"title": "Galaxy ID", "value": "id"},
+                            *(
+                                {"title": t, "value": k}
+                                for k, t in PRESETS.items()
+                            ),
+                        ],
                     ),
                     label="Find…",
                     clearable=True,
@@ -7367,6 +7427,31 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     density="compact",
                 )
+                with html.Div(
+                    v_show=("find_preset === 'id'",),
+                    style="display:flex;gap:6px;padding-top:6px;",
+                ):
+                    # (Text: a number box would round a long GalaxyIndex.)
+                    with html.Div(
+                        raw_attrs=['data-enter-click="btn-find-id"'],
+                        style="flex:1;min-width:0;",
+                    ):
+                        v3.VTextField(
+                            v_model=("find_id",),
+                            label="Galaxy ID",
+                            hide_details=True,
+                            variant="outlined",
+                            bg_color="#1a1a2e",
+                            density="compact",
+                        )
+                    v3.VBtn(
+                        "Go",
+                        id="btn-find-id",
+                        click=ctrl.find_id_go,
+                        color="cyan",
+                        density="compact",
+                        style="height:40px;",
+                    )
                 html.Div(
                     "{{ find_note }}",
                     v_show=("find_note",),
