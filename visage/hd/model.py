@@ -1314,6 +1314,10 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * np.exp(0.08 * clumps)
     )
     old = old * radial_scale(rc, 1, r, exp_d)
+    if rc.radial:
+        # Annuli can stay bright further out than the exponential: fade them
+        # inside the square map, so its edge doesn't show.
+        old = old / (1 + np.exp((r - 1.3 * rc.extent) / 0.12))
     if rc.bar_len > 0:
         # The bar is built from the inner disk: hollow it out to match.
         old *= 1 - 0.65 * np.exp(-((r / (0.8 * rc.bar_len)) ** 2))
