@@ -4,7 +4,7 @@ ViSAGE can display two or more SAGE models side-by-side in a single viewport, ea
 
 ## Loading a second box
 
-Open the hamburger menu (top-left ☰) and click **+SBS** next to any model in the Models section. The new box appears immediately to the right of the existing one. Repeat to add more boxes (up to four is practical).
+Open the Launch menu (top-left) and click **+SBS** next to any model in the Models section. The new box appears immediately to the right of the existing one. Repeat to add more boxes (up to four is practical).
 
 ## The box strip
 
@@ -36,4 +36,4 @@ Each box has its own:
 
 ## Removing a box
 
-In the hamburger menu, click the **×** next to a loaded model to unload it.
+In the Launch menu, click the **×** next to a loaded model to unload it.

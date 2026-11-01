@@ -380,6 +380,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.hd_available = True
         state.hd_unavailable = ""
     state.nav_active_tab = "layers"
+    state.panel_open = True
     state.draw_sphere_active = (
         False  # interactive sphere widget in Regions tab
     )
@@ -555,6 +556,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         dust_glow=False,
         disc_shapes=False,
         photometry_visible=False,
+        plot_dark=True,
+        panel_open=True,
+        nav_active_tab="layers",
         find_preset=None,
         find_id="",
     )
@@ -3382,7 +3386,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             "kind": kind,
             "data_url": f"data:{mime};base64,{b64}{'#' + str(_lib_id[0]) if mime == 'image/gif' else ''}",
             "top_px": 32 + (idx % 6) * 50,
-            "right_px": 24 + (idx % 6) * 44,
+            "right_px": 320 + (idx % 6) * 44,  # clear of the panel
         }
         _lib_items.append(new_item)
         state.library_items = list(_lib_items)
@@ -5377,10 +5381,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     with v3.VSheet(
         color="#000000",
-        style=(
-            "height:100%;display:flex;flex-direction:column;"
-            "color:#e2e8f0;overflow:hidden;"
-        ),
+        style="height:100%;color:#e2e8f0;",
     ):
         # Hidden fly-movement triggers — clicked by the keyboard handler in
         # visage.js (WASD / arrow keys). Kept in the DOM at all times so
@@ -5399,138 +5400,42 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
             v3.VBtn("", id="hd-escape", click=ctrl.hd_escape)
 
-        # ── Reset + Focus + Centre ─────────────────────────────────
-        with v3.VSheet(
-            color="transparent", style="padding:8px;flex-shrink:0;"
-        ):
-            # One line: Reset Camera takes the room the icon buttons leave.
-            with v3.VRow(no_gutters=True, style="gap:6px;flex-wrap:nowrap;"):
-                with v3.VCol(style="padding:0;min-width:0;"):
-                    v3.VBtn(
-                        "Reset Camera",
-                        block=True,
-                        variant="outlined",
-                        color="cyan",
-                        density="compact",
-                        style=(
-                            "min-width:0;padding:0 6px;"
-                            "letter-spacing:0.02em;font-size:0.78rem;"
-                        ),
-                        click=ctrl.reset_camera,
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
-                    # The selection card, from anywhere.
-                    v3.VBtn(
-                        icon="mdi-information-variant",
-                        variant="text",
-                        density="compact",
-                        click=ctrl.sel_toggle_card,
-                        color=("sel_show ? 'cyan' : 'white'",),
-                        title="Info: the selected galaxy's card",
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
-                    v3.VBtn(
-                        icon="mdi-target",
-                        variant="outlined",
-                        density="compact",
-                        click=ctrl.toggle_focus,
-                        color=("focus_active ? 'cyan' : 'white'",),
-                        title="Focus",
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
-                    v3.VBtn(
-                        icon="mdi-image-filter-center-focus",
-                        variant="outlined",
-                        density="compact",
-                        click=ctrl.center_camera,
-                        color="white",
-                        title="Place camera at box centre",
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
-                    v3.VBtn(
-                        icon="mdi-magnify",
-                        variant="outlined",
-                        density="compact",
-                        click=ctrl.toggle_isolate,
-                        color=("isolate_active ? 'cyan' : 'white'",),
-                        title="Isolate selected halo/galaxy",
-                    )
-                with v3.VCol(cols="auto", style="padding:0;"):
-                    v3.VBtn(
-                        "HD",
-                        variant=("hd_active ? 'flat' : 'outlined'",),
-                        density="compact",
-                        click=ctrl.toggle_hd,
-                        color=("hd_active ? 'cyan' : '#FFD700'",),
-                        loading=("hd_building",),
-                        disabled=(
-                            "hd_building || !hd_available "
-                            "|| nav_gal_idx === null || nav_gal_idx < 0",
-                        ),
-                        style="min-width:0;padding:0 8px;",
-                        title=(
-                            "hd_available ? 'HD: the selected galaxy (its "
-                            "whole pair, group or cluster, with its "
-                            "surroundings) as detailed 3D models built from "
-                            "its SAGE properties' : hd_unavailable",
-                        ),
-                        id="btn-hd-galaxy",
-                    )
-        v3.VDivider(style="flex-shrink:0;")
-
-        # ── Tab rows: 3-up grid wrapping to multiple rows ───────────
-        # NOTE: VBtnToggle's `density="compact"` clamps the wrapper to a
-        # single row of buttons via a fixed --v-btn-height.  We force
-        # height:auto so wrapped rows are actually visible.
-        with v3.VBtnToggle(
-            v_model=("nav_active_tab",),
-            mandatory=True,
-            style=(
-                "width:100%;flex-shrink:0;background:#111827;"
-                "border-radius:0;display:flex;flex-wrap:wrap;"
-                "justify-content:center;"
-                "height:auto;min-height:0;padding-bottom:4px;"
-            ),
-        ):
-            # Synthetic photometry is a lightcone's alone.
-            _phot = (
-                [("Photometry", "photometry")] if scene.is_lightcone else []
-            )
-            for label, value in [
-                ("Structure", "layers"),
-                ("Filters", "filters"),
-                *_phot,
-                ("Regions", "coords"),
-                ("Record", "record"),
-                ("Console", "console"),
-                ("Library", "library"),
-                ("Plotting", "plotting"),
-            ]:
-                v3.VBtn(
-                    label,
-                    value=value,
-                    style=(
-                        "flex:0 0 25%;font-size:0.66rem;letter-spacing:0;"
-                        "min-width:0;height:30px;text-transform:none;"
-                        "font-weight:700;"
+        # ── Icon rail: each tab, and a click on the open one closes it ──
+        _phot = [("Photometry", "photometry")] if scene.is_lightcone else []
+        with html.Div(classes="sage-rail"):
+            for label, value, icon in (
+                ("Structure", "layers", "mdi-layers-outline"),
+                ("Filters", "filters", "mdi-filter-outline"),
+                *(p + ("mdi-palette-outline",) for p in _phot),
+                ("Regions", "coords", "mdi-selection-drag"),
+                ("Record", "record", "mdi-record-circle-outline"),
+                ("Console", "console", "mdi-console"),
+                ("Library", "library", "mdi-folder-outline"),
+                ("Plotting", "plotting", "mdi-chart-line"),
+            ):
+                with html.Button(
+                    classes=(
+                        f"{{'sage-rail-on': panel_open && "
+                        f"nav_active_tab === '{value}'}}",
                     ),
-                    color=(
-                        f"nav_active_tab === '{value}' ? 'cyan' : '#6b7280'",
+                    click=(
+                        f"panel_open = !(panel_open && nav_active_tab === "
+                        f"'{value}'); nav_active_tab = '{value}'"
                     ),
-                    variant="text",
-                    density="compact",
-                )
-
-        v3.VDivider(style="flex-shrink:0;")
+                    title=label,
+                ):
+                    html.I(classes=f"mdi {icon}")
+                    html.Span(label)
 
         # ── Tab content — fills remaining panel height; scrolls vertically
         # if a tab's content is taller than the available space so that
         # nothing is ever cut off on small screens.
         with v3.VSheet(
+            v_show=("panel_open",),
             color="transparent",
+            classes="sage-panel",
             style=(
-                "flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;"
-                "padding:10px 12px;"
+                "overflow-y:auto;overflow-x:hidden;padding:12px 14px;"
                 "display:flex;flex-direction:column;"
             ),
         ):
@@ -5792,7 +5697,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 v3.VSwitch(
                     v_model=("plot_dark",),
-                    label="Dark background on plots",
+                    label="Dark mode",
                     density="compact",
                     hide_details=True,
                     color="cyan",

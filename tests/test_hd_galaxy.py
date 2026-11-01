@@ -67,6 +67,14 @@ def test_disk_recipe_has_every_starlight_component():
     assert maps.dust.max() > 0
 
 
+def test_a_shared_exposure_gives_a_satellite_back_part_of_its_dimming():
+    from visage.hd.group import SATELLITE_LIFT, shared_white
+
+    assert shared_white(1.0, 1.0) == 1.0
+    assert shared_white(0.5, 1.0) == 1.0  # never brighter than its own
+    assert shared_white(10.0, 1.0) == pytest.approx(10 ** (1 - SATELLITE_LIFT))
+
+
 def test_elliptical_recipe():
     rc = recipe_from_sage(_elliptical())
     names = {p.name for p in build_points(rc, None)}

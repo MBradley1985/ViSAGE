@@ -100,7 +100,7 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
     ]
     state.plot_filters = True
     state.plot_scatter = False
-    state.plot_dark = False
+    state.plot_dark = True
     state.plot_colour = ""
     state.plot_colours = [{"title": "None", "value": ""}] + [
         {"title": k, "value": k}

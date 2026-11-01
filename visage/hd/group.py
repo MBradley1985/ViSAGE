@@ -161,8 +161,19 @@ def ram_pressure(
 # infall), "stars" (stellar mass lost) or "both" (the stronger).
 STRIP_MODE = "dm"
 
+# How much of a shared exposure's dimming a member gets back: a group stays
+# in proportion, but a satellite beside a bright central keeps its detail.
+SATELLITE_LIFT = 0.4
+
 # Cap on a jellyfish tail's exposure compensation.
 TAIL_GAIN_MAX = 10.0
+
+
+def shared_white(white: float, base: float) -> float:
+    """A member's white level in a group: `white` is its share of the
+    group's exposure, `base` its own, with SATELLITE_LIFT of the dimming
+    between them taken back so its detail still shows."""
+    return base * max(white / base, 1.0) ** (1.0 - SATELLITE_LIFT)
 
 
 def tail_gains(entries, sat_ctx) -> dict:
@@ -185,7 +196,8 @@ def tail_gains(entries, sat_ctx) -> dict:
         if "ram" not in ctx or not e.get("prep"):
             continue
         lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
-        f = (w_common / lum) / max(e["prep"]["exposure"].base, 1e-12)
+        base = max(e["prep"]["exposure"].base, 1e-12)
+        f = shared_white(w_common / lum, base) / base
         if f > 1.15:
             out[k] = float(min(f, TAIL_GAIN_MAX))
     return out
@@ -449,7 +461,9 @@ class HDGroupLayer:
             self._hubble_h,
             gas=self._gas and member,
             prep=e["prep"],
-            white=self._w_common / lum,
+            white=shared_white(
+                self._w_common / lum, e["prep"]["exposure"].base
+            ),
             halo=member,
             icl=icl,
             manage_fxaa=False,

@@ -122,3 +122,80 @@ body,
     text-transform: none;
     border-color: rgba(255, 255, 255, 0.16);
 }
+
+/* The icon rail on the right, and the panel it opens over the view. */
+.sage-rail {
+    position: absolute;
+    top: 10px;
+    right: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 5px;
+    background: rgba(8, 10, 16, 0.62);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 20px !important;
+}
+
+.sage-rail button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 56px;
+    padding: 7px 0 5px;
+    border-radius: 12px !important;
+    color: #94a3b8;
+    font-size: 0.6rem;
+    cursor: pointer;
+}
+
+.sage-rail button .mdi {
+    font-size: 19px;
+    line-height: 1.1;
+}
+
+.sage-rail button:hover {
+    color: #e2e8f0;
+}
+
+.sage-rail button.sage-rail-on {
+    background: rgba(34, 211, 238, 0.14);
+    color: #67e8f9;
+}
+
+.sage-panel.v-sheet {
+    position: absolute !important;
+    top: 10px;
+    right: 82px;
+    width: 300px;
+    max-height: calc(100% - 20px);
+    box-sizing: border-box;
+    background: rgba(8, 10, 16, 0.62) !important;
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6) !important;
+}
+
+.sage-pill {
+    padding: 2px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 99px !important;
+    font-size: 0.74rem;
+    color: #e2e8f0;
+}
+
+.sage-bar-btn.v-btn {
+    min-width: 0;
+    margin-left: 6px;
+    padding: 0 12px;
+    height: 28px;
+    border-radius: 99px !important;
+    border-color: rgba(255, 255, 255, 0.2);
+    text-transform: none;
+    letter-spacing: 0;
+}

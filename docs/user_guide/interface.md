@@ -23,7 +23,7 @@ ViSAGE's browser UI has three main regions and a number of overlays that appear 
 
 | Control | Action |
 |---|---|
-| ☰ (hamburger) | Open the dropdown: switch tabs, switch primary model, toggle overlay models |
+| ViSAGE / Launch | Open the menu: Launch Mode tools, switch primary model, toggle overlay models |
 | Reverse | Play backwards in time |
 | Play / Pause / Stop | Snapshot transport. Stop returns to z = 0 |
 | Loop | Continue playback past the endpoints |
@@ -46,11 +46,11 @@ Eight tabs in two rows of four:
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 | Plotting    | SAGE26's diagnostic plots, with observations, for the whole catalogue or any selection (see [Plotting](plotting.md)) |
 
-Above the tabs sit **Reset Camera**, **Info (i)**, **Focus**, **Centre**, **Isolate** and **HD**, which work regardless of which tab is active (see [Navigation](navigation.md)).
+The tabs are icons on the right; clicking one opens its panel over the view, and clicking it again closes it. The top bar has **Info**, **Focus**, **Centre**, **Isolate**, **HD** and **Reset**, which work whichever tab is open, and **⋯** for Export, Fly-through, updates and closing ViSAGE (see [Navigation](navigation.md)).
 
 ## Multi-box strip
 
-When two or more SAGE models are loaded side-by-side (via `+SBS` in the hamburger menu), a **box strip** appears at the bottom of the viewport. Each box is shown as a labelled chip:
+When two or more SAGE models are loaded side-by-side (via `+SBS` in the Launch menu), a **box strip** appears at the bottom of the viewport. Each box is shown as a labelled chip:
 
 - Click any chip to make that box **active** (label turns green)
 - All right-panel tab controls then target the active box

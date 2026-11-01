@@ -17,6 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Lightcone luminosities in erg/s (`LAGN`, `LineLum*`) keep their values; they overflowed to infinity when read.
 - Reset Camera puts everything back to default, leaving HD and Isolate, and clearing filters, selection and regions.
 - HD group members are drawn at their real size, in true proportion to each other.
+- HD group members keep more of their detail next to a bright central.
 
 ### Added
 
@@ -27,9 +28,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Rotation shows stars and gas as velocity maps above the rotation curve, each map framed on its own, with Gaia-style colours, contours and orbit streaks.
-- The dark background switch moved to the bottom of the Structure tab and now also sets radial, rotation and spectrum figures.
+- The dark background switch is now Dark mode, at the bottom of the Structure tab and on by default. It also sets radial, rotation and spectrum figures.
 - Tighter spacing for the galaxy and mock-image checkboxes.
 - The selection card and pop-outs have a new glass look, matching Launch Mode.
+- Tabs moved to an icon rail on the right, opening a floating glass panel that a second click closes. Rail and panel float over the view, each only as tall as it needs.
+- The top bar has the view's controls beside playback, and a More menu for Export, Fly-through, updates and closing ViSAGE.
 - Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.
 - Drag tools are thin white lines with small grips, and chosen galaxies stand out by dimming the rest.
 - The Isolate backdrop uses the mock images' real stars, with their own colours and brightnesses.

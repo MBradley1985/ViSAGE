@@ -86,7 +86,7 @@ SAGE26/
     └── microuchuu/model_0.hdf5
 ```
 
-then `visage --par input/millennium.par` discovers all three models automatically. Click the hamburger icon (top-left) → Models section to switch, or click "+ overlay" next to a compatible model to render both at once.
+then `visage --par input/millennium.par` discovers all three models automatically. Click the Launch menu (top-left) → Models section to switch, or click "+ overlay" next to a compatible model to render both at once.
 
 ## Installation
 
@@ -251,7 +251,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 ![Draw Sphere](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/draw_sphere.gif)
 
 ### Side-by-side multi-box comparison
-- Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the hamburger menu
+- Load two or more SAGE models side-by-side in a single viewport with `+SBS` in the Models section of the Launch menu
 - Each box is fully independent: its own snapshot, filters, colormaps, opacity, and visibility settings
 - A box strip at the bottom of the viewport shows all loaded boxes; click any box label to make it active — the entire right panel (Structure, Filters, Regions, Console, …) then controls that box
 - Active box label is **green**; idle boxes are **white**
@@ -262,7 +262,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 
 ### Multi-model (overlays)
 - Auto-scans `<sage_root>/output/` for SAGE model subfolders
-- Switch the primary model from the hamburger menu (any box size)
+- Switch the primary model from the Launch menu (any box size)
 - Overlay a second compatible model on top (same box size + snap count)
 - Loading spinner during model swaps; warning snackbar for incompatible overlays
 

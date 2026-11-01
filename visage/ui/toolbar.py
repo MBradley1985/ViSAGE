@@ -1060,21 +1060,110 @@ def build_toolbar(server, scene: Scene) -> None:
         items=(_ROTATE_ITEMS,),
         density="compact",
         hide_details=True,
-        style="max-width:120px;",
+        prefix="Rotate:",
+        style="max-width:150px;",
         disabled=("box_strip_items && box_strip_items.length > 1",),
         title="Rotation disabled in multi-box mode",
     )
 
-    # Close application button
+    # The view: the selection's card, Focus, box centre, Isolate, HD, Reset.
     v3.VBtn(
-        icon="mdi-close-thick",
+        icon="mdi-information-outline",
         variant="text",
         density="compact",
-        color="#ef4444",
-        title="Close ViSAGE",
-        click=ctrl.close_app,
-        style="margin-left:8px;margin-right:4px;",
+        click=ctrl.sel_toggle_card,
+        color=("sel_show ? 'cyan' : 'white'",),
+        title="The selected galaxy's card",
+        style="margin-left:10px;",
     )
+    v3.VBtn(
+        icon="mdi-target",
+        variant="text",
+        density="compact",
+        click=ctrl.toggle_focus,
+        color=("focus_active ? 'cyan' : 'white'",),
+        title="Focus",
+    )
+    v3.VBtn(
+        icon="mdi-image-filter-center-focus",
+        variant="text",
+        density="compact",
+        click=ctrl.center_camera,
+        color="white",
+        title="Place camera at box centre",
+    )
+    v3.VBtn(
+        icon="mdi-magnify",
+        variant="text",
+        density="compact",
+        click=ctrl.toggle_isolate,
+        color=("isolate_active ? 'cyan' : 'white'",),
+        title="Isolate selected halo/galaxy",
+    )
+    v3.VBtn(
+        "HD",
+        variant=("hd_active ? 'flat' : 'outlined'",),
+        density="compact",
+        click=ctrl.toggle_hd,
+        color=("hd_active ? 'cyan' : 'white'",),
+        loading=("hd_building",),
+        disabled=(
+            "hd_building || !hd_available "
+            "|| nav_gal_idx === null || nav_gal_idx < 0",
+        ),
+        classes="sage-bar-btn",
+        title=(
+            "hd_available ? 'HD: the selected galaxy (its whole pair, group "
+            "or cluster, with its surroundings) as detailed 3D models built "
+            "from its SAGE properties' : hd_unavailable",
+        ),
+        id="btn-hd-galaxy",
+    )
+    v3.VBtn(
+        "Reset",
+        variant="outlined",
+        density="compact",
+        color="white",
+        click=ctrl.reset_camera,
+        classes="sage-bar-btn",
+        title="Back to the default view",
+    )
+
+    # Everything else.
+    with v3.VMenu(close_on_content_click=True):
+        with v3.Template(v_slot_activator="{ props }"):
+            v3.VBtn(
+                icon="mdi-dots-horizontal",
+                variant="text",
+                density="compact",
+                color="white",
+                v_bind="props",
+                title="More",
+                style="margin:0 6px;",
+            )
+        with v3.VList(density="compact"):
+            v3.VListItem(
+                title="Export galaxy catalogue",
+                prepend_icon="mdi-database-export-outline",
+                click="export_dialog_show = true",
+            )
+            v3.VListItem(
+                title="Fly-through",
+                prepend_icon="mdi-rotate-orbit",
+                click=ctrl.toggle_flythrough,
+                active=("flythrough_active",),
+            )
+            v3.VListItem(
+                title="Check for updates",
+                prepend_icon="mdi-update",
+                click=ctrl.check_for_updates,
+            )
+            v3.VListItem(
+                title="Close ViSAGE",
+                prepend_icon="mdi-close",
+                click=ctrl.close_app,
+                base_color="#ef4444",
+            )
 
     @ctrl.set("close_app")
     def on_close_app():
