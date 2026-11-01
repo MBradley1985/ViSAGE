@@ -250,7 +250,7 @@ def test_hi_glow_follows_the_annuli():
     assert half == pytest.approx(1.15 * 4.0)
     a = img[..., 3].astype(float)
     assert a[32, 32] == 0  # a hole where the gas is molecular
-    assert a[32, 32 + 22] > 0
+    assert a[32, 32 + 28] > 0
     assert a[0, 0] == 0  # nothing beyond the disc
     assert hi_texture(((1.0, 2.0, 3.0), (), (0.0, 0.0, 0.0)))[0] is None
 
