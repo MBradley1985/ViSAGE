@@ -5912,7 +5912,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ):
                     v3.VCheckbox(
                         v_model=("disc_shapes",),
-                        label="Disc shapes",
+                        label="Galaxy shapes",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",

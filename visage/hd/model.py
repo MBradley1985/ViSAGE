@@ -269,6 +269,7 @@ class SageGalaxy:
     # () for a run without annuli.
     radial: tuple = ()
     disc_height_kpc: float = 0.0  # stars, from their dispersion; 0 unknown
+    bulge_rotation: float = 0.0  # merger bulge's j / (r sigma); 0 unknown
     sfh_disk: tuple = ()
     sfh_bulge: tuple = ()
     # The massive haloes around it (its cosmic web): (dx, dy, dz, weight)
@@ -690,6 +691,13 @@ def recipe_from_sage(
         if g.vmax > 0 and g.vel_disp > 0:
             c *= float(np.clip(1.25 - 0.18 * g.vmax / g.vel_disp, 0.7, 1.1))
             c = min(c, b)
+        if g.bulge_rotation > 0:
+            # With annuli, the bulge's own rotation (j / r sigma, about 1 to
+            # 15) in place of the halo's: slow rotators are rounder.
+            spin = np.log10(np.clip(g.bulge_rotation, 1.0, 15.0)) / np.log10(
+                15.0
+            )
+            c = b * float(0.9 - 0.4 * spin)
         env_a = float(0.6 + 0.6 * mfac)
         core_frac = float(0.5 - 0.2 * mfac)
         n_gc = int(np.clip(30 * (g.stellar_mass / 1e10) ** 1.2, 20, 4000))

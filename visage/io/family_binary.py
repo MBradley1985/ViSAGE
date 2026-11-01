@@ -240,6 +240,8 @@ def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
             sigma = read("VelDispStars")
             if sigma.ndim == 2:
                 extra["sigma"] = sigma
+        if have("SpinClassicalBulge"):
+            extra["bulge_j"] = read("SpinClassicalBulge")
         if have("SpinGas") and have("SpinStars"):
             extra["spin_stars"] = read("SpinStars")
             extra["spin_dot"] = (read("SpinGas") * extra["spin_stars"]).sum(1)

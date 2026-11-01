@@ -373,7 +373,7 @@ class GalaxyLayer:
             self._redraw()
 
     def set_disc_shapes(self, on: bool) -> None:
-        """Draw galaxies as tilted discs, where the run has spins."""
+        """Draw galaxies by their shapes, where the run has spins."""
         if self._disc_shapes != bool(on):
             self._disc_shapes = bool(on)
             self._redraw()
@@ -666,10 +666,48 @@ class GalaxyLayer:
                     2.5,
                 )
             )
+        made += self._ellipticals(snap, pos, size, light, ~disc)
         for actor in made:
             self._add_sprite(actor)
         self._disc_actors = made
         self._watch_camera()
+
+    def _ellipticals(self, snap, pos, size, light, keep) -> list:
+        """Bulge-dominated galaxies tilted to their merger bulge's spin,
+        flatter the more it rotates; none for a run without that spin."""
+        ds = disc_sprites
+        j = ds.read_spins(snap, self._spin_cache, "SpinClassicalBulge")
+        sigma = snap.extra.get("VelDispMergerBulge")
+        if j is None or sigma is None:
+            return []
+        rot = ds.rotation(j, snap.merger_bulge_radius, sigma)
+        full = np.ones(len(pos))
+        sizes = ds.bulge_sizes(snap.merger_bulge_radius, keep, size)
+        made = []
+        for near, flat, core, colour in (
+            (
+                rot >= ds.ROTATING,
+                ds.FAST_FLAT,
+                ds.FAST_CORE,
+                ds.AMBER_ROTATING,
+            ),
+            (rot < ds.ROTATING, ds.SLOW_FLAT, ds.SLOW_CORE, ds.RED_SLOW),
+        ):
+            here = keep & near
+            if here.any():
+                made.append(
+                    ds.discs(
+                        self._pl,
+                        pos[here],
+                        j[here],
+                        (sizes * ds.ELL_SIZE)[here],
+                        (ds.ELL_LIGHT * light * full)[here],
+                        colour,
+                        flat=flat,
+                        falloff=core,
+                    )
+                )
+        return made
 
     def _render_dust(self, snap, radii, pos) -> None:
         """A glow of each galaxy's dust, of every reservoir."""

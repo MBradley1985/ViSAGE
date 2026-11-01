@@ -219,6 +219,7 @@ def sage_galaxy_from_snapshot(
     if sfh is not None:
         sfh = _bulge_history(sfh, _field(snap, "bulge_mass", i) / mass)
     radial, height = _radial(snap, i, hubble_h, z)
+    rotation = _bulge_rotation(snap, i, hubble_h)
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
         stellar_mass=_field(snap, "stellar_mass", i),
@@ -288,6 +289,7 @@ def sage_galaxy_from_snapshot(
         **_sed_parts(snap, i),
         radial=radial,
         disc_height_kpc=height,
+        bulge_rotation=rotation,
         sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
         sfh_bulge=(
             () if sfh is None else tuple(float(v) * mass for v in sfh[1])
@@ -437,6 +439,28 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
     else:
         rows.append(())
     return tuple(tuple(float(v) for v in x) for x in rows), height
+
+
+def _bulge_rotation(snap, i: int, hubble_h: float) -> float:
+    """The merger bulge's j / (r sigma), 0 for a run without it."""
+    from visage.scene.disc_sprites import rotation
+
+    extra = getattr(snap, "extra", None) or {}
+    sigma = _extra(snap, "VelDispMergerBulge", i)
+    radius = _field(snap, "merger_bulge_radius", i)
+    if not getattr(snap, "source_path", "") or sigma <= 0 or radius <= 0:
+        return 0.0
+    if "StellarDiscScaleRadius" not in extra:
+        return 0.0
+    from visage.io.family_binary import radial_profiles
+
+    row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+    p = radial_profiles(snap.source_path, int(snap.snap_num), row, hubble_h)
+    if "bulge_j" not in p:
+        return 0.0
+    return float(
+        rotation(p["bulge_j"], np.array([radius]), np.array([sigma]))[0]
+    )
 
 
 def _sed_tau(snap, i: int, hubble_h: float) -> float:
