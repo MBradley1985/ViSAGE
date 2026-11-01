@@ -6,6 +6,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- Load existing finds a run whose `.par` has a different name from its output folder, by the `.par`'s `OutputDir`.
+
 ## [2.16.0] — 2026-11-01
 
 ### Added
