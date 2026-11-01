@@ -3715,14 +3715,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.survey_note = ""
 
     # The radial discs of the selected galaxy, as plots.
-    fields = _lc_present | {
-        f["key"] for f in getattr(scene.active_model, "extra_fields", []) or []
-    }
-    state.radial_ok = "StellarDiscScaleRadius" in fields
-    # These appear only for runs with the toggles that make them.
-    state.dust_glow_ok = "ColdDust" in fields
-    state.disc_shapes_ok = state.radial_ok
-
     def _rotation_in_file() -> bool:
         """The run's rotation curves, which only 2D fields hold."""
         from visage.io.sage_files import open_snapshot
@@ -3737,7 +3729,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
         with open_snapshot(path, model.current_snap) as group:
             return group is not None and "DiscVcirc" in group
 
-    state.rotation_ok = state.radial_ok and _rotation_in_file()
+    def _refresh_disc_tools() -> None:
+        """Offer these only for a run with the toggles that make them."""
+        model = scene.active_model
+        lc = getattr(model, "_lc", None)
+        fields = set(lc.present_fields if lc is not None else ()) | {
+            f["key"] for f in getattr(model, "extra_fields", []) or []
+        }
+        state.radial_ok = "StellarDiscScaleRadius" in fields
+        state.dust_glow_ok = "ColdDust" in fields
+        state.disc_shapes_ok = state.radial_ok
+        state.rotation_ok = state.radial_ok and _rotation_in_file()
+        state.dust_glow = state.dust_glow and state.dust_glow_ok
+        state.disc_shapes = state.disc_shapes and state.disc_shapes_ok
+
+    _refresh_disc_tools()
+    scene.register_model_change_callback(_refresh_disc_tools)
 
     def _disc_plot(kind: str) -> None:
         from visage.io import family_binary as fb
@@ -4974,7 +4981,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             d = d - box * np.round(d / box)
         allpos = galaxies.positions[lead] + d + off
 
-        def entry(k, role, quality, magnify, gal=None):
+        def entry(k, role, quality, gal=None):
             return {
                 "idx": int(k),
                 "gal": (
@@ -4987,7 +4994,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "prep": None,
                 "role": role,
                 "quality": quality,
-                "magnify": magnify,
             }
 
         gals = [
@@ -5000,9 +5006,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             for j, k in enumerate(idx):
                 if int(k) == int(focus) and group_q[j] in (None, "lite"):
                     group_q[j] = "group"
-        many = len(idx) > 1  # a lone galaxy keeps its true size
         entries = [
-            entry(k, "member", q, many, g)
+            entry(k, "member", q, g)
             for k, q, g in zip(idx, group_q, gals, strict=True)
         ]
         partners = tidal_partners(entries, h)
@@ -5015,7 +5020,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 (j for j, e in enumerate(entries) if e["idx"] == int(focus)),
                 0,
             )
-            one = dict(entries[k], quality="full", magnify=False)
+            one = dict(entries[k], quality="full")
             partners = {0: partners.get(k, [])}
             sat_ctx = {0: sat_ctx[k]} if k in sat_ctx else {}
             entries = [one]
@@ -5044,7 +5049,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
             ctx = {
                 "spin": e["spin"],
                 "hubble_h": h,
-                "magnify": e["magnify"],
                 "partners": partners.get(k, []),
                 **sat_ctx.get(k, {}),
             }
@@ -5326,7 +5330,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if bool(state.hd_building):
             return
         h = float(scene._cfg.hubble_h)
-        ctx = {"spin": e["spin"], "hubble_h": h, "magnify": e["magnify"]}
+        ctx = {"spin": e["spin"], "hubble_h": h}
 
         def show(prep):
             grp = _hd["group"]
@@ -5920,7 +5924,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         hide_details=True,
                         density="compact",
                     )
-                with v3.VSheet(color="transparent", style=_FIELD):
+                with v3.VSheet(
+                    color="transparent", style=_FIELD + "margin-top:10px;"
+                ):
                     v3.VSelect(
                         v_model=("galaxy_color_mode",),
                         items=("galaxy_color_modes",),

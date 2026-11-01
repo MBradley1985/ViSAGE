@@ -22,7 +22,7 @@ import os
 
 import numpy as np
 
-from visage.hd.layer import HDGalaxyLayer, magnification
+from visage.hd.layer import HDGalaxyLayer
 from visage.hd.model import (
     CGM_RGB,
     HOT_GAS_RGB,
@@ -402,8 +402,8 @@ class HDGroupLayer:
 
     def show(self, entries, hubble_h: float, gas: bool = False):
         """Draw the group.  `entries`: dicts with gal, center, spin, prep
-        (None for a glow), "role" ("member" / "neighbour") and "magnify"
-        (bool); the central first."""
+        (None for a glow) and "role" ("member" / "neighbour"); the central
+        first."""
         self.clear()
         ren = self._pl.renderer
         self._fxaa = bool(ren.GetUseFXAA())
@@ -442,11 +442,6 @@ class HDGroupLayer:
         lay = HDGalaxyLayer(self._pl)
         member = e.get("role", "member") == "member"
         lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
-        mag = (
-            magnification(e["gal"], e["prep"]["rc"])
-            if e.get("magnify", True)
-            else 1.0
-        )
         lay.show(
             e["gal"],
             e["center"],
@@ -458,7 +453,6 @@ class HDGroupLayer:
             halo=member,
             icl=icl,
             manage_fxaa=False,
-            magnify=mag,
         )
         (self.members if member else self.neighbours).append(lay)
         e["layer"] = lay

@@ -286,6 +286,8 @@ def test_rotation_map_flips_counter_rotating_gas(tmp_path):
     }
     assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
     assert fb.plot_rotation(prof, "1", dark=True)[:4] == b"\x89PNG"
+    prof["gas"] = np.zeros((1, 3))
+    assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
 
 
 def test_a_spike_in_the_innermost_annulus_is_not_drawn():

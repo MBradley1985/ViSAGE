@@ -79,7 +79,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Group members | `CentralGalaxyIndex`, `Type`, `Pos*` | Every member of the FOF group is drawn at its own position, magnified to its normal-view size (at most 5×). A galaxy alone in its halo is drawn at true size. |
+| Group members | `CentralGalaxyIndex`, `Type`, `Pos*` | Every member of the FOF group is drawn at its own position and real size. |
 | Spin and orientation | `Spinx`, `Spiny`, `Spinz` | Each disk's plane is set by its spin vector. |
 | Tidal bridges and tails | `Pos*`, `StellarMass`, `Vel*`, `Spin*` | Group members within 100 kpc of each other with mass ratio above 1:10 raise tidal features. These are stronger the closer and more massive the companion, and weaker (×0.6) for retrograde encounters. |
 | Merger about to happen | `mergeType` | A galaxy SAGE merges before the next snapshot interacts with the nearest more massive galaxy, at a strength set by the merger type. |

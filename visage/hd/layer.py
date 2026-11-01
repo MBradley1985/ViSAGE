@@ -45,22 +45,6 @@ def galaxy_basis(spin: np.ndarray | None, seed: int) -> np.ndarray:
     return np.column_stack([e1, e2, e3])
 
 
-# What a group member's stars fill, in Rvir, as its splat's size runs with
-# Rvir: satellites more of theirs, so they read beside the central.
-CENTRAL_SIZE, SATELLITE_SIZE = 0.22, 0.45
-# Most a member is enlarged to reach that.
-MAX_MAGNIFY = 15.0
-
-
-def magnification(gal: SageGalaxy, rc) -> float:
-    """How much to enlarge a member's stars to their share of its Rvir (true
-    size when that is already smaller)."""
-    share = SATELLITE_SIZE if gal.t_since_infall_gyr >= 0 else CENTRAL_SIZE
-    visible = rc.extent * rc.unit_kpc * 0.8  # kpc
-    r = share * max(gal.rvir_kpc, 20.0) / max(visible, 1e-6)
-    return float(np.clip(r, 1.0, MAX_MAGNIFY))
-
-
 # HD's colour scale against observed-frame photometry: integrated HD
 # colour ln(I/V) = a + gamma ln(f_i / f_r) and ln(B/V) = a + gamma
 # ln(f_g / f_r), fitted over 300 random microUchuu lightcone galaxies
@@ -343,8 +327,8 @@ class HDGalaxyLayer:
         (QUALITY key) sets texture resolutions: lower for the many members
         of a group, each of which is small on screen.
 
-        `context` (a galaxy among others): "spin", "hubble_h", "magnify"
-        (bool); "partners", a list of (unit vector to the neighbour in
+        `context` (a galaxy among others): "spin", "hubble_h";
+        "partners", a list of (unit vector to the neighbour in
         world coordinates, distance in Mpc/h, strength, orbit sense) for
         the tidal features close neighbours raise; "ram" and "strip",
         (world direction, strength) for a satellite's ram-pressure tail and
@@ -378,8 +362,7 @@ class HDGalaxyLayer:
         if ctx.get("partners"):
             h = ctx["hubble_h"]
             R = galaxy_basis(ctx.get("spin"), rc.seed)
-            mag = magnification(gal, rc) if ctx.get("magnify") else 1.0
-            mpch_per_unit = rc.unit_kpc * mag * h / 1000.0
+            mpch_per_unit = rc.unit_kpc * h / 1000.0
             for k, (u, sep, strength, sense) in enumerate(ctx["partners"]):
                 pts.append(
                     tidal_points(
@@ -445,15 +428,11 @@ class HDGalaxyLayer:
         white: float | None = None,
         halo: bool = True,
         manage_fxaa: bool = True,
-        magnify: float = 1.0,
         icl: bool = True,
     ):
         """Build and draw the HD model of `gal` at world position `center`.
 
-        `prep`: `prepare(gal)`, if already made.  `magnify` draws the stars
-        that many times their true size (a group member, to match its
-        normal-mode splat) while the halo (gas, ICL) keeps its true size.
-        For a member of a group:
+        `prep`: `prepare(gal)`, if already made.  For a member of a group:
         `white` is its share of the group's common exposure (default: its
         own), `halo=False` leaves out the halo (gas, ICL, Rvir box) for a
         satellite, `icl=False` its intracluster light (the central's), and
@@ -466,16 +445,6 @@ class HDGalaxyLayer:
         rc, maps, pts = prep["rc"], prep["maps"], prep["pts"]
         # (Kept for the Components labels: where the parts are.)
         self._pts, self._maps = pts, maps
-        if magnify != 1.0:
-            import dataclasses
-
-            # One model unit is now `magnify` times more kpc on screen; the
-            # halo is laid out in kpc, so it keeps its true size.
-            rc = dataclasses.replace(
-                rc,
-                unit_kpc=rc.unit_kpc * magnify,
-                icl_a=rc.icl_a / magnify,
-            )
         self.recipe = rc
 
         self._R = galaxy_basis(spin, rc.seed)
@@ -497,7 +466,6 @@ class HDGalaxyLayer:
             gas=gas,
             prep=prep["gpu"],
             icl=icl,
-            magnify=magnify,
         )
         gs = self._gpu.gas
         if (

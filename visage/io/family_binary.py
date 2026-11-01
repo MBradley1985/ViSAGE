@@ -358,13 +358,118 @@ def plot_rotation(
     prof: dict, label: str, inclination: float = 55.0, dark: bool = False
 ) -> bytes:
     """One galaxy's stars and gas as line-of-sight velocity maps, side by
-    side, from the rotation curve of its annuli; a PNG. Each panel is framed
-    on its own component, the two the same size. Gas turning against the
+    side, from the rotation curve of its annuli, with that curve below; a
+    PNG. Each map is framed on its own component. Their streaks are texture:
+    they follow the orbits, but the pattern is noise. Gas turning against the
     stars has its velocities flipped."""
     from visage.plots.style import theme
 
     with theme(dark):
         return _rotation_png(prof, label, inclination, dark)
+
+
+def _orbit_streaks(x, y, half, seed: int):
+    """Noise smeared around circular orbits, -1 to 1, at face-on (x, y)."""
+    from scipy.ndimage import gaussian_filter1d, map_coordinates
+
+    rows, cols = 700, 1400
+    noise = np.random.default_rng(seed).normal(size=(rows, cols))
+    noise = gaussian_filter1d(noise, 30, axis=1, mode="wrap")
+    noise = gaussian_filter1d(noise, 1.2, axis=0)
+    radius = np.hypot(x, y) / (1.05 * half) * (rows - 1)
+    angle = np.mod(np.arctan2(y, x), 2 * np.pi) / (2 * np.pi) * (cols - 1)
+    out = map_coordinates(noise / noise.std(), [radius, angle], order=1)
+    return np.clip(0.5 * out, -1, 1)
+
+
+def _rotation_reach(prof, key) -> tuple:
+    """A component's surface density against its half-mass radius's (log),
+    and the radius where it first falls FADE_DEX below that; (None, 0) with
+    none of it. Annuli can rise again at the very edge."""
+    held = prof[key][0] * np.diff(prof["edges"][0] ** 2)
+    if held.sum() <= 0:
+        return None, 0.0
+    k = int(np.searchsorted(np.cumsum(held), 0.5 * held.sum()))
+    k = min(k, len(held) - 1)
+    surface = np.log10(np.maximum(prof[key][0], 1e-6))
+    depth = surface - surface[k]
+    below = np.flatnonzero((depth <= -FADE_DEX) & (np.arange(len(held)) > k))
+    last = int(below[0]) if len(below) else len(held)
+    return depth, float(prof["edges"][0][last])
+
+
+def _rotation_map(ax, prof, key, name, flip, inclination, norm, ink) -> None:
+    """One component's velocity map on `ax`."""
+    from matplotlib.cm import ScalarMappable
+
+    depth, reach = _rotation_reach(prof, key)
+    if depth is None:
+        ax.set_title(f"No {name.lower()}")
+        ax.axis("off")
+        return
+    r = prof["r"][0]
+    edges = prof["edges"][0]
+    half = 1.08 * reach
+    grid = np.linspace(-half, half, 400)
+    x, y = np.meshgrid(grid, grid)
+    y_disc = y / np.cos(np.radians(inclination))
+    rr = np.maximum(np.hypot(x, y_disc), 1e-4)
+    speed = np.interp(rr, edges, prof["vcirc"][0])
+    los = flip * speed * np.sin(np.radians(inclination)) * x / rr
+    seen = (rr < reach) & (
+        np.interp(np.log(rr), np.log(np.maximum(r, 1e-4)), depth) > -FADE_DEX
+    )
+    rgb = ScalarMappable(norm, "RdYlBu_r").to_rgba(los)[..., :3]
+    lines = _orbit_streaks(x, y_disc, half, len(key))[..., None]
+    rgb = rgb + 0.3 * np.where(lines > 0, lines * (1 - rgb), lines * rgb)
+    rgba = np.dstack([np.clip(rgb, 0, 1), seen])
+    ax.imshow(rgba, extent=(-half, half, -half, half), origin="lower")
+    step = 20 * np.ceil(norm.vmax / 100)
+    levels = np.arange(step, norm.vmax, step)
+    ax.contour(
+        x,
+        y,
+        np.ma.masked_where(~seen, los),
+        levels=np.r_[-levels[::-1], levels],
+        colors="black",
+        linewidths=0.5,
+        alpha=0.5,
+        linestyles="solid",
+    )
+    ax.contour(
+        x, y, seen.astype(float), levels=[0.5], colors=ink, linewidths=0.7
+    )
+    ax.set(title=name, xlabel="kpc")
+
+
+def _rotation_curve(ax, prof, stars_colour, gas_colour, grid) -> None:
+    """The rotation curve on `ax`, as far out as stars and gas go."""
+    edges = prof["edges"][0]
+    v = prof["vcirc"][0]
+    for key, name, colour in (
+        ("gas", "Gas", gas_colour),
+        ("stars", "Stars", stars_colour),
+    ):
+        keep = (edges > MIN_PLOT_KPC) & (
+            edges <= _rotation_reach(prof, key)[1]
+        )
+        if keep.any():
+            ax.plot(edges[keep], v[keep], color=colour, lw=2.4, label=name)
+    if "sigma" in prof:
+        r = prof["r"][0]
+        keep = (r > MIN_PLOT_KPC) & (r <= _rotation_reach(prof, "stars")[1])
+        ax.plot(
+            r[keep],
+            prof["sigma"][0][keep],
+            color=stars_colour,
+            lw=1.5,
+            ls="--",
+            label="Stellar σ",
+        )
+    ax.set(xlabel="R (kpc)", ylabel="km/s", xlim=(0, None), ylim=(0, None))
+    ax.grid(axis="y", color=grid, lw=0.5)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.legend(frameon=False, loc="best")
 
 
 def _rotation_png(prof, label, inclination, dark) -> bytes:
@@ -375,54 +480,57 @@ def _rotation_png(prof, label, inclination, dark) -> bytes:
     from matplotlib.colors import Normalize
     from matplotlib.figure import Figure
 
-    r = prof["r"][0]
+    from visage.plots.style import ink
+
     edges = prof["edges"][0]
     v = prof["vcirc"][0]
-    sin_i = np.sin(np.radians(inclination))
-    cos_i = np.cos(np.radians(inclination))
     # (Annuli inside MIN_PLOT_KPC can spike, and would wash out the rest.)
-    top = max(float(v[edges > MIN_PLOT_KPC].max()) * sin_i, 1.0)
+    top = float(v[edges > MIN_PLOT_KPC].max())
+    top = max(top * np.sin(np.radians(inclination)), 1.0)
     norm = Normalize(-top, top)
     spin = float(prof["spin_dot"][0]) if "spin_dot" in prof else 1.0
-    fig = Figure(figsize=(9.5, 4.6), dpi=130)
+    fig = Figure(figsize=(9.5, 7.2), dpi=130)
     FigureCanvasAgg(fig)
-    axes = fig.subplots(1, 2)
-    back = 0.0 if dark else 1.0
-    for ax, key, name, sign in (
-        (axes[0], "stars", "Stars", 1.0),
-        (axes[1], "gas", "Gas", 1.0 if spin >= 0 else -1.0),
-    ):
-        surface = np.log10(np.maximum(prof[key][0], 1e-6))
-        # Scaled at the half-mass radius: the very centre would hide the rest.
-        held = prof[key][0] * np.diff(edges**2)
-        k = int(np.searchsorted(np.cumsum(held), 0.5 * held.sum()))
-        k = min(k, len(r) - 1)
-        half = 1.1 * float(r[surface > surface[k] - FADE_DEX].max())
-        grid = np.linspace(-half, half, 400)
-        x, y = np.meshgrid(grid, grid)
-        rr = np.maximum(np.hypot(x, y / cos_i), 1e-4)
-        los = np.interp(rr, edges, v) * sin_i * x / rr
-        here = np.interp(np.log(rr), np.log(np.maximum(r, 1e-4)), surface)
-        shade = np.clip((here - surface[k] + FADE_DEX) / FADE_DEX, 0, 1)
-        shade = shade[..., None]
-        rgb = ScalarMappable(norm, "RdBu_r").to_rgba(sign * los)[..., :3]
-        ax.imshow(
-            rgb * shade + back * (1 - shade),
-            extent=(-half, half, -half, half),
-            origin="lower",
-        )
-        ax.set(title=name, xlabel="kpc")
-    axes[0].set_ylabel("kpc")
-    fig.colorbar(
-        ScalarMappable(norm, "RdBu_r"),
-        ax=axes,
-        label="Line-of-sight velocity (km/s)",
-        shrink=0.85,
+    grid = fig.add_gridspec(
+        2,
+        3,
+        width_ratios=[1, 1, 0.05],
+        height_ratios=[1.35, 1],
+        hspace=0.34,
+        wspace=0.28,
+        left=0.09,
+        right=0.92,
+        top=0.9,
+        bottom=0.08,
     )
-    angle = np.degrees(np.arccos(np.clip(spin, -1, 1)))
-    note = f"gas {angle:.0f}° from stars, seen at {inclination:.0f}°"
-    if spin < -0.5:
-        note += "; counter-rotating gas is a model prediction"
+    for j, (key, name, flip) in enumerate(
+        (
+            ("stars", "Stars", 1.0),
+            ("gas", "Gas", 1.0 if spin >= 0 else -1.0),
+        )
+    ):
+        ax = fig.add_subplot(grid[0, j])
+        _rotation_map(ax, prof, key, name, flip, inclination, norm, ink(dark))
+        if j == 0:
+            ax.set_ylabel("kpc")
+    fig.colorbar(
+        ScalarMappable(norm, "RdYlBu_r"),
+        cax=fig.add_subplot(grid[0, 2]),
+        label="Line-of-sight velocity (km/s)",
+    )
+    colours = ("#E8743B", "#4C9BE8") if dark else ("#C2541F", "#1F6FB8")
+    _rotation_curve(
+        fig.add_subplot(grid[1, :2]),
+        prof,
+        *colours,
+        "0.25" if dark else "0.85",
+    )
+    note = f"seen at {inclination:.0f}°"
+    if prof["gas"][0].sum() > 0:
+        angle = np.degrees(np.arccos(np.clip(spin, -1, 1)))
+        note = f"gas {angle:.0f}° from stars, {note}"
+        if spin < -0.5:
+            note += "; counter-rotating gas is a model prediction"
     fig.suptitle(f"Galaxy {label}: {note}")
     buf = io.BytesIO()
     fig.savefig(buf, format="png")

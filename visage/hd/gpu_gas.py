@@ -319,15 +319,11 @@ class GasSpec:
 
     glsl_impl = GLSL_IMPL
 
-    def __init__(self, gal, rc: GalaxyRecipe, magnify: float = 1.0):
-        """`magnify`: how many times its true size the galaxy is drawn (a
-        group member); the halo keeps its true size, and so does the gas's
-        clearing around the galaxy and its wind (true galaxy size)."""
+    def __init__(self, gal, rc: GalaxyRecipe):
         self.gal, self.rc = gal, rc
-        true_unit = rc.unit_kpc / magnify  # kpc per model unit, unmagnified
         self.rvir = max(gal.rvir_kpc, 20.0)
         self.half = 1.05 * self.rvir / rc.unit_kpc  # model units
-        self.r_in = 1.2 * rc.extent * true_unit
+        self.r_in = 1.2 * rc.extent * rc.unit_kpc
         self.hot = hot_opacity(gal)
         # Hot gas follows the dark matter: its core is ~1.5 NFW scale radii
         # (Rvir / c), so concentrated haloes are peakier.
@@ -375,7 +371,7 @@ class GasSpec:
             np.clip(0.6 * reach, 12.0, 150.0)
             * (0.6 + 0.4 * min(self.jet, 1.0))
         )
-        self.disk_r = rc.extent * true_unit * 0.5
+        self.disk_r = rc.extent * rc.unit_kpc * 0.5
         self.wind = 0.0
         if gal.outflow_rate > 0.05:
             self.wind = float(

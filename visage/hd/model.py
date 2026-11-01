@@ -673,8 +673,8 @@ def recipe_from_sage(
     rd, r50e, notes = display_sizes(g)
 
     # Morphology: bulge fraction decides, Regime only breaks ties in the
-    # ambiguous middle (hot-mode haloes with a big bulge).
-    elliptical = bt > 0.75 or (bt > 0.5 and g.regime == 1)
+    # ambiguous middle (hot-mode haloes with a big bulge and no gas).
+    elliptical = bt > 0.75 or (bt > 0.5 and g.regime == 1 and gas_frac < 0.02)
     notes.append(
         f"B/T={bt:.2f}, regime={'hot' if g.regime else 'cold'}, "
         f"f_gas={gas_frac:.3f} -> {'elliptical' if elliptical else 'disk'}"

@@ -986,7 +986,6 @@ class GPUGalaxy:
         gas=None,
         prep=None,
         icl: bool = True,
-        magnify: float = 1.0,
     ):
         """Create the actor.  `user_matrix` (4x4) maps galaxy-frame model
         units to world coordinates; `gas` is an optional GasSpec.  `prep` is
@@ -1177,7 +1176,7 @@ class GPUGalaxy:
         self._icl_uniforms(u, rc, gal if icl else None)
         from visage.hd.gpu_gas import GasSpec
 
-        self.gas = GasSpec(gal, rc, magnify) if gal is not None else None
+        self.gas = GasSpec(gal, rc) if gal is not None else None
         if self.gas is not None:
             self.gas.set_uniforms(u, on=gas is not None and gas is not False)
         else:
