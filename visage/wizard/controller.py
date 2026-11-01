@@ -613,6 +613,7 @@ DustySAGEMode               0   %0: switch off; 1: passive dust within SAGE26's 
 DustSNIIYields              0   %DustySAGEMode SNII yields: 0: Woosley & Weaver 1995; 1: Nomoto et al. 2006
 DustSNIaYields              0   %DustySAGEMode SNIa yields: 0: Iwamoto et al. 1999; 1: Seitenzahl et al. 2013
 DustBinaryFraction          0.1 %DustySAGEMode: fraction of 3-16 Msun stars in SNIa binaries
+DustGrowthMaxDtoZ           0.5 %DustySAGEMode: grain growth stops at this dust-to-metal ratio
 
 %------------------------------------------
 %----- SAGE model parameters --------------
