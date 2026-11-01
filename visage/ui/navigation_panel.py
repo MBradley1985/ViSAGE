@@ -3706,7 +3706,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
         f["key"] for f in getattr(scene.active_model, "extra_fields", []) or []
     }
     state.radial_ok = "StellarDiscScaleRadius" in fields
-    state.rotation_ok = state.radial_ok and "VelDispBulge" in fields
+
+    def _rotation_in_file() -> bool:
+        """The run's rotation curves, which only 2D fields hold."""
+        from visage.io.sage_files import open_snapshot
+
+        model = scene.active_model
+        path = getattr(scene._cfg, "hdf5_path", None)
+        lc = getattr(model, "_lc", None)
+        if lc is not None:
+            return any(f.lower() == "discvcirc" for f in lc.present_fields)
+        if not path:
+            return False
+        with open_snapshot(path, model.current_snap) as group:
+            return group is not None and "DiscVcirc" in group
+
+    state.rotation_ok = state.radial_ok and _rotation_in_file()
 
     def _disc_plot(kind: str) -> None:
         from visage.io import family_binary as fb

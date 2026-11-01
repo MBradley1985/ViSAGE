@@ -1,8 +1,9 @@
 """Mock survey images of a lightcone with synthetic photometry: what a
 telescope would see.
 
-Each galaxy is an exponential disk (DiskRadius as its scale length) plus a
-de Vaucouleurs bulge (BulgeRadius as its half-light radius) at its angular
+Each galaxy is an exponential disk (DiskRadius as its scale length), or
+with annuli the light of each annulus in each band (AnnulusLight_*), stretched
+to DiskRadius, plus a de Vaucouleurs bulge (BulgeRadius as its half-light radius) at its angular
 size (radius over the angular-diameter distance), with the disk flattened
 by its inclination, axis ratio q = sqrt(cos^2 i + q0^2 sin^2 i), q0 = 0.2
 (Hubble 1926; Holmberg 1958), and turned to the position angle of its
@@ -477,6 +478,31 @@ def sersic_stamp(n, re_pix, q, pa, size, sub=5, off=(0.0, 0.0)):
     return img / tot if tot > 0 else img
 
 
+def annulus_stamp(
+    edges_pix, shares, q, pa, size, off=(0.0, 0.0)
+) -> np.ndarray:
+    """Unit-flux disc of `shares` of its light in annuli with edges
+    `edges_pix`, on a size x size grid, as sersic_stamp lays one out."""
+    area = np.maximum(np.diff(edges_pix**2), 1e-9)
+    mid = 0.5 * (edges_pix[1:] + edges_pix[:-1])
+    g = (np.arange(size * 3) + 0.5) / 3 - size / 2
+    x, y = np.meshgrid(g - off[0], g - off[1])
+    c, s = np.cos(pa), np.sin(pa)
+    xr, yr = x * c + y * s, -x * s + y * c
+    r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
+    surface = np.log(np.maximum(shares / area, 1e-30))
+    img = np.exp(
+        np.interp(
+            np.log(np.maximum(r, 1e-3)), np.log(np.maximum(mid, 1e-3)), surface
+        )
+    )
+    edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
+    img = (img * 0.5 * (1 + np.cos(np.pi * edge))).reshape(size, 3, size, 3)
+    img = img.mean(axis=(1, 3))
+    tot = img.sum()
+    return img / tot if tot > 0 else img
+
+
 def psf_kernel(fwhm_pix: float) -> np.ndarray:
     """Unit-sum Moffat PSF of FWHM `fwhm_pix` pixels, out to 8 FWHM."""
     half = int(np.ceil(8 * fwhm_pix))
@@ -710,7 +736,11 @@ def _read(path: Path, rows, bands):
             "BulgeMass",
         )
         d = {k: f[k][:] if rows is None else f[k][rows] for k in need}
-        for key in ("CosInclination", "GalaxyIndex"):
+        keys = ["CosInclination", "GalaxyIndex", "SpinStars", "DiscRadii"]
+        keys += ["StellarDiscScaleRadius"] + [
+            f"AnnulusLight_{b}" for b in bands
+        ]
+        for key in keys:
             if key in f:
                 d[key] = f[key][:] if rows is None else f[key][rows]
         for b in bands:
@@ -786,6 +816,12 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
     east /= np.maximum(np.linalg.norm(east, axis=1, keepdims=True), 1e-12)
     north = np.cross(los, east)
     spin = np.c_[d["Spinx"], d["Spiny"], d["Spinz"]]
+    if "SpinStars" in d:
+        spin = np.where(
+            (d["SpinStars"] != 0).any(axis=1, keepdims=True),
+            d["SpinStars"],
+            spin,
+        )
     pa = (
         np.arctan2(np.sum(spin * north, 1), -np.sum(spin * east, 1))
         + np.pi / 2
@@ -798,6 +834,20 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
     q_disk = np.sqrt(cosi**2 + Q0**2 * (1 - cosi**2))
     # The same galaxy keeps its shape from image to image.
     q_bulge = bulge_axis_ratio(d.get("GalaxyIndex", np.arange(len(near))))
+
+    # With annuli: their edges on the sky, stretched to DiskRadius.
+    rings = "DiscRadii" in d and all(f"AnnulusLight_{b}" in d for b in s.bands)
+    if rings:
+        scale = d["StellarDiscScaleRadius"].astype(float)
+        stretch = np.where(
+            scale > 0, d["DiskRadius"] / np.maximum(scale, 1e-12), 1.0
+        )
+        ring_pix = (
+            d["DiscRadii"].astype(float)
+            * (stretch / hub / np.maximum(d_a, 1e-6))[:, None]
+            * 206265
+            / s.pixel
+        )
 
     # Skip galaxies far below the noise in every band.
     if noisy:
@@ -836,6 +886,13 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
                 continue
             cut = st[ys - y0 : ye - y0, xs - x0 : xe - x0]
             for b, v in zip(s.bands, fl, strict=True):
+                if rings and comp == "disk":
+                    shares = d[f"AnnulusLight_{b}"][k].astype(float)
+                    if shares.sum() > 0:
+                        band = annulus_stamp(
+                            ring_pix[k], shares, q, pa[k], size, off=off
+                        )
+                        cut = band[ys - y0 : ye - y0, xs - x0 : xe - x0]
                 images[b][ys:ye, xs:xe] += v * cut
             hit = True
         drawn += hit

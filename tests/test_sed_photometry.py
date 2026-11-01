@@ -503,3 +503,22 @@ def test_hi_width_is_twice_the_inclined_speed():
     w = hi_line.widths(hi, v, np.array([0.5, 0.5]))
     assert w[0] == pytest.approx(200.0, abs=40)  # 2 v sin i, a bit wider
     assert w[1] == 0.0
+
+
+def test_new_stars_make_outer_annuli_bluer():
+    from visage.sed import dust as dm
+
+    wave = np.array([4000.0, 7000.0])
+    old = np.array([[0.5, 1.0], [0.5, 1.0]])  # red
+    new = np.array([[3.0, 1.0], [3.0, 1.0]])  # blue
+    s_old = np.array([[0.8, 0.2], [0.8, 0.2]])
+    s_new = np.array([[0.1, 0.9], [0.1, 0.9]])
+    tau, eta = np.zeros((2, 2)), np.full((2, 2), -1.0)
+    blue = dm.annulus_band_shares(
+        wave, old, new, np.full(2, 4000.0), tau, eta, s_old, s_new, np.zeros(2)
+    )
+    red = dm.annulus_band_shares(
+        wave, old, new, np.full(2, 7000.0), tau, eta, s_old, s_new, np.zeros(2)
+    )
+    np.testing.assert_allclose(blue.sum(axis=1), 1.0)
+    assert blue[0, 1] > red[0, 1]  # more of the blue light is outside

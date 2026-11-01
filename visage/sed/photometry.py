@@ -457,6 +457,7 @@ def compute_photometry(
     prefixes = ("", "disk_", "bulge_") if disk_bulge else ("",)
 
     dust_info = {}
+    annuli = None
     if cf:
         from visage.sed import dust as dm
 
@@ -481,7 +482,6 @@ def compute_photometry(
             dm.sigma_dust(dust_mass, radius_kpc, cos_i)
         )
         tau_face = dm.tau_eta_ism(dm.sigma_dust(dust_mass, radius_kpc, 1.0))[0]
-        annuli = None
         if cold_dust is not None and all(
             v is not None for v in discs.values()
         ):
@@ -514,6 +514,15 @@ def compute_photometry(
             new[no_sfr] = old[no_sfr]
             tau_a, eta_a = dm.annulus_tau(disc_dust, edges, cos_i)
             annuli = (tau_a, eta_a, old, new)
+            # The disc alone, for its light by annulus.
+            none = np.zeros(n)
+            disc_old = dm.annulus_shares(
+                discs["DiscStars"].astype(np.float64), none, none, edges
+            )
+            disc_new = dm.annulus_shares(
+                discs["DiscSFR"].astype(np.float64), none, none, edges
+            )
+            disc_new[no_sfr] = disc_old[no_sfr]
             # One number for the star-weighted screen, at either tilt.
             tau_v = -np.log((old * np.exp(-tau_a)).sum(axis=1))
             face = dm.annulus_tau(disc_dust, edges, np.ones(n))[0]
@@ -616,6 +625,15 @@ def compute_photometry(
             return np.ones_like(log_z_c)
         lo, hi, w = metallicity_weights(log_z_c, nodes)
         return np.where(lo == zi, 1.0 - w, 0.0) + np.where(hi == zi, w, 0.0)
+
+    ring_light, pivots = {}, {}
+    if annuli is not None:
+        for band in bands:
+            w, t = filter_transmission(band)
+            pivots[band] = np.sqrt(
+                np.trapezoid(t * w, w) / np.trapezoid(t / w, w)
+            )
+            ring_light[band] = np.zeros((n, annuli[0].shape[1]), np.float32)
 
     a_list = np.loadtxt(alist_path)[: n_bins + 1]
     t_snap = age_at_scale_factor(a_list, hubble_h, omega_m, omega_l)  # Gyr
@@ -772,6 +790,20 @@ def compute_photometry(
                 spectra = {pre: o for pre, (o, _) in parts.items()}
                 unseen = spectra
             zg = z_obs[ci]
+            if annuli is not None:
+                d_old, d_new = parts["disk_" if disk_bulge else ""]
+                for band in bands:
+                    ring_light[band][ci] = dm.annulus_band_shares(
+                        wave,
+                        d_old,
+                        d_new,
+                        pivots[band] / (1 + (zg if want_obs else 0 * zg)),
+                        annuli[0][ci],
+                        annuli[1][ci],
+                        disc_old[ci],
+                        disc_new[ci],
+                        tau_birth[ci],
+                    )
             if re_emit:
                 # All of a galaxy's dust shares one radiation field.
                 with np.errstate(
@@ -855,6 +887,7 @@ def compute_photometry(
         mag[~has_light] = np.nan
         out[name] = mag
     out.update(dust_info)
+    out.update({f"AnnulusLight_{b}": v for b, v in ring_light.items()})
     if re_emit:
         out["LDust"] = l_dust.astype(np.float32)
         out["DustUmin"] = dust_umin.astype(np.float32)
@@ -1082,6 +1115,11 @@ def write_photometry(path: str | Path, results: dict[str, np.ndarray]) -> None:
             if name in _DUST_FIELDS:
                 ds.attrs["Description"], ds.attrs["Units"] = _DUST_FIELDS[name]
                 ds.attrs["Source"] = "ViSAGE dust"
+                continue
+            if name.startswith("AnnulusLight_"):
+                ds.attrs["Description"] = "Share of disc light by annulus"
+                ds.attrs["Units"] = ""
+                ds.attrs["Source"] = "ViSAGE dust (new stars by DiscSFR)"
                 continue
             band = name.split("mag_", 1)[1].split("_", 1)[1]
             frame_word = (

@@ -336,6 +336,21 @@ def light_within(radius_kpc, edges_kpc, shares, tau) -> np.ndarray:
     return (seen * part).sum(axis=1) / np.maximum(seen.sum(axis=1), 1e-30)
 
 
+def annulus_band_shares(wave, old, new, lam, tau, eta, s_old, s_new, birth):
+    """(n, 30) share of each galaxy's disc light in each annulus, at the
+    rest wavelengths `lam`: its old and new stars' spectra there, each
+    placed by its shares, through the annuli's screens and birth clouds."""
+    rows = np.arange(len(lam))
+    k = np.clip(np.searchsorted(wave, lam), 0, len(wave) - 1)
+    x = (lam / 5500.0)[:, None]
+    light = (
+        s_old * old[rows, k, None]
+        + s_new * (new[rows, k] * np.exp(-birth * x[:, 0] ** -N_BC))[:, None]
+    ) * np.exp(-tau * x**eta)
+    total = light.sum(axis=1, keepdims=True)
+    return np.where(total > 0, light / np.maximum(total, 1e-300), s_old)
+
+
 def bc_transmission(wave, tau_birth) -> np.ndarray:
     """(n, n_wave) birth-cloud transmission (a screen)."""
     return np.exp(

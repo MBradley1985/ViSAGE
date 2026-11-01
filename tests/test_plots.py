@@ -166,3 +166,20 @@ def test_a_run_without_dust_still_stacks_its_discs(monkeypatch):
     assert not s.has("DiscDust")
     with style.context(False):
         assert local.disc_profiles(Plot(s, [], Options())).axes
+
+
+def test_a_run_without_the_modes_is_not_offered_their_plots(monkeypatch):
+    from visage.ui import plotting
+
+    def titles(fields):
+        monkeypatch.setattr(plotting, "_present", lambda scene: fields)
+        scene = SimpleNamespace(is_lightcone=False)
+        return {
+            sec["title"]
+            for kind in plotting.plot_groups(scene)
+            for sec in kind["sections"]
+        }
+
+    assert not {"Dust", "Discs"} & titles({"stellarmass"})
+    assert "Dust" in titles({"colddust"})
+    assert "Dust" not in titles({"discradii"})

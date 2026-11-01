@@ -36,7 +36,7 @@ A group doesn't exist across snapshots, so they are unavailable for a group.
 
 Plots a model has no fields for are greyed out.
 
-Runs with `DustySAGEMode` and `DarkSAGEMode` add **Dust** and **Discs** sections. Observations are there to test against: Beeston et al. (2018) on the dust mass function, Rémy-Ruyer et al. (2014) on dust-to-gas, and Lange et al. (2015) on disc sizes. Lange's are half-light radii of whole late-type galaxies, and the model's half-mass radii of discs.
+Runs with `DustySAGEMode` and `DarkSAGEMode` add **Dust** and **Discs** sections, which other runs don't show at all. Observations are there to test against: Beeston et al. (2018) on the dust mass function, Rémy-Ruyer et al. (2014) on dust-to-gas, and Lange et al. (2015) on disc sizes. Lange's are half-light radii of whole late-type galaxies, and the model's half-mass radii of discs.
 
 ## Options
 
