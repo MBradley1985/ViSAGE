@@ -46,7 +46,7 @@ Eight tabs in two rows of four:
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 | Plotting    | SAGE26's diagnostic plots, with observations, for the whole catalogue or any selection (see [Plotting](plotting.md)) |
 
-The tabs are icons on the right; clicking one opens its panel over the view, and clicking it again closes it. The top bar has **Info**, **Focus**, **Centre**, **Isolate**, **HD** and **Reset**, which work whichever tab is open, then Export, Fly-through, updates and Close (see [Navigation](navigation.md)).
+The tabs are icons on the right; clicking one opens its panel over the view, and clicking it again closes it. The bottom of the rail has **Go**, **Info**, **Focus**, **Isolate** and **Box Centre**, and the top bar has **HD** and **Reset**, which all work whichever tab is open (see [Navigation](navigation.md)). The top bar also has Export, Fly-through, updates and Close.
 
 ## Multi-box strip
 
@@ -65,7 +65,7 @@ The box strip is hidden in single-model mode.
 | Loading spinner   | Dimmed cover while a new model loads from disk |
 | Warning snackbar  | Top of the render view; appears when an overlay attempt is rejected (e.g. incompatible box size) |
 | Selection rings   | A cyan ring on the selected galaxy, smaller rings on the rest of its group (merged where they would pile up) |
-| Selection card    | Top-left, draggable; opened by the header's **i** button or **Show info** — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
+| Selection card    | Top-left, draggable; opened by the rail's **Info** button or **Show info** — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
 | HD build card     | Centre, while an HD model builds: progress and **Cancel** (or Esc) |
 
 ## Info bar (bottom)

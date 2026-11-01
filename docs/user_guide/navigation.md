@@ -12,18 +12,19 @@ PyVista's standard trackball controls apply inside the render window:
 | **Double-click** | Select the galaxy under the cursor (the most massive one, if several) — on any tab, and inside HD |
 | Single click | Nothing — pure camera interaction (no selection state change) |
 
-## Persistent header controls
+## View controls
 
-Six buttons sit above the tab panel and work no matter which tab is active:
+These work no matter which tab is active. **HD** and **Reset** are in the top bar; the rest are at the bottom of the icon rail. Go, Info and Isolate need a selection.
 
 | Button | Action |
 |---|---|
 | Reset | Puts everything back to default and shows the whole run |
-| Info (i) | Opens or closes the selection card |
-| Focus toggle (◎ target icon) | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
-| Centre (✛ crosshair icon) | Places the camera AT the box centre, looking out |
-| Isolate (🔍 magnifier icon) | Shows only the selection, 3 Mpc/h away as Go: the galaxy, or in halo context its halo and whole group |
 | HD | Detailed 3D model of the selection and its group — see [HD Mode](hd_mode.md) |
+| Go | Flies to the selection: the galaxy, or in halo context its halo and group |
+| Info | Opens or closes the selection card |
+| Focus | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
+| Isolate | Shows only the selection, 3 Mpc/h away as Go: the galaxy, or in halo context its halo and whole group |
+| Box Centre | Places the camera AT the box centre, looking out. In a lightcone this is **Observer**, at the observer looking along the cone |
 
 ## Selecting a galaxy
 
@@ -39,7 +40,7 @@ The **i** button in the header (or **Show info** at the end of the Structure tab
 |---|---|
 | Galaxy / Halo + group | What the actions apply to: the galaxy, or its host halo with the whole group |
 | Go | Fly to it, 3 Mpc/h away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 Mpc/h focus sphere |
-| Isolate, HD | As the header buttons. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
+| Isolate, HD | As the rail's Isolate and the header's HD. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
 | Gas | HD's halo gas on or off |
 | ← → | Back and forward through what you've selected |
 | ‹ › | Previous / next member of the group, flying to it (the card keeps its Galaxy / Halo + group context) |

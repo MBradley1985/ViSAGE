@@ -328,7 +328,7 @@ def tab(ctrl) -> None:
                                 ),
                                 density="compact",
                                 hide_details=True,
-                                color="#60a5fa",
+                                color="cyan",
                             )
             _step(2, "Choose galaxies")
             v3.VSelect(
@@ -343,7 +343,7 @@ def tab(ctrl) -> None:
                 label="Use the Filters tab",
                 density="compact",
                 hide_details=True,
-                color="#60a5fa",
+                color="cyan",
                 style="margin-top:6px;",
             )
             with html.Div(
@@ -366,7 +366,7 @@ def tab(ctrl) -> None:
                 label="Show each galaxy as a point",
                 density="compact",
                 hide_details=True,
-                color="#60a5fa",
+                color="cyan",
             )
             v3.VSelect(
                 v_show=("plot_scatter",),
@@ -423,7 +423,7 @@ def tab(ctrl) -> None:
                 " + ' plots' : 'Make plot' }}",
                 v_show=("!plot_busy",),
                 block=True,
-                color="#60a5fa",
+                color="cyan",
                 variant="flat",
                 disabled=("!plot_selected.length",),
                 click=ctrl.plot_make,
@@ -431,7 +431,7 @@ def tab(ctrl) -> None:
             )
             with html.Div(v_show=("plot_busy",)):
                 v3.VProgressLinear(
-                    model_value=("plot_percent",), color="#60a5fa", height=4
+                    model_value=("plot_percent",), color="cyan", height=4
                 )
                 v3.VBtn(
                     "Cancel",

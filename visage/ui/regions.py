@@ -20,7 +20,7 @@ from visage.utils import regions
 
 _HEAD = (
     "font-size:0.72rem;font-weight:700;letter-spacing:0.05em;"
-    "color:#f472b6;padding:18px 0 10px;"
+    "color:#7FDBFF;padding:18px 0 10px;"
 )
 _ROW = "display:flex;gap:8px;margin-bottom:12px;"
 _SHAPES = ("sphere", "box", "slice", "selection")
@@ -39,7 +39,7 @@ _GEOMETRY = (
     "slice_depth",
     "slice_thickness",
 )
-_COLOUR = "#f472b6"  # Regions' colour in the theme
+_COLOUR = "cyan"
 _CLICK_REACH = 0.03  # of the view: how near a click must be to a galaxy
 
 
@@ -761,8 +761,8 @@ def tab(ctrl) -> None:
     html.Div(
         "{{ region_note }}",
         style=(
-            "background:rgba(255,255,255,0.05);border-radius:12px;"
-            "padding:10px 12px;font-size:0.78rem;color:#e2e8f0;margin-top:10px;"
+            "background:#0e1a24;border-radius:12px;"
+            "padding:10px 12px;font-size:0.78rem;color:#bfeaf5;margin-top:10px;"
         ),
     )
     html.Div("SAVED", style=_HEAD + "margin-top:8px;")

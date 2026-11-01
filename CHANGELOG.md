@@ -34,8 +34,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Tighter spacing for the galaxy and mock-image checkboxes.
 - The selection card and pop-outs have a new glass look, matching Launch Mode.
 - Tabs moved to an icon rail on the right, opening a floating glass panel that a second click closes. Rail and panel float over the view.
-- The top bar has the view's controls and Export, Fly-through and updates beside playback.
-- A new look throughout: pill dropdowns, switches, and one colour for each kind of thing.
+- The top bar has Export, Fly-through and updates beside playback.
+- Go, Info, Focus, Isolate and Box Centre sit at the bottom of the icon rail. Go is new there, and flies to the selection.
+- A new look throughout: pill dropdowns and switches.
 - Masses and units are typeset with subscripts and superscripts, in the app and on its figures.
 - The Plotting tab runs in steps: choose plots, choose galaxies, set the look, make.
 - Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.

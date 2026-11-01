@@ -1068,46 +1068,13 @@ def build_toolbar(server, scene: Scene) -> None:
         title="Rotation disabled in multi-box mode",
     )
 
-    # The view: the selection's card, Focus, box centre, Isolate, HD, Reset.
-    v3.VBtn(
-        icon="mdi-information-outline",
-        variant="text",
-        density="compact",
-        click=ctrl.sel_toggle_card,
-        color=("sel_show ? 'cyan' : 'white'",),
-        title="The selected galaxy's card",
-        style="margin-left:10px;",
-    )
-    v3.VBtn(
-        icon="mdi-target",
-        variant="text",
-        density="compact",
-        click=ctrl.toggle_focus,
-        color=("focus_active ? 'cyan' : 'white'",),
-        title="Focus: hide everything outside the target",
-    )
-    v3.VBtn(
-        icon="mdi-image-filter-center-focus",
-        variant="text",
-        density="compact",
-        click=ctrl.center_camera,
-        color="white",
-        title="Place camera at box centre",
-    )
-    v3.VBtn(
-        icon="mdi-magnify",
-        variant="text",
-        density="compact",
-        click=ctrl.toggle_isolate,
-        color=("isolate_active ? 'cyan' : 'white'",),
-        title="Isolate the selected galaxy or halo",
-    )
+    # The view: HD, Reset.
     v3.VBtn(
         "HD",
         variant=("hd_active ? 'flat' : 'outlined'",),
         density="compact",
         click=ctrl.toggle_hd,
-        color=("hd_active ? '#fbbf24' : 'white'",),
+        color=("hd_active ? 'cyan' : 'white'",),
         loading=("hd_building",),
         disabled=(
             "hd_building || !hd_available "
