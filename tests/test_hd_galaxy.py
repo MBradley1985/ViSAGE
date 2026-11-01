@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import gc
 
 import numpy as np
@@ -73,6 +74,20 @@ def test_a_shared_exposure_gives_a_satellite_back_part_of_its_dimming():
     assert shared_white(1.0, 1.0) == 1.0
     assert shared_white(0.5, 1.0) == 1.0  # never brighter than its own
     assert shared_white(10.0, 1.0) == pytest.approx(10 ** (1 - SATELLITE_LIFT))
+
+
+def test_a_jellyfish_tail_is_set_by_the_galaxy():
+    from visage.hd.model import jelly_look, jelly_points
+
+    rich = dataclasses.replace(_disk(), cold_gas=2e10, t_since_infall_gyr=4.0)
+    poor = dataclasses.replace(_disk(), cold_gas=3e8, t_since_infall_gyr=0.5)
+    assert jelly_look(rich, 0.5)["clumps"] > jelly_look(poor, 0.5)["clumps"]
+    assert jelly_look(rich, 0.5)["length"] > jelly_look(poor, 0.5)["length"]
+    rc = recipe_from_sage(rich)
+    many = jelly_points(rc, rich, (1, 0, 0), 0.5, 1)[1]
+    few = jelly_points(recipe_from_sage(poor), poor, (1, 0, 0), 0.5, 1)[1]
+    assert len(many.lum) > len(few.lum)
+    assert many.pos[:, 0].mean() > 0  # it trails along the direction given
 
 
 def test_elliptical_recipe():

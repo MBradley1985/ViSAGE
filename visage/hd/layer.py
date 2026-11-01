@@ -349,6 +349,7 @@ class HDGalaxyLayer:
                 d, st = ctx["ram"]
                 pts += jelly_points(
                     rc,
+                    gal,
                     R.T @ np.asarray(d),
                     st,
                     rc.seed + 211,

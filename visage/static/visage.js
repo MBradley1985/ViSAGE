@@ -1244,3 +1244,87 @@
     t.trigger('region_pick', [t.state.get('region_tool'), stroke]);
   });
 })();
+
+
+// Masses and units typeset wherever they appear: M*, Msun, yr^-1, 10^n and
+// so on. A text node is kept (hidden, so Vue can still update it) beside a
+// rendered copy.
+(function () {
+  var RULES = [
+    [/\bM\*/g, 'M<sub>*</sub>'],
+    [/\b([MLZ])☉/g, '$1<sub class="sun">☉</sub>'],
+    [/\b([MRV])(vir|max)\b/g, '$1<sub>$2</sub>'],
+    [/\bMsun\b/g, 'M<sub class="sun">☉</sub>'],
+    [/(\d\.\d+)e([+-])0*(\d+)/g, function (m, a, s, b) {
+      return a + '×10<sup>' + (s === '-' ? '−' : '') + b + '</sup>';
+    }],
+    [/\byr\^-1/g, 'yr<sup>−1</sup>'],
+    [/\/yr\b/g, ' yr<sup>−1</sup>'],
+    [/\b10\^(-?\d+)/g, '10<sup>$1</sup>'],
+    [/\blog10\b/g, 'log<sub>10</sub>'],
+    [/\bH2\b/g, 'H<sub>2</sub>'],
+    [/\bA_V\b/g, 'A<sub>V</sub>'],
+    [/\bM_([A-Za-z]+)/g, 'M<sub>$1</sub>'],
+  ];
+  var SKIP = 'script,style,textarea,input,code,svg,.xterm,.katex,.sage-rich,' +
+    '[data-sage-raw]';
+  function escapeHtml(s) {
+    return s.replace(/[&<>]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c];
+    });
+  }
+  function typeset(text) {
+    var out = escapeHtml(text);
+    RULES.forEach(function (r) { out = out.replace(r[0], r[1]); });
+    return out;
+  }
+  function wrap(node) {
+    var html = typeset(node.nodeValue);
+    if (html === escapeHtml(node.nodeValue)) return;
+    var rich = document.createElement('span');
+    rich.className = 'sage-rich';
+    rich.innerHTML = html;
+    var raw = document.createElement('span');
+    raw.setAttribute('data-sage-raw', '');
+    raw.style.display = 'none';
+    node.parentNode.insertBefore(rich, node);
+    node.parentNode.insertBefore(raw, node);
+    raw.appendChild(node);
+  }
+  function scan(root) {
+    if (root.nodeType === 3) {
+      var p = root.parentElement;
+      if (p && !p.closest(SKIP)) wrap(root);
+      return;
+    }
+    if (root.nodeType !== 1 || root.closest(SKIP)) return;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    var found = [];
+    while (walker.nextNode()) found.push(walker.currentNode);
+    found.forEach(function (n) {
+      if (!n.parentElement.closest(SKIP)) wrap(n);
+    });
+  }
+  new MutationObserver(function (changes) {
+    changes.forEach(function (c) {
+      var raw = c.target.parentElement;
+      if (c.type === 'characterData') {
+        if (raw && raw.hasAttribute('data-sage-raw')) {
+          raw.previousSibling.innerHTML = typeset(c.target.nodeValue);
+        } else scan(c.target);
+        return;
+      }
+      if (c.target.hasAttribute && c.target.hasAttribute('data-sage-raw')) {
+        if (!c.target.firstChild) {
+          c.target.previousSibling.remove();
+          c.target.remove();
+        }
+        return;
+      }
+      c.addedNodes.forEach(scan);
+    });
+  }).observe(document.documentElement, {
+    subtree: true, childList: true, characterData: true,
+  });
+  window.addEventListener('load', function () { scan(document.body); });
+})();

@@ -161,6 +161,10 @@ def ram_pressure(
 # infall), "stars" (stellar mass lost) or "both" (the stronger).
 STRIP_MODE = "dm"
 
+# A member's glow is gone once its model is this many pixels across: at real
+# size most never reach more, and a bright glow would hide them.
+GLOW_UNTIL_PX = 2.0
+
 # How much of a shared exposure's dimming a member gets back: a group stays
 # in proportion, but a satellite beside a bright central keeps its detail.
 SATELLITE_LIFT = 0.4
@@ -543,8 +547,8 @@ class HDGroupLayer:
         self._cloud = cloud
 
     def _update_glows(self, *_):
-        """Per frame: each glow at least ~2.5 px across, faded out once the
-        member's HD model is ~8 px across."""
+        """Per frame: each glow at least ~2.5 px across, faded out as the
+        member's HD model reaches GLOW_UNTIL_PX across."""
         d = self._glow_data
         if d is None or self._glow is None:
             return
@@ -560,7 +564,7 @@ class HDGroupLayer:
         for k, lay in enumerate(d["hd"]):
             if lay is not None:
                 size_px = lay.radius_world / px_world[k]
-                w[k] = float(np.clip(1.0 - (size_px - 3.0) / 5.0, 0.0, 1.0))
+                w[k] = float(np.clip(GLOW_UNTIL_PX - size_px, 0.0, 1.0))
         self._cloud["radius"] = rad.astype(np.float32)
         self._cloud["rgb"] = (d["rgb"] * w[:, None]).astype(np.float32)
 

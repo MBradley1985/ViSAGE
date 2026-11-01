@@ -323,7 +323,7 @@ def _plot(s: GalaxySpectrum, dpi: int, dark: bool) -> bytes:
     ssfr = i["sfr"] / max(10 ** i["log_mstar"], 1.0)
     ax.set_title(
         f"Galaxy {s.label}   z = {s.z_obs:.4f}   "
-        f"log M* = {i['log_mstar']:.2f}   SFR = {i['sfr']:.2g} M☉/yr   "
+        f"log $M_*$ = {i['log_mstar']:.2f}   SFR = {i['sfr']:.2g} $M_\\odot$ yr$^{{-1}}$   "
         f"log sSFR = {np.log10(max(ssfr, 1e-14)):.1f}   B/T = {i['bt']:.2f}",
         fontsize=9.5,
     )
@@ -333,7 +333,7 @@ def _plot(s: GalaxySpectrum, dpi: int, dark: bool) -> bytes:
     if "CosInclination" in i:
         notes.append(f"|cos i| {i['CosInclination']:.2f}")
     if i.get("LDust", 0) > 0:
-        notes.append(f"L$_{{dust}}$ {i['LDust']:.2e} L☉")
+        notes.append(f"L$_{{dust}}$ {i['LDust']:.2e} $L_\\odot$")
     if "DustUmin" in i:
         notes.append(f"U$_{{min}}$ {i['DustUmin']:.2g}")
     if np.isfinite(i.get("LineFlux_Halpha", np.nan)):

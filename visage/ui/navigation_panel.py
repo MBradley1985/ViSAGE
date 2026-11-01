@@ -1998,7 +1998,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         max_visible = max(1, (pop_h - pad_y - 4) // line_h)
         lines = []
         for entry in list(getattr(state, "console_history", [])):
-            cmd = str(entry.get("cmd", "")).strip()
+            cmd = str(entry.get("SAGE", "")).strip()
             out = str(entry.get("out", "")).strip()
             if cmd:
                 lines.append((cmd, (6, 182, 212)))
@@ -3112,7 +3112,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         history.append(
             {
                 "id": d["counter"],
-                "cmd": f"{prompt} {cmd}" if cmd else prompt,
+                "SAGE": f"{prompt} {cmd}" if cmd else prompt,
                 "out": _truncate(out) if out else "",
             }
         )
@@ -5403,17 +5403,18 @@ def build_navigation_panel(server, scene: Scene) -> None:
         # ── Icon rail: each tab, and a click on the open one closes it ──
         _phot = [("Photometry", "photometry")] if scene.is_lightcone else []
         with html.Div(classes="sage-rail"):
-            for label, value, icon in (
-                ("Structure", "layers", "mdi-layers-outline"),
-                ("Filters", "filters", "mdi-filter-outline"),
-                *(p + ("mdi-palette-outline",) for p in _phot),
-                ("Regions", "coords", "mdi-selection-drag"),
-                ("Record", "record", "mdi-record-circle-outline"),
-                ("Console", "console", "mdi-console"),
-                ("Library", "library", "mdi-folder-outline"),
-                ("Plotting", "plotting", "mdi-chart-line"),
+            for label, value, icon, kind in (
+                ("Structure", "layers", "mdi-layers-outline", "haloes"),
+                ("Filters", "filters", "mdi-filter-outline", "environment"),
+                *(p + ("mdi-palette-outline", "photometry") for p in _phot),
+                ("Regions", "coords", "mdi-selection-drag", "regions"),
+                ("Record", "record", "mdi-record-circle-outline", "system"),
+                ("Console", "console", "mdi-console", "system"),
+                ("Library", "library", "mdi-folder-outline", "system"),
+                ("Plotting", "plotting", "mdi-chart-line", "plots"),
             ):
                 with html.Button(
+                    style=f"--tab:var(--sage-{kind});",
                     classes=(
                         f"{{'sage-rail-on': panel_open && "
                         f"nav_active_tab === '{value}'}}",
@@ -5448,14 +5449,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "DARK MATTER HALOES",
                     style=(
                         "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#c084fc;padding:6px 0 8px;display:block;"
+                        "color:#a78bfa;padding:6px 0 8px;display:block;"
                     ),
                 )
                 with v3.VSheet(color="transparent", style=_FIELD):
                     v3.VCheckbox(
                         v_model=("halos_visible",),
                         label="Visible",
-                        color="#c084fc",
+                        color="#a78bfa",
                         hide_details=True,
                         density="compact",
                     )
@@ -5466,7 +5467,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         label="Colour by",
                         hide_details=True,
                         variant="outlined",
-                        color="#c084fc",
+                        color="#a78bfa",
                         density="compact",
                     )
                 with v3.VSheet(
@@ -5476,10 +5477,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("halo_colormap",),
                         items=(_CMAPS,),
-                        label="Colormap",
                         hide_details=True,
                         variant="outlined",
-                        color="#c084fc",
+                        color="#a78bfa",
                         density="compact",
                         disabled=("halo_color_mode === 'mvir'",),
                         style="flex:1;min-width:0;",
@@ -5489,7 +5489,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         label="Reverse",
                         hide_details=True,
                         density="compact",
-                        color="#c084fc",
+                        color="#a78bfa",
                         disabled=("halo_color_mode === 'mvir'",),
                         style="flex:0 0 auto;font-size:0.75rem;",
                     )
@@ -5518,14 +5518,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "GALAXIES",
                     style=(
                         "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#FFD700;padding:6px 0 8px;display:block;"
+                        "color:#fbbf24;padding:6px 0 8px;display:block;"
                     ),
                 )
                 with v3.VSheet(color="transparent", style=_TICK):
                     v3.VCheckbox(
                         v_model=("galaxies_visible",),
                         label="Visible",
-                        color="#FFD700",
+                        color="#fbbf24",
                         hide_details=True,
                         density="compact",
                     )
@@ -5537,7 +5537,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("dust_glow",),
                         label="Dusty",
-                        color="#FFD700",
+                        color="#fbbf24",
                         hide_details=True,
                         density="compact",
                     )
@@ -5549,7 +5549,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("disc_shapes",),
                         label="Dark 'n Dusty",
-                        color="#FFD700",
+                        color="#fbbf24",
                         hide_details=True,
                         density="compact",
                     )
@@ -5562,7 +5562,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         label="Colour by",
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                     )
                 with v3.VSheet(
@@ -5572,10 +5572,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("galaxy_colormap",),
                         items=(_CMAPS,),
-                        label="Colormap",
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         # Structure mode is the bare composition (no outer
                         # property halo) — the colormap doesn't apply.
@@ -5593,7 +5592,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         label="Reverse",
                         hide_details=True,
                         density="compact",
-                        color="#FFD700",
+                        color="#fbbf24",
                         disabled=(
                             "galaxy_color_mode === 'structure' || "
                             "galaxy_color_mode === 'type'",
@@ -5622,10 +5621,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 # Which environments' galaxies to show.
                 v3.VDivider(style="margin:14px 0;")
                 v3.VLabel(
-                    "ENVIRONMENT FILTER",
+                    "ENVIRONMENT",
                     style=(
                         "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#06b6d4;display:block;padding:4px 0 6px;"
+                        "color:#e7e5e4;display:block;padding:4px 0 6px;"
                     ),
                 )
                 v3.VLabel(
@@ -5641,7 +5640,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label="Field",
                     hide_details=True,
                     density="compact",
-                    color="cyan",
+                    color="#e7e5e4",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
@@ -5650,7 +5649,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label="Isolated",
                     hide_details=True,
                     density="compact",
-                    color="cyan",
+                    color="#e7e5e4",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
@@ -5659,7 +5658,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label="Pairs",
                     hide_details=True,
                     density="compact",
-                    color="cyan",
+                    color="#e7e5e4",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
@@ -5668,7 +5667,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label="Groups",
                     hide_details=True,
                     density="compact",
-                    color="cyan",
+                    color="#e7e5e4",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
@@ -5677,7 +5676,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label="Clusters",
                     hide_details=True,
                     density="compact",
-                    color="cyan",
+                    color="#e7e5e4",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
                 )
@@ -5687,7 +5686,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "{{ sel_show ? 'Hide info' : 'Show info' }}",
                     block=True,
                     variant=("sel_show ? 'flat' : 'outlined'",),
-                    color="cyan",
+                    color="#e7e5e4",
                     density="compact",
                     prepend_icon="mdi-information-outline",
                     disabled=("!sel_active",),
@@ -5700,7 +5699,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     label="Dark mode",
                     density="compact",
                     hide_details=True,
-                    color="cyan",
+                    color="#e7e5e4",
                     style="margin-top:8px;",
                 )
 
@@ -5723,7 +5722,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "SYNTHETIC PHOTOMETRY (SED)",
                     style=(
                         "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#7FDBFF;padding:2px 0 8px;display:block;"
+                        "color:#fb923c;padding:2px 0 8px;display:block;"
                     ),
                 )
                 # No SED data → just say so (the LightSAGE run had SED off).
@@ -5738,7 +5737,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     mandatory=True,
                     v_show=("has_sed_data",),
                     density="compact",
-                    color="#7FDBFF",
+                    color="#fb923c",
                     style=(
                         "width:100%;height:auto;margin-bottom:8px;"
                         "display:flex;flex-wrap:wrap;"
@@ -5763,7 +5762,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         v3.VCheckbox(
                             v_model=("photometry_visible",),
                             label="Visible",
-                            color="#7FDBFF",
+                            color="#fb923c",
                             hide_details=True,
                             density="compact",
                         )
@@ -5775,7 +5774,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             max=1.0,
                             step=0.01,
                             thumb_label=True,
-                            color="#7FDBFF",
+                            color="#fb923c",
                             hide_details=True,
                         )
                     with v3.VSheet(color="transparent", style=_FIELD):
@@ -5784,13 +5783,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         v3.VSelect(
                             v_model=("sed_galaxy_bands",),
                             items=("sed_color_modes",),
-                            label="Filters (tick to stack)",
+                            label="Bands (tick to combine)",
+                            classes="sage-top-label",
                             multiple=True,
                             chips=True,
                             closable_chips=True,
                             hide_details=True,
                             variant="outlined",
-                            color="#7FDBFF",
+                            color="#fb923c",
                             density="compact",
                         )
                     # Legend: one swatch per ticked filter, in its own colour.
@@ -5821,7 +5821,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "SPECTRUM",
                         style=(
                             "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                            "color:#fb923c;display:block;padding:2px 0 4px;"
                         ),
                     )
                     html.Div(
@@ -5840,7 +5840,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "Make spectrum",
                             prepend_icon="mdi-chart-bell-curve",
                             block=True,
-                            color="#7FDBFF",
+                            color="#fb923c",
                             variant="tonal",
                             loading=("spec_busy",),
                             disabled=("nav_gal_idx === null",),
@@ -5855,7 +5855,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "SURVEY CATALOGUE",
                         style=(
                             "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                            "color:#fb923c;display:block;padding:2px 0 4px;"
                         ),
                     )
                     html.Div(
@@ -5870,9 +5870,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 v_model=("survey_key",),
                                 items=("survey_items",),
                                 label="Selection",
+                                classes="sage-top-label",
                                 hide_details=True,
                                 variant="outlined",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 density="compact",
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
@@ -5882,14 +5883,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 label="Catalogue format",
                                 hide_details=True,
                                 variant="outlined",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 density="compact",
                             )
                         v3.VBtn(
                             "Export catalogue",
                             prepend_icon="mdi-table-arrow-down",
                             block=True,
-                            color="#7FDBFF",
+                            color="#fb923c",
                             variant="tonal",
                             loading=("survey_busy",),
                             click=ctrl.export_survey,
@@ -5908,7 +5909,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 "Make fibre spectra",
                                 prepend_icon="mdi-chart-bell-curve",
                                 block=True,
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 variant="tonal",
                                 loading=("spec_busy",),
                                 click=ctrl.make_fibre_spectra,
@@ -5923,7 +5924,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "MOCK IMAGE",
                         style=(
                             "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                            "color:#7FDBFF;display:block;padding:2px 0 4px;"
+                            "color:#fb923c;display:block;padding:2px 0 4px;"
                         ),
                     )
                     html.Div(
@@ -5940,7 +5941,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 label="Survey",
                                 hide_details=True,
                                 variant="outlined",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 density="compact",
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
@@ -5950,15 +5951,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 label="Field",
                                 hide_details=True,
                                 variant="outlined",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 density="compact",
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VCheckbox(
                                 v_model=("mock_noisy",),
-                                label="Survey depth (sky noise)",
+                                label="Add sky noise",
                                 disabled=("!mock_has_depth",),
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 hide_details=True,
                                 density="compact",
                             )
@@ -5966,14 +5967,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             v3.VSelect(
                                 v_model=("mock_background",),
                                 items=("mock_backgrounds",),
-                                label="Galaxies beyond this cone",
+                                label="Background galaxies",
+                                classes="sage-top-label",
                                 placeholder="None",
                                 persistent_placeholder=True,
                                 clearable=True,
                                 disabled=("!mock_backgrounds.length",),
                                 hide_details=True,
                                 variant="outlined",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 density="compact",
                             )
                         for model, label in (
@@ -5985,7 +5987,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 v3.VCheckbox(
                                     v_model=(model,),
                                     label=label,
-                                    color="#7FDBFF",
+                                    color="#fb923c",
                                     hide_details=True,
                                     density="compact",
                                 )
@@ -5997,7 +5999,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             v3.VCheckbox(
                                 v_model=("mock_ics",),
                                 label="Add intracluster stars",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 hide_details=True,
                                 density="compact",
                             )
@@ -6008,7 +6010,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 label="Image format",
                                 hide_details=True,
                                 variant="outlined",
-                                color="#7FDBFF",
+                                color="#fb923c",
                                 density="compact",
                             )
                         html.Div(
@@ -6020,7 +6022,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "Create mock image",
                             prepend_icon="mdi-telescope",
                             block=True,
-                            color="#7FDBFF",
+                            color="#fb923c",
                             variant="tonal",
                             loading=("mock_busy",),
                             click=ctrl.create_mock_image,
@@ -6054,7 +6056,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "CONSOLE",
                         style=(
                             "font-size:0.85rem;font-weight:700;"
-                            "letter-spacing:0.08em;color:#06b6d4;"
+                            "letter-spacing:0.08em;color:#cbd5e1;"
                             "margin-right:4px;"
                         ),
                     )
@@ -6077,7 +6079,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 ": 'outlined'",
                             ),
                             color=(
-                                "console_active_id === c.id ? 'cyan' "
+                                "console_active_id === c.id ? '#cbd5e1' "
                                 ": '#6b7280'",
                             ),
                             click=(
@@ -6103,7 +6105,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         size="x-small",
                         density="compact",
                         variant="outlined",
-                        color="cyan",
+                        color="#cbd5e1",
                         click=ctrl.console_new,
                         title="New console",
                         style="min-width:24px;padding:0;height:22px;",
@@ -6117,7 +6119,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "console_mode === 'terminal' ? 'flat' : 'outlined'",
                         ),
                         color=(
-                            "console_mode === 'terminal' ? 'cyan' : '#6b7280'",
+                            "console_mode === 'terminal' ? '#cbd5e1' : '#6b7280'",
                         ),
                         click=ctrl.console_mode_terminal,
                         title="Terminal",
@@ -6128,14 +6130,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                     )
                     v3.VBtn(
-                        "cmd",
+                        "SAGE",
                         size="x-small",
                         density="compact",
                         variant=(
                             "console_mode === 'command' ? 'flat' : 'outlined'",
                         ),
                         color=(
-                            "console_mode === 'command' ? 'cyan' : '#6b7280'",
+                            "console_mode === 'command' ? '#cbd5e1' : '#6b7280'",
                         ),
                         click=ctrl.console_mode_sage,
                         title="SAGE command mode",
@@ -6192,7 +6194,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VBtn(
                         "Pop-out",
                         variant="outlined",
-                        color=("console_popout_show ? 'cyan' : '#6b7280'",),
+                        color=("console_popout_show ? '#cbd5e1' : '#6b7280'",),
                         density="compact",
                         prepend_icon="mdi-dock-window",
                         click=ctrl.console_toggle_popout,
@@ -6253,7 +6255,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ):
                         v3.VTextField(
                             v_model=("console_input",),
-                            label="SAGE Commands  (type exit to return to terminal)",
+                            label="Commands (type exit to return)",
                             hide_details=True,
                             variant="outlined",
                             bg_color="#1a1a2e",
@@ -6265,7 +6267,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             v3.VBtn(
                                 "Run",
                                 block=True,
-                                color="cyan",
+                                color="#cbd5e1",
                                 density="compact",
                                 prepend_icon="mdi-play",
                                 click=ctrl.console_submit,
@@ -6285,7 +6287,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "Pop-out",
                         block=True,
                         variant="outlined",
-                        color=("console_popout_show ? 'cyan' : '#6b7280'",),
+                        color=("console_popout_show ? '#cbd5e1' : '#6b7280'",),
                         density="compact",
                         prepend_icon="mdi-dock-window",
                         click=ctrl.console_toggle_popout,
@@ -6306,7 +6308,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "MEDIA LIBRARY",
                     style=(
                         "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:4px 0 4px;display:block;"
+                        "color:#cbd5e1;padding:4px 0 4px;display:block;"
                         "flex-shrink:0;"
                     ),
                 )
@@ -6365,7 +6367,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 "{{ entry.ext.toUpperCase() }}",
                                 v_if=("entry.first_in_group",),
                                 style=(
-                                    "font-size:0.6rem;color:#22d3ee;"
+                                    "font-size:0.6rem;color:#cbd5e1;"
                                     "letter-spacing:0.08em;font-weight:600;"
                                     "padding:4px 6px 2px 14px;"
                                     "background:#0d1117;"
@@ -6385,7 +6387,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                         "? 'mdi-movie-open-outline' "
                                         ": 'mdi-image-outline'",
                                     ),
-                                    color="cyan",
+                                    color="#cbd5e1",
                                     size="small",
                                     style="flex-shrink:0;",
                                 )
@@ -6441,7 +6443,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             v3.VBtn(
                                 "Refresh",
                                 block=True,
-                                color="cyan",
+                                color="#cbd5e1",
                                 density="compact",
                                 size="small",
                                 prepend_icon="mdi-refresh",
@@ -6463,15 +6465,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
             with v3.VSheet(
                 color="transparent",
                 v_show=("nav_active_tab === 'filters'",),
+                style="display:flex;flex-direction:column;height:100%;min-height:0;",
             ):
                 _FSEC_HALO = (
                     "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                    "color:#c084fc;padding:2px 0 2px;display:block;"
+                    "color:#a78bfa;padding:2px 0 2px;display:block;"
                     "text-align:center;"
                 )
                 _FSEC_GAL = (
                     "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                    "color:#FFD700;padding:2px 0 2px;display:block;"
+                    "color:#fbbf24;padding:2px 0 2px;display:block;"
                     "text-align:center;"
                 )
                 _FLBL = (
@@ -6503,7 +6506,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=15.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#c084fc",
+                        color="#a78bfa",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -6518,7 +6521,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=3.0,
                         step=0.05,
                         thumb_label=True,
-                        color="#c084fc",
+                        color="#a78bfa",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -6533,7 +6536,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=1000.0,
                         step=10.0,
                         thumb_label=True,
-                        color="#c084fc",
+                        color="#a78bfa",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.vmax",),
@@ -6549,7 +6552,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=1000.0,
                         step=10.0,
                         thumb_label=True,
-                        color="#c084fc",
+                        color="#a78bfa",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -6575,7 +6578,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                     f"extra_halo_filters[{_i}]?.step ?? 0.01",
                                 ),
                                 thumb_label=True,
-                                color="#c084fc",
+                                color="#a78bfa",
                                 density="compact",
                                 hide_details=True,
                                 thumb_size=10,
@@ -6590,14 +6593,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 html.Div("GALAXIES", style=_FSEC_GAL)
                 with html.Div(style=_SH + "height:185px;"):
                     # Alphabetical, like the Colour-by lists.
-                    html.Div("B / T  (BulgeMass / StellarMass)", style=_FLBL)
+                    html.Div("Bulge-to-total ratio (B/T)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_bt",),
                         min=0.0,
                         max=1.0,
                         step=0.02,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -6612,7 +6615,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.bh_mass",),
@@ -6628,7 +6631,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -6643,7 +6646,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=1.0,
                         step=0.05,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.bulge_radius",),
@@ -6659,7 +6662,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.cgm_gas",),
@@ -6675,7 +6678,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -6683,14 +6686,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Concentration  (NFW, host halo)", style=_FLBL)
+                    html.Div("Halo concentration", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_conc",),
                         min=0.0,
                         max=50.0,
                         step=0.5,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.concentration",),
@@ -6706,7 +6709,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=7.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.cooling",),
@@ -6722,7 +6725,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=1.0,
                         step=0.05,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.disk_radius",),
@@ -6738,7 +6741,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.ejected_mass",),
@@ -6747,14 +6750,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("H1 gas  (log10 Msun)", style=_FLBL)
+                    html.Div("HI gas  (log10 Msun)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_h1gas",),
                         min=0.0,
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.h1_gas",),
@@ -6770,7 +6773,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.h2_mass",),
@@ -6786,7 +6789,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=7.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.heating",),
@@ -6802,7 +6805,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.hot_gas",),
@@ -6818,7 +6821,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.ics_mass",),
@@ -6836,7 +6839,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.instability_bulge_mass",),
@@ -6854,7 +6857,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=1.0,
                         step=0.05,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.instability_bulge_radius",),
@@ -6863,14 +6866,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Len  (DM particles, host halo)", style=_FLBL)
+                    html.Div("Halo particles", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_len",),
                         min=0,
                         max=10000,
                         step=100,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.len_particles",),
@@ -6888,7 +6891,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=5.0,
                         step=0.05,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.mass_loading",),
@@ -6904,7 +6907,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.merger_bulge_mass",),
@@ -6920,7 +6923,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=1.0,
                         step=0.05,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.merger_bulge_radius",),
@@ -6936,7 +6939,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_bulge_mass",),
@@ -6952,7 +6955,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_cgm_gas",),
@@ -6968,7 +6971,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_cold_gas",),
@@ -6986,7 +6989,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_ejected_mass",),
@@ -7002,7 +7005,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_hot_gas",),
@@ -7018,7 +7021,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_ics",),
@@ -7036,7 +7039,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=12.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.metals_stellar_mass",),
@@ -7052,7 +7055,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=5.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.outflow_rate",),
@@ -7070,7 +7073,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=5.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -7085,7 +7088,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=5.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.sfr_bulge",),
@@ -7094,14 +7097,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("SFR bulge Z  (log10 dimensionless)", style=_FLBL)
+                    html.Div("Bulge SFR metallicity  (log10)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_sfr_blg_z",),
                         min=-6.0,
                         max=1.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.sfr_bulge_z",),
@@ -7117,7 +7120,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=5.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.sfr_disk",),
@@ -7126,14 +7129,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("SFR disk Z  (log10 dimensionless)", style=_FLBL)
+                    html.Div("Disc SFR metallicity  (log10)", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_sfr_dsk_z",),
                         min=-6.0,
                         max=1.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.sfr_disk_z",),
@@ -7142,14 +7145,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Spin  (host halo)", style=_FLBL)
+                    html.Div("Halo spin", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_spin",),
                         min=0.0,
                         max=0.2,
                         step=0.002,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.spin",),
@@ -7165,7 +7168,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=0.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -7180,7 +7183,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.mean_age",),
@@ -7196,7 +7199,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         max=14.0,
                         step=0.1,
                         thumb_label=True,
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         hide_details=True,
                         thumb_size=10,
@@ -7222,7 +7225,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                     f"extra_gal_filters[{_i}]?.step ?? 0.01",
                                 ),
                                 thumb_label=True,
-                                color="#FFD700",
+                                color="#fbbf24",
                                 density="compact",
                                 hide_details=True,
                                 thumb_size=10,
@@ -7234,9 +7237,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 v3.VDivider(style="margin:4px 0 2px;")
 
                 # ── Categorical section ───────────────────────
-                html.Div("CATEGORICAL", style=_FSEC_GAL)
+                html.Div("GALAXY TYPE", style=_FSEC_GAL)
                 with html.Div(style="padding-top:18px;"):
-                    html.Div("Type", style=_FLBL)
+                    html.Div("Type", classes="sage-select-head", style=_FLBL)
                     v3.VSelect(
                         v_model=("filter_gal_type",),
                         items=(
@@ -7248,11 +7251,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         style=_FSEL,
                     )
-                    html.Div("FFB regime", style=_FLBL)
+                    html.Div(
+                        "FFB regime", classes="sage-select-head", style=_FLBL
+                    )
                     v3.VSelect(
                         v_model=("filter_gal_ffb",),
                         items=(
@@ -7264,12 +7269,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         disabled=("!model_fields.ffb_regime",),
                         style=_FSEL,
                     )
-                    html.Div("CGM / Hot regime", style=_FLBL)
+                    html.Div(
+                        "Gas regime (CGM or hot)",
+                        classes="sage-select-head",
+                        style=_FLBL,
+                    )
                     v3.VSelect(
                         v_model=("filter_gal_cgm",),
                         items=(
@@ -7284,7 +7293,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="#fbbf24",
                         density="compact",
                         disabled=("!model_fields.cgm_regime",),
                         style=_FSEL,
@@ -7309,7 +7318,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "FIND",
                     style=(
                         "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#06b6d4;display:block;padding:4px 0 6px;"
+                        "color:#e7e5e4;display:block;padding:4px 0 6px;"
                     ),
                 )
                 from visage.utils.find import PRESETS
@@ -7329,7 +7338,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     clearable=True,
                     hide_details=True,
                     variant="outlined",
-                    color="cyan",
+                    color="#e7e5e4",
                     density="compact",
                 )
                 with html.Div(
@@ -7353,7 +7362,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "Go",
                         id="btn-find-id",
                         click=ctrl.find_id_go,
-                        color="cyan",
+                        color="#e7e5e4",
                         density="compact",
                         style="height:40px;",
                     )
@@ -7373,8 +7382,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "'font-size:0.74rem;padding:3px 6px;"
                             "cursor:pointer;border-radius:4px;' + "
                             "(r.idx === nav_gal_idx ? "
-                            "'background:rgba(34,211,238,0.18);"
-                            "color:#22d3ee;' : 'color:#e2e8f0;')",
+                            "'background:rgba(255,255,255,0.1);"
+                            "color:#e7e5e4;' : 'color:#e2e8f0;')",
                         ),
                     ):
                         html.Span("{{ r.text }}")
@@ -7388,7 +7397,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "SCREENSHOT",
                     style=(
                         "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:6px 0 8px;display:block;"
+                        "color:#cbd5e1;padding:6px 0 8px;display:block;"
                     ),
                 )
                 with html.Div(
@@ -7396,7 +7405,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ):
                     v3.VTextField(
                         v_model=("screenshot_label",),
-                        label="Label (optional)",
+                        label="File name (optional)",
                         hide_details=True,
                         variant="outlined",
                         bg_color="#1a1a2e",
@@ -7407,7 +7416,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 v3.VBtn(
                     "Take Screenshot",
                     block=True,
-                    color="cyan",
+                    color="#cbd5e1",
                     density="compact",
                     prepend_icon="mdi-camera",
                     click=ctrl.take_screenshot,
@@ -7421,7 +7430,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "PNG",
                             block=True,
                             variant="outlined",
-                            color="cyan",
+                            color="#cbd5e1",
                             density="compact",
                             click=ctrl.screenshot_png,
                         )
@@ -7430,7 +7439,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "JPG",
                             block=True,
                             variant="outlined",
-                            color="cyan",
+                            color="#cbd5e1",
                             density="compact",
                             click=ctrl.screenshot_jpg,
                         )
@@ -7439,7 +7448,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "TIFF",
                             block=True,
                             variant="outlined",
-                            color="cyan",
+                            color="#cbd5e1",
                             density="compact",
                             click=ctrl.screenshot_tiff,
                         )
@@ -7458,7 +7467,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "RECORD MOVIE",
                     style=(
                         "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:6px 0 8px;display:block;"
+                        "color:#cbd5e1;padding:6px 0 8px;display:block;"
                     ),
                 )
                 with html.Div(
@@ -7466,7 +7475,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ):
                     v3.VTextField(
                         v_model=("movie_label",),
-                        label="Label (optional)",
+                        label="File name (optional)",
                         hide_details=True,
                         variant="outlined",
                         bg_color="#1a1a2e",
@@ -7484,13 +7493,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     max=60,
                     step=1,
                     thumb_label=True,
-                    color="cyan",
+                    color="#cbd5e1",
                     density="compact",
                     hide_details=True,
                 )
 
                 v3.VLabel(
                     "Resolution",
+                    classes="sage-select-head",
                     style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
                 )
                 v3.VSelect(
@@ -7504,12 +7514,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ),
                     hide_details=True,
                     variant="outlined",
-                    color="cyan",
+                    color="#cbd5e1",
                     density="compact",
                 )
 
                 v3.VLabel(
                     "Output format",
+                    classes="sage-select-head",
                     style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
                 )
                 v3.VSelect(
@@ -7523,7 +7534,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     ),
                     hide_details=True,
                     variant="outlined",
-                    color="cyan",
+                    color="#cbd5e1",
                     density="compact",
                 )
 
@@ -7532,7 +7543,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v_model=("movie_loop",),
                     label="Loop GIF forever",
                     v_show=("movie_format === 'gif'",),
-                    color="cyan",
+                    color="#cbd5e1",
                     density="compact",
                     hide_details=True,
                     style="padding-top:4px;",

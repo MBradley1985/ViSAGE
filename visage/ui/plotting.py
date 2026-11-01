@@ -95,8 +95,8 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
             "title": "Whole lightcone" if scene.is_lightcone else "Whole box",
             "value": "whole",
         },
-        {"title": "Active region", "value": "region"},
-        {"title": "Selected group", "value": "group"},
+        {"title": "Region from Regions tab", "value": "region"},
+        {"title": "Group of selected galaxy", "value": "group"},
     ]
     state.plot_filters = True
     state.plot_scatter = False
@@ -280,164 +280,169 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
             procs.stop_group(run["proc"])
 
 
+def _step(number: int, title: str) -> None:
+    with html.Div(classes="sage-step"):
+        html.Span(str(number))
+        html.Div(title)
+
+
 def tab(ctrl) -> None:
-    """The tab's panel."""
+    """The tab's panel: choose plots, choose galaxies, set the look, make."""
     with v3.VSheet(
         color="transparent",
         v_show=("nav_active_tab === 'plotting'",),
-        style="padding:8px 12px;",
+        style="display:flex;flex-direction:column;flex:1;min-height:0;",
     ):
-        html.Span("PLOTTING", style=HEADING)
-        v3.VSelect(
-            v_model=("plot_region",),
-            items=("plot_regions",),
-            label="Galaxies",
-            density="compact",
-            hide_details=True,
-            variant="outlined",
-            style="margin-bottom:6px;",
-        )
-        v3.VCheckbox(
-            v_model=("plot_filters",),
-            label="Use Filters and Environments",
-            density="compact",
-            hide_details=True,
-            color="cyan",
-        )
-        with html.Div(v_show=("plot_is_cone",), style="display:flex;gap:6px;"):
-            for key, label in (("zmin", "Local z from"), ("zmax", "to")):
-                v3.VTextField(
-                    v_model=(f"plot_{key}",),
-                    label=label,
-                    type="number",
-                    step=0.05,
-                    density="compact",
-                    hide_details=True,
-                    variant="outlined",
-                )
-        with v3.VExpansionPanels(
-            multiple=True, variant="accordion", style="margin:8px 0;"
-        ):
-            with v3.VExpansionPanel(
-                v_for=("kind in plot_groups",),
-                key=("kind.title",),
-                bg_color="transparent",
-            ):
-                v3.VExpansionPanelTitle(
-                    "{{ kind.title }}",
-                    style="font-size:0.8rem;min-height:34px;padding:4px 8px;",
-                )
-                with v3.VExpansionPanelText():
-                    with html.Div(
-                        v_for=("sec in kind.sections",), key=("sec.title",)
-                    ):
-                        html.Div(
-                            "{{ sec.title }}",
-                            style=(
-                                "font-size:0.68rem;color:#9ca3af;"
-                                "padding:6px 0 0;"
-                            ),
-                        )
+        with html.Div(style="flex:1;min-height:0;overflow-y:auto;"):
+            _step(1, "Choose plots")
+            with v3.VExpansionPanels(multiple=True, variant="accordion"):
+                with v3.VExpansionPanel(
+                    v_for=("kind in plot_groups",),
+                    key=("kind.title",),
+                    bg_color="transparent",
+                ):
+                    v3.VExpansionPanelTitle(
+                        "{{ kind.title }}",
+                        style="font-size:0.8rem;min-height:34px;padding:4px 8px;",
+                    )
+                    with v3.VExpansionPanelText(classes="sage-plot-list"):
                         with html.Div(
-                            style=(
-                                "display:grid;gap:0 6px;"
-                                "grid-template-columns:1fr 1fr;"
-                            ),
+                            v_for=("sec in kind.sections",), key=("sec.title",)
                         ):
-                            with v3.VCheckbox(
+                            html.Div(
+                                "{{ sec.title }}",
+                                style=(
+                                    "font-size:0.68rem;color:#9ca3af;"
+                                    "padding:10px 0 2px;"
+                                ),
+                            )
+                            v3.VCheckbox(
                                 v_for=("item in sec.items",),
                                 key=("item.key",),
                                 v_model=("plot_selected",),
                                 value=("item.key",),
+                                label=("item.title",),
                                 disabled=(
                                     "item.missing || (plot_region === 'group'"
                                     " && !item.group)",
                                 ),
                                 density="compact",
                                 hide_details=True,
-                                color="cyan",
-                                style="min-width:0;",
-                            ):
-                                with v3.Template(v_slot_label=True):
-                                    html.Span(
-                                        "{{ item.title }}",
-                                        style=(
-                                            "font-size:0.68rem;"
-                                            "line-height:1.15;"
-                                        ),
-                                    )
-        v3.VSwitch(
-            v_model=("plot_scatter",),
-            label="Each galaxy, not the median and 1σ",
-            density="compact",
-            hide_details=True,
-            color="cyan",
-        )
-        v3.VSelect(
-            v_show=("plot_scatter",),
-            v_model=("plot_colour",),
-            items=("plot_colours",),
-            label="Colour by",
-            density="compact",
-            hide_details=True,
-            variant="outlined",
-            style="margin:6px 0;",
-        )
-        with html.Div(style="display:flex;gap:6px;margin:6px 0;"):
-            for axis in "xy":
-                v3.VSelect(
-                    v_model=(f"plot_{axis}scale",),
-                    items=("plot_scales",),
-                    label=f"{axis} axis",
-                    density="compact",
-                    hide_details=True,
-                    variant="outlined",
-                )
-        for axis in "xy":
-            with html.Div(style="display:flex;gap:6px;margin-bottom:6px;"):
-                for end in ("min", "max"):
+                                color="#60a5fa",
+                            )
+            _step(2, "Choose galaxies")
+            v3.VSelect(
+                v_model=("plot_region",),
+                items=("plot_regions",),
+                density="compact",
+                hide_details=True,
+                variant="outlined",
+            )
+            v3.VCheckbox(
+                v_model=("plot_filters",),
+                label="Use the Filters tab",
+                density="compact",
+                hide_details=True,
+                color="#60a5fa",
+                style="margin-top:6px;",
+            )
+            with html.Div(
+                v_show=("plot_is_cone",),
+                style="display:flex;gap:8px;margin-top:10px;",
+            ):
+                for key, label in (("zmin", "Local z from"), ("zmax", "to")):
                     v3.VTextField(
-                        v_model=(f"plot_{axis}{end}",),
-                        label=f"{axis} {end}",
+                        v_model=(f"plot_{key}",),
+                        label=label,
                         type="number",
+                        step=0.05,
                         density="compact",
                         hide_details=True,
                         variant="outlined",
                     )
-        v3.VSelect(
-            v_model=("plot_formats",),
-            items=("plot_format_items",),
-            label="Save as",
-            multiple=True,
-            chips=True,
-            density="compact",
-            hide_details=True,
-            variant="outlined",
-        )
-        v3.VBtn(
-            "{{ plot_selected.length > 1 ? 'Make ' + plot_selected.length"
-            " + ' plots' : 'Make plot' }}",
-            v_show=("!plot_busy",),
-            block=True,
-            color="cyan",
-            variant="outlined",
-            disabled=("!plot_selected.length",),
-            click=ctrl.plot_make,
-            style="margin-top:8px;",
-        )
-        with html.Div(v_show=("plot_busy",), style="margin-top:8px;"):
-            v3.VProgressLinear(
-                model_value=("plot_percent",), color="cyan", height=4
-            )
-            v3.VBtn(
-                "Cancel",
-                block=True,
-                variant="text",
-                color="#ef4444",
+            _step(3, "Options")
+            v3.VCheckbox(
+                v_model=("plot_scatter",),
+                label="Show each galaxy as a point",
                 density="compact",
-                click=ctrl.plot_cancel,
+                hide_details=True,
+                color="#60a5fa",
             )
-        html.Div(
-            "{{ plot_status }}",
-            style="font-size:0.7rem;color:#9ca3af;padding-top:6px;",
-        )
+            v3.VSelect(
+                v_show=("plot_scatter",),
+                v_model=("plot_colour",),
+                items=("plot_colours",),
+                label="Colour by",
+                density="compact",
+                hide_details=True,
+                variant="outlined",
+                style="margin-top:8px;",
+            )
+            with v3.VExpansionPanels(
+                variant="accordion", style="margin-top:8px;"
+            ):
+                with v3.VExpansionPanel(bg_color="transparent"):
+                    v3.VExpansionPanelTitle(
+                        "Axes",
+                        style="font-size:0.8rem;min-height:34px;padding:4px 8px;",
+                    )
+                    with v3.VExpansionPanelText():
+                        for axis in "xy":
+                            v3.VSelect(
+                                v_model=(f"plot_{axis}scale",),
+                                items=("plot_scales",),
+                                label=f"{axis} scale",
+                                density="compact",
+                                hide_details=True,
+                                variant="outlined",
+                                style="margin:8px 0;",
+                            )
+                            with html.Div(style="display:flex;gap:8px;"):
+                                for end in ("min", "max"):
+                                    v3.VTextField(
+                                        v_model=(f"plot_{axis}{end}",),
+                                        label=f"{axis} {end}",
+                                        type="number",
+                                        density="compact",
+                                        hide_details=True,
+                                        variant="outlined",
+                                    )
+            v3.VSelect(
+                v_model=("plot_formats",),
+                items=("plot_format_items",),
+                label="File format",
+                multiple=True,
+                density="compact",
+                hide_details=True,
+                variant="outlined",
+                style="margin-top:10px;",
+            )
+        with html.Div(style="flex:none;padding-top:12px;"):
+            v3.VBtn(
+                "{{ plot_selected.length > 1 ? 'Make ' + plot_selected.length"
+                " + ' plots' : 'Make plot' }}",
+                v_show=("!plot_busy",),
+                block=True,
+                color="#60a5fa",
+                variant="flat",
+                disabled=("!plot_selected.length",),
+                click=ctrl.plot_make,
+                style="text-transform:none;letter-spacing:0;",
+            )
+            with html.Div(v_show=("plot_busy",)):
+                v3.VProgressLinear(
+                    model_value=("plot_percent",), color="#60a5fa", height=4
+                )
+                v3.VBtn(
+                    "Cancel",
+                    block=True,
+                    variant="text",
+                    color="#ef4444",
+                    density="compact",
+                    click=ctrl.plot_cancel,
+                )
+            html.Div(
+                "{{ plot_status }}",
+                v_show=("plot_status",),
+                style="font-size:0.7rem;color:#9ca3af;padding-top:8px;",
+            )

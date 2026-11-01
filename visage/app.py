@@ -1025,8 +1025,9 @@ def create_app(
                         density="compact",
                         v_bind="props",
                         title="Launch Mode",
+                        classes="sage-brand",
                         style=(
-                            "padding:2px 4px;min-width:36px;"
+                            "padding:2px 10px 2px 4px;min-width:36px;"
                             "text-transform:none;letter-spacing:0;"
                         ),
                     ):
@@ -1041,10 +1042,9 @@ def create_app(
                             "ViSAGE",
                             style=(
                                 "font-size:1.05rem;font-weight:700;"
-                                "color:#fff;margin-right:10px;"
+                                "color:#fff;"
                             ),
                         )
-                        html.Span("Launch", classes="sage-pill")
                 with v3.VList(density="compact", bg_color="transparent"):
                     # ── Launch Mode ────────────────────────────────────────
                     v3.VListSubheader(
@@ -1222,18 +1222,6 @@ def create_app(
                 style="margin-left:2px;",
             )
 
-            # ── SAGEswarm button — opens the wizard straight into the PSO
-            #    calibration flow. ───────────────────────────────────────────
-            v3.VBtn(
-                icon="mdi-chart-scatter-plot",
-                variant="text",
-                density="compact",
-                color="white",
-                title="SAGEswarm — PSO Calibration",
-                click=server.controller.open_sageswarm_wizard,
-                style="margin-left:2px;",
-            )
-
             # ── LightSAGE button — opens the wizard straight into the
             #    lightcone-extraction flow. ────────────────────────────────
             v3.VBtn(
@@ -1246,8 +1234,51 @@ def create_app(
                 style="margin-left:2px;",
             )
 
+            # ── SAGEswarm button — opens the wizard straight into the PSO
+            #    calibration flow. ───────────────────────────────────────────
+            v3.VBtn(
+                icon="mdi-chart-scatter-plot",
+                variant="text",
+                density="compact",
+                color="white",
+                title="SAGEswarm — PSO Calibration",
+                click=server.controller.open_sageswarm_wizard,
+                style="margin-left:2px;",
+            )
+
             # ── Story Mode button + dropdown ───────────────────────────────
             build_story_button(server)
+
+            # ── Export, Fly-through, updates ───────────────────────────────
+            for icon, tip, click, colour in (
+                (
+                    "mdi-database-export-outline",
+                    "Export galaxy catalogue",
+                    "export_dialog_show = true",
+                    "white",
+                ),
+                (
+                    "mdi-rotate-orbit",
+                    "Fly-through: approach box then orbit (click to stop)",
+                    server.controller.toggle_flythrough,
+                    ("flythrough_active ? 'cyan' : 'white'",),
+                ),
+                (
+                    "mdi-update",
+                    "Check for updates",
+                    server.controller.check_for_updates,
+                    "white",
+                ),
+            ):
+                v3.VBtn(
+                    icon=icon,
+                    variant="text",
+                    density="compact",
+                    color=colour,
+                    title=tip,
+                    click=click,
+                    style="margin-left:2px;",
+                )
 
             build_toolbar(server, scene)
 

@@ -65,6 +65,7 @@ body,
 }
 
 .sage-popout .mdi-close::before,
+.sage-close .mdi-close::before,
 .sage-popout .mdi-fullscreen::before {
     content: "";
     display: block;
@@ -75,7 +76,8 @@ body,
     mask: var(--sage-glyph) center / contain no-repeat;
 }
 
-.sage-popout .mdi-close {
+.sage-popout .mdi-close,
+.sage-close .mdi-close {
     --sage-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.5 1.5l9 9M10.5 1.5l-9 9' stroke='black' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
@@ -86,7 +88,7 @@ body,
 .sel-hero {
     background: radial-gradient(
         120% 130% at 12% 0%,
-        rgba(6, 182, 212, 0.34),
+        rgba(251, 191, 36, 0.26),
         rgba(0, 0, 0, 0) 62%
     );
 }
@@ -96,9 +98,9 @@ body,
     margin-top: 8px;
     padding: 2px 10px;
     border-radius: 99px;
-    border: 1px solid rgba(34, 197, 94, 0.55);
-    background: rgba(34, 197, 94, 0.15);
-    color: #86efac;
+    border: 1px solid color-mix(in srgb, var(--sage-environment) 55%, transparent);
+    background: color-mix(in srgb, var(--sage-environment) 14%, transparent);
+    color: var(--sage-environment);
     font-size: 0.72rem;
 }
 
@@ -141,13 +143,14 @@ body,
 }
 
 .sage-rail button {
+    --tab: #94a3b8;
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 56px;
     padding: 7px 0 5px;
     border-radius: 12px !important;
-    color: #94a3b8;
+    color: var(--tab);
     font-size: 0.6rem;
     cursor: pointer;
 }
@@ -157,13 +160,13 @@ body,
     line-height: 1.1;
 }
 
-.sage-rail button:hover {
-    color: #e2e8f0;
+.sage-rail button span {
+    color: #cbd5e1;
 }
 
+.sage-rail button:hover,
 .sage-rail button.sage-rail-on {
-    background: rgba(34, 211, 238, 0.14);
-    color: #67e8f9;
+    background: color-mix(in srgb, var(--tab) 16%, transparent);
 }
 
 .sage-panel.v-sheet {
@@ -171,6 +174,7 @@ body,
     top: 10px;
     right: 82px;
     width: 300px;
+    height: 800px;
     max-height: calc(100% - 20px);
     box-sizing: border-box;
     background: rgba(8, 10, 16, 0.62) !important;
@@ -198,4 +202,337 @@ body,
     border-color: rgba(255, 255, 255, 0.2);
     text-transform: none;
     letter-spacing: 0;
+}
+
+/* One colour per kind of thing, the same everywhere. */
+:root {
+    --sage-action: #22d3ee;
+    --sage-haloes: #a78bfa;
+    --sage-galaxies: #fbbf24;
+    --sage-environment: #e7e5e4;
+    --sage-regions: #f472b6;
+    --sage-photometry: #fb923c;
+    --sage-plots: #60a5fa;
+    --sage-system: #94a3b8;
+}
+
+.sage-close.v-btn {
+    width: 28px;
+    height: 28px;
+    margin: 0 8px 0 6px;
+    border: 1px solid rgba(239, 68, 68, 0.6);
+    border-radius: 9px !important;
+}
+
+/* Subscripts and superscripts typeset in the page (visage.js). */
+.sage-rich sub,
+.sage-rich sup {
+    font-size: 0.72em;
+    line-height: 0;
+}
+
+.sage-rich sub.sun {
+    font-size: 0.95em;
+    vertical-align: -0.2em;
+}
+
+/* Dropdowns: a pill, "Colour by" on the left and the choice on the right. */
+.v-select .v-field {
+    border-radius: 99px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: transparent !important;
+    --v-field-padding-start: 14px;
+}
+
+.v-select .v-field__outline {
+    --v-field-border-width: 0;
+    --v-field-border-opacity: 0;
+}
+
+.v-select .v-field__outline__start,
+.v-select .v-field__outline__end,
+.v-select .v-field__outline__notch::before,
+.v-select .v-field__outline__notch::after {
+    border: none !important;
+}
+
+.v-select .v-field__outline__notch {
+    position: static !important;
+    max-width: none !important;
+}
+
+.v-select .v-field-label--floating {
+    position: absolute !important;
+    left: 0 !important;
+    margin-left: 14px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    font-size: 0.82rem !important;
+    color: #94a3b8;
+    width: max-content !important;
+    max-width: none !important;
+    overflow: visible !important;
+}
+
+/* (Empty, a dropdown shows its label in the middle.) */
+.v-select .v-field--active .v-field-label:not(.v-field-label--floating) {
+    display: none;
+}
+
+.v-select .v-field:not(.v-field--active) .v-field-label--floating {
+    display: none;
+}
+
+.v-select .v-field__input {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 34px !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    justify-content: flex-end;
+}
+
+/* Checkboxes: switches, label left and switch right. */
+.v-checkbox {
+    --v-input-control-height: 28px;
+    min-height: 28px;
+}
+
+.v-checkbox .v-selection-control {
+    flex-direction: row-reverse;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 28px;
+}
+
+.v-checkbox .v-selection-control .v-label {
+    flex: 1;
+    opacity: 1;
+}
+
+.v-checkbox .v-selection-control__wrapper {
+    width: 32px;
+    height: 18px;
+    flex: none;
+}
+
+.v-checkbox .v-selection-control__input {
+    width: 32px;
+    height: 18px;
+    border-radius: 99px !important;
+    background: rgba(255, 255, 255, 0.16);
+    transition: background 0.15s ease;
+}
+
+.v-checkbox .v-selection-control__input > .v-icon {
+    display: none;
+}
+
+.v-checkbox .v-selection-control__input::before {
+    content: "";
+    position: absolute;
+    inset: auto;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50% !important;
+    background: #cbd5e1;
+    opacity: 1;
+    transform: none;
+    transition: left 0.15s ease;
+}
+
+.v-checkbox .v-selection-control--dirty .v-selection-control__input {
+    background: currentColor;
+}
+
+.v-checkbox .v-selection-control--dirty .v-selection-control__input::before {
+    left: 16px;
+    background: #0b0d12;
+}
+
+.v-switch .v-selection-control {
+    flex-direction: row-reverse;
+    justify-content: space-between;
+}
+
+.v-switch .v-label {
+    opacity: 1;
+}
+
+.sage-brand.v-btn {
+    height: 36px;
+    border: 1px solid rgba(231, 229, 228, 0.35);
+    border-radius: 12px !important;
+}
+
+/* The panels: room to breathe. */
+.sage-panel.v-sheet {
+    padding: 16px 18px !important;
+}
+
+.sage-panel .v-btn:not(.v-btn--icon):not(.v-btn--size-x-small) {
+    min-height: 36px;
+    letter-spacing: 0.01em;
+}
+
+.sage-panel .v-checkbox,
+.sage-panel .v-switch {
+    margin-bottom: 4px;
+}
+
+.sage-panel .v-select,
+.sage-panel .v-text-field {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.sage-panel .v-divider {
+    margin-top: 16px !important;
+    margin-bottom: 16px !important;
+}
+
+.sage-panel .v-field-label--floating {
+    font-size: 0.8rem !important;
+}
+
+/* A dropdown too narrow, or too full, for its label inside. */
+.sage-top-label {
+    margin-top: 18px !important;
+}
+
+.sage-top-label .v-field-label--floating {
+    top: -10px !important;
+    margin-left: 4px !important;
+    transform: translateY(-100%) !important;
+    font-size: 0.74rem !important;
+}
+
+.sage-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.sage-step:first-child {
+    margin-top: 2px;
+}
+
+.sage-step span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50% !important;
+    background: color-mix(in srgb, var(--sage-plots) 22%, transparent);
+    color: var(--sage-plots);
+    font-size: 0.72rem;
+}
+
+/* Numbers get the box's whole width. */
+.sage-panel input[type="number"]::-webkit-inner-spin-button,
+.sage-panel input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Text centred; headings, switches and lists read from the left. */
+.sage-panel,
+.sage-panel input,
+.sage-panel .v-label,
+.sel-pills,
+.sel-hero {
+    text-align: center;
+}
+
+.sage-panel input {
+    text-align: center !important;
+}
+
+.sage-panel .v-field-label:not(.v-field-label--floating) {
+    left: 0 !important;
+    right: 0;
+    margin: 0 auto;
+    width: max-content;
+}
+
+.sage-panel .v-checkbox .v-label,
+.sage-panel .v-switch .v-label {
+    justify-content: flex-start;
+    text-align: left;
+}
+
+/* Headings read from the left. */
+.sage-panel [style*="font-weight:700"],
+.sage-panel [style*="font-weight: 700"] {
+    text-align: left !important;
+}
+
+.v-select .v-field__input {
+    justify-content: center;
+    padding-inline-start: 34% !important;
+}
+
+.v-select:not(:has(.v-field-label--floating)) .v-field__input,
+.sage-top-label .v-field__input {
+    padding-inline-start: 8px !important;
+}
+
+.v-toolbar .v-select .v-field__input {
+    padding-inline-start: 56px !important;
+}
+
+.v-toolbar .v-select:not(:has(.v-field-label--floating)) .v-field__input {
+    padding-inline-start: 8px !important;
+}
+
+.sage-top-label .v-field-label--floating {
+    left: 0 !important;
+    margin: 0 0 0 4px !important;
+}
+
+/* A dropdown's heading sits at its left edge. */
+.sage-panel .sage-select-head {
+    display: block;
+    text-align: left !important;
+    padding-left: 4px;
+}
+
+.sage-panel .v-expansion-panel-title__icon {
+    position: absolute;
+    right: 8px;
+}
+
+.sel-pills .v-btn-group,
+.sel-pills {
+    justify-content: center;
+    display: flex;
+}
+
+.sel-hero > div {
+    text-align: center;
+    padding-left: 26px;
+}
+
+.sage-brand .v-btn__content {
+    display: flex;
+    align-items: center;
+    line-height: 1;
+}
+
+.sage-panel .v-btn__content {
+    justify-content: center;
+}
+
+.sage-plot-list .v-label {
+    font-size: 0.68rem !important;
+    line-height: 1.15;
 }

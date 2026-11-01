@@ -20,9 +20,9 @@ from visage.utils import regions
 
 _HEAD = (
     "font-size:0.72rem;font-weight:700;letter-spacing:0.05em;"
-    "color:#7FDBFF;padding:10px 0 6px;"
+    "color:#f472b6;padding:18px 0 10px;"
 )
-_ROW = "display:flex;gap:6px;margin-bottom:6px;"
+_ROW = "display:flex;gap:8px;margin-bottom:12px;"
 _SHAPES = ("sphere", "box", "slice", "selection")
 _AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 _GEOMETRY = (
@@ -39,6 +39,7 @@ _GEOMETRY = (
     "slice_depth",
     "slice_thickness",
 )
+_COLOUR = "#f472b6"  # Regions' colour in the theme
 _CLICK_REACH = 0.03  # of the view: how near a click must be to a galaxy
 
 
@@ -289,6 +290,21 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
                 state[f"nav_box_{a}max"] = round(float(v) + half, 3)
         sync_handles()
 
+    @ctrl.set("region_fit_view")
+    def on_fit_view():
+        """Centre on the view and size to what it shows."""
+        cam = scene.plotter.camera
+        centre = np.array(cam.focal_point, float)
+        gap = float(np.linalg.norm(np.subtract(cam.position, centre)))
+        half = max(gap * np.tan(np.deg2rad(cam.view_angle) / 2.0), 0.1)
+        if state.region_shape == "sphere":
+            state.nav_distance = round(half, 3)
+        else:
+            for a, v in zip("xyz", centre, strict=True):
+                state[f"nav_box_{a}min"] = round(float(v - half), 3)
+                state[f"nav_box_{a}max"] = round(float(v + half), 3)
+        centre_on(centre)
+
     @ctrl.set("region_view_centre")
     def on_view_centre():
         centre_on(scene.plotter.camera.focal_point)
@@ -533,16 +549,19 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
 
 
 def _field(key: str, label: str) -> None:
-    v3.VTextField(
-        v_model=(key,),
-        label=label,
-        type="number",
-        hide_details=True,
-        variant="outlined",
-        bg_color="#1a1a2e",
-        density="compact",
+    with html.Div(
+        raw_attrs=['data-enter-click="btn-region-go"'],
         style="flex:1 1 0;min-width:0;",
-    )
+    ):
+        v3.VTextField(
+            v_model=(key,),
+            label=label,
+            type="number",
+            hide_details=True,
+            variant="outlined",
+            bg_color="#1a1a2e",
+            density="compact",
+        )
 
 
 def _tick(key: str, label: str) -> None:
@@ -550,13 +569,13 @@ def _tick(key: str, label: str) -> None:
         v3.VCheckbox(
             v_model=(key,),
             label=label,
-            color="cyan",
+            color=_COLOUR,
             hide_details=True,
             density="compact",
         )
 
 
-def _toggle(key: str, items, colour: str = "cyan") -> None:
+def _toggle(key: str, items, colour: str = _COLOUR) -> None:
     """A row of mutually exclusive buttons, (label, value) each."""
     with v3.VBtnToggle(
         v_model=(key,),
@@ -584,7 +603,7 @@ def _button(label: str, click, **kw) -> None:
         label,
         click=click,
         variant=kw.pop("variant", "outlined"),
-        color=kw.pop("color", "cyan"),
+        color=kw.pop("color", _COLOUR),
         density="compact",
         style=style + kw.pop("style", ""),
         **kw,
@@ -592,6 +611,8 @@ def _button(label: str, click, **kw) -> None:
 
 
 def _centre_buttons(ctrl) -> None:
+    with html.Div(style=_ROW):
+        _button("Fit to view", ctrl.region_fit_view)
     with html.Div(style=_ROW):
         _button("Centre on view", ctrl.region_view_centre)
         _button(
@@ -666,7 +687,7 @@ def tab(ctrl) -> None:
         html.Div("AXIS", style=_HEAD)
         _toggle(
             "slice_axis",
-            [("X", "x"), ("Y", "y"), ("Z", "z"), ("View", "camera")],
+            [("X", "x"), ("Y", "y"), ("Z", "z"), ("Camera", "camera")],
         )
         html.Div("POSITION", style=_HEAD)
         v3.VSlider(
@@ -674,16 +695,16 @@ def tab(ctrl) -> None:
             min=("slice_lo",),
             max=("slice_hi",),
             step=0.1,
-            color="cyan",
+            color=_COLOUR,
             hide_details=True,
             density="compact",
         )
         with html.Div(style=_ROW + "margin-top:10px;"):
             _field("slice_depth", "Position (Mpc/h)")
             _field("slice_thickness", "Thickness")
-        _tick("slice_sweep", "Sweep")
+        _tick("slice_sweep", "Animate through the volume")
         with html.Div(style=_ROW + "margin-top:6px;"):
-            _button("Face slice", ctrl.region_face_slice)
+            _button("Look along slice", ctrl.region_face_slice)
     with html.Div(v_show=("region_shape === 'selection'",)):
         html.Div("DRAW", style=_HEAD)
         with html.Div(style=_ROW):
@@ -699,12 +720,12 @@ def tab(ctrl) -> None:
                         f"region_tool === '{tool}' ? 'flat' : 'outlined'",
                     ),
                 )
-        html.Div("MODE", style=_HEAD)
+        html.Div("EACH SHAPE WILL", style=_HEAD)
         _toggle(
             "region_op",
             [("Add", "add"), ("Remove", "remove"), ("Replace", "replace")],
         )
-        html.Div("ADD FROM", style=_HEAD)
+        html.Div("ADD ALL FROM", style=_HEAD)
         with html.Div(style=_ROW):
             _button("Filters", ctrl.region_take_filtered)
             _button(
@@ -713,7 +734,7 @@ def tab(ctrl) -> None:
                 disabled=("nav_gal_idx == null",),
             )
             _button("Last region", ctrl.region_take_region)
-        _tick("region_front", "Front galaxies only")
+        _tick("region_front", "Nearest galaxies only")
     with html.Div(
         v_show=("region_shape !== 'selection'",),
         style=_ROW + "margin-top:10px;",
@@ -722,21 +743,26 @@ def tab(ctrl) -> None:
             "{{ region_handles ? 'Remove' : 'Create' }} {{ region_shape }}",
             click="region_handles = !region_handles",
             variant="outlined",
-            color="cyan",
+            color=_COLOUR,
             density="compact",
             style=(
                 "flex:1 1 0;letter-spacing:0;text-transform:none;min-width:0;"
             ),
         )
-    _tick("region_grey", "Dim the rest instead of hiding")
+    _tick("region_grey", "Dim outside the region")
     with html.Div(style=_ROW + "margin-top:6px;"):
-        _button("Go", ctrl.region_go, variant="flat")
+        _button(
+            "Go",
+            ctrl.region_go,
+            variant="flat",
+            id="btn-region-go",
+        )
         _button("Clear", ctrl.region_clear, color="#ef4444")
     html.Div(
         "{{ region_note }}",
         style=(
-            "background:#0e1a24;border-radius:4px;padding:7px 8px;"
-            "font-size:0.78rem;color:#bfeaf5;margin-top:6px;"
+            "background:rgba(255,255,255,0.05);border-radius:12px;"
+            "padding:10px 12px;font-size:0.78rem;color:#e2e8f0;margin-top:10px;"
         ),
     )
     html.Div("SAVED", style=_HEAD + "margin-top:8px;")

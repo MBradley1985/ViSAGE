@@ -1051,6 +1051,7 @@ def build_toolbar(server, scene: Scene) -> None:
         items=(_SPEED_ITEMS,),
         density="compact",
         hide_details=True,
+        variant="outlined",
         style="max-width:90px;",
     )
 
@@ -1060,7 +1061,8 @@ def build_toolbar(server, scene: Scene) -> None:
         items=(_ROTATE_ITEMS,),
         density="compact",
         hide_details=True,
-        prefix="Rotate:",
+        label="Rotate",
+        variant="outlined",
         style="max-width:150px;",
         disabled=("box_strip_items && box_strip_items.length > 1",),
         title="Rotation disabled in multi-box mode",
@@ -1082,7 +1084,7 @@ def build_toolbar(server, scene: Scene) -> None:
         density="compact",
         click=ctrl.toggle_focus,
         color=("focus_active ? 'cyan' : 'white'",),
-        title="Focus",
+        title="Focus: hide everything outside the target",
     )
     v3.VBtn(
         icon="mdi-image-filter-center-focus",
@@ -1098,14 +1100,14 @@ def build_toolbar(server, scene: Scene) -> None:
         density="compact",
         click=ctrl.toggle_isolate,
         color=("isolate_active ? 'cyan' : 'white'",),
-        title="Isolate selected halo/galaxy",
+        title="Isolate the selected galaxy or halo",
     )
     v3.VBtn(
         "HD",
         variant=("hd_active ? 'flat' : 'outlined'",),
         density="compact",
         click=ctrl.toggle_hd,
-        color=("hd_active ? 'cyan' : 'white'",),
+        color=("hd_active ? '#fbbf24' : 'white'",),
         loading=("hd_building",),
         disabled=(
             "hd_building || !hd_available "
@@ -1129,41 +1131,15 @@ def build_toolbar(server, scene: Scene) -> None:
         title="Back to the default view",
     )
 
-    # Everything else.
-    with v3.VMenu(close_on_content_click=True):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-dots-horizontal",
-                variant="text",
-                density="compact",
-                color="white",
-                v_bind="props",
-                title="More",
-                style="margin:0 6px;",
-            )
-        with v3.VList(density="compact"):
-            v3.VListItem(
-                title="Export galaxy catalogue",
-                prepend_icon="mdi-database-export-outline",
-                click="export_dialog_show = true",
-            )
-            v3.VListItem(
-                title="Fly-through",
-                prepend_icon="mdi-rotate-orbit",
-                click=ctrl.toggle_flythrough,
-                active=("flythrough_active",),
-            )
-            v3.VListItem(
-                title="Check for updates",
-                prepend_icon="mdi-update",
-                click=ctrl.check_for_updates,
-            )
-            v3.VListItem(
-                title="Close ViSAGE",
-                prepend_icon="mdi-close",
-                click=ctrl.close_app,
-                base_color="#ef4444",
-            )
+    v3.VBtn(
+        icon="mdi-close",
+        variant="text",
+        density="compact",
+        color="#ef4444",
+        title="Close ViSAGE",
+        click=ctrl.close_app,
+        classes="sage-close",
+    )
 
     @ctrl.set("close_app")
     def on_close_app():

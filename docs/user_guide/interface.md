@@ -46,7 +46,7 @@ Eight tabs in two rows of four:
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 | Plotting    | SAGE26's diagnostic plots, with observations, for the whole catalogue or any selection (see [Plotting](plotting.md)) |
 
-The tabs are icons on the right; clicking one opens its panel over the view, and clicking it again closes it. The top bar has **Info**, **Focus**, **Centre**, **Isolate**, **HD** and **Reset**, which work whichever tab is open, and **⋯** for Export, Fly-through, updates and closing ViSAGE (see [Navigation](navigation.md)).
+The tabs are icons on the right; clicking one opens its panel over the view, and clicking it again closes it. The top bar has **Info**, **Focus**, **Centre**, **Isolate**, **HD** and **Reset**, which work whichever tab is open, then Export, Fly-through, updates and Close (see [Navigation](navigation.md)).
 
 ## Multi-box strip
 

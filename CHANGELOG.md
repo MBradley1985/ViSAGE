@@ -18,6 +18,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Reset Camera puts everything back to default, leaving HD and Isolate, and clearing filters, selection and regions.
 - HD group members are drawn at their real size, in true proportion to each other.
 - HD group members keep more of their detail next to a bright central.
+- HD group members show as galaxies at a distance, not as bright dots.
+- HD jellyfish tails are clumps of young stars streaking off the disc over a faint glow, each set by the galaxy's cold gas, sSFR, gas fraction, ram pressure and time since infall.
 
 ### Added
 
@@ -31,8 +33,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - The dark background switch is now Dark mode, at the bottom of the Structure tab and on by default. It also sets radial, rotation and spectrum figures.
 - Tighter spacing for the galaxy and mock-image checkboxes.
 - The selection card and pop-outs have a new glass look, matching Launch Mode.
-- Tabs moved to an icon rail on the right, opening a floating glass panel that a second click closes. Rail and panel float over the view, each only as tall as it needs.
-- The top bar has the view's controls beside playback, and a More menu for Export, Fly-through, updates and closing ViSAGE.
+- Tabs moved to an icon rail on the right, opening a floating glass panel that a second click closes. Rail and panel float over the view.
+- The top bar has the view's controls and Export, Fly-through and updates beside playback.
+- A new look throughout: pill dropdowns, switches, and one colour for each kind of thing.
+- Masses and units are typeset with subscripts and superscripts, in the app and on its figures.
+- The Plotting tab runs in steps: choose plots, choose galaxies, set the look, make.
 - Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.
 - Drag tools are thin white lines with small grips, and chosen galaxies stand out by dimming the rest.
 - The Isolate backdrop uses the mock images' real stars, with their own colours and brightnesses.

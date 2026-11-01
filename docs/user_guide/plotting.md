@@ -7,9 +7,11 @@ models, LightSAGE lightcones and DarkSAGE and DustySAGE runs.
 
 ## Choosing the galaxies
 
+The tab runs in steps: choose plots, choose galaxies, set the look, make.
+
 - **Galaxies:** the whole box or lightcone, the active region on the
   Regions tab, or the selected galaxy's group.
-- **Use Filters and Environments:** applies the Filters tab and the
+- **Use the Filters tab:** applies the Filters tab and the
   Environment checkboxes in the Structure tab as well, so a plot shows what
   the viewer shows.
 - **Local z** (lightcones): the redshift slice for the Local and Observed

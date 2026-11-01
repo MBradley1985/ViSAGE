@@ -182,7 +182,7 @@ def selection_card(server) -> None:
                 "HD",
                 size="small",
                 variant=("hd_active ? 'flat' : 'outlined'",),
-                color=("hd_active ? 'cyan' : '#cbd5e1'",),
+                color=("hd_active ? '#fbbf24' : '#cbd5e1'",),
                 loading=("hd_building",),
                 disabled=("!hd_available",),
                 click=ctrl.toggle_hd,
@@ -285,7 +285,7 @@ def selection_card(server) -> None:
                 )
             html.Div(style="flex:1;")
             v3.VBtn(
-                "{{ sel_rings ? 'Clear indicator' : 'Show indicator' }}",
+                "{{ sel_rings ? 'Hide rings' : 'Show rings' }}",
                 size="x-small",
                 variant="text",
                 color="#9ca3af",
@@ -302,12 +302,12 @@ def selection_card(server) -> None:
                 "font-size:0.75rem;flex-shrink:0;"
             ),
         ):
-            html.Span("{{ sel_halo }}", style="flex:1;color:#c084fc;")
+            html.Span("{{ sel_halo }}", style="flex:1;color:#a78bfa;")
             v3.VBtn(
                 "Go to halo",
                 size="x-small",
                 variant="outlined",
-                color="#c084fc",
+                color="#a78bfa",
                 click=ctrl.sel_go_halo,
                 title="Fly to the host halo (10 Mpc/h standoff)",
             )
@@ -323,7 +323,13 @@ def selection_card(server) -> None:
                 ),
             ):
                 html.Span("{{ p.label }}", style="color:#9ca3af;")
-                html.Span("{{ p.value }}", style="font-family:monospace;")
+                html.Span(
+                    "{{ p.value }}",
+                    style=(
+                        "{color: p.label === 'Stellar mass' ? '#fbbf24' : "
+                        "p.label === 'ICS' ? '#a78bfa' : '#f1f5f9'}",
+                    ),
+                )
             # Every property, on demand.
             v3.VBtn(
                 "{{ sel_info_open ? 'Fewer properties' : 'All properties' }}",
@@ -371,7 +377,7 @@ def selection_card(server) -> None:
                 "GROUP · {{ sel_group }}",
                 v_show=("sel_members.length > 1",),
                 style=(
-                    "font-size:0.7rem;letter-spacing:0.08em;color:#c084fc;"
+                    "font-size:0.7rem;letter-spacing:0.08em;color:#a78bfa;"
                     "margin:10px 0 4px;font-weight:700;"
                 ),
             )

@@ -1915,27 +1915,45 @@ def tidal_points(
     return Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.2), "tidal")
 
 
-# Jellyfish tails: brightness (x the galaxy's light) and how it splits
-# between pink H-alpha streamers and blue star-forming knots.
-# Jellyfish tails: brightness, the shares of ionised gas and of young
-# star knots, length (x), and the gas's colour: None for H-alpha red
-# (HALPHA_RGB), "hii" for the galaxy's own HII colour, or an RGB.
-# Chosen from options (2026-10-25, between "faint, own HII colour" and
-# "faint, mostly blue knots", the gas fainter): was gain 1, halpha 0.45,
-# knots 0.55, H-alpha red.
-JELLY = dict(gain=0.35, halpha=0.22, knots=0.58, length=1.0, rgb="hii")
+# Jellyfish tails, after real ones (Ebeling et al. 2014; Poggianti et al.
+# 2017; Sun et al. 2010): clumps of young stars streaking off the disc over
+# a faint broad glow. Each is set by the galaxy: how many clumps by its cold
+# gas, how packed by its sSFR, how long by ram pressure and time since
+# infall, the glow by its gas fraction.
+JELLY_BLUE = np.array([0.55, 0.72, 1.0])
+JELLY_PINK = np.array([1.0, 0.45, 0.68])
+JELLY_GLOW = np.array([0.48, 0.46, 1.0])
+JELLY_PINK_SHARE = 0.25  # of the clumps, H-alpha bright
+
+
+def jelly_look(g: SageGalaxy, strength: float) -> dict:
+    """0 to 1 for a tail's "clumps", "packed", "length" and "glow"."""
+
+    def fit(v, lo, hi):
+        return float(np.clip((v - lo) / (hi - lo), 0.0, 1.0))
+
+    fraction = g.cold_gas / max(g.cold_gas + g.stellar_mass, 1.0)
+    return dict(
+        clumps=fit(np.log10(max(g.cold_gas, 1.0)), 8.3, 10.5),
+        packed=fit(np.log10(g.ssfr + 1e-14), -12.0, -9.5),
+        length=0.6 * strength + 0.4 * fit(g.t_since_infall_gyr, 0.0, 6.0),
+        glow=fit(fraction, 0.0, 0.5),
+    )
 
 
 def jelly_points(
-    rc: GalaxyRecipe, direction, strength: float, seed: int, gain: float = 1.0
+    rc: GalaxyRecipe,
+    g: SageGalaxy,
+    direction,
+    strength: float,
+    seed: int,
+    gain: float = 1.0,
 ) -> list[Points]:
-    """A ram-pressure-stripped ("jellyfish") gas tail: the galaxy's gas
-    pushed out behind it by the hot halo it is ploughing through, forming
-    stars as it goes -- blue knots and pink H-alpha streaks trailing
-    along `direction` (model frame, away from the motion).  `gain`
-    brightens it to undo a group's shared exposure, which dims a satellite
-    next to a much brighter central: the tail then looks as it does at the
-    satellite's own exposure."""
+    """A ram-pressure-stripped ("jellyfish") tail trailing along `direction`
+    (model frame, away from the motion): streaks of young stars on curved
+    streamers, over a faint glow of the stripped gas, as `jelly_look`.
+    `gain` brightens it to undo a group's shared exposure."""
+    look = jelly_look(g, strength)
     rng = np.random.default_rng(seed)
     u = np.asarray(direction, float)
     u = u / max(np.linalg.norm(u), 1e-9)
@@ -1945,45 +1963,79 @@ def jelly_points(
     a /= np.linalg.norm(a)
     b = np.cross(u, a)
     e = rc.extent
-    length = (1.5 + 3.5 * strength) * e * JELLY["length"]
-    n = int(6000 + 14000 * strength)
-    # Streamers start across the disk's trailing side and fan out.
-    k = int(5 + 7 * strength)
-    starts = rng.normal(0, 0.35 * e, (k, 2))
-    which = rng.integers(0, k, n)
-    t = rng.random(n) ** 0.7
-    spread = 0.05 * e + 0.15 * e * t
-    off = starts[which] * (1 + 0.6 * t[:, None])
+    length = (1.0 + 3.2 * look["length"]) * e
+    light = (
+        1.05 * gain * (rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0)
+    )
+
+    def along(t, x, y):
+        return (
+            (0.1 * e + t * length)[:, None] * u
+            + x[:, None] * a
+            + y[:, None] * b
+        )
+
+    # Streamers: each leaves the trailing side of the disc and curves away.
+    n_streams = int(4 + 6 * look["clumps"])
+    angle = rng.uniform(0, 2 * np.pi, n_streams)
+    radius = 0.8 * e * np.sqrt(rng.random(n_streams))
+    start = np.c_[radius * np.cos(angle), radius * np.sin(angle)]
+    bend = rng.normal(0, 0.5 * e, (n_streams, 2))
+    reach = rng.uniform(0.5, 1.0, n_streams)
+
+    # Clumps along them, each a short streak of stars.
+    n_clumps = int(14 + 130 * look["clumps"])
+    on = rng.integers(0, n_streams, n_clumps)
+    t = reach[on] * rng.random(n_clumps) ** (1.8 - 0.6 * look["packed"])
+    x = start[on, 0] * (1 + 0.8 * t) + bend[on, 0] * t**2
+    y = start[on, 1] * (1 + 0.8 * t) + bend[on, 1] * t**2
+    centre = along(t, x, y)
+    heading = length * u + 2 * t[:, None] * (
+        bend[on, 0, None] * a + bend[on, 1, None] * b
+    )
+    heading /= np.linalg.norm(heading, axis=1, keepdims=True)
+    per = int(9 + 26 * look["packed"])
+    stars = rng.integers(max(per // 3, 2), per, n_clumps)
+    clump = np.repeat(np.arange(n_clumps), stars)
+    m = len(clump)
+    streak = (0.06 + 0.09 * look["length"]) * e
     pos = (
-        (0.4 * e + t * length)[:, None] * u
-        + (off[:, 0] + rng.normal(0, 1, n) * spread)[:, None] * a
-        + (off[:, 1] + rng.normal(0, 1, n) * spread)[:, None] * b
+        centre[clump]
+        + (
+            rng.normal(0, 1, m)
+            * streak
+            * rng.uniform(0.4, 1.4, n_clumps)[clump]
+        )[:, None]
+        * heading[clump]
+        + rng.normal(0, 0.012 * e, (m, 3))
     )
-    main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
-    # (Bright for its surface: real tails stand out in H-alpha imaging.)
-    total = 3.0 * JELLY["gain"] * gain * strength * main_light
-    # Ionised gas: diffuse pink streamers.
-    lum = 1.15 - t
-    lum = lum * JELLY["halpha"] * total / lum.sum()
-    rgb = JELLY["rgb"]
-    rgb = (
-        HALPHA_RGB
-        if rgb is None
-        else np.asarray(rc.hii_rgb) if rgb == "hii" else np.asarray(rgb)
-    )
-    gas = Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.0), "jelly")
-    # Stars formed in the tail: compact blue knots along the streamers.
-    m = int(200 + 900 * strength)
-    w = (1.15 - t) / (1.15 - t).sum()
-    pick = rng.choice(n, m, p=w)
-    klum = rng.pareto(1.6, m) + 1
-    klum *= JELLY["knots"] * total / klum.sum()
+    weight = np.minimum(rng.pareto(1.5, n_clumps) + 1, 20) * (1 - 0.55 * t)
+    lum = (weight / stars)[clump]
+    lum *= (0.25 + 0.75 * look["packed"]) * 0.9 * light / lum.sum()
+    pink = rng.random(n_clumps) < JELLY_PINK_SHARE
+    rgb = np.where(pink[clump, None], JELLY_PINK, JELLY_BLUE)
     knots = Points(
-        pos[pick] + rng.normal(0, 0.02 * e, (m, 3)),
-        klum,
-        np.tile(YOUNG_RGB * 1.1, (m, 1)),
+        pos,
+        lum,
+        rgb * rng.uniform(0.9, 1.15, (m, 1)),
         rng.uniform(0.5, 1.0, m),
         "jellyknots",
+    )
+
+    # The stripped gas: broad, soft, fading down the tail.
+    n = 40000
+    t = rng.random(n)
+    width = (0.35 + 0.5 * t) * e * 0.6 * (0.7 + 0.7 * look["glow"])
+    x = rng.normal(0, 1, n) * width
+    y = rng.normal(0, 1, n) * width * 0.7
+    lum = (1 - t) ** 1.4 + 0.02
+    lum *= (0.04 + 0.42 * look["glow"]) * light / lum.sum()
+    gas = Points(
+        along(t, x, y),
+        lum,
+        np.tile(JELLY_GLOW, (n, 1)),
+        np.full(n, 1.0),
+        "jelly",
     )
     return [gas, knots]
 

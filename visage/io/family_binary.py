@@ -291,7 +291,7 @@ def _profile_png(prof, label, dark) -> bytes:
         xscale="log",
         yscale="log",
         xlabel="R (kpc)",
-        ylabel="Surface density (M☉ pc⁻²)",
+        ylabel=r"Surface density ($M_\odot$ pc$^{-2}$)",
     )
     a.legend(frameon=False)
     s = prof["sfr"][0]
@@ -301,7 +301,7 @@ def _profile_png(prof, label, dark) -> bytes:
         xscale="log",
         yscale="log",
         xlabel="R (kpc)",
-        ylabel="Star formation (M☉ yr⁻¹ kpc⁻²)",
+        ylabel=r"Star formation ($M_\odot$ yr$^{-1}$ kpc$^{-2}$)",
     )
     if s.max() > 0:
         b.set_ylim(s[middle].max() * 1e-7, s[middle].max() * 3)
@@ -319,7 +319,12 @@ def _profile_png(prof, label, dark) -> bytes:
                 lw=2,
             )
     if c.has_data():
-        c.set(xscale="log", yscale="log", xlabel="R (kpc)", ylabel="Z / Z☉")
+        c.set(
+            xscale="log",
+            yscale="log",
+            xlabel="R (kpc)",
+            ylabel=r"$Z / Z_\odot$",
+        )
         c.legend(frameon=False)
     else:
         c.axis("off")
@@ -338,7 +343,7 @@ def _profile_png(prof, label, dark) -> bytes:
         d.plot(
             r[keep],
             prof["sigma"][0][keep],
-            label="Stellar σ",
+            label=r"Stellar $\sigma$",
             color="#d9622b",
             lw=2,
         )
@@ -464,7 +469,7 @@ def _rotation_curve(ax, prof, stars_colour, gas_colour, grid) -> None:
             color=stars_colour,
             lw=1.5,
             ls="--",
-            label="Stellar σ",
+            label=r"Stellar $\sigma$",
         )
     ax.set(xlabel="R (kpc)", ylabel="km/s", xlim=(0, None), ylim=(0, None))
     ax.grid(axis="y", color=grid, lw=0.5)
