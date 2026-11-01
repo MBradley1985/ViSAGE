@@ -505,13 +505,33 @@ def test_hi_width_is_twice_the_inclined_speed():
     assert w[1] == 0.0
 
 
+def test_band_shares_ignore_an_emission_line():
+    from visage.sed import dust as dm
+
+    wave = np.linspace(4000.0, 8000.0, 401)
+    flat = np.ones((1, 401))
+    line = flat.copy()
+    line[0, 200] = 100.0  # a line right at the band's centre
+    tau, eta = np.zeros((1, 2)), np.full((1, 2), -1.0)
+    shares = np.array([[0.5, 0.5]]), np.array([[0.0, 1.0]])
+    lam = np.array([6000.0])
+
+    def inner(recent):
+        return dm.annulus_band_shares(
+            wave, flat, recent, flat * 0, lam, tau, eta, *shares, np.zeros(1)
+        )[0, 0]
+
+    # Near the same share: the line is a sliver of the band.
+    assert inner(line) == pytest.approx(inner(flat), abs=0.15)
+
+
 def test_new_stars_make_outer_annuli_bluer():
     from visage.sed import dust as dm
 
-    wave = np.array([4000.0, 7000.0])
-    old = np.array([[0.5, 1.0], [0.5, 1.0]])  # red
-    new = np.array([[3.0, 1.0], [3.0, 1.0]])  # blue
-    clouds = np.zeros((2, 2))
+    wave = np.linspace(3000.0, 9000.0, 61)
+    old = np.tile(np.where(wave < 5500, 0.5, 1.0), (2, 1))  # red
+    new = np.tile(np.where(wave < 5500, 3.0, 1.0), (2, 1))  # blue
+    clouds = np.zeros_like(old)
     s_old = np.array([[0.8, 0.2], [0.8, 0.2]])
     s_new = np.array([[0.1, 0.9], [0.1, 0.9]])
     tau, eta = np.zeros((2, 2)), np.full((2, 2), -1.0)
