@@ -22,13 +22,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - The card lists a galaxy's ICS mass.
 - Find has a Galaxy ID option: type a GalaxyIndex and Go.
-- A Regions tab, the same in box and lightcone modes, in place of Coords and Box: spheres, boxes, slices that can sweep through the volume, and selections by lasso, rectangle or click, with live counts, drag handles and named regions saved with each model.
+- A Regions tab, the same in box and lightcone modes, in place of Coords and Box: spheres, boxes, slices that can sweep through the volume, and selections by lasso, rectangle or click, with live counts, a Go button and named regions saved with each model.
 
 ### Changed
 
 - Rotation shows stars and gas as velocity maps above the rotation curve, each map framed on its own, with Gaia-style colours, contours and orbit streaks.
 - The dark background switch moved to the bottom of the Structure tab and now also sets radial, rotation and spectrum figures.
 - Tighter spacing for the galaxy and mock-image checkboxes.
+- The selection card and pop-outs have a new glass look, matching Launch Mode.
+- Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.
 - Drag tools are thin white lines with small grips, and chosen galaxies stand out by dimming the rest.
 - The Isolate backdrop uses the mock images' real stars, with their own colours and brightnesses.
 

@@ -59,7 +59,8 @@ def mask(region, pos, box_size=None, ids=None) -> np.ndarray:
         d = _nearest(pos - 0.5 * (lo + hi), box_size)
         return np.all(np.abs(d) <= 0.5 * (hi - lo), axis=1)
     d = _nearest(pos - np.array(region["point"]), box_size)
-    return np.abs(d @ np.array(region["normal"])) <= 0.5 * region["thickness"]
+    along = np.sum(d * np.array(region["normal"]), axis=1)
+    return np.abs(along) <= 0.5 * region["thickness"]
 
 
 def volume(region, box_size=None) -> float | None:
@@ -79,7 +80,9 @@ def screen(pos, matrix) -> tuple:
     """Positions by a camera's composite matrix (4, 4): (N, 2) in -1 to 1,
     depth, and whether each is in front of the camera."""
     pos = np.asarray(pos, float)
-    p = np.c_[pos, np.ones(len(pos))] @ np.asarray(matrix).T
+    m = np.asarray(matrix, float)
+    p = pos[:, 0, None] * m[:, 0] + pos[:, 1, None] * m[:, 1]
+    p = p + pos[:, 2, None] * m[:, 2] + m[:, 3]
     w = p[:, 3]
     safe = np.where(w > 0, w, 1.0)
     return p[:, :2] / safe[:, None], p[:, 2] / safe, w > 0

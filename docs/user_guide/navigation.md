@@ -83,11 +83,10 @@ The list updates as the snapshot changes.
 
 Pick a **Sphere**, **Box**, **Slice** or **Selection**. What is on the tab is the active region: the count below it, and **Active region** in Plotting and Export, all use it. In a periodic box, regions wrap around the edges.
 
-- **Show only this region** cuts the view to it; **Grey out the rest** dims the galaxies outside it instead (haloes outside are still hidden).
-- **Drag handles in the view** moves a sphere or box with the mouse.
-- **Frame camera** only moves the camera.
-- **Slice:** face X, Y, Z or the camera, then set the depth and thickness. **Sweep through the volume** moves it for you.
-- **Selection:** draw a lasso or rectangle over the view, or click galaxies, and Add, Remove or Replace. While you choose, everything else is dimmed. A drawn shape takes everything through the depth; **Only what I can see** keeps the nearest in each part of the screen. **Filtered**, **Group** and **Region** take those galaxies. In a box, a selection follows its galaxies through snapshots.
+- **Go** isolates the region and frames it; **Clear** puts the view back. **Dim the rest instead of hiding** dims the galaxies outside it (haloes outside are still hidden).
+- **Create sphere**, **Create box** and **Create slice** show it in the view: drag a sphere or box to move and size it.
+- **Slice:** pick an axis or the current view, then set the position and thickness. **Sweep** moves it through the volume.
+- **Selection:** draw a lasso or rectangle over the view, or click galaxies, and Add, Remove or Replace. While you choose, everything else is dimmed. A drawn shape takes everything through the depth; **Front galaxies only** keeps the nearest in each part of the screen. **Filters**, **Group** and **Last region** add those galaxies. In a box, a selection follows its galaxies through snapshots.
 - **Save** keeps a region with its model. Click a saved name to bring it back.
 
 Box mode and Lightcone Mode have the same tab. A lightcone also has a **Photometry** tab: see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).

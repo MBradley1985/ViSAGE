@@ -1,8 +1,7 @@
 """The Regions tab: a sphere, box, slice or selection, one at a time.
 
 What is on the tab is the active region: the count, Plotting and export all
-read it from here. "Show only this region" cuts the view to it; Frame camera
-only moves the camera. Saved regions come back with their model. The region
+read it from here. Go cuts the view to it and frames it. Saved regions come back with their model. The region
 itself is visage.utils.regions; a selection is drawn in the browser
 (visage.js, over `region-draw`) and picked here by where galaxies fall on
 screen.
@@ -13,6 +12,7 @@ from __future__ import annotations
 import asyncio
 
 import numpy as np
+import pyvista as pv
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
@@ -72,6 +72,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
     picked: set = set()
     held: dict = {"normal": (0.0, 0.0, 1.0), "geometry": "sphere"}
     sweep: list = [None]
+    outline: list = [None]
 
     def number(key) -> float:
         return float(state[key])
@@ -157,7 +158,38 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             state.focus_active = True
             state.isolate_active = False
         show_chosen()
+        show_slice()
         push()
+
+    def show_slice() -> None:
+        """Outline the slice in the view, once created."""
+        if outline[0] is not None:
+            scene.plotter.remove_actor(outline[0], render=False)
+            outline[0] = None
+        region = current("slice")
+        if not state.region_handles or state.region_shape != "slice":
+            return
+        if region is None:
+            return
+        n, point = np.array(region["normal"]), np.array(region["point"])
+        u = np.cross(
+            n, (0.0, 0.0, 1.0) if abs(n[2]) < 0.9 else (1.0, 0.0, 0.0)
+        )
+        u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        reach = 0.5 * float(state.slice_hi - state.slice_lo)
+        corners = [(a, b) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        ring = [point + reach * (a * u + b * v) for a, b in corners]
+        line = pv.lines_from_points(np.array(ring + ring[:1]))
+        outline[0] = scene.plotter.add_mesh(
+            line,
+            color="white",
+            opacity=0.55,
+            line_width=1,
+            pickable=False,
+            reset_camera=False,
+            render=False,
+        )
 
     def stop_handles() -> None:
         if state.draw_sphere_active:
@@ -177,7 +209,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         _, pos = _active(scene)
         if not len(pos):
             return
-        along = np.asarray(pos, float) @ normal()
+        along = np.sum(np.asarray(pos, float) * normal(), axis=1)
         lo, hi = float(along.min()), float(along.max())
         state.slice_lo, state.slice_hi = round(lo, 2), round(hi, 2)
         state.slice_depth = round(0.5 * (lo + hi), 2)
@@ -213,6 +245,8 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
     @state.change("region_handles")
     def on_handles(**_):
         sync_handles()
+        show_slice()
+        push()
 
     @state.change("slice_axis")
     def on_axis(slice_axis, **_):
@@ -265,8 +299,9 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             _, pos = _active(scene)
             centre_on(pos[int(state.nav_gal_idx)])
 
-    @ctrl.set("region_frame")
-    def on_frame():
+    @ctrl.set("region_go")
+    def on_go():
+        """Isolate the region and frame it."""
         region = current()
         if region is None:
             return
@@ -281,7 +316,8 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             radius = float(np.linalg.norm(pos - centre, axis=1).max())
         scene.camera.zoom_to_radius(tuple(centre), max(radius, 0.1))
         scene.camera._clear_indicator()
-        push()
+        state.region_tool = None
+        region_show()
 
     @ctrl.set("region_face_slice")
     def on_face_slice():
@@ -557,9 +593,9 @@ def _button(label: str, click, **kw) -> None:
 
 def _centre_buttons(ctrl) -> None:
     with html.Div(style=_ROW):
-        _button("View centre", ctrl.region_view_centre)
+        _button("Centre on view", ctrl.region_view_centre)
         _button(
-            "Selected galaxy",
+            "Centre on galaxy",
             ctrl.region_galaxy_centre,
             disabled=("nav_gal_idx == null",),
         )
@@ -625,12 +661,12 @@ def tab(ctrl) -> None:
                 with html.Div(style=_ROW):
                     _field(f"nav_box_{a}min", f"{a.upper()} min")
                     _field(f"nav_box_{a}max", f"{a.upper()} max")
-        _tick("box_minmax", "Use min and max")
+        _tick("box_minmax", "Enter min and max")
     with html.Div(v_show=("region_shape === 'slice'",)):
-        html.Div("FACING", style=_HEAD)
+        html.Div("AXIS", style=_HEAD)
         _toggle(
             "slice_axis",
-            [("X", "x"), ("Y", "y"), ("Z", "z"), ("Camera", "camera")],
+            [("X", "x"), ("Y", "y"), ("Z", "z"), ("View", "camera")],
         )
         html.Div("POSITION", style=_HEAD)
         v3.VSlider(
@@ -643,13 +679,13 @@ def tab(ctrl) -> None:
             density="compact",
         )
         with html.Div(style=_ROW + "margin-top:10px;"):
-            _field("slice_depth", "Depth (Mpc/h)")
+            _field("slice_depth", "Position (Mpc/h)")
             _field("slice_thickness", "Thickness")
-        _tick("slice_sweep", "Sweep through the volume")
+        _tick("slice_sweep", "Sweep")
         with html.Div(style=_ROW + "margin-top:6px;"):
-            _button("Look straight at it", ctrl.region_face_slice)
+            _button("Face slice", ctrl.region_face_slice)
     with html.Div(v_show=("region_shape === 'selection'",)):
-        html.Div("PICK ON SCREEN", style=_HEAD)
+        html.Div("DRAW", style=_HEAD)
         with html.Div(style=_ROW):
             for label, tool in (
                 ("Lasso", "lasso"),
@@ -663,28 +699,38 @@ def tab(ctrl) -> None:
                         f"region_tool === '{tool}' ? 'flat' : 'outlined'",
                     ),
                 )
-        html.Div("WHEN I DRAW", style=_HEAD)
+        html.Div("MODE", style=_HEAD)
         _toggle(
             "region_op",
             [("Add", "add"), ("Remove", "remove"), ("Replace", "replace")],
         )
-        html.Div("OR TAKE", style=_HEAD)
+        html.Div("ADD FROM", style=_HEAD)
         with html.Div(style=_ROW):
-            _button("Filtered", ctrl.region_take_filtered)
+            _button("Filters", ctrl.region_take_filtered)
             _button(
                 "Group",
                 ctrl.region_take_group,
                 disabled=("nav_gal_idx == null",),
             )
-            _button("Region", ctrl.region_take_region)
-        _tick("region_front", "Only what I can see")
-    with html.Div(style="margin-top:8px;"):
-        _tick("region_on", "Show only this region")
-        _tick("region_grey", "Grey out the rest instead of hiding")
-        with html.Div(v_show=("['sphere', 'box'].includes(region_shape)",)):
-            _tick("region_handles", "Drag handles in the view")
-    with html.Div(style=_ROW + "margin-top:8px;"):
-        _button("Frame camera", ctrl.region_frame, variant="flat")
+            _button("Last region", ctrl.region_take_region)
+        _tick("region_front", "Front galaxies only")
+    with html.Div(
+        v_show=("region_shape !== 'selection'",),
+        style=_ROW + "margin-top:10px;",
+    ):
+        v3.VBtn(
+            "{{ region_handles ? 'Remove' : 'Create' }} {{ region_shape }}",
+            click="region_handles = !region_handles",
+            variant="outlined",
+            color="cyan",
+            density="compact",
+            style=(
+                "flex:1 1 0;letter-spacing:0;text-transform:none;min-width:0;"
+            ),
+        )
+    _tick("region_grey", "Dim the rest instead of hiding")
+    with html.Div(style=_ROW + "margin-top:6px;"):
+        _button("Go", ctrl.region_go, variant="flat")
         _button("Clear", ctrl.region_clear, color="#ef4444")
     html.Div(
         "{{ region_note }}",

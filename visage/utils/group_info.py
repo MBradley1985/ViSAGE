@@ -72,6 +72,45 @@ def row_for_galaxy_index(galaxies, gid: int) -> int | None:
     return int(hit[0]) if len(hit) else None
 
 
+_HALO_IDS: dict = {}  # the last snapshot's column: {"key": ..., "ids": ...}
+
+
+def halo_ids(galaxies) -> np.ndarray | None:
+    """Each loaded galaxy's SimulationHaloIndex, the halo's number in the
+    merger trees; None for a catalogue without it. Read when asked for, as
+    nothing else needs it."""
+    from visage.io.family_binary import _disc_group
+
+    key = (galaxies.source_path, int(galaxies.snap_num))
+    if _HALO_IDS.get("key") != key:
+        try:
+            with _disc_group(*key) as group:
+                ids = np.asarray(group["SimulationHaloIndex"])
+        except (OSError, KeyError, TypeError):
+            ids = None
+        _HALO_IDS.update(key=key, ids=ids)
+    ids = _HALO_IDS["ids"]
+    return None if ids is None else ids[galaxies.sage_indices]
+
+
+def halo_label(galaxies, central: int, row: int) -> str:
+    """How a halo is named to the user: its SimulationHaloIndex, from its
+    central galaxy, or its row where there is none to go by."""
+    ids = halo_ids(galaxies)
+    if ids is None or galaxies.gal_type[central] != 0:
+        return f"row {int(row)}"
+    return str(int(ids[central]))
+
+
+def central_of_halo(galaxies, halo_id: int) -> int | None:
+    """The row of the central galaxy of halo `halo_id`, or None."""
+    ids = halo_ids(galaxies)
+    if ids is None:
+        return None
+    hit = np.flatnonzero((ids == int(halo_id)) & (galaxies.gal_type == 0))
+    return int(hit[0]) if len(hit) else None
+
+
 # A lightcone's FOF group: the rows with its CentralGalaxyIndex within
 # this many of the host's Rvir of its central (99% of satellites are
 # inside 1.5 Rvir in microUchuu cones), or CONE_GROUP_MPC when the central

@@ -1751,9 +1751,6 @@ def create_app(
                             "position:absolute;left:24px;bottom:24px;"
                             "width:560px;min-width:240px;"
                             "height:360px;min-height:160px;"
-                            "background:rgba(13,13,26,0.92);"
-                            "border:1px solid #06b6d4;"
-                            "box-shadow:0 0 18px rgba(6,182,212,0.30);"
                             "display:flex;flex-direction:column;"
                             "z-index:10;color:#e2e8f0;"
                             "resize:both;overflow:hidden;"
@@ -1879,9 +1876,6 @@ def create_app(
                             "height:380px;min-height:200px;"
                             "display:flex;flex-direction:column;"
                             "resize:both;overflow:hidden;"
-                            "background:rgba(17,24,39,0.92);"
-                            "backdrop-filter:blur(6px);"
-                            "border:1px solid #374151;"
                             "color:#e2e8f0;"
                             # In Story Mode, lift library cards above the story
                             # overlay layer (z40) + HUD (z50) so opened items sit
