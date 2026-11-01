@@ -266,6 +266,15 @@ def test_hi_glow_follows_the_annuli():
     assert hi_texture(((1.0, 2.0, 3.0), (), (0.0, 0.0, 0.0)))[0] is None
 
 
+def test_hi_glow_is_round_even_where_annuli_end_above_its_threshold():
+    from visage.hd.layer import hi_texture
+
+    r = (0.1, 1.0, 5.0, 9.0)
+    img, half = hi_texture((r, (), (50.0, 20.0, 5.0, 2.0)), n=64)
+    assert img[0, 0, 3] == 0 and img[0, 32, 3] == 0
+    assert img[32, 32, 3] > 0
+
+
 def test_rotation_map_flips_counter_rotating_gas(tmp_path):
     prof = {
         "r": np.array([[1.0, 3.0, 6.0]]),
@@ -276,6 +285,7 @@ def test_rotation_map_flips_counter_rotating_gas(tmp_path):
         "spin_dot": np.array([-0.99]),
     }
     assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
+    assert fb.plot_rotation(prof, "1", dark=True)[:4] == b"\x89PNG"
 
 
 def test_a_spike_in_the_innermost_annulus_is_not_drawn():

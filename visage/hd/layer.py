@@ -45,24 +45,19 @@ def galaxy_basis(spin: np.ndarray | None, seed: int) -> np.ndarray:
     return np.column_stack([e1, e2, e3])
 
 
-def normal_mode_radius_kpc(gal: SageGalaxy, hubble_h: float) -> float:
-    """The radius of a galaxy's stellar (disk) layer in the normal view
-    (visage.scene.galaxy_layer: 0.22 Rvir, by disk mass), in kpc."""
-    r_outer = max(gal.rvir_kpc * hubble_h / 1000.0, 0.02)  # Mpc/h
-    disk = max(gal.stellar_mass - gal.bulge_mass, 1.0)
-    f = float(np.clip((np.log10(disk) - 7.0) / 5.0, 0.0, 1.0))
-    return r_outer * 0.22 * (0.35 + 0.65 * f) * 1000.0 / hubble_h
+# What a group member's stars fill, in Rvir, as its splat's size runs with
+# Rvir: satellites more of theirs, so they read beside the central.
+CENTRAL_SIZE, SATELLITE_SIZE = 0.22, 0.45
+# Most a member is enlarged to reach that.
+MAX_MAGNIFY = 15.0
 
 
-# Most a member is enlarged to match its normal-mode size.
-MAX_MAGNIFY = 5.0
-
-
-def magnification(gal: SageGalaxy, rc, hubble_h: float) -> float:
-    """How much to enlarge a member's stars so they fill its normal-mode
-    stellar layer (true size when that is already smaller)."""
+def magnification(gal: SageGalaxy, rc) -> float:
+    """How much to enlarge a member's stars to their share of its Rvir (true
+    size when that is already smaller)."""
+    share = SATELLITE_SIZE if gal.t_since_infall_gyr >= 0 else CENTRAL_SIZE
     visible = rc.extent * rc.unit_kpc * 0.8  # kpc
-    r = normal_mode_radius_kpc(gal, hubble_h) / max(visible, 1e-6)
+    r = share * max(gal.rvir_kpc, 20.0) / max(visible, 1e-6)
     return float(np.clip(r, 1.0, MAX_MAGNIFY))
 
 
@@ -311,7 +306,9 @@ def hi_texture(radial: tuple, n: int = 512) -> tuple:
         rr, np.log(np.maximum(r, 1e-4)), np.log10(np.maximum(hi, 1e-8))
     )
     t = np.clip((lg - HI_GLOW["lo"]) / (HI_GLOW["hi"] - HI_GLOW["lo"]), 0, 1)
-    alpha = t * t * (3 - 2 * t) * HI_GLOW["alpha"]
+    # (The annuli can end above `lo`: round it off before the square does.)
+    edge = np.clip((half - np.hypot(x, y)) / (0.3 * half), 0, 1)
+    alpha = t * t * (3 - 2 * t) * edge * edge * HI_GLOW["alpha"]
     img = np.zeros((n, n, 4), np.uint8)
     img[..., :3] = (np.array(HI_GLOW["rgb"]) * 255).astype(np.uint8)
     img[..., 3] = (alpha * 255).astype(np.uint8)
@@ -381,7 +378,7 @@ class HDGalaxyLayer:
         if ctx.get("partners"):
             h = ctx["hubble_h"]
             R = galaxy_basis(ctx.get("spin"), rc.seed)
-            mag = magnification(gal, rc, h) if ctx.get("magnify") else 1.0
+            mag = magnification(gal, rc) if ctx.get("magnify") else 1.0
             mpch_per_unit = rc.unit_kpc * mag * h / 1000.0
             for k, (u, sep, strength, sense) in enumerate(ctx["partners"]):
                 pts.append(

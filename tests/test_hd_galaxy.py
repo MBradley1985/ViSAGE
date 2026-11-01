@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import gc
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -65,6 +67,23 @@ def test_disk_recipe_has_every_starlight_component():
     assert {"clusters", "hii", "field"} <= names
     assert rc.bar_len > 0  # instability bulge of 12% of M* makes a bar
     assert maps.dust.max() > 0
+
+
+def test_big_bulge_in_a_hot_halo_is_not_a_disc_with_gas_or_without():
+    gal = dataclasses.replace(
+        _elliptical(), bulge_mass=0.6 * _elliptical().stellar_mass
+    )
+    rich = dataclasses.replace(gal, cold_gas=0.1 * gal.stellar_mass)
+    assert recipe_from_sage(rich).kind == "elliptical"
+
+
+def test_satellites_fill_more_of_their_rvir_than_a_central():
+    from visage.hd.layer import magnification
+
+    rc = SimpleNamespace(extent=20.0, unit_kpc=1.0)
+    gal = dataclasses.replace(_disk(), rvir_kpc=100.0)
+    sat = dataclasses.replace(gal, t_since_infall_gyr=1.0)
+    assert magnification(gal, rc) < magnification(sat, rc)
 
 
 def test_elliptical_recipe():

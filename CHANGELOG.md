@@ -11,6 +11,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Load existing finds a run whose `.par` has a different name from its output folder, by the `.par`'s `OutputDir`.
+- Dusty and Dark 'n Dusty, Radial profile and Rotation appear on lightcones that have the fields.
+- The HD HI glow no longer shows as a flat square where a disc's annuli end above its threshold.
+- HD: big bulges in hot haloes are drawn as ellipticals whatever their gas, and discs fade softly instead of ending at a rim.
+- HD group members are sized by their Rvir, as the splats are, so the range of sizes shows.
+
+### Added
+
+- The card lists a galaxy's ICS mass.
+
+### Changed
+
+- Rotation maps frame stars and gas each on their own, in panels of the same size.
+- The dark background switch moved to the bottom of the Structure tab and now also sets radial, rotation and spectrum figures.
+- Tighter spacing for the galaxy and mock-image checkboxes.
 
 ## [2.16.0] — 2026-11-01
 

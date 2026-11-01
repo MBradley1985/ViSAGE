@@ -34,6 +34,7 @@ RENAME = {
     "MetalsICS": "MetalsIntraClusterStars",
 }
 MIN_PLOT_KPC = 0.1  # annuli inside this are too small to mean anything
+FADE_DEX = 1.5  # rotation maps fade out this far below the half-mass radius
 FIELD = re.compile(r"^\s*(long long|short|int|float|double)\s+(.+);\s*$")
 
 
@@ -254,12 +255,21 @@ def radial_profiles(path, snap: int, rows, hubble_h: float) -> dict:
     return res
 
 
-def plot_profile(prof: dict, label: str) -> bytes:
+def plot_profile(prof: dict, label: str, dark: bool = False) -> bytes:
     """One galaxy's radial profiles as a PNG."""
+    from visage.plots.style import theme
+
+    with theme(dark):
+        return _profile_png(prof, label, dark)
+
+
+def _profile_png(prof, label, dark) -> bytes:
     import io
 
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
+
+    from visage.plots.style import ink
 
     fig = Figure(figsize=(9.5, 7.6), dpi=130)
     FigureCanvasAgg(fig)
@@ -271,7 +281,7 @@ def plot_profile(prof: dict, label: str) -> bytes:
         ("gas", "Cold gas", "#7a2fb0", "-", 1),
         ("hi", "HI", "#3aa655", "-", 1),
         ("h2", "H2", "#2a78b5", "-", 1),
-        ("dust", "Dust x 100", "#222222", "--", 100),
+        ("dust", "Dust x 100", ink(dark), "--", 100),
     ):
         if key in prof:
             v = prof[key][0] * scale
@@ -286,7 +296,7 @@ def plot_profile(prof: dict, label: str) -> bytes:
     a.legend(frameon=False)
     s = prof["sfr"][0]
     keep = (s > 0) & middle
-    b.plot(r[keep], s[keep], color="#17324d", lw=2)
+    b.plot(r[keep], s[keep], color=ink(dark), lw=2)
     b.set(
         xscale="log",
         yscale="log",
@@ -344,10 +354,20 @@ def plot_profile(prof: dict, label: str) -> bytes:
     return buf.getvalue()
 
 
-def plot_rotation(prof: dict, label: str, inclination: float = 55.0) -> bytes:
+def plot_rotation(
+    prof: dict, label: str, inclination: float = 55.0, dark: bool = False
+) -> bytes:
     """One galaxy's stars and gas as line-of-sight velocity maps, side by
-    side, from the rotation curve of its annuli; a PNG. Gas turning against
-    the stars has its velocities flipped."""
+    side, from the rotation curve of its annuli; a PNG. Each panel is framed
+    on its own component, the two the same size. Gas turning against the
+    stars has its velocities flipped."""
+    from visage.plots.style import theme
+
+    with theme(dark):
+        return _rotation_png(prof, label, inclination, dark)
+
+
+def _rotation_png(prof, label, inclination, dark) -> bytes:
     import io
 
     from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -358,33 +378,36 @@ def plot_rotation(prof: dict, label: str, inclination: float = 55.0) -> bytes:
     r = prof["r"][0]
     edges = prof["edges"][0]
     v = prof["vcirc"][0]
-    gas = np.maximum(prof["gas"][0], 1e-12)
-    mass = np.cumsum(gas * np.diff(edges**2))
-    half = 1.2 * float(np.interp(0.85 * mass[-1], mass, edges[1:]))
-    grid = np.linspace(-half, half, 400)
-    x, y = np.meshgrid(grid, grid)
+    sin_i = np.sin(np.radians(inclination))
     cos_i = np.cos(np.radians(inclination))
-    rr = np.maximum(np.hypot(x, y / cos_i), 1e-4)
-    los = np.interp(rr, edges, v) * np.sin(np.radians(inclination)) * x / rr
-    top = max(float(np.percentile(np.abs(los), 98)), 1.0)
+    # (Annuli inside MIN_PLOT_KPC can spike, and would wash out the rest.)
+    top = max(float(v[edges > MIN_PLOT_KPC].max()) * sin_i, 1.0)
+    norm = Normalize(-top, top)
     spin = float(prof["spin_dot"][0]) if "spin_dot" in prof else 1.0
     fig = Figure(figsize=(9.5, 4.6), dpi=130)
     FigureCanvasAgg(fig)
-    axes = fig.subplots(1, 2, sharey=True)
-    norm = Normalize(-top, top)
+    axes = fig.subplots(1, 2)
+    back = 0.0 if dark else 1.0
     for ax, key, name, sign in (
         (axes[0], "stars", "Stars", 1.0),
         (axes[1], "gas", "Gas", 1.0 if spin >= 0 else -1.0),
     ):
         surface = np.log10(np.maximum(prof[key][0], 1e-6))
-        here = np.interp(np.log(rr), np.log(np.maximum(r, 1e-4)), surface)
         # Scaled at the half-mass radius: the very centre would hide the rest.
         held = prof[key][0] * np.diff(edges**2)
         k = int(np.searchsorted(np.cumsum(held), 0.5 * held.sum()))
-        shade = np.clip((here - surface[k] + 1.5) / 1.5, 0, 1)[..., None]
+        k = min(k, len(r) - 1)
+        half = 1.1 * float(r[surface > surface[k] - FADE_DEX].max())
+        grid = np.linspace(-half, half, 400)
+        x, y = np.meshgrid(grid, grid)
+        rr = np.maximum(np.hypot(x, y / cos_i), 1e-4)
+        los = np.interp(rr, edges, v) * sin_i * x / rr
+        here = np.interp(np.log(rr), np.log(np.maximum(r, 1e-4)), surface)
+        shade = np.clip((here - surface[k] + FADE_DEX) / FADE_DEX, 0, 1)
+        shade = shade[..., None]
         rgb = ScalarMappable(norm, "RdBu_r").to_rgba(sign * los)[..., :3]
         ax.imshow(
-            rgb * shade,
+            rgb * shade + back * (1 - shade),
             extent=(-half, half, -half, half),
             origin="lower",
         )

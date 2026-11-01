@@ -552,6 +552,7 @@ def build_selection(server, scene) -> None:
             ("sSFR", _fmt(float(galaxies.ssfr[i]), " /yr")),
             ("B/T", f"{galaxies.bulge_mass[i] / max(ms, 1.0):.2f}"),
             ("Cold gas", _fmt(float(galaxies.cold_gas[i]), " M☉")),
+            ("ICS", _fmt(float(galaxies.ics_mass[i]), " M☉")),
         ]
         state.sel_halo = (
             f"Host halo {host} · {_fmt(mvir_host, ' M☉')}"

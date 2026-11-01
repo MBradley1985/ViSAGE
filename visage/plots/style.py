@@ -17,21 +17,10 @@ GROUPS = ("#0C5DA5", "#FF2C00", "#00B945", "#FF9500", "#845B97", "#9e9e9e")
 FORMATS = ("png", "pdf", "jpeg", "svg")
 
 
-def _rc(dark: bool) -> dict:
-    rc = dict(
-        matplotlib.rc_params_from_file(STYLESHEET, use_default_template=False)
-    )
-    rc["savefig.dpi"] = 200
-    rc["figure.facecolor"] = rc["savefig.facecolor"] = (
-        "black" if dark else "white"
-    )
-    rc["axes.prop_cycle"] = rc["axes.prop_cycle"]
-    latex = all(shutil.which(t) for t in ("latex", "dvipng", "gs"))
-    if not latex:
-        # Same look without LaTeX: a Palatino face and matching maths.
-        rc["text.usetex"] = False
-        rc["font.serif"] = ["Palatino", "TeX Gyre Pagella", "DejaVu Serif"]
-        rc["mathtext.fontset"] = "stix"
+def _colours(dark: bool) -> dict:
+    """Matplotlib's colours for a light or dark background."""
+    back = "black" if dark else "white"
+    rc = {"figure.facecolor": back, "savefig.facecolor": back}
     if dark:
         for key in (
             "text.color",
@@ -46,9 +35,30 @@ def _rc(dark: bool) -> dict:
     return rc
 
 
+def _rc(dark: bool) -> dict:
+    rc = dict(
+        matplotlib.rc_params_from_file(STYLESHEET, use_default_template=False)
+    )
+    rc["savefig.dpi"] = 200
+    rc["axes.prop_cycle"] = rc["axes.prop_cycle"]
+    latex = all(shutil.which(t) for t in ("latex", "dvipng", "gs"))
+    if not latex:
+        # Same look without LaTeX: a Palatino face and matching maths.
+        rc["text.usetex"] = False
+        rc["font.serif"] = ["Palatino", "TeX Gyre Pagella", "DejaVu Serif"]
+        rc["mathtext.fontset"] = "stix"
+    rc.update(_colours(dark))
+    return rc
+
+
 def context(dark: bool):
     """Matplotlib settings for a plot, for use in a `with`."""
     return matplotlib.rc_context(_rc(dark))
+
+
+def theme(dark: bool):
+    """The colours alone, for a figure with its own layout, in a `with`."""
+    return matplotlib.rc_context(_colours(dark))
 
 
 def plasma(n: int, dark: bool) -> np.ndarray:

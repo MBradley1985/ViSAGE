@@ -45,6 +45,7 @@ _HALO_NAME_HINTS = (
 )
 
 _FIELD = "padding:8px 0 4px;"
+_TICK = "padding:0;height:30px;"  # a checkbox in a tight stack
 _BTN = "padding:8px 0 4px;"
 
 # Full ordered lists; each entry may carry an optional "requires" key naming
@@ -3714,7 +3715,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.survey_note = ""
 
     # The radial discs of the selected galaxy, as plots.
-    fields = {
+    fields = _lc_present | {
         f["key"] for f in getattr(scene.active_model, "extra_fields", []) or []
     }
     state.radial_ok = "StellarDiscScaleRadius" in fields
@@ -3756,7 +3757,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         out = _get_session_dir() / f"{kind}_{_safe_label(label)}.png"
         draw = fb.plot_profile if kind == "radial" else fb.plot_rotation
-        out.write_bytes(draw(prof, label))
+        out.write_bytes(draw(prof, label, dark=bool(state.plot_dark)))
         on_library_open(str(out))
         state.library_files = _scan_library()
 
@@ -3953,7 +3954,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
             worker = _spec_run["worker"] = _spec.SpectrumWorker()
         fresh = not worker.alive()
         cold = fresh  # no FSPS grid built in this worker yet
-        jid = worker.submit(path, row, label, png, csv)
+        jid = worker.submit(
+            path, row, label, png, csv, dark=bool(state.plot_dark)
+        )
         _spec_run["job"] = jid
         state.spec_busy = True
         state.spec_title = f"Building spectrum of Galaxy {label}"
@@ -5885,7 +5888,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         "color:#FFD700;padding:6px 0 8px;display:block;"
                     ),
                 )
-                with v3.VSheet(color="transparent", style=_FIELD):
+                with v3.VSheet(color="transparent", style=_TICK):
                     v3.VCheckbox(
                         v_model=("galaxies_visible",),
                         label="Visible",
@@ -5896,7 +5899,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 with v3.VSheet(
                     v_show=("dust_glow_ok",),
                     color="transparent",
-                    style=_FIELD,
+                    style=_TICK,
                 ):
                     v3.VCheckbox(
                         v_model=("dust_glow",),
@@ -5908,7 +5911,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 with v3.VSheet(
                     v_show=("disc_shapes_ok",),
                     color="transparent",
-                    style=_FIELD,
+                    style=_TICK,
                 ):
                     v3.VCheckbox(
                         v_model=("disc_shapes",),
@@ -6056,6 +6059,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     click=ctrl.sel_toggle_card,
                     style="margin-top:14px;",
                     title="Show the selected galaxy's card",
+                )
+                v3.VSwitch(
+                    v_model=("plot_dark",),
+                    label="Dark background on plots",
+                    density="compact",
+                    hide_details=True,
+                    color="cyan",
+                    style="margin-top:8px;",
                 )
 
             # Coords
@@ -6408,9 +6419,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         for model, label in (
                             ("mock_patch", "Random patch of sky"),
                             ("mock_subtract_sky", "Subtract sky brightness"),
-                            ("mock_stars", "Add real stars (not SAGE26)"),
+                            ("mock_stars", "Add real stars"),
                         ):
-                            with v3.VSheet(color="transparent", style=_FIELD):
+                            with v3.VSheet(color="transparent", style=_TICK):
                                 v3.VCheckbox(
                                     v_model=(model,),
                                     label=label,
@@ -6420,7 +6431,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 )
                         with v3.VSheet(
                             color="transparent",
-                            style=_FIELD,
+                            style=_TICK,
                             v_show=("mock_ics_ok",),
                         ):
                             v3.VCheckbox(

@@ -381,13 +381,6 @@ def tab(ctrl) -> None:
             hide_details=True,
             color="cyan",
         )
-        v3.VSwitch(
-            v_model=("plot_dark",),
-            label="Dark background",
-            density="compact",
-            hide_details=True,
-            color="cyan",
-        )
         v3.VSelect(
             v_show=("plot_scatter",),
             v_model=("plot_colour",),

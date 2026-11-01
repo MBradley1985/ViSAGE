@@ -673,8 +673,8 @@ def recipe_from_sage(
     rd, r50e, notes = display_sizes(g)
 
     # Morphology: bulge fraction decides, Regime only breaks ties in the
-    # ambiguous middle (hot-mode haloes with a big bulge and no gas).
-    elliptical = bt > 0.75 or (bt > 0.5 and g.regime == 1 and gas_frac < 0.02)
+    # ambiguous middle (hot-mode haloes with a big bulge).
+    elliptical = bt > 0.75 or (bt > 0.5 and g.regime == 1)
     notes.append(
         f"B/T={bt:.2f}, regime={'hot' if g.regime else 'cold'}, "
         f"f_gas={gas_frac:.3f} -> {'elliptical' if elliptical else 'disk'}"
@@ -1324,8 +1324,8 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     old = old * radial_scale(rc, 1, r, exp_d)
     if rc.radial:
         # Annuli can stay bright further out than the exponential: fade them
-        # inside the square map, so its edge doesn't show.
-        old = old / (1 + np.exp((r - 1.3 * rc.extent) / 0.12))
+        # gently, so neither a rim nor the square map's edge shows.
+        old = old * np.exp(-((r / rc.extent) ** 4))
     if rc.bar_len > 0:
         # The bar is built from the inner disk: hollow it out to match.
         old *= 1 - 0.65 * np.exp(-((r / (0.8 * rc.bar_len)) ** 2))

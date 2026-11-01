@@ -443,7 +443,7 @@ class HDGroupLayer:
         member = e.get("role", "member") == "member"
         lum = display_luminosity(e["gal"], e["prep"]["rc"].kind)
         mag = (
-            magnification(e["gal"], e["prep"]["rc"], self._hubble_h)
+            magnification(e["gal"], e["prep"]["rc"])
             if e.get("magnify", True)
             else 1.0
         )

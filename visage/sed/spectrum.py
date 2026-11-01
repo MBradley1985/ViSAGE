@@ -231,13 +231,22 @@ def _pivot_a(band: str) -> float | None:
     return float(np.sqrt(np.trapezoid(t * w, w) / np.trapezoid(t / w, w)))
 
 
-def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
+def plot_png(s: GalaxySpectrum, dpi: int = 130, dark: bool = False) -> bytes:
+    """The spectrum figure as a PNG."""
+    from visage.plots.style import theme
+
+    with theme(dark):
+        return _plot(s, dpi, dark)
+
+
+def _plot(s: GalaxySpectrum, dpi: int, dark: bool) -> bytes:
     """The observed-frame spectrum, the cone's stored magnitudes on it."""
     import matplotlib
 
     matplotlib.use("Agg", force=False)
     from matplotlib.figure import Figure
 
+    from visage.plots.style import ink
     from visage.sed.filters import band_label
 
     lo = LYMAN_LIMIT_A
@@ -247,7 +256,7 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
     fig = Figure(figsize=(9.0, 5.2), dpi=dpi)
     ax = fig.add_subplot(111)
     y_obs = s.fnu_ujy("observed")[keep]
-    ax.loglog(x, y_obs, color="k", lw=1.1, label="observed", zorder=3)
+    ax.loglog(x, y_obs, color=ink(dark), lw=1.1, label="observed", zorder=3)
     if "intrinsic" in s.lnu and "observed" in s.lnu:
         if not np.allclose(s.lnu["intrinsic"], s.lnu["observed"]):
             ax.loglog(
@@ -308,7 +317,7 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
         functions=(lambda v: v / (1 + s.z_obs), lambda v: v * (1 + s.z_obs)),
     )
     sec.set_xlabel("rest wavelength [µm]")
-    ax.grid(True, which="major", color="0.9", lw=0.6)
+    ax.grid(True, which="major", color="0.3" if dark else "0.9", lw=0.6)
     ax.legend(fontsize=8, loc="lower center", ncol=6, frameon=False)
     i = s.info
     ssfr = i["sfr"] / max(10 ** i["log_mstar"], 1.0)
@@ -347,7 +356,7 @@ def plot_png(s: GalaxySpectrum, dpi: int = 130) -> bytes:
         f"{s.settings.get('IMF', '')} IMF; dust: "
         f"{str(s.settings.get('Dust', 'none')).split(';')[0]}",
         fontsize=6.5,
-        color="0.4",
+        color="0.6" if dark else "0.4",
     )
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     buf = io.BytesIO()
@@ -420,7 +429,7 @@ def _worker_main(inbox, outbox, parent: int) -> None:
                 job["path"], job["row"], job["label"], progress_cb=cb
             )
             outbox.put(("stage", jid, "plot"))
-            Path(job["png"]).write_bytes(plot_png(s))
+            Path(job["png"]).write_bytes(plot_png(s, dark=job["dark"]))
             write_csv(s, job["csv"])
             outbox.put(("done", jid, {"z_obs": s.z_obs}))
         except Exception as exc:
@@ -460,7 +469,7 @@ class SpectrumWorker:
     def alive(self) -> bool:
         return self._proc is not None and self._proc.is_alive()
 
-    def submit(self, path, row, label, png, csv) -> int:
+    def submit(self, path, row, label, png, csv, dark=False) -> int:
         if not self.alive():
             self._start()
         self._id += 1
@@ -472,6 +481,7 @@ class SpectrumWorker:
                 "label": str(label),
                 "png": str(png),
                 "csv": str(csv),
+                "dark": bool(dark),
             }
         )
         return self._id
