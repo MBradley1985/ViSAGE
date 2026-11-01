@@ -186,6 +186,39 @@ def _dust_row(galaxies, i: int) -> str | None:
     return None
 
 
+def dust_details(galaxies, i: int, h: float) -> dict:
+    """A run's own dust (DustySAGEMode), without the rows that are zero."""
+    cold = _x(galaxies, "ColdDust", i)
+    if cold is None:
+        return {}
+    out = {}
+    mass = 1e10 / max(h, 1e-6)
+    for key, label in (
+        ("ColdDust", "Dust (cold)"),
+        ("HotDust", "Dust (hot)"),
+        ("CGMDust", "Dust (CGM)"),
+        ("EjectedDust", "Dust (ejected)"),
+    ):
+        v = _x(galaxies, key, i)
+        if v:
+            out[label] = f"{v * mass:.2e} Msun"
+    gas = float(galaxies.cold_gas[i])  # (already Msun)
+    if cold and gas > 0:
+        out["Dust-to-gas"] = f"{cold * mass / gas:.2e}"
+    metals = float(galaxies.metals_cold_gas[i])
+    if cold and metals > 0:
+        out["Dust-to-metals"] = f"{cold * mass / metals:.2f}"
+    for key, label in (
+        ("DustFormationRate", "Dust made"),
+        ("DustGrowthRate", "Dust grown"),
+        ("DustDestructionRate", "Dust destroyed"),
+    ):
+        v = _x(galaxies, key, i)
+        if v:
+            out[label] = f"{v:.3g} Msun/yr"
+    return out
+
+
 def cone_details(
     galaxies: GalaxySnapshot, i: int, hubble_h: float = 0.7
 ) -> dict:
@@ -209,11 +242,21 @@ def cone_details(
     if how == "charlot_fall":
         # (Columns of an older run with another dust setting are left
         # in the file: only this one's are shown.)
+        own = dust_details(galaxies, i, hubble_h)
+        info.update(own)
+        v = _x(galaxies, "FibreLight", i)
+        if v is not None:
+            info['Light in a 3" fibre'] = f"{100 * v:.0f}%"
+        v = _x(galaxies, "W50_HI", i)
+        if v:
+            info["HI line width W50"] = f"{v:.0f} km/s"
         for key, label, fmt in (
             ("DustMassCold", "Dust mass (cold ISM)", "{:.2e} Msun"),
             ("DustToGas", "Dust-to-gas", "{:.2e}"),
             ("TauV_ISM", "τ_V face-on (ISM)", "{:.3f}"),
         ):
+            if own and key != "TauV_ISM":
+                continue
             v = _x(galaxies, key, i)
             if v is not None:
                 info[label] = fmt.format(v)
@@ -447,5 +490,7 @@ def build_galaxy_info(
 
     if getattr(galaxies, "is_cone", False):
         info.update(cone_details(galaxies, idx, hubble_h))
+    else:
+        info.update(dust_details(galaxies, idx, hubble_h))
 
     return info

@@ -623,13 +623,14 @@ _IMPL = """//VTK::Light::Impl
         if (uLPseudo > 0.0) bul += uLPseudo * hernq(p, uPseudoA, uPseudoQ, vec3(1.0)) * dt;
         if (uBarLen > 0.0) {
           float bx = uBarLen, by = uBarLen * uBarAxis;
-          float bar = exp(-(pow(abs(p.x) / bx, 2.4) + pow(abs(p.y) / by, 2.4)));
+          // An exponential ellipse: a boxier one reads as a lit rectangle.
+          float bar = exp(-1.6 * sqrt(pow(p.x / bx, 2.0) + pow(p.y / by, 2.0)));
           // A buckled bar is thickest half way out: boxy / peanut-shaped
           // seen edge-on.
           float hb = 0.12;
           if (uPeanut > 0.0)
             hb = 0.07 + 0.4 * uPeanut * exp(-pow((abs(p.x) / bx - 0.5) / 0.25, 2.0));
-          bul += uLBar * bar * pint(z0, z1, hb, dt) / (3.14159265 * bx * by * 0.92);
+          bul += uLBar * bar * pint(z0, z1, hb, dt) / (2.4544 * bx * by);
         }
         e += bul * uBulgeRGB;
       }

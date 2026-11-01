@@ -264,10 +264,10 @@ def test_lightcone_galaxy_has_sage26_radii():
     assert display_sizes(_spiral(disk_radius_kpc=9.0))[0] == 9.0
 
 
-def test_box_galaxy_keeps_the_display_sizes():
+def test_box_galaxy_draws_the_models_disc_radius():
     from visage.hd.model import display_sizes
 
-    assert display_sizes(_spiral(disk_radius_kpc=9.0, los=()))[0] != 9
+    assert display_sizes(_spiral(disk_radius_kpc=9.0, los=()))[0] == 9
 
 
 def test_closure_sets_the_components_to_the_photometry():

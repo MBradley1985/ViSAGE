@@ -6,6 +6,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.16.0] — 2026-11-01
+
+### Added
+
+- SAGE26's `DarkSAGEMode` and `DustySAGEMode`: Radial discs and Dust toggles in Launch Mode, and a Discs & dust section in All settings.
+- Runs with their own dust use it: `ColdDust` in the photometry, a screen per annulus with `DiscDust`, and new stars placed by `DiscSFR`.
+- Dust plots (mass function, dust-to-gas, dust-to-metals, reservoirs, cosmic density, made and destroyed) and Discs plots (half-mass radii, stacked profiles, gas metallicity gradient), with Beeston+18, Rémy-Ruyer+14 and Lange+15.
+- A 2x2 Radial profile with dust, metals, rotation and dispersion, a Rotation map of stars and gas, and the run's dust on the card.
+- HD from annuli: dust by radius, disc height from `VelDispStars`, arms that fade where Toomre Q says the disc is stable, and a faint HI glow with Gas.
+- On a lightcone with annuli: inclination from the stellar disc, the light inside a 3 arcsec fibre, HI line widths, an HI Tully-Fisher plot, and mock images drawn from each annulus's light in each band.
+- Structure tab: Dusty and Dark 'n Dusty checkboxes, on runs with the modes. Dark 'n Dusty lays an ellipse over each galaxy, tilted to its `SpinStars`, with a bulge core and its gas disc at the real size against the stars.
+- Dark 'n Dusty draws ellipticals tilted to their merger bulge's spin, sized by its radius, flatter and sharper the more it rotates; HD flattens them by the same rotation.
+
+### Changed
+
+- HD draws every disc at the model's own `DiskRadius`, not the size-mass relation.
+
+### Fixed
+
+- HD bars fade smoothly from the centre, shorter and rounder, where they read as a lit rectangle.
+- The `.par` template had tags SAGE26 no longer reads, so a new `.par` stopped at startup.
+- Patches to LightSAGE were skipped, reported as not fitting, when `git` wouldn't run from bash.
+- The LightSAGE build script reports a failed build as one.
+- A patch rotates `SpinGas` and `SpinStars` with the box tiling.
+
 ## [2.15.0] — 2026-11-01
 
 ### Added

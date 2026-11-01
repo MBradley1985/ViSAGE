@@ -157,6 +157,144 @@ def test_profile_conserves_the_annulus_mass(tmp_path):
     assert np.allclose(out["r"][0], [0.5, 1.5])
 
 
+def test_profile_plots_with_or_without_the_newer_fields(tmp_path):
+    p = tmp_path / "m.hdf5"
+    with h5py.File(p, "w") as f:
+        g = f.create_group("Snap_1")
+        g["DiscRadii"] = np.array([[0.0, 1e-3, 2e-3]])
+        for k in ("DiscGas", "DiscHI", "DiscH2", "DiscStars", "DiscSFR"):
+            g[k] = np.array([[1.0, 1.0]])
+    plain = fb.radial_profiles(p, 1, 0, 1.0)
+    assert fb.plot_profile(plain, "1")[:4] == b"\x89PNG"
+    assert "dust" not in plain
+    with h5py.File(p, "a") as f:
+        g = f["Snap_1"]
+        g["DiscDust"] = np.array([[0.01, 0.01]])
+        g["DiscGasMetals"] = np.array([[0.02, 0.01]])
+        g["DiscStarsMetals"] = np.array([[0.02, 0.02]])
+        g["DiscVcirc"] = np.array([[0.0, 200.0, 180.0]])
+        g["VelDispStars"] = np.array([[30.0, 20.0]])
+    full = fb.radial_profiles(p, 1, 0, 1.0)
+    assert full["dust"][0] == pytest.approx(plain["gas"][0] * 0.01)
+    assert full["z_gas"][0] == pytest.approx([0.02, 0.01])
+    assert fb.plot_profile(full, "1")[:4] == b"\x89PNG"
+
+
+def test_the_card_shows_a_runs_own_dust_and_hides_zeros():
+    from types import SimpleNamespace
+
+    from visage.utils.galaxy_info import dust_details
+
+    extra = {
+        "ColdDust": np.array([1e-3]),
+        "HotDust": np.array([0.0]),
+        "DustGrowthRate": np.array([1.2]),
+    }
+    gal = SimpleNamespace(
+        extra=extra,
+        cold_gas=np.array([1e9]),
+        metals_cold_gas=np.array([2e7]),
+    )
+    d = dust_details(gal, 0, 1.0)
+    assert d["Dust (cold)"] == "1.00e+07 Msun"
+    assert "Dust (hot)" not in d
+    assert d["Dust-to-gas"] == "1.00e-02"
+    assert d["Dust-to-metals"] == "0.50"
+    assert d["Dust grown"] == "1.2 Msun/yr"
+    assert dust_details(SimpleNamespace(extra={}), 0, 1.0) == {}
+
+
+def test_toomre_q_and_height_of_a_known_disc():
+    from visage.hd.adapter import disc_height_kpc, toomre_q
+
+    # A flat rotation curve: kappa = sqrt(2) v / r.
+    prof = {
+        "r": np.array([[4.0, 8.0]]),
+        "vcirc": np.full((1, 3), 200.0),
+        "sigma": np.array([[20.0, 20.0]]),
+        "stars": np.array([[50.0, 50.0]]),
+        "gas": np.array([[0.0, 0.0]]),
+    }
+    q = toomre_q(prof, 0.0)
+    kappa = np.sqrt(2) * 200 / 4
+    want = 20 * kappa / (3.36 * 4.30e-6 * 50e6)
+    assert q[0] == pytest.approx(want, rel=1e-3)
+    assert disc_height_kpc(prof, 4.0) == pytest.approx(
+        400 / (np.pi * 4.30e-6 * 50e6)
+    )
+
+
+def test_stable_annuli_lose_their_arms():
+    from types import SimpleNamespace
+
+    from visage.hd.model import arm_reach
+
+    rc = SimpleNamespace(
+        radial=(
+            (1.0, 2.0, 4.0),
+            (), (), (), (), (),
+            (0.8, 1.2, 4.0),
+        )
+    )  # fmt: skip
+    assert arm_reach(rc, np.array([1.0]))[0] == pytest.approx(1.0)
+    assert arm_reach(rc, np.array([4.0]))[0] == pytest.approx(0.0)
+    assert 0 < arm_reach(rc, np.array([2.0]))[0] < 1
+    assert arm_reach(SimpleNamespace(radial=()), np.ones(2)) == 1.0
+
+
+def test_profiles_read_a_flat_lightcone(tmp_path):
+    p = tmp_path / "cone.h5"
+    with h5py.File(p, "w") as f:
+        f["StellarMass"] = np.array([1.0, 1.0])
+        f["DiscRadii"] = np.array([[0.0, 1e-3, 2e-3]] * 2)
+        for k in ("DiscGas", "DiscHI", "DiscH2", "DiscStars", "DiscSFR"):
+            f[k] = np.array([[1.0, 1.0]] * 2)
+    out = fb.radial_profiles(p, 0, 1, 1.0)
+    assert np.allclose(out["r"][0], [0.5, 1.5])
+
+
+def test_hi_glow_follows_the_annuli():
+    from visage.hd.layer import hi_texture
+
+    radial = ((1.0, 2.0, 4.0, 8.0), (), (0.0, 0.0, 5.0, 0.0))
+    img, half = hi_texture(radial, n=64)
+    assert half == pytest.approx(1.15 * 4.0)
+    a = img[..., 3].astype(float)
+    assert a[32, 32] == 0  # a hole where the gas is molecular
+    assert a[32, 32 + 28] > 0
+    assert a[0, 0] == 0  # nothing beyond the disc
+    assert hi_texture(((1.0, 2.0, 3.0), (), (0.0, 0.0, 0.0)))[0] is None
+
+
+def test_rotation_map_flips_counter_rotating_gas(tmp_path):
+    prof = {
+        "r": np.array([[1.0, 3.0, 6.0]]),
+        "edges": np.array([[0.0, 2.0, 4.0, 8.0]]),
+        "vcirc": np.array([[0.0, 150.0, 200.0, 200.0]]),
+        "stars": np.array([[100.0, 10.0, 1.0]]),
+        "gas": np.array([[1.0, 5.0, 5.0]]),
+        "spin_dot": np.array([-0.99]),
+    }
+    assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
+
+
+def test_a_spike_in_the_innermost_annulus_is_not_drawn():
+    from types import SimpleNamespace
+
+    from visage.hd.model import radial_scale
+
+    edge = (0.01, 0.2, 0.5, 1.0, 2.0)
+    flat = (1.0, 1.0, 1.0, 1.0, 1.0)
+    spike = (1e5, 1.0, 1.0, 1.0, 1.0)
+    r = np.linspace(0.02, 3, 300)
+    base = np.ones_like(r)
+
+    def drawn(v):
+        return radial_scale(SimpleNamespace(radial=(edge, v)), 1, r, base)
+
+    np.testing.assert_allclose(drawn(spike), drawn(flat))
+
+
 def test_other_models_have_no_radial_scale():
     from types import SimpleNamespace
 

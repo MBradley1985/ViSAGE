@@ -514,6 +514,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Layer state
     state.halos_visible = True
     state.galaxies_visible = True
+    state.dust_glow = False
+    state.disc_shapes = False
     scene.halo_layer.opacity = _HALO_OPACITY
     scene.galaxy_layer.opacity = 1.0
     state.halo_opacity = scene.halo_layer.opacity
@@ -915,6 +917,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
     @state.change("halos_visible")
     def on_halo_toggle(halos_visible, **_):
         scene.halo_layer.visible = bool(halos_visible)
+        _push()
+
+    @state.change("dust_glow")
+    def on_dust_glow(dust_glow, **_):
+        scene.galaxy_layer.set_dust_glow(bool(dust_glow))
+        _push()
+
+    @state.change("disc_shapes")
+    def on_disc_shapes(disc_shapes, **_):
+        scene.galaxy_layer.set_disc_shapes(bool(disc_shapes))
         _push()
 
     @state.change("galaxies_visible")
@@ -3701,14 +3713,32 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.survey_busy = False
     state.survey_note = ""
 
-    # DarkSAGE's radial discs of the selected galaxy, as a plot.
-    state.radial_ok = any(
-        f["key"] == "StellarDiscScaleRadius"
-        for f in getattr(scene.active_model, "extra_fields", []) or []
-    )
+    # The radial discs of the selected galaxy, as plots.
+    fields = {
+        f["key"] for f in getattr(scene.active_model, "extra_fields", []) or []
+    }
+    state.radial_ok = "StellarDiscScaleRadius" in fields
+    # These appear only for runs with the toggles that make them.
+    state.dust_glow_ok = "ColdDust" in fields
+    state.disc_shapes_ok = state.radial_ok
 
-    @ctrl.set("radial_profile")
-    def on_radial_profile():
+    def _rotation_in_file() -> bool:
+        """The run's rotation curves, which only 2D fields hold."""
+        from visage.io.sage_files import open_snapshot
+
+        model = scene.active_model
+        path = getattr(scene._cfg, "hdf5_path", None)
+        lc = getattr(model, "_lc", None)
+        if lc is not None:
+            return any(f.lower() == "discvcirc" for f in lc.present_fields)
+        if not path:
+            return False
+        with open_snapshot(path, model.current_snap) as group:
+            return group is not None and "DiscVcirc" in group
+
+    state.rotation_ok = state.radial_ok and _rotation_in_file()
+
+    def _disc_plot(kind: str) -> None:
         from visage.io import family_binary as fb
         from visage.utils.group_info import galaxy_label
 
@@ -3724,10 +3754,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
             int(gal.sage_indices[idx]),
             float(scene._cfg.hubble_h),
         )
-        out = _get_session_dir() / f"radial_{_safe_label(label)}.png"
-        out.write_bytes(fb.plot_profile(prof, label))
+        out = _get_session_dir() / f"{kind}_{_safe_label(label)}.png"
+        draw = fb.plot_profile if kind == "radial" else fb.plot_rotation
+        out.write_bytes(draw(prof, label))
         on_library_open(str(out))
         state.library_files = _scan_library()
+
+    @ctrl.set("radial_profile")
+    def on_radial_profile():
+        _disc_plot("radial")
+
+    @ctrl.set("rotation_view")
+    def on_rotation_view():
+        _disc_plot("rotation")
 
     @ctrl.set("export_survey")
     async def on_export_survey():
@@ -5850,6 +5889,30 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("galaxies_visible",),
                         label="Visible",
+                        color="#FFD700",
+                        hide_details=True,
+                        density="compact",
+                    )
+                with v3.VSheet(
+                    v_show=("dust_glow_ok",),
+                    color="transparent",
+                    style=_FIELD,
+                ):
+                    v3.VCheckbox(
+                        v_model=("dust_glow",),
+                        label="Dusty",
+                        color="#FFD700",
+                        hide_details=True,
+                        density="compact",
+                    )
+                with v3.VSheet(
+                    v_show=("disc_shapes_ok",),
+                    color="transparent",
+                    style=_FIELD,
+                ):
+                    v3.VCheckbox(
+                        v_model=("disc_shapes",),
+                        label="Dark 'n Dusty",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",

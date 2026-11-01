@@ -264,9 +264,12 @@ class SageGalaxy:
     ics_share: float = 0.0
     ha_share: float = 0.0
     lum_v: float = 0.0  # relative luminosity in V, 0 without photometry
-    # DarkSAGE's discs: radii (kpc), surface densities of stars, HI, H2 and
-    # star formation; () for any other model.
+    # Discs in annuli: radii (kpc), surface densities of stars, HI, H2 and
+    # star formation, then dust and Toomre Q if the run has them (else ());
+    # () for a run without annuli.
     radial: tuple = ()
+    disc_height_kpc: float = 0.0  # stars, from their dispersion; 0 unknown
+    bulge_rotation: float = 0.0  # merger bulge's j / (r sigma); 0 unknown
     sfh_disk: tuple = ()
     sfh_bulge: tuple = ()
     # The massive haloes around it (its cosmic web): (dx, dy, dz, weight)
@@ -407,13 +410,13 @@ class GalaxyRecipe:
 def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     """Disk scale length and elliptical half-light radius, in kpc.
 
-    SAGE's spin-based DiskRadius scatters a lot at fixed mass (a few
-    galaxies come out tens of kpc), so the picture's size follows the
-    observed size-mass relations of Shen et al. (2003) and SAGE's own
-    radius only nudges it (to the 1/4 power, at most ~+-30%).
+    The disc is drawn at the model's own DiskRadius, which scatters a lot
+    at fixed mass (a few galaxies come out tens of kpc). The bulge's size
+    follows the observed size-mass relation of Shen et al. (2003) and SAGE's
+    own radius only nudges it (to the 1/4 power, at most ~+-30%).
     """
     m = max(g.stellar_mass, 1e7)
-    if (g.los or g.radial) and g.disk_radius_kpc > 0:
+    if g.los and g.disk_radius_kpc > 0:
         # On a lightcone: SAGE26's own radii, as its images and photometry.
         r50 = (
             g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 2.88e-6 * m**0.56
@@ -439,6 +442,9 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
         if g.bulge_radius_kpc > 0
         else 1.0
     )
+    if g.disk_radius_kpc > 0:
+        # The disc is drawn at the model's own radius.
+        rd_rel, mod_d = g.disk_radius_kpc, 1.0
     notes = [
         f"size: Rd={rd_rel * mod_d:.2f} kpc, R50(early)={r50_early * mod_e:.2f} kpc "
         f"(Shen+03 x SAGE nudge {mod_d:.2f}/{mod_e:.2f})"
@@ -685,6 +691,13 @@ def recipe_from_sage(
         if g.vmax > 0 and g.vel_disp > 0:
             c *= float(np.clip(1.25 - 0.18 * g.vmax / g.vel_disp, 0.7, 1.1))
             c = min(c, b)
+        if g.bulge_rotation > 0:
+            # With annuli, the bulge's own rotation (j / r sigma, about 1 to
+            # 15) in place of the halo's: slow rotators are rounder.
+            spin = np.log10(np.clip(g.bulge_rotation, 1.0, 15.0)) / np.log10(
+                15.0
+            )
+            c = b * float(0.9 - 0.4 * spin)
         env_a = float(0.6 + 0.6 * mfac)
         core_frac = float(0.5 - 0.2 * mfac)
         n_gc = int(np.clip(30 * (g.stellar_mass / 1e10) ** 1.2, 20, 4000))
@@ -806,6 +819,8 @@ def recipe_from_sage(
         # (steep: the population's sigma/Vmax spans only ~0.45-0.65)
         hz *= float(np.clip(((g.vel_disp / g.vmax) / 0.55) ** 6, 0.6, 2.0))
     hz = float(min(hz, 0.45))
+    if g.disc_height_kpc > 0:
+        hz = float(np.clip(g.disc_height_kpc / rd, 0.02, 0.6))
 
     # Bulges: the classical (merger-built) one round, at its own radius;
     # the pseudo-bulge (instability-built) compact and flattened at its own.
@@ -837,9 +852,9 @@ def recipe_from_sage(
     if barred:
         bar_mass = min(g.instability_bulge_mass, 0.08 * g.stellar_mass)
         bar_frac = bar_mass / max(g.stellar_mass, 1.0)
-        bar_len = float(np.clip(0.9 + 10.0 * bar_frac, 0.9, 1.8))
+        bar_len = BAR_LENGTH * float(np.clip(0.9 + 10.0 * bar_frac, 0.9, 1.8))
         # Stronger bars are thinner.
-        bar_axis = float(np.clip(0.36 - 1.5 * bar_frac, 0.22, 0.36))
+        bar_axis = BAR_AXIS * float(np.clip(0.36 - 1.5 * bar_frac, 0.22, 0.36))
         l_bar = 1.8 * OLD_LIGHT * bar_mass / max(disk_mass, 1.0)
         notes.append(
             f"instability bulge {ib_frac:.2f} of M* -> bar {bar_frac:.2f} of M*, "
@@ -1015,10 +1030,7 @@ def recipe_from_sage(
         l_pseudo=float(l_pseudo),
         pseudo_a=pseudo_a,
         bar_axis=bar_axis,
-        # Bars buckle into a peanut once the disk is gas-poor.
-        peanut=float(
-            np.clip(1.3 - 2.0 * gas_frac, 0.4, 1.0) if bar_len > 0 else 0.0
-        ),
+        peanut=0.0,
         # Pseudo-bulges are flatter in colder (rotation-dominated) disks.
         pseudo_q=float(
             np.clip(0.25 + 0.2 * (g.vel_disp / g.vmax), 0.25, 0.5)
@@ -1203,7 +1215,10 @@ def _arm_field(rc, r, th, lnr0, tanp, wobble, shift, sharp):
         taper = 1 / (1 + np.exp(-(r - ra) / (0.15 * max(ra, 0.2))))
         taper *= 1 / (1 + np.exp((r - rb) / (0.12 * rb)))
         out *= 1 - a * lobe * taper
-    return 1 - out
+    return (1 - out) * arm_reach(rc, r)
+
+
+MIN_ANNULUS = 0.15  # of the disc radius
 
 
 def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
@@ -1213,9 +1228,12 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
         return 1.0
     edge = np.asarray(rc.radial[0], float)
     v = np.asarray(rc.radial[which], float)
-    ok = v > 0
+    # Held flat inside MIN_ANNULUS: the disc has one height, so a peak there
+    # would be drawn as a column of light along its axis.
+    ok = (v > 0) & (edge >= MIN_ANNULUS)
     if ok.sum() < 3:
         return 1.0
+    r = np.maximum(r, edge[ok].min())
     lg = np.interp(
         np.log(np.maximum(r, 1e-3)), np.log(edge[ok]), np.log(v[ok])
     )
@@ -1223,6 +1241,23 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
     lg = lg - 4.0 * np.clip(r - edge[ok].max(), 0, None)
     want = np.exp(lg - np.interp(0.0, np.log(edge[ok]), np.log(v[ok])))
     return want / np.maximum(base / np.mean(base[np.abs(r - 1) < 0.05]), 1e-6)
+
+
+# Bars' half-length relative to the recipe, and axis ratio relative to it:
+# longer and thinner reads as a strip of light across the disc.
+BAR_LENGTH = 0.75
+BAR_AXIS = 2.0
+
+
+def arm_reach(rc, r) -> np.ndarray | float:
+    """How much of a spiral pattern a disc with annuli holds at radius r:
+    all where Toomre Q <= 1, none where Q >= 2, as it's stable; 1 without Q."""
+    if len(rc.radial) < 7 or not rc.radial[6]:
+        return 1.0
+    x = np.log(np.maximum(np.asarray(rc.radial[0], float), 1e-4))
+    q = np.log(np.maximum(np.asarray(rc.radial[6], float), 0.01))
+    here = np.interp(np.log(np.maximum(r, 1e-3)), x, q)
+    return np.clip(np.log(2.0 / np.exp(here)) / np.log(2.0), 0.0, 1.0)
 
 
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
@@ -1287,6 +1322,10 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * np.exp(0.08 * clumps)
     )
     old = old * radial_scale(rc, 1, r, exp_d)
+    if rc.radial:
+        # Annuli can stay bright further out than the exponential: fade them
+        # inside the square map, so its edge doesn't show.
+        old = old / (1 + np.exp((r - 1.3 * rc.extent) / 0.12))
     if rc.bar_len > 0:
         # The bar is built from the inner disk: hollow it out to match.
         old *= 1 - 0.65 * np.exp(-((r / (0.8 * rc.bar_len)) ** 2))
@@ -1369,11 +1408,21 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 - 0.7 * np.exp(-((r / 1.2) ** 2)))
         * (0.15 + arm_dust)
     )
+    # H2 and HI follow the run's own gas. The dust is laid out as they are,
+    # then follows the run's own dust where it has it.
+    has_dust = len(rc.radial) > 5 and len(rc.radial[5]) > 0
+    laid_h2, laid_hi = h2, hi
     h2 = h2 * radial_scale(rc, 3, r, np.exp(-r / 0.9))
     hi = hi * radial_scale(rc, 2, r, np.exp(-r / rc.hi_scale))
+    if has_dust:
+        laid_h2 = laid_h2 * radial_scale(rc, 5, r, np.exp(-r / 0.9))
+        laid_hi = laid_hi * radial_scale(rc, 5, r, np.exp(-r / rc.hi_scale))
+    else:
+        laid_h2, laid_hi = h2, hi
     if rc.clumps:
         h2 = h2 + 1.5 * giant * np.exp(-r / 3.0)
-    dust = (h2 + 0.35 * hi) * outer_cut * inner
+        laid_h2 = laid_h2 + 1.5 * giant * np.exp(-r / 3.0)
+    dust = (laid_h2 + 0.35 * laid_hi) * outer_cut * inner
     # Normalise the total dust column to that of a smooth exponential disk
     # with face-on optical depth tau0 at its centre (2 pi tau0 Rd^2).  An
     # integral rather than a ring average, so a central hole (bar) doesn't

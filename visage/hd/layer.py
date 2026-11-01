@@ -290,6 +290,34 @@ class Exposure:
         return max(self.base, self._k * self._box_mean(x, y, half))
 
 
+# The cold-gas disc with the Gas button: HI as a faint blue glow, from about
+# 0.3 Msun/pc^2 to full at about 6, fading softly at its edges.
+HI_GLOW = dict(rgb=(0.35, 0.6, 1.0), alpha=0.12, lo=-0.5, hi=0.8)
+
+
+def hi_texture(radial: tuple, n: int = 512) -> tuple:
+    """(n, n, 4) uint8 image of a disc's HI and the half width it covers, in
+    the radii's units, or (None, 0) with no HI to draw."""
+    r = np.asarray(radial[0], float)
+    hi = np.asarray(radial[2], float)
+    lo = 10.0 ** HI_GLOW["lo"]
+    if len(r) < 3 or not (hi > lo).any():
+        return None, 0.0
+    half = 1.15 * r[hi > lo].max()
+    ax = (np.arange(n) + 0.5) / n * 2 - 1
+    x, y = np.meshgrid(ax * half, ax * half)
+    rr = np.log(np.maximum(np.hypot(x, y), 1e-4))
+    lg = np.interp(
+        rr, np.log(np.maximum(r, 1e-4)), np.log10(np.maximum(hi, 1e-8))
+    )
+    t = np.clip((lg - HI_GLOW["lo"]) / (HI_GLOW["hi"] - HI_GLOW["lo"]), 0, 1)
+    alpha = t * t * (3 - 2 * t) * HI_GLOW["alpha"]
+    img = np.zeros((n, n, 4), np.uint8)
+    img[..., :3] = (np.array(HI_GLOW["rgb"]) * 255).astype(np.uint8)
+    img[..., 3] = (alpha * 255).astype(np.uint8)
+    return img, float(half)
+
+
 class HDGalaxyLayer:
     """One HD galaxy in a pyvista plotter."""
 
@@ -297,6 +325,7 @@ class HDGalaxyLayer:
         self._pl = plotter
         self._gpu = GPUGalaxy(plotter)
         self._observer = None
+        self._hi = None
         self._fxaa = None
         self._near_tol = None
         self._white0 = 1.0
@@ -489,6 +518,8 @@ class HDGalaxyLayer:
             gs.set_web(self._R, self._gpu._uni)
         self._gas_on = bool(gas)
         self._gpu.set_gas(self._gas_on)
+        if halo:
+            self._add_hi(gal, rc, m)
         ren = self._pl.renderer
         if manage_fxaa:
             # The shader resolves single stars; FXAA would smear them.
@@ -503,7 +534,37 @@ class HDGalaxyLayer:
         self._observer = (ren, ren.AddObserver("StartEvent", self._on_camera))
         self._on_camera()
 
+    def _add_hi(self, gal, rc, matrix) -> None:
+        """The HI disc, in the disc's plane, for runs with annuli."""
+        if len(gal.radial) < 3 or not rc.radial:
+            return
+        img, half = hi_texture(rc.radial)
+        if img is None:
+            return
+        import pyvista as pv
+
+        plane = pv.Plane(
+            direction=(0, 0, 1),
+            i_size=2 * half,
+            j_size=2 * half,
+            i_resolution=1,
+            j_resolution=1,
+        )
+        self._hi = self._pl.add_mesh(
+            plane,
+            texture=pv.Texture(img),
+            lighting=False,
+            reset_camera=False,
+            render=False,
+            pickable=False,
+        )
+        self._hi.user_matrix = matrix
+        self._hi.SetVisibility(self._gas_on)
+
     def clear(self):
+        if self._hi is not None:
+            self._pl.remove_actor(self._hi, reset_camera=False, render=False)
+            self._hi = None
         if self._observer is not None:
             ren, tag = self._observer
             try:
@@ -525,6 +586,8 @@ class HDGalaxyLayer:
         """Show or hide the halo-gas overlay (no rebuild: a shader switch)."""
         self._gas_on = bool(on)
         self._gpu.set_gas(self._gas_on)
+        if self._hi is not None:
+            self._hi.SetVisibility(self._gas_on)
 
     # -- geometry ------------------------------------------------------
 

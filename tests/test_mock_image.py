@@ -365,3 +365,22 @@ def test_measured_psfs_cover_their_surveys():
     have = set(mi._measured())
     for name in ("sdss", "ps1", "hst", "euclid", "roman", "nircam"):
         assert {f"{name}/{b}" for b in mi.SURVEYS[name].bands} <= have
+
+
+def test_annulus_stamp_has_unit_flux_and_follows_the_shares():
+    from visage.sed.mock_image import annulus_stamp
+
+    edges = np.array([0.0, 4.0, 8.0, 16.0])
+    inner = annulus_stamp(edges, np.array([1.0, 0, 0]), 1.0, 0.0, 61)
+    outer = annulus_stamp(edges, np.array([0, 0, 1.0]), 1.0, 0.0, 61)
+    assert inner.sum() == pytest.approx(1.0)
+    assert inner[30, 30] > outer[30, 30]
+    assert outer[30, 42] > inner[30, 42]
+
+
+def test_an_empty_annulus_is_not_a_dark_hole():
+    from visage.sed.mock_image import annulus_stamp
+
+    edges = np.array([0.0, 2.0, 4.0, 8.0, 16.0])
+    img = annulus_stamp(edges, np.array([0.0, 0.5, 0.3, 0.2]), 1.0, 0.0, 61)
+    assert img[30, 30] >= img[30, 36] * 0.5  # the centre isn't black

@@ -43,6 +43,15 @@ def fake_sample(volume=1.0e6):
         "Posz": rng.uniform(0, 60, N),
         "RcoolToRvir": rng.uniform(0, 2, N),
     }
+    edges = np.cumsum(rng.uniform(1e-5, 1e-3, (N, 31)), axis=1)
+    data["DiscRadii"] = edges
+    data["StellarDiscHalfMassRadius"] = rng.uniform(1e-3, 0.01, N)
+    data["GasDiscHalfMassRadius"] = rng.uniform(1e-3, 0.04, N)
+    for name in ("DiscStars", "DiscHI", "DiscH2", "DiscDust", "DiscGas"):
+        data[name] = rng.uniform(1e-4, 1e-2, (N, 30))
+    data["DiscGasMetals"] = data["DiscGas"] * 0.02
+    for name in ("ColdDust", "HotDust", "CGMDust", "EjectedDust"):
+        data[name] = mass * rng.uniform(1e-4, 1e-2, N)
     for name in (
         "ColdGas", "H1gas", "H2gas", "HotGas", "CGMgas", "EjectedMass",
         "IntraClusterStars", "BlackHoleMass", "MergerBulgeMass",
@@ -127,3 +136,50 @@ class _Open(SimpleNamespace):
     def __getattr__(self, name):
         wide = (-1e9, 1e9)
         return wide if name.startswith("filter_") else []
+
+
+def test_dust_observations():
+    from visage.plots import obs
+
+    # The break of Remy-Ruyer+14 joins up, and solar metals give G/D = 162.
+    assert 1 / obs.dust_to_gas(8.69) == pytest.approx(162, rel=0.01)
+    assert obs.dust_to_gas(8.09) == pytest.approx(
+        obs.dust_to_gas(8.11), rel=0.1
+    )
+    # Beeston+18's knee: phi* ln10 / e at M*, h = 0.7.
+    assert obs.dust_mf(np.array([4.65e7]), 0.7)[0] == pytest.approx(
+        6.26e-3 * np.log(10) / np.e, rel=1e-6
+    )
+
+
+def test_a_run_without_dust_still_stacks_its_discs(monkeypatch):
+    monkeypatch.setattr(style.shutil, "which", lambda _: None)
+    s = fake_sample()
+    read = s._read
+
+    def no_dust(name):
+        if name == "DiscDust":
+            raise KeyError(name)
+        return read(name)
+
+    s._read = no_dust
+    assert not s.has("DiscDust")
+    with style.context(False):
+        assert local.disc_profiles(Plot(s, [], Options())).axes
+
+
+def test_a_run_without_the_modes_is_not_offered_their_plots(monkeypatch):
+    from visage.ui import plotting
+
+    def titles(fields):
+        monkeypatch.setattr(plotting, "_present", lambda scene: fields)
+        scene = SimpleNamespace(is_lightcone=False)
+        return {
+            sec["title"]
+            for kind in plotting.plot_groups(scene)
+            for sec in kind["sections"]
+        }
+
+    assert not {"Dust", "Discs"} & titles({"stellarmass"})
+    assert "Dust" in titles({"colddust"})
+    assert "Dust" not in titles({"discradii"})

@@ -389,3 +389,175 @@ def test_edge_on_disks_show_more_dust():
 
     face, edge = dm.sigma_dust(1e7, 4.0, np.array([1.0, 0.0]))
     assert edge == pytest.approx(7.3 * face)
+
+
+def test_annuli_of_one_depth_are_one_screen():
+    from visage.sed import dust as dm
+
+    wave = np.array([3000.0, 5500.0, 9000.0])
+    tau, eta = np.full((1, 3), 0.4), np.full((1, 3), -1.0)
+    shares = np.array([[0.2, 0.3, 0.5]])
+    np.testing.assert_allclose(
+        dm.annuli_transmission(wave, tau, eta, shares),
+        dm.ism_transmission(wave, tau[:, 0], eta[:, 0]),
+    )
+
+
+def test_annulus_shares_sum_to_one_and_hold_the_bulge_near_the_centre():
+    from visage.sed import dust as dm
+
+    edges = np.array([[0.0, 1.0, 5.0, 20.0]])
+    disc = np.array([[0.0, 1.0, 1.0]])
+    s = dm.annulus_shares(disc, np.array([0.0]), np.array([1.0]), edges)
+    np.testing.assert_allclose(s, [[0, 0.5, 0.5]])
+    s = dm.annulus_shares(disc, np.array([100.0]), np.array([1.0]), edges)
+    assert s.sum() == pytest.approx(1.0)
+    assert s[0, 0] > 0.1
+    # Nothing there: an even share, not lost light.
+    s = dm.annulus_shares(disc * 0, np.array([0.0]), np.array([1.0]), edges)
+    np.testing.assert_allclose(s, 1 / 3)
+
+
+def test_annulus_depth_follows_dust_and_tilt():
+    from visage.sed import dust as dm
+
+    edges = np.array([[0.0, 2.0, 8.0, 30.0]])
+    dust = np.array([[1e7, 1e7, 0.0]])
+    tau, _ = dm.annulus_tau(dust, edges, np.array([1.0]))
+    assert tau[0, 0] > tau[0, 1] > tau[0, 2]
+    assert tau[0, 2] < 1e-6
+    # Face-on depth rises with tilt.
+    assert dm.annulus_tau(dust, edges, np.array([0.1]))[0][0, 0] > tau[0, 0]
+
+
+@pytest.mark.slow
+def test_photometry_prefers_the_runs_dust(tmp_path):
+    import h5py
+
+    from visage.sed.photometry import compute_photometry
+
+    alist = tmp_path / "a.list"
+    np.savetxt(alist, np.linspace(0.1, 1.0, 8))
+    p = tmp_path / "c.h5"
+    _metal_cone(p, alist, False)
+    with h5py.File(p, "a") as f:
+        for k, v in (
+            ("ColdGas", 0.05),
+            ("MetalsColdGas", 0.001),
+            ("H2gas", 0.01),
+            ("DiskRadius", 0.003),
+            ("SfrDisk", 1.0),
+            ("SfrBulge", 0.0),
+            ("Spinx", 0.0),
+            ("Spiny", 0.0),
+            ("Spinz", 1.0),
+            ("Posx", 1.0),
+            ("Posy", 2.0),
+            ("Posz", 3.0),
+        ):
+            f[k] = np.full(2, v, dtype=np.float32)
+
+    def run():
+        return compute_photometry(
+            p, bands=("sdss_r",), frame="rest", dust_model="charlot_fall"
+        )
+
+    bare = run()
+    with h5py.File(p, "a") as f:
+        f["ColdDust"] = np.full(2, 2e-4, dtype=np.float32)
+    own = run()
+    assert own["DustMassCold"][0] == pytest.approx(2e-4 * 1e10 / 0.7, rel=1e-5)
+    assert own["DustMassCold"][0] != pytest.approx(bare["DustMassCold"][0])
+    with h5py.File(p, "a") as f:
+        edges = np.tile(np.linspace(0, 0.02, 31), (2, 1))
+        f["DiscRadii"] = edges.astype(np.float32)
+        f["DiscDust"] = np.full((2, 30), 2e-4 / 30, dtype=np.float32)
+        f["DiscStars"] = np.full((2, 30), 0.8 / 30, dtype=np.float32)
+        f["DiscSFR"] = np.full((2, 30), 1 / 30, dtype=np.float32)
+    ann = run()
+    assert ann["mag_rest_sdss_r"][0] != pytest.approx(
+        own["mag_rest_sdss_r"][0], abs=1e-3
+    )
+    assert np.isfinite(ann["mag_rest_sdss_r"]).all()
+
+
+def test_a_fibre_holds_the_light_inside_it():
+    from visage.sed import dust as dm
+
+    edges = np.array([[0.0, 2.0, 4.0]])
+    shares = np.array([[0.5, 0.5]])
+    tau = np.zeros((1, 2))
+    assert dm.light_within(np.array([2.0]), edges, shares, tau)[0] == 0.5
+    assert dm.light_within(np.array([9.0]), edges, shares, tau)[0] == 1.0
+    # Dust outside the fibre leaves it a bigger share of what's seen.
+    dusty = np.array([[0.0, 2.0]])
+    assert dm.light_within(np.array([2.0]), edges, shares, dusty)[0] > 0.5
+
+
+def test_hi_width_is_twice_the_inclined_speed():
+    from visage.sed import hi_line
+
+    hi = np.zeros((2, 30))
+    hi[0, 20] = 1.0
+    v = np.full((2, 31), 200.0)
+    w = hi_line.widths(hi, v, np.array([0.5, 0.5]))
+    assert w[0] == pytest.approx(200.0, abs=40)  # 2 v sin i, a bit wider
+    assert w[1] == 0.0
+
+
+def test_band_shares_ignore_an_emission_line():
+    from visage.sed import dust as dm
+
+    wave = np.linspace(4000.0, 8000.0, 401)
+    flat = np.ones((1, 401))
+    line = flat.copy()
+    line[0, 200] = 100.0  # a line right at the band's centre
+    tau, eta = np.zeros((1, 2)), np.full((1, 2), -1.0)
+    shares = np.array([[0.5, 0.5]]), np.array([[0.0, 1.0]])
+    lam = np.array([6000.0])
+
+    def inner(recent):
+        return dm.annulus_band_shares(
+            wave, flat, recent, flat * 0, lam, tau, eta, *shares, np.zeros(1)
+        )[0, 0]
+
+    # Near the same share: the line is a sliver of the band.
+    assert inner(line) == pytest.approx(inner(flat), abs=0.15)
+
+
+def test_new_stars_make_outer_annuli_bluer():
+    from visage.sed import dust as dm
+
+    wave = np.linspace(3000.0, 9000.0, 61)
+    old = np.tile(np.where(wave < 5500, 0.5, 1.0), (2, 1))  # red
+    new = np.tile(np.where(wave < 5500, 3.0, 1.0), (2, 1))  # blue
+    clouds = np.zeros_like(old)
+    s_old = np.array([[0.8, 0.2], [0.8, 0.2]])
+    s_new = np.array([[0.1, 0.9], [0.1, 0.9]])
+    tau, eta = np.zeros((2, 2)), np.full((2, 2), -1.0)
+    blue = dm.annulus_band_shares(
+        wave,
+        old,
+        new,
+        clouds,
+        np.full(2, 4000.0),
+        tau,
+        eta,
+        s_old,
+        s_new,
+        np.zeros(2),
+    )
+    red = dm.annulus_band_shares(
+        wave,
+        old,
+        new,
+        clouds,
+        np.full(2, 7000.0),
+        tau,
+        eta,
+        s_old,
+        s_new,
+        np.zeros(2),
+    )
+    np.testing.assert_allclose(blue.sum(axis=1), 1.0)
+    assert blue[0, 1] > red[0, 1]  # more of the blue light is outside

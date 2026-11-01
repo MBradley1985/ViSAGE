@@ -1,0 +1,52 @@
+diff --git a/src/libtao/base/kdtree_backend/kdtree_backend.hh b/src/libtao/base/kdtree_backend/kdtree_backend.hh
+index 506d59f..bb09c91 100644
+--- a/src/libtao/base/kdtree_backend/kdtree_backend.hh
++++ b/src/libtao/base/kdtree_backend/kdtree_backend.hh
+@@ -652,6 +652,38 @@ protected:
+         }
+     }
+ 
++    // As above, for an axial vector held as one (n, 3) field.
++    template <class U>
++    void _permute_axial_vector_as(const char* name, int ix, int iy, int iz, U sign)
++    {
++        auto& m = _bat->template vector<U>(name);
++        for (unsigned ii = 0; ii < _bat->size(); ++ii)
++        {
++            U v[3] = {m(ii, 0), m(ii, 1), m(ii, 2)};
++            m(ii, 0) = sign * v[ix];
++            m(ii, 1) = sign * v[iy];
++            m(ii, 2) = sign * v[iz];
++        }
++    }
++
++    void _permute_axial_vector(const char* name, int ix, int iy, int iz)
++    {
++        if (!_bat->has_field(name))
++            return;
++        int parity = (iy - ix) * (iz - ix) * (iz - iy);
++        switch (static_cast<tao::batch<real_type>::field_value_type>(_bat->get_field_type(name)))
++        {
++        case tao::batch<real_type>::DOUBLE:
++            _permute_axial_vector_as<double>(name, ix, iy, iz, parity > 0 ? 1.0 : -1.0);
++            break;
++        case tao::batch<real_type>::FLOAT:
++            _permute_axial_vector_as<float>(name, ix, iy, iz, parity > 0 ? 1.0f : -1.0f);
++            break;
++        default:
++            break;
++        }
++    }
++
+     void _calc_fields(bool satellite_mode = false)
+     {
+         if (_lc)
+@@ -697,6 +729,8 @@ protected:
+             // r x v): an odd permutation (two axes swapped) is a mirror,
+             // under which it also flips sign.
+             _permute_axial("spinx", "spiny", "spinz", ix, iy, iz);
++            _permute_axial_vector("spingas", ix, iy, iz);
++            _permute_axial_vector("spinstars", ix, iy, iz);
+ 
+             // std::cout<<"+++COUNT="<<_bat->size()<<std::endl;
+             auto off = _be->cell_offs()[_it.cell()] + _done_so_far;

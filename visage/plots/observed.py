@@ -228,6 +228,27 @@ def bpt(p):
 
 @plot(
     "Observed",
+    "tully_fisher",
+    "HI Tully-Fisher",
+    ("W50_HI", "CosInclination", "StellarMass"),
+    modes=("cone",),
+)
+def tully_fisher(p):
+    fig, ax = p.figure()
+    s = p.s
+    sin_i = np.sqrt(np.maximum(1 - s("CosInclination") ** 2, 1e-4))
+    ok = (s("W50_HI") > 0) & (sin_i > 0.5) & (s("StellarMass") > 1e8)
+    p.relation(
+        ax, s("W50_HI") / sin_i, s("StellarMass"), log_edges(1.5, 3.0, 0.1), ok
+    )
+    ax.set(xscale="log", yscale="log", ylabel=r"$M_\star\ (M_\odot)$")
+    ax.set_xlabel(r"$W_{50} / \sin i\ ({\rm km\,s^{-1}})$")
+    p.finish("upper left")
+    return fig
+
+
+@plot(
+    "Observed",
     "attenuation",
     "Dust attenuation vs stellar mass",
     ("TauV_ISM", "StellarMass"),

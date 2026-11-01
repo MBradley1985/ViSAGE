@@ -55,14 +55,18 @@ def plot_groups(scene) -> list:
         for key, spec in PLOTS.items():
             if spec["kind"] != kind or mode not in spec["modes"]:
                 continue
+            missing = not all(f.lower() in fields for f in spec["needs"])
+            # Plots of a mode the run doesn't have aren't offered at all.
+            if missing and (
+                spec["section"] in ("Dust", "Discs") or key == "tully_fisher"
+            ):
+                continue
             sections.setdefault(spec["section"], []).append(
                 {
                     "key": key,
                     "title": spec["title"],
                     "group": spec["group"],
-                    "missing": not all(
-                        f.lower() in fields for f in spec["needs"]
-                    ),
+                    "missing": missing,
                 }
             )
         if sections:

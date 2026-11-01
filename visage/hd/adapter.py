@@ -218,6 +218,8 @@ def sage_galaxy_from_snapshot(
     sfh = _sfh_bins(snap, i, snap_table, hubble_h, omega_m)
     if sfh is not None:
         sfh = _bulge_history(sfh, _field(snap, "bulge_mass", i) / mass)
+    radial, height = _radial(snap, i, hubble_h, z)
+    rotation = _bulge_rotation(snap, i, hubble_h)
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
         stellar_mass=_field(snap, "stellar_mass", i),
@@ -232,8 +234,8 @@ def sage_galaxy_from_snapshot(
         sfr_disk=_field(snap, "sfr_disk", i),
         sfr_bulge=_field(snap, "sfr_bulge", i),
         disk_radius_kpc=(
-            _extra(snap, "StellarDiscScaleRadius", i)
-            or _field(snap, "disk_radius", i)
+            _field(snap, "disk_radius", i)
+            or _extra(snap, "StellarDiscScaleRadius", i)
         )
         * kpc,
         bulge_radius_kpc=_field(snap, "bulge_radius", i) * kpc,
@@ -285,7 +287,9 @@ def sage_galaxy_from_snapshot(
         sed_ratio=_sed_ratio(snap, i),
         los=_los(snap, i),
         **_sed_parts(snap, i),
-        radial=_radial(snap, i, hubble_h),
+        radial=radial,
+        disc_height_kpc=height,
+        bulge_rotation=rotation,
         sfh_disk=() if sfh is None else tuple(float(v) * mass for v in sfh[0]),
         sfh_bulge=(
             () if sfh is None else tuple(float(v) * mass for v in sfh[1])
@@ -378,20 +382,84 @@ def _dusty_tau(snap, i: int, h: float) -> float:
     return float(tau)
 
 
-def _radial(snap, i: int, hubble_h: float) -> tuple:
-    """DarkSAGE's disc profiles for HD, () for any other run: radii (kpc)
-    and surface densities of stars, HI, H2 and star formation."""
+def toomre_q(prof: dict, redshift: float) -> np.ndarray:
+    """Two-fluid Toomre Q of one galaxy's annuli, as SAGE26 finds it (Romeo
+    & Wiegert 2011), with kappa from the rotation curve and the gas at
+    11 + 11.3 z km/s."""
+    r = prof["r"][0]
+    v = 0.5 * (prof["vcirc"][0][1:] + prof["vcirc"][0][:-1])
+    rr = np.maximum(r, 1e-4)
+    slope = np.gradient(np.log(np.maximum(v, 1.0)), np.log(rr))
+    kappa = np.sqrt(np.maximum(2 * (v / rr) ** 2 * (1 + slope), 1e-6))
+    sig = np.maximum(prof["sigma"][0], 1.0)
+    cs = 11.0 + 11.3 * max(redshift, 0.0)
+    g = 4.30e-6  # kpc (km/s)^2 / Msun
+    q_s = sig * kappa / (3.36 * g * np.maximum(prof["stars"][0] * 1e6, 1.0))
+    q_g = cs * kappa / (np.pi * g * np.maximum(prof["gas"][0] * 1e6, 1.0))
+    w = 2 * sig * cs / (sig**2 + cs**2)
+    return np.where(
+        q_g >= q_s, 1 / (w / q_g + 1 / q_s), 1 / (1 / q_g + w / q_s)
+    )
+
+
+def disc_height_kpc(prof: dict, half_mass_kpc: float) -> float:
+    """Stellar disc height at its half-mass radius: sigma^2 / (pi G Sigma),
+    a self-gravitating isothermal sheet (Spitzer 1942)."""
+    k = int(np.argmin(np.abs(prof["r"][0] - half_mass_kpc)))
+    surface = max(float(prof["stars"][0][k]) * 1e6, 1.0)
+    return float(prof["sigma"][0][k]) ** 2 / (np.pi * 4.30e-6 * surface)
+
+
+def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
+    """Disc profiles for HD, () for a run without annuli, and the stellar
+    disc's height (kpc, 0 if unknown): radii (kpc), surface densities of
+    stars, HI, H2 and star formation, then as the run has them dust and
+    Toomre Q (empty if not)."""
     path = getattr(snap, "source_path", "")
     extra = getattr(snap, "extra", None) or {}
     if not path or "StellarDiscScaleRadius" not in extra:
-        return ()
+        return (), 0.0
     from visage.io.family_binary import radial_profiles
 
     row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
     p = radial_profiles(path, int(snap.snap_num), row, hubble_h)
-    return tuple(
-        tuple(float(v) for v in p[k][0])
-        for k in ("r", "stars", "hi", "h2", "sfr")
+    # The model's disc radius sets the size, the annuli the shape.
+    scale = _extra(snap, "StellarDiscScaleRadius", i)
+    radius = _field(snap, "disk_radius", i)
+    stretch = radius / scale if scale > 0 and radius > 0 else 1.0
+    rows = [p[k][0] for k in ("r", "stars", "hi", "h2", "sfr")]
+    rows[0] = rows[0] * stretch
+    rows.append(p["dust"][0] if "dust" in p else ())
+    height = 0.0
+    if "vcirc" in p and "sigma" in p:
+        rows.append(toomre_q(p, redshift))
+        half = _extra(snap, "StellarDiscHalfMassRadius", i) * 1e3 / hubble_h
+        if half > 0:
+            height = disc_height_kpc(p, half) * stretch
+    else:
+        rows.append(())
+    return tuple(tuple(float(v) for v in x) for x in rows), height
+
+
+def _bulge_rotation(snap, i: int, hubble_h: float) -> float:
+    """The merger bulge's j / (r sigma), 0 for a run without it."""
+    from visage.scene.disc_sprites import rotation
+
+    extra = getattr(snap, "extra", None) or {}
+    sigma = _extra(snap, "VelDispMergerBulge", i)
+    radius = _field(snap, "merger_bulge_radius", i)
+    if not getattr(snap, "source_path", "") or sigma <= 0 or radius <= 0:
+        return 0.0
+    if "StellarDiscScaleRadius" not in extra:
+        return 0.0
+    from visage.io.family_binary import radial_profiles
+
+    row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+    p = radial_profiles(snap.source_path, int(snap.snap_num), row, hubble_h)
+    if "bulge_j" not in p:
+        return 0.0
+    return float(
+        rotation(p["bulge_j"], np.array([radius]), np.array([sigma]))[0]
     )
 
 
@@ -420,7 +488,17 @@ def _los(snap, i: int) -> tuple:
 
 
 def spin_vector(snap, i: int) -> np.ndarray | None:
-    """Unit spin axis from Spinx/y/z, or None if the output has none."""
+    """Unit spin axis: the stellar disc's with annuli, else from
+    Spinx/y/z, or None if the output has none."""
+    extra = getattr(snap, "extra", None) or {}
+    if getattr(snap, "source_path", "") and "StellarDiscScaleRadius" in extra:
+        from visage.io.family_binary import radial_profiles
+
+        row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+        p = radial_profiles(snap.source_path, int(snap.snap_num), row, 1.0)
+        v = p["spin_stars"][0] if "spin_stars" in p else np.zeros(3)
+        if np.linalg.norm(v) > 0:
+            return v / np.linalg.norm(v)
     v = np.array([_extra(snap, f"Spin{c}", i) for c in "xyz"])
     norm = np.linalg.norm(v)
     return v / norm if norm > 0 else None
