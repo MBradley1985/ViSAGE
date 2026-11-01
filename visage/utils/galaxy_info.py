@@ -244,6 +244,12 @@ def cone_details(
         # in the file: only this one's are shown.)
         own = dust_details(galaxies, i, hubble_h)
         info.update(own)
+        v = _x(galaxies, "FibreLight", i)
+        if v is not None:
+            info['Light in a 3" fibre'] = f"{100 * v:.0f}%"
+        v = _x(galaxies, "W50_HI", i)
+        if v:
+            info["HI line width W50"] = f"{v:.0f} km/s"
         for key, label, fmt in (
             ("DustMassCold", "Dust mass (cold ISM)", "{:.2e} Msun"),
             ("DustToGas", "Dust-to-gas", "{:.2e}"),

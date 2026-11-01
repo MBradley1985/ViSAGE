@@ -383,6 +383,7 @@ def compute_photometry(
                 for k in ("DiscDust", "DiscRadii", "DiscStars", "DiscSFR")
             }
             bulge_r = get("BulgeRadius")
+            disc_extra = {k: get(k) for k in ("DiscHI", "DiscVcirc")}
 
         # From the file, not `rows`: a quiescent galaxy alone can't tell.
         first = slice(0, 20_000)
@@ -518,6 +519,24 @@ def compute_photometry(
             face = dm.annulus_tau(disc_dust, edges, np.ones(n))[0]
             tau_face = -np.log((old * np.exp(-face)).sum(axis=1))
 
+        fibre = hi_width = None
+        if annuli is not None:
+            from visage.sed import hi_line
+
+            # An SDSS fibre, 3 arcsec across, in the galaxy's own kpc.
+            d_l = luminosity_distance_mpc(z_obs, hubble_h, omega_m, omega_l)
+            d_a = d_l / (1 + np.maximum(z_obs, 0.0)) ** 2
+            fibre = dm.light_within(
+                1.5 / 206265 * d_a * 1e3, edges, annuli[2], annuli[0]
+            )
+            disc_hi, disc_v = disc_extra["DiscHI"], disc_extra["DiscVcirc"]
+            if disc_hi is not None and disc_v is not None:
+                hi_width = hi_line.widths(
+                    disc_hi * mfac,
+                    disc_v,
+                    np.sqrt(np.maximum(1 - cos_i**2, 0.0)),
+                )
+
         def screens(w, gals):
             """Transmission (old stars, new stars) of galaxies `gals`."""
             if annuli is None:
@@ -537,6 +556,10 @@ def compute_photometry(
             "TauV_BC": tau_birth.astype(np.float32),
             "CosInclination": cos_i.astype(np.float32),
         }
+        if fibre is not None:
+            dust_info["FibreLight"] = fibre.astype(np.float32)
+        if hi_width is not None:
+            dust_info["W50_HI"] = hi_width.astype(np.float32)
         dust = False  # (the SSPs stay unattenuated; dust is applied here)
 
     import fsps
@@ -996,6 +1019,8 @@ _DUST_FIELDS = {
         "Lsun",
     ),
     "DustUmin": ("Draine & Li (2007) U_min, from LDust / DustMassCold", ""),
+    "FibreLight": ("Share of V-band light inside a 3 arcsec fibre", ""),
+    "W50_HI": ("HI line width at half the peak, as inclined", "km/s"),
 }
 
 

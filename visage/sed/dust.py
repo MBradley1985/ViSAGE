@@ -322,6 +322,20 @@ def annuli_transmission(wave, tau, eta, shares) -> np.ndarray:
     return out
 
 
+def light_within(radius_kpc, edges_kpc, shares, tau) -> np.ndarray:
+    """Share of each galaxy's V-band light seen inside `radius_kpc`, from
+    its stars' `shares` of the annuli and their depths `tau`."""
+    edges = np.asarray(edges_kpc, float)
+    seen = shares * np.exp(-tau)
+    inner, outer = edges[:, :-1], edges[:, 1:]
+    r = np.asarray(radius_kpc, float)[:, None]
+    # (Light within an annulus is taken as even over its area.)
+    part = np.clip(
+        (r**2 - inner**2) / np.maximum(outer**2 - inner**2, 1e-12), 0, 1
+    )
+    return (seen * part).sum(axis=1) / np.maximum(seen.sum(axis=1), 1e-30)
+
+
 def bc_transmission(wave, tau_birth) -> np.ndarray:
     """(n, n_wave) birth-cloud transmission (a screen)."""
     return np.exp(

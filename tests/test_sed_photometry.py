@@ -479,3 +479,27 @@ def test_photometry_prefers_the_runs_dust(tmp_path):
         own["mag_rest_sdss_r"][0], abs=1e-3
     )
     assert np.isfinite(ann["mag_rest_sdss_r"]).all()
+
+
+def test_a_fibre_holds_the_light_inside_it():
+    from visage.sed import dust as dm
+
+    edges = np.array([[0.0, 2.0, 4.0]])
+    shares = np.array([[0.5, 0.5]])
+    tau = np.zeros((1, 2))
+    assert dm.light_within(np.array([2.0]), edges, shares, tau)[0] == 0.5
+    assert dm.light_within(np.array([9.0]), edges, shares, tau)[0] == 1.0
+    # Dust outside the fibre leaves it a bigger share of what's seen.
+    dusty = np.array([[0.0, 2.0]])
+    assert dm.light_within(np.array([2.0]), edges, shares, dusty)[0] > 0.5
+
+
+def test_hi_width_is_twice_the_inclined_speed():
+    from visage.sed import hi_line
+
+    hi = np.zeros((2, 30))
+    hi[0, 20] = 1.0
+    v = np.full((2, 31), 200.0)
+    w = hi_line.widths(hi, v, np.array([0.5, 0.5]))
+    assert w[0] == pytest.approx(200.0, abs=40)  # 2 v sin i, a bit wider
+    assert w[1] == 0.0
