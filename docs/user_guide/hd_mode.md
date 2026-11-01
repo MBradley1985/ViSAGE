@@ -28,7 +28,7 @@ On a DarkSAGE run the disc follows the model's own radial profiles, and on a Dus
 
 The full list of components, the SAGE26 fields each one uses and how, is in [HD Galaxy Components](../physics/hd_components.md).
 
-Every disc is drawn at the model's own `DiskRadius`. With SAGE26's `DarkSAGEMode` the annuli set the shape of its light, star formation and dust, its height comes from `VelDispStars` (σ² / πGΣ at the half-mass radius), and spiral arms fade between Toomre Q of 1 and 2, where the disc is stable. Q decides where arms end, not whether a galaxy has them.
+Every disc is drawn at the model's own `DiskRadius`. With SAGE26's `DarkSAGEMode` the annuli set the shape of its light, star formation and dust, its height comes from `VelDispStars` (σ² / πGΣ at the half-mass radius), and spiral arms fade between Toomre Q of 1 and 2, where the disc is stable. Q decides where arms end, not whether a galaxy has them. The profile is held flat inside 0.15 of the disc radius: the disc has one height, so a peak there would be drawn as a column of light.
 
 ## Groups and clusters
 

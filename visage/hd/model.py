@@ -1213,6 +1213,9 @@ def _arm_field(rc, r, th, lnr0, tanp, wobble, shift, sharp):
     return (1 - out) * arm_reach(rc, r)
 
 
+MIN_ANNULUS = 0.15  # of the disc radius
+
+
 def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
     """What turns an exponential map (`base` at radius r) into DarkSAGE's own
     profile `which`, 1 at the disc's scale radius; 1 for any other model."""
@@ -1220,9 +1223,12 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
         return 1.0
     edge = np.asarray(rc.radial[0], float)
     v = np.asarray(rc.radial[which], float)
-    ok = v > 0
+    # Held flat inside MIN_ANNULUS: the disc has one height, so a peak there
+    # would be drawn as a column of light along its axis.
+    ok = (v > 0) & (edge >= MIN_ANNULUS)
     if ok.sum() < 3:
         return 1.0
+    r = np.maximum(r, edge[ok].min())
     lg = np.interp(
         np.log(np.maximum(r, 1e-3)), np.log(edge[ok]), np.log(v[ok])
     )

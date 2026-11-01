@@ -278,6 +278,23 @@ def test_rotation_map_flips_counter_rotating_gas(tmp_path):
     assert fb.plot_rotation(prof, "1")[:4] == b"\x89PNG"
 
 
+def test_a_spike_in_the_innermost_annulus_is_not_drawn():
+    from types import SimpleNamespace
+
+    from visage.hd.model import radial_scale
+
+    edge = (0.01, 0.2, 0.5, 1.0, 2.0)
+    flat = (1.0, 1.0, 1.0, 1.0, 1.0)
+    spike = (1e5, 1.0, 1.0, 1.0, 1.0)
+    r = np.linspace(0.02, 3, 300)
+    base = np.ones_like(r)
+
+    def drawn(v):
+        return radial_scale(SimpleNamespace(radial=(edge, v)), 1, r, base)
+
+    np.testing.assert_allclose(drawn(spike), drawn(flat))
+
+
 def test_other_models_have_no_radial_scale():
     from types import SimpleNamespace
 
