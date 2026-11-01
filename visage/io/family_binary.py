@@ -349,10 +349,8 @@ def plot_rotation(prof: dict, label: str, inclination: float = 55.0) -> bytes:
     edges = prof["edges"][0]
     v = prof["vcirc"][0]
     gas = np.maximum(prof["gas"][0], 1e-12)
-    half = 1.3 * edges[1:][np.cumsum(gas * np.diff(edges**2))
-                           <= 0.95 * np.sum(gas * np.diff(edges**2))].max(
-        initial=edges[-1] * 0.2
-    )  # fmt: skip
+    mass = np.cumsum(gas * np.diff(edges**2))
+    half = 1.2 * float(np.interp(0.85 * mass[-1], mass, edges[1:]))
     grid = np.linspace(-half, half, 400)
     x, y = np.meshgrid(grid, grid)
     cos_i = np.cos(np.radians(inclination))
@@ -370,7 +368,10 @@ def plot_rotation(prof: dict, label: str, inclination: float = 55.0) -> bytes:
     ):
         surface = np.log10(np.maximum(prof[key][0], 1e-6))
         here = np.interp(np.log(rr), np.log(np.maximum(r, 1e-4)), surface)
-        shade = np.clip((here - (surface.max() - 3)) / 3, 0, 1)[..., None]
+        # Scaled at the half-mass radius: the very centre would hide the rest.
+        held = prof[key][0] * np.diff(edges**2)
+        k = int(np.searchsorted(np.cumsum(held), 0.5 * held.sum()))
+        shade = np.clip((here - surface[k] + 1.5) / 1.5, 0, 1)[..., None]
         rgb = ScalarMappable(norm, "RdBu_r").to_rgba(sign * los)[..., :3]
         ax.imshow(
             rgb * shade,
