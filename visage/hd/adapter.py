@@ -233,8 +233,8 @@ def sage_galaxy_from_snapshot(
         sfr_disk=_field(snap, "sfr_disk", i),
         sfr_bulge=_field(snap, "sfr_bulge", i),
         disk_radius_kpc=(
-            _extra(snap, "StellarDiscScaleRadius", i)
-            or _field(snap, "disk_radius", i)
+            _field(snap, "disk_radius", i)
+            or _extra(snap, "StellarDiscScaleRadius", i)
         )
         * kpc,
         bulge_radius_kpc=_field(snap, "bulge_radius", i) * kpc,
@@ -421,14 +421,19 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
 
     row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
     p = radial_profiles(path, int(snap.snap_num), row, hubble_h)
+    # The model's disc radius sets the size, the annuli the shape.
+    scale = _extra(snap, "StellarDiscScaleRadius", i)
+    radius = _field(snap, "disk_radius", i)
+    stretch = radius / scale if scale > 0 and radius > 0 else 1.0
     rows = [p[k][0] for k in ("r", "stars", "hi", "h2", "sfr")]
+    rows[0] = rows[0] * stretch
     rows.append(p["dust"][0] if "dust" in p else ())
     height = 0.0
     if "vcirc" in p and "sigma" in p:
         rows.append(toomre_q(p, redshift))
         half = _extra(snap, "StellarDiscHalfMassRadius", i) * 1e3 / hubble_h
         if half > 0:
-            height = disc_height_kpc(p, half)
+            height = disc_height_kpc(p, half) * stretch
     else:
         rows.append(())
     return tuple(tuple(float(v) for v in x) for x in rows), height

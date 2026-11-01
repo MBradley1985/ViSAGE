@@ -603,7 +603,7 @@ EnhancedStarFormationOn     1   %0: off; 1: Li+24 mass threshold w. sigmoid; 2: 
 
 SaveFullSFH                 1   %0: switch off
 SaveFullMH                  0   %0: switch off; 1: also save stellar metal mass per SFH bin (needs SaveFullSFH = 1)
-DarkSAGEMode                0   %0: switch off; 1: SAGE26 bulk recipes shared over 30 radial annuli; 2: SF law evaluated per annulus
+DarkSAGEMode                0   %0: switch off; 1: 30 radial annuli with SAGE26's disc radius, output identical to SAGE26; 2: disc radius from the annuli; 3: as 2, SF law per annulus
 DustySAGEMode               0   %0: switch off; 1: passive dust within SAGE26's metals; 2: Dusty-SAGE delayed yields and dust
 DustSNIIYields              0   %DustySAGEMode SNII yields: 0: Woosley & Weaver 1995; 1: Nomoto et al. 2006
 DustSNIaYields              0   %DustySAGEMode SNIa yields: 0: Iwamoto et al. 1999; 1: Seitenzahl et al. 2013

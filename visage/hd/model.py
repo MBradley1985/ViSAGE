@@ -415,7 +415,7 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     radius only nudges it (to the 1/4 power, at most ~+-30%).
     """
     m = max(g.stellar_mass, 1e7)
-    if (g.los or g.radial) and g.disk_radius_kpc > 0:
+    if g.los and g.disk_radius_kpc > 0:
         # On a lightcone: SAGE26's own radii, as its images and photometry.
         r50 = (
             g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 2.88e-6 * m**0.56
@@ -441,6 +441,9 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
         if g.bulge_radius_kpc > 0
         else 1.0
     )
+    if g.radial and g.disk_radius_kpc > 0:
+        # A run with annuli draws its disc at the model's own radius.
+        rd_rel, mod_d = g.disk_radius_kpc, 1.0
     notes = [
         f"size: Rd={rd_rel * mod_d:.2f} kpc, R50(early)={r50_early * mod_e:.2f} kpc "
         f"(Shen+03 x SAGE nudge {mod_d:.2f}/{mod_e:.2f})"
