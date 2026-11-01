@@ -485,20 +485,34 @@ def annulus_stamp(
     `edges_pix`, on a size x size grid, as sersic_stamp lays one out."""
     area = np.maximum(np.diff(edges_pix**2), 1e-9)
     mid = 0.5 * (edges_pix[1:] + edges_pix[:-1])
-    g = (np.arange(size * 3) + 0.5) / 3 - size / 2
-    x, y = np.meshgrid(g - off[0], g - off[1])
+    use = shares > 0  # (an empty annulus isn't a dark ring)
     c, s = np.cos(pa), np.sin(pa)
-    xr, yr = x * c + y * s, -x * s + y * c
-    r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
-    surface = np.log(np.maximum(shares / area, 1e-30))
-    img = np.exp(
-        np.interp(
-            np.log(np.maximum(r, 1e-3)), np.log(np.maximum(mid, 1e-3)), surface
-        )
+    lr = np.log(np.maximum(mid[use], 1e-3))
+    surface = np.log(shares[use] / area[use])
+
+    def light(gx, gy):
+        x, y = np.meshgrid(gx, gy)
+        x, y = x - off[0], y - off[1]
+        xr, yr = x * c + y * s, -x * s + y * c
+        r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
+        img = np.exp(np.interp(np.log(np.maximum(r, 1e-3)), lr, surface))
+        edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
+        return img * 0.5 * (1 + np.cos(np.pi * edge))
+
+    g = (np.arange(size * 3) + 0.5) / 3 - size / 2
+    img = light(g, g).reshape(size, 3, size, 3).mean(axis=(1, 3))
+    # As for the Sersic cusp: the centre is far narrower than a pixel.
+    (x0, x1), (y0, y1) = (
+        (max(k - 3, 0), min(k + 4, size))
+        for k in (int(np.floor(o + size / 2)) for o in off)
     )
-    edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
-    img = (img * 0.5 * (1 + np.cos(np.pi * edge))).reshape(size, 3, size, 3)
-    img = img.mean(axis=(1, 3))
+    gx = (np.arange((x1 - x0) * CUSP_SUB) + 0.5) / CUSP_SUB + x0 - size / 2
+    gy = (np.arange((y1 - y0) * CUSP_SUB) + 0.5) / CUSP_SUB + y0 - size / 2
+    img[y0:y1, x0:x1] = (
+        light(gx, gy)
+        .reshape(y1 - y0, CUSP_SUB, x1 - x0, CUSP_SUB)
+        .mean(axis=(1, 3))
+    )
     tot = img.sum()
     return img / tot if tot > 0 else img
 
