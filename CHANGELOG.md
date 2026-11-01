@@ -17,7 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - HD from annuli: dust by radius, disc height from `VelDispStars`, arms that fade where Toomre Q says the disc is stable, and a faint HI glow with Gas.
 - On a lightcone with annuli: inclination from the stellar disc, the light inside a 3 arcsec fibre, HI line widths, an HI Tully-Fisher plot, and mock images drawn from each annulus's light in each band.
 
-- Structure tab: Dust glow and Galaxy shapes checkboxes, on runs with the modes. Galaxy shapes lays an ellipse over each galaxy, tilted to its `SpinStars`, with a bulge core and its gas disc at the real size against the stars.
+- Structure tab: Dusty and Dark 'n Dusty checkboxes, on runs with the modes. Dark 'n Dusty lays an ellipse over each galaxy, tilted to its `SpinStars`, with a bulge core and its gas disc at the real size against the stars.
 
 ### Changed
 

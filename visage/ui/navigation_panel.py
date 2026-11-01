@@ -5900,7 +5900,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ):
                     v3.VCheckbox(
                         v_model=("dust_glow",),
-                        label="Dust glow",
+                        label="Dusty",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
@@ -5912,7 +5912,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ):
                     v3.VCheckbox(
                         v_model=("disc_shapes",),
-                        label="Galaxy shapes",
+                        label="Dark 'n Dusty",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
