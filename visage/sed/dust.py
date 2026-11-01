@@ -343,13 +343,21 @@ def annulus_band_shares(
     rest wavelengths `lam`: `old` stars placed by `s_old`, `recent` ones and
     those in their birth `clouds` by `s_new`, through the annuli's screens
     (and the clouds' depth `birth`)."""
-    rows = np.arange(len(lam))
-    k = np.clip(np.searchsorted(wave, lam), 0, len(wave) - 1)
+    # Averaged across the band: one wavelength can land on an emission line.
+    wave = np.asarray(wave, float)
     x = (lam / 5500.0)[:, None]
-    young = recent[rows, k] + clouds[rows, k] * np.exp(
+
+    def in_band(spec):
+        whole = np.cumsum(spec, axis=1)
+        rows = np.arange(len(lam))
+        lo = np.clip(np.searchsorted(wave, lam * 0.9), 0, len(wave) - 2)
+        hi = np.clip(np.searchsorted(wave, lam * 1.1), lo + 1, len(wave) - 1)
+        return (whole[rows, hi] - whole[rows, lo]) / (hi - lo)
+
+    young = in_band(recent) + in_band(clouds) * np.exp(
         -birth * x[:, 0] ** -N_BC
     )
-    light = (s_old * old[rows, k, None] + s_new * young[:, None]) * np.exp(
+    light = (s_old * in_band(old)[:, None] + s_new * young[:, None]) * np.exp(
         -tau * x**eta
     )
     total = light.sum(axis=1, keepdims=True)

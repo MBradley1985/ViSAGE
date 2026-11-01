@@ -1400,15 +1400,21 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 - 0.7 * np.exp(-((r / 1.2) ** 2)))
         * (0.15 + arm_dust)
     )
-    # The dust follows the run's own dust where it has it, else the gas.
+    # H2 and HI follow the run's own gas. The dust is laid out as they are,
+    # then follows the run's own dust where it has it.
     has_dust = len(rc.radial) > 5 and len(rc.radial[5]) > 0
-    h2 = h2 * radial_scale(rc, 5 if has_dust else 3, r, np.exp(-r / 0.9))
-    hi = hi * radial_scale(
-        rc, 5 if has_dust else 2, r, np.exp(-r / rc.hi_scale)
-    )
+    laid_h2, laid_hi = h2, hi
+    h2 = h2 * radial_scale(rc, 3, r, np.exp(-r / 0.9))
+    hi = hi * radial_scale(rc, 2, r, np.exp(-r / rc.hi_scale))
+    if has_dust:
+        laid_h2 = laid_h2 * radial_scale(rc, 5, r, np.exp(-r / 0.9))
+        laid_hi = laid_hi * radial_scale(rc, 5, r, np.exp(-r / rc.hi_scale))
+    else:
+        laid_h2, laid_hi = h2, hi
     if rc.clumps:
         h2 = h2 + 1.5 * giant * np.exp(-r / 3.0)
-    dust = (h2 + 0.35 * hi) * outer_cut * inner
+        laid_h2 = laid_h2 + 1.5 * giant * np.exp(-r / 3.0)
+    dust = (laid_h2 + 0.35 * laid_hi) * outer_cut * inner
     # Normalise the total dust column to that of a smooth exponential disk
     # with face-on optical depth tau0 at its centre (2 pi tau0 Rd^2).  An
     # integral rather than a ring average, so a central hole (bar) doesn't
