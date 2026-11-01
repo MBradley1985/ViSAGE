@@ -6,7 +6,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [2.16.0] — 2026-11-01
 
 ### Added
 
@@ -16,8 +16,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - A 2x2 Radial profile with dust, metals, rotation and dispersion, a Rotation map of stars and gas, and the run's dust on the card.
 - HD from annuli: dust by radius, disc height from `VelDispStars`, arms that fade where Toomre Q says the disc is stable, and a faint HI glow with Gas.
 - On a lightcone with annuli: inclination from the stellar disc, the light inside a 3 arcsec fibre, HI line widths, an HI Tully-Fisher plot, and mock images drawn from each annulus's light in each band.
-
 - Structure tab: Dusty and Dark 'n Dusty checkboxes, on runs with the modes. Dark 'n Dusty lays an ellipse over each galaxy, tilted to its `SpinStars`, with a bulge core and its gas disc at the real size against the stars.
+- Dark 'n Dusty draws ellipticals tilted to their merger bulge's spin, sized by its radius, flatter and sharper the more it rotates; HD flattens them by the same rotation.
 
 ### Changed
 
