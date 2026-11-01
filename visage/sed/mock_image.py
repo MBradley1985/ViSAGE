@@ -485,7 +485,9 @@ def annulus_stamp(
     `edges_pix`, on a size x size grid, as sersic_stamp lays one out."""
     area = np.maximum(np.diff(edges_pix**2), 1e-9)
     mid = 0.5 * (edges_pix[1:] + edges_pix[:-1])
-    use = shares > 0  # (an empty annulus isn't a dark ring)
+    # An empty annulus inside the disc isn't a dark ring; past the last one
+    # with light there's nothing.
+    use = shares > 0
     c, s = np.cos(pa), np.sin(pa)
     lr = np.log(np.maximum(mid[use], 1e-3))
     surface = np.log(shares[use] / area[use])
@@ -495,7 +497,9 @@ def annulus_stamp(
         x, y = x - off[0], y - off[1]
         xr, yr = x * c + y * s, -x * s + y * c
         r = np.sqrt(xr**2 + (yr / max(q, 0.05)) ** 2)
-        img = np.exp(np.interp(np.log(np.maximum(r, 1e-3)), lr, surface))
+        img = np.exp(
+            np.interp(np.log(np.maximum(r, 1e-3)), lr, surface, right=-700.0)
+        )
         edge = np.clip((np.hypot(x, y) / (size / 2) - 0.7) / 0.3, 0, 1)
         return img * 0.5 * (1 + np.cos(np.pi * edge))
 
