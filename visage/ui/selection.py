@@ -31,7 +31,7 @@ _PICK_PX = 28.0  # how close (pixels) a double-click must be to a galaxy
 
 def _init_state(state) -> None:
     for k, v in {
-        "sel_show": False,  # the card is open (Show info)
+        "sel_show": False,  # the card is open (Info)
         "sel_active": False,  # something is selected
         "sel_title": "",
         "sel_sub": "",
@@ -122,7 +122,7 @@ def selection_card(server) -> None:
                 size="x-small",
                 variant="text",
                 click=ctrl.sel_close,
-                title="Hide (Show info brings it back)",
+                title="Hide (Info brings it back)",
             )
         html.Div(
             "{{ sel_note }}",
@@ -607,7 +607,7 @@ def build_selection(server, scene) -> None:
         ):
             note = "Hidden by the redshift slider's cut."
         state.sel_note = note
-        state.sel_active = True  # (the card opens on Show info)
+        state.sel_active = True  # (the card opens on Info)
         if state.sel_info_open:
             _fill_info(i, snap)
         marker = scene.camera.marker
@@ -1051,8 +1051,7 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("sel_toggle_card")
     def _sel_toggle_card():
-        """Show info / Hide info (the header's i button and the
-        Structure tab's button)."""
+        """The icon rail's Info button."""
         if not state.sel_active:
             state.notice_text = "Double-click a galaxy to select it first."
             state.notice_color = "info"

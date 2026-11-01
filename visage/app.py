@@ -298,28 +298,27 @@ def create_app(
     # with the renderer for the CPU.
     frame_delivery.on_frame.append(lambda: hold_background(0.3))
 
-    # A lightcone is framed to the window's shape, which is only known once
-    # the browser sends its first frame size: frame it again then (once).
-    if scene.is_lightcone:
-        _fit_size = [tuple(scene.plotter.ren_win.GetSize()[:2])]
+    # The first view is framed to the window's shape, which is only known
+    # once the browser sends its first frame size: frame it again then (once).
+    _fit_size = [tuple(scene.plotter.ren_win.GetSize()[:2])]
 
-        def _refit_lightcone() -> None:
-            size = tuple(scene.plotter.ren_win.GetSize()[:2])
-            if _fit_size[0] is None or size == _fit_size[0]:
-                return
-            _fit_size[0] = None
+    def _refit_view() -> None:
+        size = tuple(scene.plotter.ren_win.GetSize()[:2])
+        if _fit_size[0] is None or size == _fit_size[0]:
+            return
+        _fit_size[0] = None
 
-            def _go() -> None:
-                scene.camera.reset()
-                if hasattr(server.controller, "view_update"):
-                    server.controller.view_update()
+        def _go() -> None:
+            scene.camera.reset()
+            if hasattr(server.controller, "view_update"):
+                server.controller.view_update()
 
-            try:
-                asyncio.get_running_loop().call_soon(_go)
-            except RuntimeError:
-                pass
+        try:
+            asyncio.get_running_loop().call_soon(_go)
+        except RuntimeError:
+            pass
 
-        frame_delivery.on_frame.append(_refit_lightcone)
+    frame_delivery.on_frame.append(_refit_view)
     if perf:
         from visage.utils import perf as _perf
 
@@ -1492,14 +1491,6 @@ def create_app(
 
                     # Components: labels on the HD galaxy's parts, drawn by
                     # visage.js from hd_labels (an SVG over the view).
-                    html.Div(
-                        id="region-draw",
-                        v_show=("region_tool",),
-                        style=(
-                            "position:absolute;inset:0;z-index:4;"
-                            "cursor:crosshair;"
-                        ),
-                    )
                     html.Div(
                         id="hd-labels",
                         style=(

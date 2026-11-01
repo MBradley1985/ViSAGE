@@ -34,7 +34,7 @@ The Console also selects (`go to halo 42` selects that halo's central), and so d
 
 ### The selection card
 
-The **i** button in the header (or **Show info** at the end of the Structure tab) opens the card:
+The rail's **Info** button opens the card:
 
 | Part | What it does |
 |---|---|
@@ -82,13 +82,12 @@ The list updates as the snapshot changes.
 
 ## Regions tab
 
-Pick a **Sphere**, **Box**, **Slice** or **Selection**. What is on the tab is the active region: the count below it, and **Active region** in Plotting and Export, all use it. In a periodic box, regions wrap around the edges.
+Pick a **Sphere**, **Box** or **Slice**. What is on the tab is the active region: the count below it, and **Active region** in Plotting and Export, all use it. In a periodic box, regions wrap around the edges.
 
-- **Fit to view** centres a sphere or box on the view and sizes it to what the view shows. Pressing Enter in a field is the same as **Go**.
+- **Fit sphere to view** and **Fit box to view** centre the shape on the view and size it to what the view shows. Pressing Enter in a field is the same as **Go**.
 - **Go** isolates the region and frames it; **Clear** puts the view back. **Dim outside the region** dims the galaxies outside it (haloes outside are still hidden).
-- **Create sphere**, **Create box** and **Create slice** show it in the view: drag a sphere or box to move and size it.
+- **Create sphere**, **Create box** and **Create slice** show it in the view: drag the move icon at its centre to move it, a box's face or a sphere's rim to size it. What you drag lights up. A slice moves along its direction, and its thickness is set on the tab.
 - **Slice:** pick an axis or the current view, then set the position and thickness. **Animate through the volume** moves it through the volume.
-- **Selection:** draw a lasso or rectangle over the view, or click galaxies, and Add, Remove or Replace. While you choose, everything else is dimmed. A drawn shape takes everything through the depth; **Nearest galaxies only** keeps the nearest in each part of the screen. **Add all from** Filters, Group or Last region adds those galaxies. In a box, a selection follows its galaxies through snapshots.
 - **Save** keeps a region with its model. Click a saved name to bring it back.
 
 Box mode and Lightcone Mode have the same tab. A lightcone also has a **Photometry** tab: see [Lightcone Mode → Synthetic photometry](lightcone.md#synthetic-photometry-sed).

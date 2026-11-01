@@ -333,6 +333,8 @@ def tab(ctrl) -> None:
             _step(2, "Choose galaxies")
             v3.VSelect(
                 v_model=("plot_region",),
+                classes="sage-left sage-sel-cyan",
+                color="cyan",
                 items=("plot_regions",),
                 density="compact",
                 hide_details=True,
@@ -371,6 +373,8 @@ def tab(ctrl) -> None:
             v3.VSelect(
                 v_show=("plot_scatter",),
                 v_model=("plot_colour",),
+                classes="sage-sel-cyan",
+                color="cyan",
                 items=("plot_colours",),
                 label="Colour by",
                 density="compact",
@@ -390,6 +394,8 @@ def tab(ctrl) -> None:
                         for axis in "xy":
                             v3.VSelect(
                                 v_model=(f"plot_{axis}scale",),
+                                classes="sage-sel-cyan",
+                                color="cyan",
                                 items=("plot_scales",),
                                 label=f"{axis} scale",
                                 density="compact",
@@ -409,6 +415,8 @@ def tab(ctrl) -> None:
                                     )
             v3.VSelect(
                 v_model=("plot_formats",),
+                classes="sage-right sage-sel-cyan",
+                color="cyan",
                 items=("plot_format_items",),
                 label="File format",
                 multiple=True,
@@ -418,6 +426,13 @@ def tab(ctrl) -> None:
                 style="margin-top:10px;",
             )
         with html.Div(style="flex:none;padding-top:12px;"):
+            v3.VCheckbox(
+                v_model=("plot_dark",),
+                label="Dark mode",
+                density="compact",
+                hide_details=True,
+                color="cyan",
+            )
             v3.VBtn(
                 "{{ plot_selected.length > 1 ? 'Make ' + plot_selected.length"
                 " + ' plots' : 'Make plot' }}",

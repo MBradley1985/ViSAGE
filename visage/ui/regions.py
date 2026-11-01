@@ -1,10 +1,8 @@
-"""The Regions tab: a sphere, box, slice or selection, one at a time.
+"""The Regions tab: a sphere, box or slice, one at a time.
 
 What is on the tab is the active region: the count, Plotting and export all
-read it from here. Go cuts the view to it and frames it. Saved regions come back with their model. The region
-itself is visage.utils.regions; a selection is drawn in the browser
-(visage.js, over `region-draw`) and picked here by where galaxies fall on
-screen.
+read it from here. Go cuts the view to it and frames it. Saved regions come
+back with their model. The region itself is visage.utils.regions.
 """
 
 from __future__ import annotations
@@ -16,6 +14,7 @@ import pyvista as pv
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
+from visage.scene.shape_drag import ShapeDrag
 from visage.utils import regions
 
 _HEAD = (
@@ -23,7 +22,7 @@ _HEAD = (
     "color:#7FDBFF;padding:18px 0 10px;"
 )
 _ROW = "display:flex;gap:8px;margin-bottom:12px;"
-_SHAPES = ("sphere", "box", "slice", "selection")
+_SHAPES = ("sphere", "box", "slice")
 _AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 _GEOMETRY = (
     "nav_x",
@@ -40,7 +39,6 @@ _GEOMETRY = (
     "slice_thickness",
 )
 _COLOUR = "cyan"
-_CLICK_REACH = 0.03  # of the view: how near a click must be to a galaxy
 
 
 def _active(scene):
@@ -50,9 +48,8 @@ def _active(scene):
     return galaxies, galaxies.positions + model.offset
 
 
-def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
-    """The tab's state and handlers. `toggle_sphere` and `toggle_box` show
-    or hide the drag handles; `push` redraws."""
+def setup(server, scene, push) -> None:
+    """The tab's state and handlers; `push` redraws."""
     state, ctrl = server.state, server.controller
     state.region_shape = "sphere"
     state.region_on = False
@@ -67,13 +64,8 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
     state.slice_thickness = 5.0
     state.slice_lo, state.slice_hi = 0.0, 1.0
     state.slice_sweep = False
-    state.region_tool = None
-    state.region_op = "add"
-    state.region_front = False
-    picked: set = set()
-    held: dict = {"normal": (0.0, 0.0, 1.0), "geometry": "sphere"}
+    held: dict = {"normal": (0.0, 0.0, 1.0)}
     sweep: list = [None]
-    outline: list = [None]
 
     def number(key) -> float:
         return float(state[key])
@@ -119,7 +111,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
                 }
         except (TypeError, ValueError):
             return None
-        return {"kind": "selection", "ids": sorted(int(i) for i in picked)}
+        return None
 
     def rows(region) -> np.ndarray:
         galaxies, pos = _active(scene)
@@ -129,9 +121,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         if region is None:
             return "Fill in every field."
         n = int(rows(region).sum())
-        if region["kind"] == "selection":
-            follow = "" if scene.is_lightcone else ", followed through time"
-            return f"{n:,} of {len(picked):,} chosen galaxies here{follow}"
         model = scene.active_model
         halos, _ = model.loader.get(model.current_snap)
         size = None if scene.is_lightcone else model.box_size
@@ -140,17 +129,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         vol = regions.volume(region, size)
         return text if vol is None else f"{text} · {vol:.3g} (Mpc/h)³"
 
-    def show_chosen() -> None:
-        """While choosing, dim everything but the chosen galaxies."""
-        focus = scene._focus_region
-        marking = focus is not None and focus.get("marking", False)
-        if state.region_on:
-            return
-        if picked and state.region_shape == "selection":
-            scene.set_focus_region(current("selection"), True, True)
-        elif marking:
-            scene.clear_focus()
-
     def apply() -> None:
         region = current()
         state.region_note = count_note(region)
@@ -158,52 +136,36 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             scene.set_focus_region(region, bool(state.region_grey))
             state.focus_active = True
             state.isolate_active = False
-        show_chosen()
-        show_slice()
+        show_handles()
         push()
 
-    def show_slice() -> None:
-        """Outline the slice in the view, once created."""
-        if outline[0] is not None:
-            scene.plotter.remove_actor(outline[0], render=False)
-            outline[0] = None
-        region = current("slice")
-        if not state.region_handles or state.region_shape != "slice":
-            return
-        if region is None:
-            return
-        n, point = np.array(region["normal"]), np.array(region["point"])
-        u = np.cross(
-            n, (0.0, 0.0, 1.0) if abs(n[2]) < 0.9 else (1.0, 0.0, 0.0)
-        )
-        u /= np.linalg.norm(u)
-        v = np.cross(n, u)
-        reach = 0.5 * float(state.slice_hi - state.slice_lo)
-        corners = [(a, b) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-        ring = [point + reach * (a * u + b * v) for a, b in corners]
-        line = pv.lines_from_points(np.array(ring + ring[:1]))
-        outline[0] = scene.plotter.add_mesh(
-            line,
-            color="white",
-            opacity=0.55,
-            line_width=1,
-            pickable=False,
-            reset_camera=False,
-            render=False,
-        )
+    def on_drag(region: dict) -> None:
+        """A shape dragged in the view: the tab's fields follow."""
+        if region["kind"] == "sphere":
+            for a, v in zip("xyz", region["centre"], strict=True):
+                state[f"nav_{a}"] = round(v, 2)
+            state.nav_distance = round(region["radius"], 2)
+        elif region["kind"] == "box":
+            for n, a in enumerate("xyz"):
+                state[f"nav_box_{a}min"] = round(region["lo"][n], 2)
+                state[f"nav_box_{a}max"] = round(region["hi"][n], 2)
+        else:
+            depth = float(np.dot(region["point"], region["normal"]))
+            depth = min(max(depth, state.slice_lo), state.slice_hi)
+            state.slice_depth = round(depth, 2)
+        state.flush()
 
-    def stop_handles() -> None:
-        if state.draw_sphere_active:
-            toggle_sphere()
-        if state.draw_box_active:
-            toggle_box()
+    drag = ShapeDrag(scene.plotter, on_drag, push)
 
-    def sync_handles() -> None:
-        stop_handles()
-        if state.region_handles and state.region_shape == "sphere":
-            toggle_sphere()
-        if state.region_handles and state.region_shape == "box":
-            toggle_box()
+    def show_handles() -> None:
+        """The active shape in the view, once created."""
+        region = current()
+        if region is None or not state.region_handles:
+            drag.hide()
+            return
+        if region["kind"] == "slice":
+            region["reach"] = 0.5 * float(state.slice_hi - state.slice_lo)
+        drag.show(region)
 
     def slice_range() -> None:
         """The slider's reach along the slice's direction."""
@@ -217,13 +179,9 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
 
     @state.change("region_shape")
     def on_shape(region_shape, **_):
-        state.region_tool = None
         state.slice_sweep = False
-        if region_shape != "selection":
-            held["geometry"] = region_shape
         if region_shape == "slice":
             slice_range()
-        sync_handles()
         apply()
 
     @state.change(*_GEOMETRY)
@@ -240,13 +198,11 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         elif mine:
             scene.clear_focus()
             state.focus_active = False
-            show_chosen()
             push()
 
     @state.change("region_handles")
     def on_handles(**_):
-        sync_handles()
-        show_slice()
+        show_handles()
         push()
 
     @state.change("slice_axis")
@@ -288,7 +244,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
                 )
                 state[f"nav_box_{a}min"] = round(float(v) - half, 3)
                 state[f"nav_box_{a}max"] = round(float(v) + half, 3)
-        sync_handles()
+        show_handles()
 
     @ctrl.set("region_fit_view")
     def on_fit_view():
@@ -332,7 +288,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             radius = float(np.linalg.norm(pos - centre, axis=1).max())
         scene.camera.zoom_to_radius(tuple(centre), max(radius, 0.1))
         scene.camera._clear_indicator()
-        state.region_tool = None
         region_show()
 
     @ctrl.set("region_face_slice")
@@ -351,9 +306,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
 
     @ctrl.set("region_clear")
     def on_clear():
-        picked.clear()
         state.slice_sweep = False
-        state.region_tool = None
         state.region_on = False
         state.region_handles = False
         scene.clear_focus()
@@ -361,78 +314,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         state.focus_active = False
         state.isolate_active = False
         apply()
-
-    # -- Selection -------------------------------------------------------
-
-    def choose(ids) -> None:
-        """Change the selection by `ids`, as the tab's Add/Remove/Replace."""
-        if state.region_op == "replace":
-            picked.clear()
-        if state.region_op == "remove":
-            picked.difference_update(int(i) for i in ids)
-        else:
-            picked.update(int(i) for i in ids)
-        apply()
-
-    def on_screen() -> tuple:
-        """Rows of the galaxies on show, their screen positions and depth."""
-        galaxies, pos = _active(scene)
-        layer = scene.active_model.galaxy_layer
-        shown = layer._combined_mask()
-        idx = (
-            np.arange(galaxies.count)
-            if shown is None
-            else np.flatnonzero(shown)
-        )
-        ren = scene.plotter.renderer
-        m = ren.GetActiveCamera().GetCompositeProjectionTransformMatrix(
-            ren.GetTiledAspectRatio(), -1, 1
-        )
-        matrix = [[m.GetElement(i, j) for j in range(4)] for i in range(4)]
-        xy, depth, ahead = regions.screen(pos[idx], matrix)
-        return idx[ahead], xy[ahead], depth[ahead]
-
-    @ctrl.trigger("region_pick")
-    def on_pick(tool, points):
-        """A stroke over the view: `points` run 0 to 1 from the top left."""
-        idx, xy, depth = on_screen()
-        ids = regions.identity(_active(scene)[0])
-        stroke = np.array(points, float) * [2, -2] + [-1, 1]
-        if tool == "click":
-            near = np.linalg.norm(xy - stroke[0], axis=1)
-            hit = near.argmin() if len(near) else None
-            if hit is not None and near[hit] < 2 * _CLICK_REACH:
-                choose(ids[idx[[hit]]])
-            return
-        if tool == "rectangle":
-            (x0, y0), (x1, y1) = stroke[0], stroke[-1]
-            stroke = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-        inside = np.flatnonzero(regions.in_polygon(xy, stroke))
-        if state.region_front and len(inside):
-            inside = inside[regions.front(xy[inside], depth[inside])]
-        choose(ids[idx[inside]])
-
-    @ctrl.set("region_take_filtered")
-    def on_take_filtered():
-        galaxies, _ = _active(scene)
-        keep = scene.active_model.galaxy_layer._filter_mask
-        ids = regions.identity(galaxies)
-        choose(ids if keep is None else ids[keep])
-
-    @ctrl.set("region_take_group")
-    def on_take_group():
-        from visage.utils.group_info import member_indices
-
-        if state.nav_gal_idx is not None:
-            galaxies, _ = _active(scene)
-            members = member_indices(galaxies, int(state.nav_gal_idx))
-            choose(regions.identity(galaxies)[members])
-
-    @ctrl.set("region_take_region")
-    def on_take_region():
-        region = current(held["geometry"])
-        if region is not None:
-            choose(regions.identity(_active(scene)[0])[rows(region)])
 
     # -- Saved -----------------------------------------------------------
 
@@ -443,6 +324,7 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         state.region_saved = [
             {"name": e["name"], "count": e["count"]}
             for e in regions.saved(model_name())
+            if e["region"]["kind"] != "selection"
         ]
 
     @ctrl.set("region_save")
@@ -483,9 +365,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
             held["normal"] = tuple(region["normal"])
             state.slice_axis = region["axis"]
             state.slice_thickness = region["thickness"]
-        else:
-            picked.clear()
-            picked.update(region["ids"])
         state.region_shape = kind
         state.flush()
         if kind == "slice":
@@ -517,8 +396,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         found = np.flatnonzero(rows(region))
         if not len(found):
             raise ValueError("No galaxies in the active region.")
-        if region["kind"] == "selection":
-            return found.astype(np.int64), {"selection_galaxies": len(found)}
         return found.astype(np.int64), {
             f"region_{k}": str(v) for k, v in region.items()
         }
@@ -530,7 +407,6 @@ def setup(server, scene, toggle_sphere, toggle_box, push) -> None:
         apply()
 
     def on_model() -> None:
-        picked.clear()
         state.region_on = False
         state.slice_sweep = False
         list_saved()
@@ -610,9 +486,9 @@ def _button(label: str, click, **kw) -> None:
     )
 
 
-def _centre_buttons(ctrl) -> None:
+def _centre_buttons(ctrl, shape: str) -> None:
     with html.Div(style=_ROW):
-        _button("Fit to view", ctrl.region_fit_view)
+        _button(f"Fit {shape} to view", ctrl.region_fit_view)
     with html.Div(style=_ROW):
         _button("Centre on view", ctrl.region_view_centre)
         _button(
@@ -661,7 +537,7 @@ def tab(ctrl) -> None:
         with html.Div(style=_ROW):
             for a in "xyz":
                 _field(f"nav_{a}", a.upper())
-        _centre_buttons(ctrl)
+        _centre_buttons(ctrl, "sphere")
         html.Div("SIZE", style=_HEAD)
         with html.Div(style=_ROW):
             _field("nav_distance", "Radius (Mpc/h)")
@@ -671,7 +547,7 @@ def tab(ctrl) -> None:
             with html.Div(style=_ROW):
                 for a in "xyz":
                     _box_axis_field(a, True)
-            _centre_buttons(ctrl)
+            _centre_buttons(ctrl, "box")
             html.Div("SIZE (Mpc/h)", style=_HEAD)
             with html.Div(style=_ROW):
                 for a in "xyz":
@@ -705,40 +581,7 @@ def tab(ctrl) -> None:
         _tick("slice_sweep", "Animate through the volume")
         with html.Div(style=_ROW + "margin-top:6px;"):
             _button("Look along slice", ctrl.region_face_slice)
-    with html.Div(v_show=("region_shape === 'selection'",)):
-        html.Div("DRAW", style=_HEAD)
-        with html.Div(style=_ROW):
-            for label, tool in (
-                ("Lasso", "lasso"),
-                ("Rectangle", "rectangle"),
-                ("Click", "click"),
-            ):
-                _button(
-                    label,
-                    f"region_tool = region_tool === '{tool}' ? null : '{tool}'",
-                    variant=(
-                        f"region_tool === '{tool}' ? 'flat' : 'outlined'",
-                    ),
-                )
-        html.Div("EACH SHAPE WILL", style=_HEAD)
-        _toggle(
-            "region_op",
-            [("Add", "add"), ("Remove", "remove"), ("Replace", "replace")],
-        )
-        html.Div("ADD ALL FROM", style=_HEAD)
-        with html.Div(style=_ROW):
-            _button("Filters", ctrl.region_take_filtered)
-            _button(
-                "Group",
-                ctrl.region_take_group,
-                disabled=("nav_gal_idx == null",),
-            )
-            _button("Last region", ctrl.region_take_region)
-        _tick("region_front", "Nearest galaxies only")
-    with html.Div(
-        v_show=("region_shape !== 'selection'",),
-        style=_ROW + "margin-top:10px;",
-    ):
+    with html.Div(style=_ROW + "margin-top:10px;"):
         v3.VBtn(
             "{{ region_handles ? 'Remove' : 'Create' }} {{ region_shape }}",
             click="region_handles = !region_handles",

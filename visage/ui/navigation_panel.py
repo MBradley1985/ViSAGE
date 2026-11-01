@@ -58,6 +58,7 @@ _HALO_MODES = [
     {"title": "Vmax", "value": "vmax", "requires": "vmax"},
 ]
 
+
 _GALAXY_MODES = [
     # Special / computed — always available
     {"title": "Structure", "value": "structure"},
@@ -380,11 +381,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.hd_available = True
         state.hd_unavailable = ""
     state.nav_active_tab = "layers"
-    state.panel_open = True
-    state.draw_sphere_active = (
-        False  # interactive sphere widget in Regions tab
-    )
-    state.draw_box_active = False  # interactive box widget in Regions tab
+    state.panel_open = False
 
     # Console — supports multiple parallel sessions. The state vars
     # below always reflect the *active* console; switching consoles
@@ -557,8 +554,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         disc_shapes=False,
         photometry_visible=False,
         plot_dark=True,
-        panel_open=True,
-        nav_active_tab="layers",
         find_preset=None,
         find_id="",
     )
@@ -666,9 +661,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         # SED bands live only in the dedicated Synthetic Photometry section
         # below, not in the general "Colour by" dropdown.
-        state.galaxy_color_modes = _sorted_modes(
-            _filter_modes(_GALAXY_MODES, fields) + _extra_modes()
-        )
+        # Structure first, ruled off: the default view, not a property.
+        modes = _filter_modes(_GALAXY_MODES, fields) + _extra_modes()
+        state.galaxy_color_modes = [
+            {
+                "title": "Structure",
+                "value": "structure",
+                "props": {"class": "sage-list-rule"},
+            }
+        ] + _sorted_modes([m for m in modes if m["value"] != "structure"])
         state.sed_color_modes = sed_modes
         state.has_sed_data = bool(sed_modes)
         state.is_lightcone = scene.is_lightcone
@@ -1095,153 +1096,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.gal_cbar_style = _cbar_style(cmap_css_gradient(name))
         _push()
 
-    # ------------------------------------------------------------------
-    # Interactive draw-widget storage (one slot each; only one active at a time)
-    # ------------------------------------------------------------------
-
-    _draw_sphere_widget: list = [None]  # vtkSphereWidget or None
-    _draw_sphere_actor: list = [None]  # custom 5-ring mesh actor or None
-    _draw_box_widget: list = [None]  # vtkBoxWidget or None
-    _box_cam_obs_tag: list = [None]  # (widget, w_tag, cam, cam_tag) or None
-    _handle_world_r: list = [None]  # fixed world-space handle radius
-    _box_handle_sources: list = [
-        []
-    ]  # vtkSphereSource objects for the 7 handle spheres
-
-    def _remove_sphere_actor() -> None:
-        if _draw_sphere_actor[0] is not None:
-            try:
-                scene.plotter.remove_actor(_draw_sphere_actor[0], render=False)
-            except Exception:
-                pass
-            _draw_sphere_actor[0] = None
-
-    # ------------------------------------------------------------------
-    # Box widget handle sizing — keep handles world-space constant.
-    #
-    # PyVista uses vtkBoxWidget (not vtkBoxWidget2).  Internally, VTK
-    # calls SizeHandles() (C++, not Python-accessible) on every Scale /
-    # Translate interaction, which recomputes handle sphere radii based
-    # on the CURRENT camera distance.  SetHandleSize() has no visual
-    # effect in VTK 9.5 — it is not wired to the sphere geometry.
-    #
-    # Direct fix: capture the vtkSphereSource objects that back the 7
-    # handle actors at placement time, snapshot their initial radius, and
-    # restore it in an EndInteractionEvent observer (which fires AFTER
-    # SizeHandles() but BEFORE the following Render()).  The camera
-    # ModifiedEvent observer covers zoom changes for the same reason.
-    # ------------------------------------------------------------------
-
-    def _hairline_box(widget) -> None:
-        """Thin white lines, without the cross through the box's middle."""
-        widget.OutlineCursorWiresOff()
-        for prop in (
-            widget.GetOutlineProperty(),
-            widget.GetSelectedOutlineProperty(),
-        ):
-            prop.SetColor(1.0, 1.0, 1.0)
-            prop.SetOpacity(0.55)
-            prop.SetLineWidth(1.0)
-        widget.GetHandleProperty().SetColor(1.0, 1.0, 1.0)
-        widget.GetSelectedHandleProperty().SetColor(1.0, 1.0, 1.0)
-
-    def _rescale_box_handles(*_) -> None:
-        r = _handle_world_r[0]
-        sources = _box_handle_sources[0]
-        if r is None or not sources:
-            return
-        try:
-            for src in sources:
-                src.SetRadius(r)
-                src.Modified()
-        except Exception:
-            pass
-
-    def _attach_box_cam_observer(widget) -> None:
-        w_tag = widget.AddObserver("EndInteractionEvent", _rescale_box_handles)
-        cam = scene.plotter.renderer.GetActiveCamera()
-        cam_tag = cam.AddObserver("ModifiedEvent", _rescale_box_handles)
-        _box_cam_obs_tag[0] = (widget, w_tag, cam, cam_tag)
-
-    def _detach_box_cam_observer() -> None:
-        if _box_cam_obs_tag[0] is not None:
-            widget, w_tag, cam, cam_tag = _box_cam_obs_tag[0]
-            try:
-                widget.RemoveObserver(w_tag)
-            except Exception:
-                pass
-            try:
-                cam.RemoveObserver(cam_tag)
-            except Exception:
-                pass
-            _box_cam_obs_tag[0] = None
-        _handle_world_r[0] = None
-        _box_handle_sources[0] = []
-
-    def _rebuild_sphere_rings(center, radius: float) -> None:
-        """Draw the sphere as three thin rings."""
-        import numpy as _np2
-        import pyvista as _pv2
-
-        _remove_sphere_actor()
-        cx2 = float(center[0])
-        cy2 = float(center[1])
-        cz2 = float(center[2])
-        r2 = max(0.01, float(radius))
-        t = _np2.linspace(0.0, 2.0 * _np2.pi, 64, dtype=_np2.float64)
-        c2, s2 = _np2.cos(t) * r2, _np2.sin(t) * r2
-        rings = [
-            _np2.column_stack([cx2 + c2, cy2 + s2, _np2.full_like(c2, cz2)])
-        ]
-        for deg in (0.0, 90.0):
-            ca, sa = _np2.cos(_np2.deg2rad(deg)), _np2.sin(_np2.deg2rad(deg))
-            rings.append(
-                _np2.column_stack([cx2 + c2 * ca, cy2 + c2 * sa, cz2 + s2])
-            )
-        all_pts = _np2.vstack(rings)
-        n = len(t)
-        lines = []
-        for i in range(len(rings)):
-            lines.append(n + 1)
-            lines.extend([i * n + j for j in range(n)])
-            lines.append(i * n)
-        poly = _pv2.PolyData(all_pts)
-        poly.verts = _np2.empty(0, dtype=_np2.int64)
-        poly.lines = _np2.array(lines, dtype=_np2.int64)
-        _draw_sphere_actor[0] = scene.plotter.add_mesh(
-            poly,
-            color="white",
-            opacity=0.55,
-            line_width=1,
-            style="wireframe",
-            render_points_as_spheres=False,
-            point_size=0,
-        )
-        try:
-            _draw_sphere_actor[0].GetProperty().SetRenderPointsAsSpheres(False)
-            _draw_sphere_actor[0].GetProperty().SetVertexVisibility(False)
-            _draw_sphere_actor[0].GetProperty().SetPointSize(0)
-        except Exception:
-            pass
-
     def _clear_draw_widgets() -> None:
-        """Remove any active interactive sphere/box widget and reset state."""
-        if bool(state.draw_sphere_active):
-            try:
-                scene.plotter.clear_sphere_widgets()
-            except Exception:
-                pass
-            _draw_sphere_widget[0] = None
-            _remove_sphere_actor()
-            state.draw_sphere_active = False
-        if bool(state.draw_box_active):
-            try:
-                scene.plotter.clear_box_widgets()
-            except Exception:
-                pass
-            _detach_box_cam_observer()
-            _draw_box_widget[0] = None
-            state.draw_box_active = False
+        """Take any drawn Regions shape out of the view."""
+        state.region_handles = False
 
     # Clear draw widgets whenever the primary model changes (world coords shift).
     scene.register_model_change_callback(_clear_draw_widgets)
@@ -2689,193 +2546,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         threading.Thread(target=_do_finalize, daemon=True).start()
 
-    @ctrl.set("toggle_draw_sphere")
-    def on_toggle_draw_sphere():
-        """Show or hide the interactive sphere widget of the Regions tab.
+    _regions.setup(server, scene, _push)
 
-        First click places a draggable sphere in the 3D view; dragging its
-        handles updates the X/Y/Z and Standoff fields in real time.
-        Second click (Lock) removes the widget and runs go_to_coords so
-        the locked sphere becomes the active focus region."""
-        if bool(state.draw_sphere_active):
-            # Lock — clear widget; fields already hold the final position.
-            try:
-                scene.plotter.clear_sphere_widgets()
-            except Exception:
-                pass
-            _draw_sphere_widget[0] = None
-            _remove_sphere_actor()
-            state.draw_sphere_active = False
-            state.flush()
-            _push()
-        else:
-            # Start — place two draggable handle balls:
-            #   index 0 = center ball  (translates the sphere)
-            #   index 1 = edge ball    (resizes: distance from centre = radius)
-            # A custom 5-ring mesh (identical to the sphere indicator)
-            # is drawn between them and rebuilt whenever either ball moves.
-            cx, cy, cz = (
-                float(state.nav_x),
-                float(state.nav_y),
-                float(state.nav_z),
-            )
-            r = float(state.nav_distance)
-
-            # Mutable centre/radius shared by the callback closure.
-            _sc = [cx, cy, cz]
-            _sr = [r]
-
-            def _sphere_cb(point, index, widget):
-                import numpy as _np2
-
-                if index == 0:
-                    # Centre ball moved — translate sphere.
-                    _sc[0], _sc[1], _sc[2] = (
-                        float(point[0]),
-                        float(point[1]),
-                        float(point[2]),
-                    )
-                    state.nav_x = round(_sc[0], 2)
-                    state.nav_y = round(_sc[1], 2)
-                    state.nav_z = round(_sc[2], 2)
-                    # Slide the edge ball to stay on the sphere surface (+X).
-                    ww = _draw_sphere_widget[0]
-                    if isinstance(ww, list) and len(ww) > 1:
-                        ww[1].SetCenter(_sc[0] + _sr[0], _sc[1], _sc[2])
-                        ww[1].Modified()
-                else:
-                    # Edge ball moved — resize from distance to centre.
-                    p = _np2.array(
-                        [float(point[0]), float(point[1]), float(point[2])]
-                    )
-                    c = _np2.array(_sc)
-                    _sr[0] = max(0.1, float(_np2.linalg.norm(p - c)))
-                    state.nav_distance = round(_sr[0], 2)
-                _rebuild_sphere_rings(_sc, _sr[0])
-                state.flush()
-
-            handle_r = r * 0.04
-            try:
-                _draw_sphere_widget[0] = scene.plotter.add_sphere_widget(
-                    _sphere_cb,
-                    center=[(cx, cy, cz), (cx + r, cy, cz)],
-                    radius=handle_r,
-                    color="white",
-                    style="surface",
-                    pass_widget=True,
-                    interaction_event="always",
-                )
-                _rebuild_sphere_rings((cx, cy, cz), r)
-                state.draw_sphere_active = True
-            except Exception:
-                pass
-            state.flush()
-            _push()
-
-    @ctrl.set("toggle_draw_box")
-    def on_toggle_draw_box():
-        """Show or hide the interactive box widget of the Regions tab.
-
-        First click places a draggable, resizable box in the 3D view; moving
-        its handles updates the six min/max bound fields in real time.
-        Second click (Lock) removes the widget and runs zoom_to_box so the
-        locked box becomes the active focus region."""
-        if bool(state.draw_box_active):
-            # Lock — clear widget; fields already hold the final bounds.
-            try:
-                scene.plotter.clear_box_widgets()
-            except Exception:
-                pass
-            _detach_box_cam_observer()
-            _draw_box_widget[0] = None
-            state.draw_box_active = False
-            state.flush()
-            _push()
-        else:
-            # Start — place an interactive box centred on the current view.
-            xmin, xmax = float(state.nav_box_xmin), float(state.nav_box_xmax)
-            ymin, ymax = float(state.nav_box_ymin), float(state.nav_box_ymax)
-            zmin, zmax = float(state.nav_box_zmin), float(state.nav_box_zmax)
-
-            def _box_cb(planes):
-                pts = planes.GetPoints()
-                if pts is None or pts.GetNumberOfPoints() == 0:
-                    return
-                n = pts.GetNumberOfPoints()
-                xs = [pts.GetPoint(i)[0] for i in range(n)]
-                ys = [pts.GetPoint(i)[1] for i in range(n)]
-                zs = [pts.GetPoint(i)[2] for i in range(n)]
-                bxmin = round(min(xs), 2)
-                bxmax = round(max(xs), 2)
-                bymin = round(min(ys), 2)
-                bymax = round(max(ys), 2)
-                bzmin = round(min(zs), 2)
-                bzmax = round(max(zs), 2)
-                state.nav_box_xmin = bxmin
-                state.nav_box_xmax = bxmax
-                state.nav_box_ymin = bymin
-                state.nav_box_ymax = bymax
-                state.nav_box_zmin = bzmin
-                state.nav_box_zmax = bzmax
-                state.flush()
-
-            try:
-                # Snapshot sphere sources that exist BEFORE the widget
-                # so we can identify the 7 new handle sources afterward.
-                def _sphere_src_ids():
-                    _ids = set()
-                    _a = scene.plotter.renderer.GetActors()
-                    _a.InitTraversal()
-                    for _ in range(_a.GetNumberOfItems()):
-                        _ac = _a.GetNextActor()
-                        _mp = _ac.GetMapper()
-                        if _mp:
-                            _s = _mp.GetInputAlgorithm()
-                            if _s and hasattr(_s, "SetRadius"):
-                                _ids.add(id(_s))
-                    return _ids
-
-                _pre_ids = _sphere_src_ids()
-
-                _draw_box_widget[0] = scene.plotter.add_box_widget(
-                    _box_cb,
-                    bounds=[xmin, xmax, ymin, ymax, zmin, zmax],
-                    color="white",
-                    rotation_enabled=False,
-                )
-                state.draw_box_active = True
-                _hairline_box(_draw_box_widget[0])
-
-                # Capture the new sphere sources (= handle spheres)
-                _new_srcs = []
-                _a2 = scene.plotter.renderer.GetActors()
-                _a2.InitTraversal()
-                for _ in range(_a2.GetNumberOfItems()):
-                    _ac2 = _a2.GetNextActor()
-                    _mp2 = _ac2.GetMapper()
-                    if _mp2:
-                        _s2 = _mp2.GetInputAlgorithm()
-                        if (
-                            _s2
-                            and id(_s2) not in _pre_ids
-                            and hasattr(_s2, "SetRadius")
-                            and hasattr(_s2, "GetRadius")
-                        ):
-                            _new_srcs.append(_s2)
-                _box_handle_sources[0] = _new_srcs
-                _handle_world_r[0] = (
-                    _new_srcs[0].GetRadius() * 0.35 if _new_srcs else None
-                )
-                _rescale_box_handles()
-                _attach_box_cam_observer(_draw_box_widget[0])
-            except Exception:
-                pass
-            state.flush()
-            _push()
-
-    _regions.setup(
-        server, scene, on_toggle_draw_sphere, on_toggle_draw_box, _push
-    )
+    @state.change("panel_open")
+    def on_panel_open(panel_open, **_):
+        scene.camera.set_panel(bool(panel_open))
+        _push()
 
     @ctrl.set("reset_camera")
     def on_reset():
@@ -5521,6 +5197,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         v_model=("halo_color_mode",),
                         items=("halo_color_modes",),
                         label="Colour by",
+                        classes="sage-right sage-sel-halo",
                         hide_details=True,
                         variant="outlined",
                         color="#c084fc",
@@ -5533,6 +5210,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("halo_colormap",),
                         items=(_CMAPS,),
+                        classes="sage-left sage-sel-halo",
                         hide_details=True,
                         variant="outlined",
                         color="#c084fc",
@@ -5593,6 +5271,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("dust_glow",),
                         label="Dusty",
+                        classes="sage-dusty",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
@@ -5605,6 +5284,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("disc_shapes",),
                         label="Dark 'n Dusty",
+                        classes="sage-dark-dusty",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
@@ -5616,6 +5296,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         v_model=("galaxy_color_mode",),
                         items=("galaxy_color_modes",),
                         label="Colour by",
+                        classes="sage-right sage-sel-gal",
                         hide_details=True,
                         variant="outlined",
                         color="#FFD700",
@@ -5628,6 +5309,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("galaxy_colormap",),
                         items=(_CMAPS,),
+                        classes="sage-left sage-sel-gal",
                         hide_details=True,
                         variant="outlined",
                         color="#FFD700",
@@ -5675,17 +5357,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         )
 
                 # Which environments' galaxies to show.
-                v3.VDivider(style="margin:14px 0;")
+                v3.VDivider(style="margin:26px 0 20px;")
                 v3.VLabel(
                     "ENVIRONMENT",
                     style=(
                         "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
                         "color:#06b6d4;display:block;padding:4px 0 6px;"
                     ),
-                )
-                v3.VLabel(
-                    "Show galaxies in these environments",
-                    style="font-size:0.6rem;color:#9ca3af;padding:0 0 4px;display:block;",
                 )
                 _ENV_CB_STYLE = (
                     "margin-top:-6px;margin-bottom:-8px;"
@@ -5735,28 +5413,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
-                )
-                # The selection card (what's selected, its group, Go /
-                # Isolate / HD / Gas).
-                v3.VBtn(
-                    "{{ sel_show ? 'Hide info' : 'Show info' }}",
-                    block=True,
-                    variant=("sel_show ? 'flat' : 'outlined'",),
-                    color="cyan",
-                    density="compact",
-                    prepend_icon="mdi-information-outline",
-                    disabled=("!sel_active",),
-                    click=ctrl.sel_toggle_card,
-                    style="margin-top:14px;",
-                    title="Show the selected galaxy's card",
-                )
-                v3.VSwitch(
-                    v_model=("plot_dark",),
-                    label="Dark mode",
-                    density="compact",
-                    hide_details=True,
-                    color="cyan",
-                    style="margin-top:8px;",
                 )
 
             # Regions
@@ -7298,6 +6954,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     html.Div("Type", classes="sage-select-head", style=_FLBL)
                     v3.VSelect(
                         v_model=("filter_gal_type",),
+                        classes="sage-left sage-sel-gal",
                         items=(
                             [
                                 {"title": "All", "value": "both"},
@@ -7316,6 +6973,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
                     v3.VSelect(
                         v_model=("filter_gal_ffb",),
+                        classes="sage-left sage-sel-gal",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
@@ -7337,6 +6995,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
                     v3.VSelect(
                         v_model=("filter_gal_cgm",),
+                        classes="sage-left sage-sel-gal",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
@@ -7561,6 +7220,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 v3.VSelect(
                     v_model=("movie_resolution",),
+                    classes="sage-left sage-sel-cyan",
                     items=(
                         [
                             {"title": "Native  (1×)", "value": "native"},
@@ -7581,6 +7241,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 v3.VSelect(
                     v_model=("movie_format",),
+                    classes="sage-left sage-sel-cyan",
                     items=(
                         [
                             {"title": "GIF", "value": "gif"},

@@ -38,9 +38,9 @@ Eight tabs in two rows of four:
 
 | Tab | Purpose |
 |---|---|
-| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter and **Show info** (the selection card) |
+| Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter |
 | Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime); **Find** presets |
-| Regions     | Spheres, boxes, slices and selections, with live counts and saved regions |
+| Regions     | Spheres, boxes and slices, with live counts and saved regions |
 | Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
@@ -65,7 +65,7 @@ The box strip is hidden in single-model mode.
 | Loading spinner   | Dimmed cover while a new model loads from disk |
 | Warning snackbar  | Top of the render view; appears when an overlay attempt is rejected (e.g. incompatible box size) |
 | Selection rings   | A cyan ring on the selected galaxy, smaller rings on the rest of its group (merged where they would pile up) |
-| Selection card    | Top-left, draggable; opened by the rail's **Info** button or **Show info** — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
+| Selection card    | Top-left, draggable; opened by the rail's **Info** button — properties, group list, Go / Isolate / HD / Gas, browsing (see [Navigation](navigation.md#the-selection-card)) |
 | HD build card     | Centre, while an HD model builds: progress and **Cancel** (or Esc) |
 
 ## Info bar (bottom)

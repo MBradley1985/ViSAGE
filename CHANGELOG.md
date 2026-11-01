@@ -30,11 +30,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Rotation shows stars and gas as velocity maps above the rotation curve, each map framed on its own, with Gaia-style colours, contours and orbit streaks.
-- The dark background switch is now Dark mode, at the bottom of the Structure tab and on by default. It also sets radial, rotation and spectrum figures.
+- The dark background switch is now Dark mode, in the Plotting tab above Make plot, on by default. It also sets radial, rotation and spectrum figures.
 - Tighter spacing for the galaxy and mock-image checkboxes.
 - The selection card and pop-outs have a new glass look, matching Launch Mode.
 - Tabs moved to an icon rail on the right, opening a floating glass panel that a second click closes. Rail and panel float over the view.
 - The top bar has Export, Fly-through and updates beside playback.
+- ViSAGE opens with the side panel closed and the box or lightcone centred in full view. The view moves over when the panel opens.
+- Reset keeps the tab you are on.
+- Drawn boxes, spheres and slices have a move icon at their centre. Drag a box's face or a sphere's rim to resize; what you drag lights up.
+- Structure and Filters dropdowns show the chosen value in the haloes' or galaxies' colour.
+- Show info is gone from the Structure tab: use Info on the icon rail.
+- Structure heads the galaxy Colour by list, ruled off from the properties.
+- Dusty and Dark 'n Dusty take the top and bottom halves of plasma.
 - Go, Info, Focus, Isolate and Box Centre sit at the bottom of the icon rail. Go is new there, and flies to the selection.
 - A new look throughout: pill dropdowns and switches.
 - Masses and units are typeset with subscripts and superscripts, in the app and on its figures.

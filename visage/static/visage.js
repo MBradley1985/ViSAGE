@@ -1194,58 +1194,6 @@
 
 })();
 
-// Regions tab: draw a lasso or rectangle over the view, or click. The stroke
-// goes to the server as 0 to 1 from the view's top left.
-(function () {
-  var pts = null;
-  function place(host, e) {
-    var r = host.getBoundingClientRect();
-    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
-  }
-  function draw(host, tool) {
-    var svg = host.querySelector('svg');
-    if (!svg) {
-      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 1 1');
-      svg.setAttribute('preserveAspectRatio', 'none');
-      svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;' +
-        'pointer-events:none;';
-      svg.innerHTML = '<polygon fill="none" stroke="#fff" stroke-opacity=".55" ' +
-        'stroke-width="1" vector-effect="non-scaling-stroke"/>';
-      host.appendChild(svg);
-    }
-    var p = pts || [];
-    if (tool === 'rectangle' && p.length > 1) {
-      var a = p[0], b = p[p.length - 1];
-      p = [a, [b[0], a[1]], b, [a[0], b[1]]];
-    }
-    svg.firstChild.setAttribute('points', p.map(function (q) {
-      return q.join(',');
-    }).join(' '));
-  }
-  document.addEventListener('mousedown', function (e) {
-    var host = e.target.closest && e.target.closest('#region-draw');
-    if (!host) return;
-    pts = [place(host, e)];
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', function (e) {
-    var host = document.getElementById('region-draw');
-    if (!pts || !host) return;
-    pts.push(place(host, e));
-    draw(host, window.trame.state.get('region_tool'));
-  });
-  document.addEventListener('mouseup', function () {
-    var host = document.getElementById('region-draw');
-    if (!pts || !host) return;
-    var t = window.trame, stroke = pts;
-    pts = null;
-    draw(host);
-    t.trigger('region_pick', [t.state.get('region_tool'), stroke]);
-  });
-})();
-
-
 // Masses and units typeset wherever they appear: M*, Msun, yr^-1, 10^n and
 // so on. A text node is kept (hidden, so Vue can still update it) beside a
 // rendered copy.
