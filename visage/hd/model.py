@@ -409,10 +409,10 @@ class GalaxyRecipe:
 def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     """Disk scale length and elliptical half-light radius, in kpc.
 
-    SAGE's spin-based DiskRadius scatters a lot at fixed mass (a few
-    galaxies come out tens of kpc), so the picture's size follows the
-    observed size-mass relations of Shen et al. (2003) and SAGE's own
-    radius only nudges it (to the 1/4 power, at most ~+-30%).
+    The disc is drawn at the model's own DiskRadius, which scatters a lot
+    at fixed mass (a few galaxies come out tens of kpc). The bulge's size
+    follows the observed size-mass relation of Shen et al. (2003) and SAGE's
+    own radius only nudges it (to the 1/4 power, at most ~+-30%).
     """
     m = max(g.stellar_mass, 1e7)
     if g.los and g.disk_radius_kpc > 0:
@@ -441,8 +441,8 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
         if g.bulge_radius_kpc > 0
         else 1.0
     )
-    if g.radial and g.disk_radius_kpc > 0:
-        # A run with annuli draws its disc at the model's own radius.
+    if g.disk_radius_kpc > 0:
+        # The disc is drawn at the model's own radius.
         rd_rel, mod_d = g.disk_radius_kpc, 1.0
     notes = [
         f"size: Rd={rd_rel * mod_d:.2f} kpc, R50(early)={r50_early * mod_e:.2f} kpc "
