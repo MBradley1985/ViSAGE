@@ -23,7 +23,7 @@ These work no matter which tab is active. **HD** and **Reset** are in the top ba
 | Go | Flies to the selection: the galaxy, or in halo context its halo and group |
 | Info | Opens or closes the selection card |
 | Focus | Masks haloes and galaxies outside the current zoom region. Galaxy zooms auto-enable focus |
-| Isolate | Shows only the selection, 3 Mpc/h away as Go: the galaxy, or in halo context its halo and whole group |
+| Isolate | Shows only the selection, 3 h⁻¹ Mpc away as Go: the galaxy, or in halo context its halo and whole group |
 | Box Centre | Places the camera AT the box centre, looking out. In a lightcone this is **Observer**, at the observer looking along the cone |
 
 ## Selecting a galaxy
@@ -39,14 +39,14 @@ The rail's **Info** button opens the card:
 | Part | What it does |
 |---|---|
 | Galaxy / Halo + group | What the actions apply to: the galaxy, or its host halo with the whole group |
-| Go | Fly to it, 3 Mpc/h away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 Mpc/h focus sphere |
+| Go | Fly to it, 3 h⁻¹ Mpc away: the galaxy, or in halo context the halo and its group (inside HD, to it in close-up). Everything else stays shown, within a 10 h⁻¹ Mpc focus sphere |
 | Isolate, HD | As the rail's Isolate and the header's HD. In **Galaxy** context HD draws just the galaxy; in **Halo + group** context, the whole group |
 | Gas | HD's halo gas on or off |
 | ← → | Back and forward through what you've selected |
 | ‹ › | Previous / next member of the group, flying to it (the card keeps its Galaxy / Halo + group context) |
 | ☆ | Up to the group's central |
 | Nearest | Hop to the nearest galaxy and fly there; amber rings mark the next nearest (the next hop larger). Hopping again carries on to the nearest not yet visited, so it never bounces back |
-| Zoom 3 / 5 / 10 | Fly in at that radius (Mpc/h), with focus |
+| Zoom 3 / 5 / 10 | Fly in at that radius (h⁻¹ Mpc), with focus |
 | Clear / Show indicator | Rings off or on. The galaxy stays selected, and the choice holds through HD, Gas and new selections |
 | Host halo · Go to halo | The halo the central sits on, and a flight to it |
 | Properties | Key properties; **All properties** lists every field (Approx Age needs SAGE's full star-formation histories, `SaveFullSFH 1`) |

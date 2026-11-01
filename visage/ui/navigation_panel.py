@@ -8,6 +8,7 @@ import time
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
+from visage.utils import labels
 from visage.scene.scene import Scene
 from visage.ui import plotting
 from visage.ui import regions as _regions
@@ -52,117 +53,157 @@ _BTN = "padding:8px 0 4px;"
 # Full ordered lists; each entry may carry an optional "requires" key naming
 # the model_fields flag that must be True for the mode to appear.
 _HALO_MODES = [
-    {"title": "Mvir", "value": "mvir"},
-    {"title": "Rvir", "value": "rvir"},
-    {"title": "Vvir", "value": "vvir"},
-    {"title": "Vmax", "value": "vmax", "requires": "vmax"},
+    {"title": labels.name("mvir"), "value": "mvir"},
+    {"title": labels.name("rvir"), "value": "rvir"},
+    {"title": labels.name("vvir"), "value": "vvir"},
+    {"title": labels.name("vmax"), "value": "vmax", "requires": "vmax"},
 ]
 
 
 _GALAXY_MODES = [
     # Special / computed — always available
     {"title": "Structure", "value": "structure"},
-    {"title": "Stellar Mass", "value": "stellar_mass"},
-    {"title": "SFR", "value": "sfr"},
-    {"title": "sSFR", "value": "ssfr"},
-    {"title": "B / T", "value": "bt"},
-    {"title": "Age", "value": "age", "requires": "mean_age"},
-    {"title": "Type", "value": "type"},
+    {"title": labels.name("stellar_mass"), "value": "stellar_mass"},
+    {"title": labels.name("sfr"), "value": "sfr"},
+    {"title": labels.name("ssfr"), "value": "ssfr"},
+    {"title": labels.name("bt"), "value": "bt"},
+    {"title": labels.name("age"), "value": "age", "requires": "mean_age"},
+    {"title": labels.name("type"), "value": "type"},
     # Alphabetical — optional SAGE26 properties
-    {"title": "BH Mass", "value": "bh_mass", "requires": "bh_mass"},
-    {"title": "Bulge Mass", "value": "bulge_mass"},
     {
-        "title": "Bulge Radius",
+        "title": labels.name("bh_mass"),
+        "value": "bh_mass",
+        "requires": "bh_mass",
+    },
+    {"title": labels.name("bulge_mass"), "value": "bulge_mass"},
+    {
+        "title": labels.name("bulge_radius"),
         "value": "bulge_radius",
         "requires": "bulge_radius",
     },
-    {"title": "CGM Gas", "value": "cgm_gas", "requires": "cgm_gas"},
-    {"title": "Cold Gas", "value": "cold_gas"},
-    {"title": "Cooling", "value": "cooling", "requires": "cooling"},
     {
-        "title": "Disk Radius",
+        "title": labels.name("cgm_gas"),
+        "value": "cgm_gas",
+        "requires": "cgm_gas",
+    },
+    {"title": labels.name("cold_gas"), "value": "cold_gas"},
+    {
+        "title": labels.name("cooling"),
+        "value": "cooling",
+        "requires": "cooling",
+    },
+    {
+        "title": labels.name("disk_radius"),
         "value": "disk_radius",
         "requires": "disk_radius",
     },
     {
-        "title": "Ejected Mass",
+        "title": labels.name("ejected_mass"),
         "value": "ejected_mass",
         "requires": "ejected_mass",
     },
-    {"title": "H1 Gas", "value": "h1_gas", "requires": "h1_gas"},
-    {"title": "H2 Gas", "value": "h2_gas", "requires": "h2_mass"},
-    {"title": "Heating", "value": "heating", "requires": "heating"},
-    {"title": "Hot Gas", "value": "hot_gas", "requires": "hot_gas"},
-    {"title": "ICS Mass", "value": "ics_mass", "requires": "ics_mass"},
+    {"title": labels.name("h1_gas"), "value": "h1_gas", "requires": "h1_gas"},
+    {"title": labels.name("h2_gas"), "value": "h2_gas", "requires": "h2_mass"},
     {
-        "title": "Inst. Bulge Mass",
+        "title": labels.name("heating"),
+        "value": "heating",
+        "requires": "heating",
+    },
+    {
+        "title": labels.name("hot_gas"),
+        "value": "hot_gas",
+        "requires": "hot_gas",
+    },
+    {
+        "title": labels.name("ics_mass"),
+        "value": "ics_mass",
+        "requires": "ics_mass",
+    },
+    {
+        "title": labels.name("instability_bulge_mass"),
         "value": "instability_bulge_mass",
         "requires": "instability_bulge_mass",
     },
     {
-        "title": "Inst. Bulge Rad",
+        "title": labels.name("instability_bulge_radius"),
         "value": "instability_bulge_radius",
         "requires": "instability_bulge_radius",
     },
     {
-        "title": "Mass Loading",
+        "title": labels.name("mass_loading"),
         "value": "mass_loading",
         "requires": "mass_loading",
     },
     {
-        "title": "Merger Bulge Mass",
+        "title": labels.name("merger_bulge_mass"),
         "value": "merger_bulge_mass",
         "requires": "merger_bulge_mass",
     },
     {
-        "title": "Merger Bulge Rad",
+        "title": labels.name("merger_bulge_radius"),
         "value": "merger_bulge_radius",
         "requires": "merger_bulge_radius",
     },
     {
-        "title": "Metals — Bulge",
+        "title": labels.name("metals_bulge_mass"),
         "value": "metals_bulge_mass",
         "requires": "metals_bulge_mass",
     },
     {
-        "title": "Metals — CGM Gas",
+        "title": labels.name("metals_cgm_gas"),
         "value": "metals_cgm_gas",
         "requires": "metals_cgm_gas",
     },
     {
-        "title": "Metals — Cold Gas",
+        "title": labels.name("metals_cold_gas"),
         "value": "metals_cold_gas",
         "requires": "metals_cold_gas",
     },
     {
-        "title": "Metals — Ejected",
+        "title": labels.name("metals_ejected_mass"),
         "value": "metals_ejected_mass",
         "requires": "metals_ejected_mass",
     },
     {
-        "title": "Metals — Hot Gas",
+        "title": labels.name("metals_hot_gas"),
         "value": "metals_hot_gas",
         "requires": "metals_hot_gas",
     },
-    {"title": "Metals — ICS", "value": "metals_ics", "requires": "metals_ics"},
     {
-        "title": "Metals — Stellar",
+        "title": labels.name("metals_ics"),
+        "value": "metals_ics",
+        "requires": "metals_ics",
+    },
+    {
+        "title": labels.name("metals_stellar_mass"),
         "value": "metals_stellar_mass",
         "requires": "metals_stellar_mass",
     },
     {
-        "title": "Outflow Rate",
+        "title": labels.name("outflow_rate"),
         "value": "outflow_rate",
         "requires": "outflow_rate",
     },
-    {"title": "SFR Bulge", "value": "sfr_bulge", "requires": "sfr_bulge"},
     {
-        "title": "SFR Bulge Z",
+        "title": labels.name("sfr_bulge"),
+        "value": "sfr_bulge",
+        "requires": "sfr_bulge",
+    },
+    {
+        "title": labels.name("sfr_bulge_z"),
         "value": "sfr_bulge_z",
         "requires": "sfr_bulge_z",
     },
-    {"title": "SFR Disk", "value": "sfr_disk", "requires": "sfr_disk"},
-    {"title": "SFR Disk Z", "value": "sfr_disk_z", "requires": "sfr_disk_z"},
+    {
+        "title": labels.name("sfr_disk"),
+        "value": "sfr_disk",
+        "requires": "sfr_disk",
+    },
+    {
+        "title": labels.name("sfr_disk_z"),
+        "value": "sfr_disk_z",
+        "requires": "sfr_disk_z",
+    },
 ]
 
 
@@ -207,15 +248,15 @@ _CMAPS = [
 
 _HALO_CB = {
     "mvir": ("Mvir", "10^10", "10^15 Msun"),
-    "rvir": ("Rvir", "0.03", "3 Mpc/h"),
-    "vvir": ("Vvir", "30", "1000 km/s"),
-    "vmax": ("Vmax", "30", "1000 km/s"),
+    "rvir": ("Rvir", "0.03", "3 h^-1 Mpc"),
+    "vvir": ("Vvir", "30", "1000 km s^-1"),
+    "vmax": ("Vmax", "30", "1000 km s^-1"),
 }
 
 _GAL_CB = {
     "stellar_mass": ("M*", "10^8", "10^12.5 Msun"),
     "ssfr": ("sSFR", "10^-14", "10^-6 yr^-1"),
-    "sfr": ("SFR", "10^-3", "10^2 Msun/yr"),
+    "sfr": ("SFR", "10^-3", "10^2 Msun yr^-1"),
     "cold_gas": ("Mgas", "10^7", "10^11.5 Msun"),
     "bt": ("B/T", "0", "1"),
     "bh_mass": ("Mbh", "10^4", "10^10 Msun"),
@@ -229,20 +270,20 @@ _GAL_CB = {
     "h2_gas": ("MH2", "10^6", "10^11 Msun"),
     "hot_gas": ("Mhot", "10^7", "10^12 Msun"),
     "ejected_mass": ("Meject", "10^7", "10^12 Msun"),
-    "outflow_rate": ("OutflowRate", "10^-6", "10^3 Msun/yr"),
+    "outflow_rate": ("OutflowRate", "10^-6", "10^3 Msun yr^-1"),
     "mass_loading": ("Eta", "10^-2", "10^3"),
     "cooling": ("Cooling", "10^-5", "10^5"),
     "heating": ("Heating", "10^-5", "10^5"),
     # Structural
-    "disk_radius": ("Rdisk", "10^-4", "1 Mpc/h"),
-    "bulge_radius": ("Rbulge", "10^-4", "1 Mpc/h"),
+    "disk_radius": ("Rdisk", "10^-4", "1 h^-1 Mpc"),
+    "bulge_radius": ("Rbulge", "10^-4", "1 h^-1 Mpc"),
     "merger_bulge_mass": ("Mmb", "10^6", "10^12 Msun"),
-    "merger_bulge_radius": ("Rmb", "10^-4", "1 Mpc/h"),
+    "merger_bulge_radius": ("Rmb", "10^-4", "1 h^-1 Mpc"),
     "instability_bulge_mass": ("Mib", "10^6", "10^12 Msun"),
-    "instability_bulge_radius": ("Rib", "10^-4", "1 Mpc/h"),
+    "instability_bulge_radius": ("Rib", "10^-4", "1 h^-1 Mpc"),
     # SFR components
-    "sfr_bulge": ("SFRbulge", "10^-6", "10^3 Msun/yr"),
-    "sfr_disk": ("SFRdisk", "10^-6", "10^3 Msun/yr"),
+    "sfr_bulge": ("SFRbulge", "10^-6", "10^3 Msun yr^-1"),
+    "sfr_disk": ("SFRdisk", "10^-6", "10^3 Msun yr^-1"),
     "sfr_bulge_z": ("SFRbulgeZ", "10^-6", "1"),
     "sfr_disk_z": ("SFRdiskZ", "10^-6", "1"),
     # Metals
@@ -587,7 +628,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def _extra_spec(f: dict) -> dict:
         return {
             "key": f["key"],
-            "label": f"{f['label']}  (log10)" if f["log"] else f["label"],
+            "label": f.get("slider")
+            or (f"{f['label']} (log10)" if f["log"] else f["label"]),
             "log": f["log"],
             "min": f["min"],
             "max": f["max"],
@@ -625,8 +667,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         out = []
         for f in getattr(scene.active_model, "extra_fields", []) or []:
             title = f["label"]
-            if _is_halo_property(f["key"]):
-                title = f"{title}  (halo)"
+            if _is_halo_property(f["key"]) and not f.get("slider"):
+                title = f"{title} (halo)"
             out.append({"title": title, "value": f"extra:{f['key']}"})
         return out
 
@@ -4140,7 +4182,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
 
     def _hd_frame(center, R, radius: float, keep_view: bool = False) -> None:
-        """`radius` (Mpc/h) filling the view, sparkles around it, Isolate
+        """`radius` (h^-1 Mpc) filling the view, sparkles around it, Isolate
         engaged.  The camera looks from ~55 deg off the galaxy's spin axis,
         or (`keep_view`, for a group) along the current line of sight, so
         the members keep the layout they had in the normal view."""
@@ -5913,13 +5955,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         style="flex:1 1 auto;",
                     )
                     v3.VBtn(
-                        icon="mdi-close-circle-outline",
-                        variant="outlined",
-                        color="red",
+                        icon="mdi-close",
+                        variant="text",
+                        color="#ef4444",
                         density="compact",
                         click=ctrl.console_close_pty,
                         title="Close terminal",
-                        style="flex-shrink:0;min-width:36px;",
+                        classes="sage-close",
                     )
 
                 # History — shown in SAGE command mode.
@@ -6202,7 +6244,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _FSEL = (
                     "--v-input-control-height:30px;"
                     "--v-field-font-size:0.8rem;"
-                    "margin-top:1px;"
+                    "margin-top:6px;"
                 )
                 # Explicit heights so each section scrolls independently
                 # while the panel itself never needs an outer scrollbar.
@@ -6210,8 +6252,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # ── Halo section ──────────────────────────────
                 v3.VLabel("DARK MATTER HALOES", style=_FSEC_HALO)
-                with html.Div(style=_SH + "height:120px;"):
-                    html.Div("Mvir  (log10 Msun)", style=_FLBL)
+                with html.Div(style=_SH + "height:150px;"):
+                    html.Div(labels.slider("mvir"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_mvir",),
                         min=10.0,
@@ -6226,7 +6268,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Rvir  (Mpc/h)", style=_FLBL)
+                    html.Div(labels.slider("rvir", log=False), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_rvir",),
                         min=0.0,
@@ -6241,7 +6283,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Vmax  (km/s)", style=_FLBL)
+                    html.Div(labels.slider("vmax", log=False), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_vmax",),
                         min=0.0,
@@ -6257,7 +6299,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Vvir  (km/s)", style=_FLBL)
+                    html.Div(labels.slider("vvir", log=False), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_vvir",),
                         min=0.0,
@@ -6303,24 +6345,25 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # ── Galaxy section ────────────────────────────
                 html.Div("GALAXIES", style=_FSEC_GAL)
-                with html.Div(style=_SH + "height:185px;"):
+                with html.Div(style=_SH + "height:235px;"):
                     # Alphabetical, like the Colour-by lists.
-                    html.Div("Bulge-to-total ratio (B/T)", style=_FLBL)
+                    html.Div(labels.slider("h1_gas"), style=_FLBL)
                     v3.VRangeSlider(
-                        v_model=("filter_gal_bt",),
+                        v_model=("filter_gal_h1gas",),
                         min=0.0,
-                        max=1.0,
-                        step=0.02,
+                        max=14.0,
+                        step=0.1,
                         thumb_label=True,
                         color="#FFD700",
                         density="compact",
                         hide_details=True,
+                        disabled=("!model_fields.h1_gas",),
                         thumb_size=10,
                         track_size=2,
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("BH mass  (log10 Msun)", style=_FLBL)
+                    html.Div(labels.slider("bh_mass"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_bhmass",),
                         min=0.0,
@@ -6336,7 +6379,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Bulge mass  (log10 Msun)", style=_FLBL)
+                    html.Div(labels.slider("bulge_mass"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_bulge",),
                         min=0.0,
@@ -6351,7 +6394,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Bulge radius  (log10 Mpc/h)", style=_FLBL)
+                    html.Div(labels.slider("bulge_radius"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_bulgerad",),
                         min=-4.0,
@@ -6367,7 +6410,54 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("CGM gas  (log10 Msun)", style=_FLBL)
+                    html.Div(labels.slider("sfr_bulge_z"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_sfr_blg_z",),
+                        min=-6.0,
+                        max=1.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.sfr_bulge_z",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("sfr_bulge"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_sfr_bulge",),
+                        min=-6.0,
+                        max=5.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.sfr_bulge",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div("Bulge-to-total ratio (B/T)", style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_bt",),
+                        min=0.0,
+                        max=1.0,
+                        step=0.02,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("cgm_gas"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_cgmgas",),
                         min=0.0,
@@ -6383,7 +6473,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Cold gas  (log10 Msun)", style=_FLBL)
+                    html.Div(labels.slider("cold_gas"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_coldgas",),
                         min=0.0,
@@ -6393,6 +6483,86 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="#FFD700",
                         density="compact",
                         hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("cooling"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_cooling",),
+                        min=-7.0,
+                        max=7.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.cooling",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("disk_radius"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_diskrad",),
+                        min=-4.0,
+                        max=1.0,
+                        step=0.05,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.disk_radius",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("sfr_disk_z"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_sfr_dsk_z",),
+                        min=-6.0,
+                        max=1.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.sfr_disk_z",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("sfr_disk"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_sfr_disk",),
+                        min=-6.0,
+                        max=5.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.sfr_disk",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("ejected_mass"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_ejected",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.ejected_mass",),
                         thumb_size=10,
                         track_size=2,
                         classes="sage-fslider",
@@ -6414,170 +6584,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Cooling  (log10 SAGE units)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_cooling",),
-                        min=-7.0,
-                        max=7.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.cooling",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Disk radius  (log10 Mpc/h)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_diskrad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.disk_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Ejected mass  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ejected",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.ejected_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("HI gas  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_h1gas",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.h1_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("H2 gas  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_h2",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.h2_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Heating  (log10 SAGE units)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_heating",),
-                        min=-7.0,
-                        max=7.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.heating",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Hot gas  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_hotgas",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.hot_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("ICS mass  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ics",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.ics_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "Instability bulge mass  (log10 Msun)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ib_mass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.instability_bulge_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "Instability bulge radius  (log10 Mpc/h)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ib_rad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.instability_bulge_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
                     html.Div("Halo particles", style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_len",),
@@ -6589,269 +6595,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         hide_details=True,
                         disabled=("!model_fields.len_particles",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "Mass loading  (log10 OutflowRate/SFR)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_massload",),
-                        min=-3.0,
-                        max=5.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.mass_loading",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Merger bulge mass  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_mb_mass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.merger_bulge_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Merger bulge radius  (log10 Mpc/h)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_mb_rad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.merger_bulge_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Metals — bulge mass  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_bm",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_bulge_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Metals — CGM gas  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_cgm",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_cgm_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Metals — cold gas  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_cg",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_cold_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "Metals — ejected mass  (log10 Msun)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_em",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_ejected_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Metals — hot gas  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_hg",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_hot_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Metals — ICS  (log10 Msun)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_ics",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_ics",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "Metals — stellar mass  (log10 Msun)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_sm",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_stellar_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Outflow rate  (log10 Msun/yr)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_outflow",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.outflow_rate",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "SFR  (log10 Msun/yr,  -6 = quenched)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("SFR bulge  (log10 Msun/yr)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_bulge",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_bulge",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Bulge SFR metallicity  (log10)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_blg_z",),
-                        min=-6.0,
-                        max=1.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_bulge_z",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("SFR disk  (log10 Msun/yr)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_disk",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_disk",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Disc SFR metallicity  (log10)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_dsk_z",),
-                        min=-6.0,
-                        max=1.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_disk_z",),
                         thumb_size=10,
                         track_size=2,
                         classes="sage-fslider",
@@ -6873,7 +6616,285 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("sSFR  (log10 yr^-1)", style=_FLBL)
+                    html.Div(labels.slider("heating"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_heating",),
+                        min=-7.0,
+                        max=7.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.heating",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("hot_gas"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_hotgas",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.hot_gas",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(
+                        labels.slider("instability_bulge_mass"), style=_FLBL
+                    )
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_ib_mass",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.instability_bulge_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(
+                        labels.slider("instability_bulge_radius"), style=_FLBL
+                    )
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_ib_rad",),
+                        min=-4.0,
+                        max=1.0,
+                        step=0.05,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.instability_bulge_radius",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("ics_mass"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_ics",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.ics_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(
+                        "Mass loading (log10 outflow rate / SFR)", style=_FLBL
+                    )
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_massload",),
+                        min=-3.0,
+                        max=5.0,
+                        step=0.05,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.mass_loading",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("merger_bulge_mass"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_mb_mass",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.merger_bulge_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("merger_bulge_radius"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_mb_rad",),
+                        min=-4.0,
+                        max=1.0,
+                        step=0.05,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.merger_bulge_radius",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_cgm_gas"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_cgm",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_cgm_gas",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_cold_gas"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_cg",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_cold_gas",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_ejected_mass"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_em",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_ejected_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_hot_gas"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_hg",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_hot_gas",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_ics"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_ics",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_ics",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_stellar_mass"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_sm",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_stellar_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("metals_bulge_mass"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_met_bm",),
+                        min=-2.0,
+                        max=12.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.metals_bulge_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("h2_gas"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_h2",),
+                        min=0.0,
+                        max=14.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.h2_mass",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("outflow_rate"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_outflow",),
+                        min=-6.0,
+                        max=5.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        disabled=("!model_fields.outflow_rate",),
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("ssfr"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_ssfr",),
                         min=-14.0,
@@ -6888,7 +6909,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Stellar age  (Gyr, mass-weighted)", style=_FLBL)
+                    html.Div(labels.slider("sfr"), style=_FLBL)
+                    v3.VRangeSlider(
+                        v_model=("filter_gal_sfr",),
+                        min=-6.0,
+                        max=5.0,
+                        step=0.1,
+                        thumb_label=True,
+                        color="#FFD700",
+                        density="compact",
+                        hide_details=True,
+                        thumb_size=10,
+                        track_size=2,
+                        classes="sage-fslider",
+                        style=_FSLD,
+                    )
+                    html.Div(labels.slider("age", log=False), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_age",),
                         min=0.0,
@@ -6904,7 +6940,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         classes="sage-fslider",
                         style=_FSLD,
                     )
-                    html.Div("Stellar mass  (log10 Msun)", style=_FLBL)
+                    html.Div(labels.slider("stellar_mass"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_smass",),
                         min=0.0,
@@ -6950,11 +6986,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # ── Categorical section ───────────────────────
                 html.Div("GALAXY TYPE", style=_FSEC_GAL)
-                with html.Div(style="padding-top:18px;"):
-                    html.Div("Type", classes="sage-select-head", style=_FLBL)
+                with html.Div(style="padding-top:8px;"):
                     v3.VSelect(
                         v_model=("filter_gal_type",),
-                        classes="sage-left sage-sel-gal",
+                        label="Type",
+                        classes="sage-right sage-sel-cyan sage-head-white",
                         items=(
                             [
                                 {"title": "All", "value": "both"},
@@ -6964,16 +7000,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="cyan",
                         density="compact",
                         style=_FSEL,
                     )
-                    html.Div(
-                        "FFB regime", classes="sage-select-head", style=_FLBL
-                    )
                     v3.VSelect(
                         v_model=("filter_gal_ffb",),
-                        classes="sage-left sage-sel-gal",
+                        label="FFB regime",
+                        classes="sage-right sage-sel-cyan sage-head-white",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
@@ -6983,32 +7017,25 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         ),
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="cyan",
                         density="compact",
                         disabled=("!model_fields.ffb_regime",),
                         style=_FSEL,
                     )
-                    html.Div(
-                        "Gas regime (CGM or hot)",
-                        classes="sage-select-head",
-                        style=_FLBL,
-                    )
                     v3.VSelect(
                         v_model=("filter_gal_cgm",),
-                        classes="sage-left sage-sel-gal",
+                        label="Gas regime",
+                        classes="sage-right sage-sel-cyan sage-head-white",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
-                                {"title": "CGM galaxies", "value": "cold"},
-                                {
-                                    "title": "Hot atmosphere galaxies",
-                                    "value": "hot",
-                                },
+                                {"title": "CGM", "value": "cold"},
+                                {"title": "Hot atmosphere", "value": "hot"},
                             ],
                         ),
                         hide_details=True,
                         variant="outlined",
-                        color="#FFD700",
+                        color="cyan",
                         density="compact",
                         disabled=("!model_fields.cgm_regime",),
                         style=_FSEL,
@@ -7200,6 +7227,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
                 v3.VLabel(
                     "FPS (output)  {{ '— ' + movie_fps }}",
+                    classes="sage-select-head",
                     style="font-size:0.6rem;color:#9ca3af;display:block;padding:4px 0 2px;",
                 )
                 v3.VSlider(

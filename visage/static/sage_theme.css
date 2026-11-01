@@ -416,7 +416,7 @@ body,
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 18px 0 10px;
+    margin: 24px 0 14px;
     font-size: 0.85rem;
     font-weight: 600;
     color: #fff;
@@ -590,4 +590,19 @@ body,
 
 .sage-sel-cyan .v-select__selection-text {
     color: #22d3ee;
+}
+
+.sage-head-white .v-field-label {
+    color: #fff;
+    opacity: 1;
+}
+
+.sage-panel hr.sage-step-rule {
+    margin: 24px 0 0;
+}
+
+.sage-formats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 16px;
 }

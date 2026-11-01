@@ -337,7 +337,7 @@ def _plot(s: GalaxySpectrum, dpi: int, dark: bool) -> bytes:
     if "DustUmin" in i:
         notes.append(f"U$_{{min}}$ {i['DustUmin']:.2g}")
     if np.isfinite(i.get("LineFlux_Halpha", np.nan)):
-        notes.append(f"Hα {i['LineFlux_Halpha']:.2e} erg/s/cm²")
+        notes.append(f"Hα {i['LineFlux_Halpha']:.2e} erg s^-1 cm^-2")
     if notes:
         ax.text(
             0.01,

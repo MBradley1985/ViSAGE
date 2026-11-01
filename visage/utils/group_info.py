@@ -179,10 +179,15 @@ def group_summary(galaxies, members, hubble_h: float) -> list:
     lead = int(members[0])
     out = [
         ("Type", classify_members(galaxies, members, mvir)),
-        ("Host Mvir", f"{mvir:.2e} M☉"),
+        ("Host halo mass (Mvir)", f"{mvir:.2e} M☉"),
     ]
     if galaxies.gal_type[lead] == 0 and galaxies.rvir[lead] > 0:
-        out.append(("Host Rvir", f"{galaxies.rvir[lead] * 1e3 / h:.0f} kpc"))
+        out.append(
+            (
+                "Host virial radius (Rvir)",
+                f"{galaxies.rvir[lead] * 1e3 / h:.0f} kpc",
+            )
+        )
     n_b = int(np.sum(sm >= BRIGHT_MSTAR))
     out.append(("Members", f"{len(members)} ({n_b} with M* ≥ 1e9 M☉)"))
     # Velocity dispersion along one axis (3D / sqrt 3), from the members'
@@ -196,9 +201,9 @@ def group_summary(galaxies, members, hubble_h: float) -> list:
             float
         )
         sig = float(np.sqrt(np.sum(np.var(v, axis=0)) / 3.0))
-        out.append(("σ_v (1D)", f"{sig:.0f} km/s"))
+        out.append(("Velocity dispersion (σ, 1D)", f"{sig:.0f} km s^-1"))
     tot = float(sm.sum())
-    out.append(("Total M*", f"{tot:.2e} M☉"))
+    out.append(("Total stellar mass (M*)", f"{tot:.2e} M☉"))
     order = np.argsort(-sm)
     if len(members) >= 2 and sm[order[1]] > 0:
         out.append(
@@ -225,7 +230,7 @@ def group_summary(galaxies, members, hubble_h: float) -> list:
         out.append(
             (
                 "Quenched",
-                f"{np.mean(ssfr < QUENCHED_SSFR):.0%} (sSFR < 1e-11 /yr)",
+                f"{np.mean(ssfr < QUENCHED_SSFR):.0%} (sSFR < 1e-11 yr^-1)",
             )
         )
     ics = float(galaxies.ics_mass[lead])

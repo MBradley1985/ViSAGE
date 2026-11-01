@@ -127,7 +127,7 @@ def setup(server, scene, push) -> None:
         h = regions.mask(region, halos.positions + model.offset, size)
         text = f"{n:,} galaxies · {int(h.sum()):,} haloes"
         vol = regions.volume(region, size)
-        return text if vol is None else f"{text} · {vol:.3g} (Mpc/h)³"
+        return text if vol is None else f"{text} · {vol:.3g} (h^-3 Mpc^3)"
 
     def apply() -> None:
         region = current()
@@ -540,7 +540,7 @@ def tab(ctrl) -> None:
         _centre_buttons(ctrl, "sphere")
         html.Div("SIZE", style=_HEAD)
         with html.Div(style=_ROW):
-            _field("nav_distance", "Radius (Mpc/h)")
+            _field("nav_distance", "Radius (h^-1 Mpc)")
     with html.Div(v_show=("region_shape === 'box'",)):
         with html.Div(v_show=("!box_minmax",)):
             html.Div("CENTRE", style=_HEAD)
@@ -548,12 +548,12 @@ def tab(ctrl) -> None:
                 for a in "xyz":
                     _box_axis_field(a, True)
             _centre_buttons(ctrl, "box")
-            html.Div("SIZE (Mpc/h)", style=_HEAD)
+            html.Div("SIZE (h^-1 Mpc)", style=_HEAD)
             with html.Div(style=_ROW):
                 for a in "xyz":
                     _box_axis_field(a, False)
         with html.Div(v_show=("box_minmax",)):
-            html.Div("BOUNDS (Mpc/h)", style=_HEAD)
+            html.Div("BOUNDS (h^-1 Mpc)", style=_HEAD)
             for a in "xyz":
                 with html.Div(style=_ROW):
                     _field(f"nav_box_{a}min", f"{a.upper()} min")
@@ -576,7 +576,7 @@ def tab(ctrl) -> None:
             density="compact",
         )
         with html.Div(style=_ROW + "margin-top:10px;"):
-            _field("slice_depth", "Position (Mpc/h)")
+            _field("slice_depth", "Position (h^-1 Mpc)")
             _field("slice_thickness", "Thickness")
         _tick("slice_sweep", "Animate through the volume")
         with html.Div(style=_ROW + "margin-top:6px;"):

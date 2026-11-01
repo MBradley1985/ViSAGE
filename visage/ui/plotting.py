@@ -59,7 +59,7 @@ def plot_groups(scene) -> list:
             missing = not all(f.lower() in fields for f in spec["needs"])
             # Plots of a mode the run doesn't have aren't offered at all.
             if missing and (
-                spec["section"] in ("Dust", "Discs") or key == "tully_fisher"
+                spec["section"] in ("Dust", "Disks") or key == "tully_fisher"
             ):
                 continue
             sections.setdefault(spec["section"], []).append(
@@ -112,7 +112,6 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
     state.plot_xmin = state.plot_xmax = None
     state.plot_ymin = state.plot_ymax = None
     state.plot_formats = ["png"]
-    state.plot_format_items = list(FORMATS)
     state.plot_busy = False
     state.plot_percent = 0
     state.plot_status = ""
@@ -280,6 +279,9 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
             procs.stop_group(run["proc"])
 
 
+_FORMAT_HEAD = "font-size:0.72rem;color:#9ca3af;padding:12px 0 2px;"
+
+
 def _step(number: int, title: str) -> None:
     with html.Div(classes="sage-step"):
         html.Span(str(number))
@@ -330,6 +332,7 @@ def tab(ctrl) -> None:
                                 hide_details=True,
                                 color="cyan",
                             )
+            v3.VDivider(classes="sage-step-rule")
             _step(2, "Choose galaxies")
             v3.VSelect(
                 v_model=("plot_region",),
@@ -362,6 +365,7 @@ def tab(ctrl) -> None:
                         hide_details=True,
                         variant="outlined",
                     )
+            v3.VDivider(classes="sage-step-rule")
             _step(3, "Options")
             v3.VCheckbox(
                 v_model=("plot_scatter",),
@@ -413,18 +417,19 @@ def tab(ctrl) -> None:
                                         hide_details=True,
                                         variant="outlined",
                                     )
-            v3.VSelect(
-                v_model=("plot_formats",),
-                classes="sage-right sage-sel-cyan",
-                color="cyan",
-                items=("plot_format_items",),
-                label="File format",
-                multiple=True,
-                density="compact",
-                hide_details=True,
-                variant="outlined",
-                style="margin-top:10px;",
+            html.Div(
+                "File format", classes="sage-select-head", style=_FORMAT_HEAD
             )
+            with html.Div(classes="sage-formats"):
+                for kind in FORMATS:
+                    v3.VCheckbox(
+                        v_model=("plot_formats",),
+                        value=kind,
+                        label=kind.upper(),
+                        density="compact",
+                        hide_details=True,
+                        color="cyan",
+                    )
         with html.Div(style="flex:none;padding-top:12px;"):
             v3.VCheckbox(
                 v_model=("plot_dark",),

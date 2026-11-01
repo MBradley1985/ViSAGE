@@ -45,6 +45,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Go, Info, Focus, Isolate and Box Centre sit at the bottom of the icon rail. Go is new there, and flies to the selection.
 - A new look throughout: pill dropdowns and switches.
 - Masses and units are typeset with subscripts and superscripts, in the app and on its figures.
+- The Plotting tab has dividers between its steps, and file formats are switches.
+- The Filters tab gives the Galaxy type dropdowns less room and the sliders more.
+- Properties have one name, symbol and unit everywhere: Colour by lists, Filters, the card, plots and axis labels. Units are written as km s⁻¹, M☉ yr⁻¹ and h⁻¹ Mpc.
 - The Plotting tab runs in steps: choose plots, choose galaxies, set the look, make.
 - Haloes are named by `SimulationHaloIndex`, on the card, when typed and in the Console, not by their row in the loaded list.
 - Drag tools are thin white lines with small grips, and chosen galaxies stand out by dimming the rest.

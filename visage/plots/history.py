@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from visage.utils import labels
 from visage.plots import obs
 from visage.plots.base import F_BARYON, SSFR_CUT, density, log_edges, plot
 from visage.plots.style import GROUPS, observed, plasma
@@ -26,9 +27,9 @@ Z_BINS = (
     (8.5, 10.0),
     (10.0, 12.0),
 )
-M_STAR = r"$M_\star\ (M_\odot)$"
-M_VIR = r"$M_{\rm vir}\ (M_\odot)$"
-PHI = r"$\phi\ ({\rm Mpc}^{-3}\,{\rm dex}^{-1})$"
+M_STAR = labels.axis("stellar_mass")
+M_VIR = labels.axis("mvir")
+PHI = r"Number density $\phi$ (${\rm Mpc}^{-3}\,{\rm dex}^{-1}$)"
 Z_LABEL = r"Redshift $z$"
 
 
@@ -104,7 +105,7 @@ def means_in_bins(x, y, edges):
 def phi_axis(p, ax) -> None:
     ax.set_yscale("log")
     has_volume = any(s.volume for s in p.views)
-    ax.set_ylabel(PHI if has_volume else r"$N\ ({\rm dex}^{-1})$")
+    ax.set_ylabel(PHI if has_volume else r"Number $N$ (${\rm dex}^{-1}$)")
     if has_volume:
         ax.set_ylim(1e-6, 1e-1)
 
@@ -140,7 +141,7 @@ def rcool(p):
             rf"$f_{{>1}}$ = {share:.2f}",
         )
     ax.axvline(1.0, color=p.ink, ls="--", lw=1)
-    ax.set_xlabel(r"$r_{\rm cool}\,/\,R_{\rm vir}$")
+    ax.set_xlabel(r"$R_{\rm cool}$-to-$R_{\rm vir}$")
     ax.set_ylabel("PDF")
     p.finish("upper left")
     return fig
@@ -208,7 +209,7 @@ def sfrd(p):
     ax.set(yscale="log", ylim=(1e-3, 10**-0.4))
     z_axis(p, ax, 8.0)
     ax.set_ylabel(
-        r"$\rho_{\rm SFR}\ (M_\odot\,{\rm yr}^{-1}\,{\rm Mpc}^{-3})$"
+        r"SFR density $\rho_{\rm SFR}$ ($M_\odot\,{\rm yr}^{-1}\,{\rm Mpc}^{-3}$)"
     )
     p.finish()
     return fig
@@ -240,7 +241,9 @@ def dust_density(p):
         ax.plot(z[keep], rho[keep], color=colour, label=label)
     ax.set(yscale="log", ylim=(1e2, None))
     z_axis(p, ax, 8.0)
-    ax.set_ylabel(r"$\rho_{\rm dust}\ (M_\odot\,{\rm Mpc}^{-3})$")
+    ax.set_ylabel(
+        r"Dust mass density $\rho_{\rm dust}$ ($M_\odot\,{\rm Mpc}^{-3}$)"
+    )
     p.finish()
     return fig
 
@@ -270,7 +273,9 @@ def dust_budget(p):
         ax.plot(z[keep], rate[keep], color=colour, label=label)
     ax.set(yscale="log", ylim=(1e-8, None))
     z_axis(p, ax, 8.0)
-    ax.set_ylabel(r"$\dot{\rho}\ (M_\odot\,{\rm yr}^{-1}\,{\rm Mpc}^{-3})$")
+    ax.set_ylabel(
+        r"SFR density $\rho_{\rm SFR}$ ($M_\odot\,{\rm yr}^{-1}\,{\rm Mpc}^{-3}$)"
+    )
     p.finish()
     return fig
 
@@ -308,7 +313,9 @@ def smd(p):
         )
     ax.set(yscale="log", ylim=(10**6.5, 1e9))
     z_axis(p, ax, 4.2)
-    ax.set_ylabel(r"$\rho_\star\ (M_\odot\,{\rm Mpc}^{-3})$")
+    ax.set_ylabel(
+        r"Stellar mass density $\rho_\star$ ($M_\odot\,{\rm Mpc}^{-3}$)"
+    )
     p.finish("upper right", "lower left")
     return fig
 
@@ -338,7 +345,7 @@ def sfr_z(p):
         ylim=(1e-4, 1e3),
         xlabel=M_STAR,
     )
-    ax.set_ylabel(r"${\rm SFR}\ (M_\odot\,{\rm yr}^{-1})$")
+    ax.set_ylabel(labels.axis("sfr"))
     p.finish("lower right")
     return fig
 
@@ -416,7 +423,7 @@ def sfrf(p):
         p,
         "SFR",
         log_edges(-3.0, 3.4, 0.2),
-        r"${\rm SFR}\ (M_\odot\,{\rm yr}^{-1})$",
+        labels.axis("sfr"),
         (1e-3, 10**3.2),
     )
 
@@ -469,7 +476,7 @@ def bhmf(p):
             dark=p.o.dark,
         )
     ax.set(xscale="log", xlim=(1e6, 1e11))
-    ax.set_xlabel(r"$M_{\rm BH}\ (M_\odot)$")
+    ax.set_xlabel(labels.axis("bh_mass"))
     phi_axis(p, ax)
     ax.set_ylim(1e-5, 1e-1) if any(s.volume for s in p.views) else None
     p.finish()
@@ -579,7 +586,7 @@ def metallicity_z(p):
 
     evolve(p, ax, measure)
     ax.set(xscale="log", yscale="log", xlim=(10**7.2, 1e12), xlabel=M_STAR)
-    ax.set_ylabel(r"$Z_\star$")
+    ax.set_ylabel(labels.axis("stellar_metallicity"))
     p.finish("lower right")
     return fig
 
@@ -604,7 +611,9 @@ def h2_z(p):
     evolve(p, ax, measure, log_y=False)
     ax.axhline(1.0, color=p.ink, ls="--", lw=1, alpha=0.5)
     ax.set(xscale="log", xlim=(10**7.2, 1e12), ylim=(0, 1.05), xlabel=M_STAR)
-    ax.set_ylabel(r"$M_{\rm H_2}\,/\,(0.74\,M_{\rm cold})$")
+    ax.set_ylabel(
+        r"Molecular gas fraction $M_{\rm H_2}\,/\,(0.74\,M_{\rm cold})$"
+    )
     p.finish("upper left")
     return fig
 
@@ -636,7 +645,9 @@ def sfe(p):
     ax.plot(z[keep], med[keep], color=p.ink, label="Centrals")
     ax.set(yscale="log", ylim=(1e-6, 1))
     z_axis(p, ax, 15.0)
-    ax.set_ylabel(r"$M_\star\,/\,(f_b\,M_{\rm vir})$")
+    ax.set_ylabel(
+        r"Star formation efficiency $M_\star\,/\,(f_b\,M_{\rm vir})$"
+    )
     p.finish()
     return fig
 

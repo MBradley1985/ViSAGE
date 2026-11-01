@@ -44,8 +44,8 @@ visage --par input/millennium.par
 
 ## Supported simulations
 
-- **miniMillennium** — 62.5 Mpc/h box, 64 snapshots, lhalo_binary trees
-- **microUchuu** — 96 Mpc/h box, 50 snapshots, lhalo_binary trees
+- **miniMillennium** — 62.5 h⁻¹ Mpc box, 64 snapshots, lhalo_binary trees
+- **microUchuu** — 96 h⁻¹ Mpc box, 50 snapshots, lhalo_binary trees
 
 ---
 

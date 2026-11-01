@@ -139,7 +139,7 @@ def cone_summary(galaxies: GalaxySnapshot, i: int) -> list:
     d = _x(galaxies, "distance", i)
     if d is None:
         d = float(np.linalg.norm(galaxies.positions[i]))
-    out.append(("Distance", f"{d:.1f} Mpc/h"))
+    out.append(("Distance", f"{d:.1f} h^-1 Mpc"))
     mags = galaxies.sed_mags or {}
     for blue, red in _CARD_BANDS:
         obs, rest = f"mag_obs_{red}", f"mag_rest_{red}"
@@ -215,7 +215,7 @@ def dust_details(galaxies, i: int, h: float) -> dict:
     ):
         v = _x(galaxies, key, i)
         if v:
-            out[label] = f"{v:.3g} Msun/yr"
+            out[label] = f"{v:.3g} Msun yr^-1"
     return out
 
 
@@ -237,7 +237,7 @@ def cone_details(
         info["Snapshot"] = str(int(galaxies.snap_nums[i]))
     d = _x(galaxies, "distance", i)
     if d is not None:
-        info["Comoving distance"] = f"{d:.2f} Mpc/h"
+        info["Comoving distance"] = f"{d:.2f} h^-1 Mpc"
     how = galaxies.sed_dust()[0]
     if how == "charlot_fall":
         # (Columns of an older run with another dust setting are left
@@ -249,7 +249,7 @@ def cone_details(
             info['Light in a 3" fibre'] = f"{100 * v:.0f}%"
         v = _x(galaxies, "W50_HI", i)
         if v:
-            info["HI line width W50"] = f"{v:.0f} km/s"
+            info["H1 line width (W50)"] = f"{v:.0f} km s^-1"
         for key, label, fmt in (
             ("DustMassCold", "Dust mass (cold ISM)", "{:.2e} Msun"),
             ("DustToGas", "Dust-to-gas", "{:.2e}"),
@@ -275,7 +275,7 @@ def cone_details(
     lines = str(phot.get("NebularEmission", "none")).lower() != "none"
     for key, label, fmt, on in (
         ("LDust", "Dust luminosity (IR)", "{:.2e} Lsun", dust_ir),
-        ("LAGN", "AGN luminosity", "{:.2e} erg/s", lines),
+        ("LAGN", "AGN luminosity", "{:.2e} erg s^-1", lines),
         ("EddingtonRatio", "Eddington ratio", "{:.2e}", lines),
     ):
         v = _x(galaxies, key, i) if on else None
@@ -304,7 +304,7 @@ def cone_details(
                     if f"LineFlux_{key}" in f:
                         v = float(f[f"LineFlux_{key}"][raw])
                         if np.isfinite(v) and v > 0:
-                            info[f"{label} flux"] = f"{v:.2e} erg/s/cm²"
+                            info[f"{label} flux"] = f"{v:.2e} erg s^-1 cm^-2"
         except Exception:
             pass
     mags = galaxies.sed_mags or {}
@@ -401,11 +401,11 @@ def build_galaxy_info(
     info: dict = {
         "GalaxyIndex": "—",
         "Type": gal_type_str,
-        "Halo Mvir": f"{mvir:.2e} Msun",
-        "Stellar Mass": f"{sm:.2e} Msun",
+        "Halo mass (Mvir)": f"{mvir:.2e} Msun",
+        "Stellar mass (M*)": f"{sm:.2e} Msun",
         "sSFR": f"{ssfr:.2e} yr^-1",
-        "Cold Gas": f"{cg:.2e} Msun",
-        "Bulge / Total": bt_label,
+        "Cold gas (M_cold)": f"{cg:.2e} Msun",
+        "Bulge-to-total ratio (B/T)": bt_label,
     }
 
     if fields_available.get("galaxy_id", False):
@@ -413,16 +413,20 @@ def build_galaxy_info(
 
     if fields_available.get("bh_mass", False):
         bh = float(galaxies.bh_mass[idx])
-        info["BH Mass"] = f"{bh:.2e} Msun" if bh > 0 else "0  (no central BH)"
+        info["Black hole mass (M_BH)"] = (
+            f"{bh:.2e} Msun" if bh > 0 else "0  (no central BH)"
+        )
 
     if fields_available.get("h2_mass", False):
         # `h2_mass` in the snapshot is already Msun (converted by the reader).
         h2 = float(galaxies.h2_mass[idx])
-        info["H2 Mass"] = f"{h2:.2e} Msun" if h2 > 0 else "0  (no H2)"
+        info["Molecular hydrogen (H2)"] = (
+            f"{h2:.2e} Msun" if h2 > 0 else "0  (no H2)"
+        )
 
     if fields_available.get("cgm_regime", False):
         regime = int(galaxies.cgm_regime[idx])
-        info["Gas Regime"] = _cgm_label(regime)
+        info["Gas regime"] = _cgm_label(regime)
         # Show whichever gas-mass fields are non-zero for this galaxy;
         # if both are present (shouldn't happen often) show both.
         has_cgm = fields_available.get("cgm_gas", False)
@@ -430,20 +434,20 @@ def build_galaxy_info(
         if has_cgm:
             cgm_m = float(galaxies.cgm_gas[idx])
             if cgm_m > 0:
-                info["CGM Gas"] = f"{cgm_m:.2e} Msun"
+                info["CGM gas (M_CGM)"] = f"{cgm_m:.2e} Msun"
         if has_hot:
             hot_m = float(galaxies.hot_gas[idx])
             if hot_m > 0:
-                info["Hot Gas"] = f"{hot_m:.2e} Msun"
+                info["Hot gas (M_hot)"] = f"{hot_m:.2e} Msun"
         # If the regime flag says CGM/Hot but neither mass is non-zero, say so.
         if has_cgm and has_hot:
             if regime == 0 and float(galaxies.cgm_gas[idx]) <= 0:
-                info["CGM Gas"] = "0"
+                info["CGM gas (M_CGM)"] = "0"
             elif regime == 1 and float(galaxies.hot_gas[idx]) <= 0:
-                info["Hot Gas"] = "0"
+                info["Hot gas (M_hot)"] = "0"
 
     if fields_available.get("ffb_regime", False):
-        info["FFB Regime"] = _ffb_label(int(galaxies.ffb_regime[idx]))
+        info["FFB regime"] = _ffb_label(int(galaxies.ffb_regime[idx]))
 
     # Group / environment classification
     if fields_available.get("central_id", False):
@@ -480,13 +484,13 @@ def build_galaxy_info(
     if getattr(galaxies, "is_cone", False) and galaxies.has_sfh:
         # (A lightcone's ages aren't precomputed: from its SFH, now.)
         a = cone_age_gyr(galaxies, idx, snap_table, hubble_h)
-        info["Approx Age"] = f"{a:.2f} Gyr" if a else "—"
+        info["Approximate age"] = f"{a:.2f} Gyr" if a else "—"
     elif not fields_available.get("mean_age", False):
         # The catalogue has no star-formation histories (SAGE's
         # SaveFullSFH off), which the age is computed from.
-        info["Approx Age"] = "Needs full SFH"
+        info["Approximate age"] = "Needs full SFH"
     else:
-        info["Approx Age"] = f"{age:.2f} Gyr" if age > 0 else "—"
+        info["Approximate age"] = f"{age:.2f} Gyr" if age > 0 else "—"
 
     if getattr(galaxies, "is_cone", False):
         info.update(cone_details(galaxies, idx, hubble_h))

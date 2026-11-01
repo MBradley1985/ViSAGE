@@ -169,7 +169,7 @@ def selection_card(server) -> None:
                 variant="tonal",
                 color="cyan",
                 click=ctrl.sel_go,
-                title="Fly to it (10 Mpc/h; in HD, to it in close-up)",
+                title="Fly to it (10 h^-1 Mpc; in HD, to it in close-up)",
             )
             v3.VBtn(
                 "Isolate",
@@ -269,7 +269,7 @@ def selection_card(server) -> None:
                 "font-size:0.72rem;color:#9ca3af;flex-shrink:0;"
             ),
         ):
-            html.Span("Zoom (Mpc/h)", style="margin-right:4px;")
+            html.Span("Zoom (h^-1 Mpc)", style="margin-right:4px;")
             for label, fn in (
                 ("3", ctrl.go_to_galaxy_1),
                 ("5", ctrl.go_to_galaxy_3),
@@ -309,7 +309,7 @@ def selection_card(server) -> None:
                 variant="outlined",
                 color="#c084fc",
                 click=ctrl.sel_go_halo,
-                title="Fly to the host halo (10 Mpc/h standoff)",
+                title="Fly to the host halo (10 h^-1 Mpc standoff)",
             )
         with html.Div(style="overflow-y:auto;padding:0 12px 10px;"):
             # Key properties.
@@ -559,8 +559,8 @@ def build_selection(server, scene) -> None:
         sfr = float(galaxies.sfr[i])
         props = [
             ("Stellar mass", _fmt(ms, " M☉")),
-            ("SFR", f"{sfr:.2f} M☉/yr"),
-            ("sSFR", _fmt(float(galaxies.ssfr[i]), " /yr")),
+            ("SFR", f"{sfr:.2f} M☉ yr^-1"),
+            ("sSFR", _fmt(float(galaxies.ssfr[i]), " yr^-1")),
             ("B/T", f"{galaxies.bulge_mass[i] / max(ms, 1.0):.2f}"),
             ("Cold gas", _fmt(float(galaxies.cold_gas[i]), " M☉")),
             ("ICS", _fmt(float(galaxies.ics_mass[i]), " M☉")),

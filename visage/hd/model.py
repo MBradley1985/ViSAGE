@@ -898,7 +898,7 @@ def recipe_from_sage(
         np.clip(0.015 * (sigma_h2 + 0.4 * sigma_hi) * zfac, 0.05, 3.0)
     )
     notes.append(
-        f"Sigma_H2~{sigma_h2:.1f} Msun/pc^2, Z~{zfac:.2f} Zsun -> tau0={tau0:.2f}"
+        f"Sigma_H2~{sigma_h2:.1f} Msun pc^-2, Z~{zfac:.2f} Zsun -> tau0={tau0:.2f}"
     )
     # Arm dust lanes from the same dust column, unclipped and on a log
     # scale, so they keep varying where tau0 saturates.

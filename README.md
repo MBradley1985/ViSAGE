@@ -241,7 +241,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 ![Filters in action](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/filters.gif)
 
 ### Filtering
-- Halo filters: Mvir (log10), Rvir (Mpc/h), Vvir (km/s)
+- Halo filters: Mvir (log10), Rvir (h⁻¹ Mpc), Vvir (km s⁻¹)
 - Galaxy filters: stellar mass, sSFR, B/T, age, BH mass, ICS mass, type (centrals / satellites), FFB regime, CGM / Hot regime, environment class (Field / Isolated / Pairs / Groups / Clusters, via the Environment filter in the Structure tab)
 - Filters are **active-only** — a slider sitting at its full-range endpoints has no effect; move it inward to filter. Every galaxy with detectable mass is visible at startup.
 - Filters auto-disable when the loaded model doesn't contain the underlying field
@@ -327,8 +327,8 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 
 | Simulation | Box size | Snapshots | Tree format |
 |---|---|---|---|
-| miniMillennium | 62.5 Mpc/h | 64 | lhalo_binary |
-| microUchuu | 96 Mpc/h | 50 | lhalo_binary |
+| miniMillennium | 62.5 h⁻¹ Mpc | 64 | lhalo_binary |
+| microUchuu | 96 h⁻¹ Mpc | 50 | lhalo_binary |
 
 Both supported automatically — point at the `.par` file and ViSAGE figures out the rest from the HDF5.
 

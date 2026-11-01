@@ -1199,20 +1199,21 @@
 // rendered copy.
 (function () {
   var RULES = [
-    [/\bM\*/g, 'M<sub>*</sub>'],
+    [/\b([MZ])\*/g, '$1<sub>⋆</sub>'],
     [/\b([MLZ])☉/g, '$1<sub class="sun">☉</sub>'],
     [/\b([MRV])(vir|max)\b/g, '$1<sub>$2</sub>'],
     [/\bMsun\b/g, 'M<sub class="sun">☉</sub>'],
+    [/\bLsun\b/g, 'L<sub class="sun">☉</sub>'],
     [/(\d\.\d+)e([+-])0*(\d+)/g, function (m, a, s, b) {
       return a + '×10<sup>' + (s === '-' ? '−' : '') + b + '</sup>';
     }],
-    [/\byr\^-1/g, 'yr<sup>−1</sup>'],
-    [/\/yr\b/g, ' yr<sup>−1</sup>'],
     [/\b10\^(-?\d+)/g, '10<sup>$1</sup>'],
+    [/\b([A-Za-z]+)\^-(\d+)/g, '$1<sup>−$2</sup>'],
+    [/\b([A-Za-z]+)\^(\d+)/g, '$1<sup>$2</sup>'],
     [/\blog10\b/g, 'log<sub>10</sub>'],
-    [/\bH2\b/g, 'H<sub>2</sub>'],
+    [/\bH([12])\b/g, 'H<sub>$1</sub>'],
     [/\bA_V\b/g, 'A<sub>V</sub>'],
-    [/\bM_([A-Za-z]+)/g, 'M<sub>$1</sub>'],
+    [/\b([MRgt])_([A-Za-z]+)/g, '$1<sub>$2</sub>'],
   ];
   var SKIP = 'script,style,textarea,input,code,svg,.xterm,.katex,.sage-rich,' +
     '[data-sage-raw]';
