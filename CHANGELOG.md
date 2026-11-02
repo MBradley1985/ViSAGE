@@ -10,6 +10,37 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.18.0] — 2026-11-02
+
+### Added
+
+- A Track tool on its own rail icon: follow a galaxy or its whole halo through the snapshots of a box, built behind a progress bar and played from the top bar.
+- A track carries on through mergers with the galaxy merged into, and waits through snapshots where a subhalo is briefly lost. The view says when a merger happens.
+- Track framing (Galaxy, Surroundings, Whole box) with zoom buttons that act at once, and switches for Indicators, FoF links (the group and lines to its central) and Contributors (only the galaxies that end up in what is followed).
+- Tracks save as GIF, MOV or PNG sequence, several at once.
+- Record Movie can save several formats at once.
+- Screenshots use the same file types as Plotting: PNG, PDF, JPEG and SVG.
+
+### Changed
+
+- One look for controls across the panels and the info card: solid cyan for main actions, dark red for danger, thin outlines for the rest.
+- Dropdowns are plain rows with white values, labels in the colour of their section, and a black list with a thin edge.
+- Text boxes are a line underneath; X, Y and Z labels in Regions are cyan.
+- Toggles read On or Off beside a dot, close to their label, and the whole word and dot can be clicked.
+- Choices such as Sphere, Box and Slice are dots.
+- Slice's Position and Thickness are on separate rows.
+
+### Removed
+
+- Screenshot's TIFF output.
+
+### Fixed
+
+- Saved GIFs no longer show contour lines in soft glows: dithering never took effect. All frames now share one palette.
+- A galaxy with GalaxyIndex 0 stays selected across snapshots and is named by its index.
+
+---
+
 ## [2.17.0] — 2026-11-02
 
 ### Fixed
