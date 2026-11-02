@@ -316,17 +316,16 @@ def contributors(
 ) -> dict:
     """{snapshot: the galaxies there that end up in what is followed}.
 
-    ``path`` is {snapshot: GalaxyIndex followed}.  A galaxy counts for the
-    one followed at that snapshot; with ``halo``, for every member of the
-    group at the end of the track, satellites as well as mergers."""
+    ``path`` is {snapshot: GalaxyIndex followed}.  Counted at the end of the
+    track: the last galaxy followed, or with ``halo`` every member of its
+    group, satellites as well as mergers."""
     if not path:
         return {}
     end = max(path)
     rows, links = merge_chains(first, path[end], snaps)
-    group = group_members(first, path[end], end) if halo else None
+    targets = group_members(first, path[end], end) if halo else {path[end]}
     out = {}
     for snap in sorted(path):
-        targets = group if halo else {path[snap]}
         out[snap] = [
             int(g)
             for g in rows.get(snap, ())

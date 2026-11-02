@@ -13,6 +13,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Whole halo tracks no longer rebuild in a loop for a galaxy whose halo isn't found at some snapshot.
 - FoF links stay when indicators are hidden.
 - Switching a built track from Whole halo to Galaxy returns to the galaxy chosen, not its central.
+- Only contributors counts everything that ends up in the galaxy at the end of the track, as Whole halo does.
 
 ---
 
