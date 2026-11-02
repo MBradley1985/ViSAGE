@@ -10,6 +10,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.19.2] — 2026-11-02
+
+### Fixed
+
+- The info card shows when Isolate, HD and Gas are on again.
+
+### Added
+
+- The info card's 3, 5 and 10 zoom buttons show which zoom is in use.
+
+---
+
 ## [2.19.1] — 2026-11-02
 
 ### Changed
