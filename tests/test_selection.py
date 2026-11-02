@@ -500,3 +500,42 @@ def test_haloes_go_by_their_simulation_index(monkeypatch):
     assert group_info.halo_label(gal, 0, 40) == "row 40"
     monkeypatch.setattr(group_info, "halo_ids", lambda _: None)
     assert group_info.halo_label(gal, 2, 40) == "row 40"
+
+
+def test_links_stay_when_the_indicators_are_hidden(panel):
+    _, scene = panel
+    marker = scene.camera.marker
+    marker.set_target((1.0, 1.0, 1.0))
+    marker.set_links([(2.0, 1.0, 1.0)], (1.0, 1.0, 1.0))
+    marker.set_enabled(False)
+    assert marker._actors["links"].GetMapper().GetInput().GetNumberOfLines()
+    assert (
+        not marker._actors["target"].GetMapper().GetInput().GetNumberOfLines()
+    )
+    marker.set_links(None)
+    marker.set_enabled(True)
+
+
+def test_the_card_dropping_to_the_galaxy_leaves_a_track_alone(panel):
+    server, _ = panel
+    state = server.state
+    state.track_kind = "halo"
+    state.track_ready = True
+    state.flush()
+    state.sel_kind = "galaxy"  # the halo isn't found at this snapshot
+    state.flush()
+    assert state.track_kind == "halo"
+    state.track_ready = False
+    state.flush()
+
+
+def test_the_card_choosing_the_halo_sets_what_a_track_follows(panel):
+    server, _ = panel
+    state = server.state
+    state.track_kind = "galaxy"
+    state.flush()
+    state.sel_kind = "halo"
+    state.flush()
+    assert state.track_kind == "halo"
+    state.track_kind = "galaxy"
+    state.flush()

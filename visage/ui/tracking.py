@@ -91,6 +91,10 @@ def setup(server, scene) -> None:
     state.track_framing = "galaxy"
     state.track_framings = FRAMING_ITEMS
     state.track_zoom = DEFAULT_ZOOM["galaxy"]
+    # What a track follows.  Its own, not the card's sel_kind: the card
+    # drops to the galaxy at a snapshot where the halo isn't found, which
+    # is no reason to change a track.
+    state.track_kind = "galaxy"
     state.track_links = False
     state.track_contrib = False
     state.track_zooms = ZOOMS
@@ -183,9 +187,8 @@ def setup(server, scene) -> None:
         # starts there even if that is outside the range asked for.
         snaps = list(range(min(first, now), max(last, now) + 1))
         framing = str(state.track_framing)
-        halo = str(state.sel_kind) == "halo"
+        halo = state.track_kind == "halo"
         links, only = bool(state.track_links), bool(state.track_contrib)
-        run["origin"] = (gid, own, now)
         if state.isolate_active:
             ctrl.toggle_isolate()
         path_file = scene._cfg.hdf5_path
@@ -288,11 +291,14 @@ def setup(server, scene) -> None:
                 "It isn't in this snapshot: move to one it is in."
             )
             return
+        state.sel_kind = state.track_kind
         first, last = sorted((int(state.track_from), int(state.track_to)))
         own = ctrl.sel_galaxy()
+        own = gid if own is None else own
         now = int(scene.current_snap)
+        run["origin"] = (own, ctrl.sel_central_id(), now)
         asyncio.get_running_loop().create_task(
-            build(gid, gid if own is None else own, first, last, now, now)
+            build(gid, own, first, last, now, now)
         )
 
     def options() -> tuple:
@@ -301,7 +307,7 @@ def setup(server, scene) -> None:
             state.track_framing,
             state.track_links,
             state.track_contrib,
-            state.sel_kind,
+            state.track_kind,
             state.sel_rings,
         )
 
@@ -336,7 +342,8 @@ def setup(server, scene) -> None:
             first, last = sorted((int(state.track_from), int(state.track_to)))
             asyncio.get_running_loop().create_task(
                 build(
-                    *origin[:2],
+                    origin[1] if state.track_kind == "halo" else origin[0],
+                    origin[0],
                     first,
                     last,
                     origin[2],
@@ -383,6 +390,18 @@ def setup(server, scene) -> None:
 
     whole_run()
     scene.register_model_change_callback(whole_run)
+
+    @state.change("sel_kind")
+    def card_kind(sel_kind, **_):
+        if state.track_ready or state.track_busy:
+            return
+        if sel_kind == "halo" or state.sel_has_halo:
+            state.track_kind = sel_kind
+
+    @state.change("track_kind")
+    def follow_kind(track_kind, **_):
+        state.sel_kind = track_kind
+
     run["options"] = options()
     state.change("track_from", "track_to")(forget)
     state.change(
@@ -390,7 +409,7 @@ def setup(server, scene) -> None:
         "track_framing",
         "track_links",
         "track_contrib",
-        "sel_kind",
+        "track_kind",
         "sel_rings",
     )(option_changed)
 
@@ -412,7 +431,7 @@ def tab(ctrl) -> None:
                 ),
             )
             with v3.VBtnToggle(
-                v_model=("sel_kind",),
+                v_model=("track_kind",),
                 mandatory=True,
                 density="compact",
                 color="cyan",

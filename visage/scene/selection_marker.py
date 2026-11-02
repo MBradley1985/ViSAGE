@@ -254,12 +254,22 @@ class SelectionMarker:
             self._ensure()
         self.update()
 
+    def _draw_links(self) -> None:
+        """The lines: apart from the rings, so they don't go with them."""
+        ends, start = (), (0.0, 0.0)
+        if len(self.links) and self.link_from is not None:
+            lxy, lok = self._project(self.links)
+            fxy, fok = self._project(self.link_from[None, :])
+            start, ends = fxy[0], lxy[lok] if fok[0] else ()
+        self._actors["links"].GetMapper().SetInputData(_lines(start, ends))
+
     def update(self, *_) -> None:
         if self.target is None or not self._actors:
             return
+        self._draw_links()
         if not self.enabled:
             empty = _rings(np.zeros((0, 2)), 1.0)
-            for name in ("target", "members", "near", "links"):
+            for name in ("target", "members", "near"):
                 self._actors[name].GetMapper().SetInputData(empty)
             self._actors["label"].SetInput("")
             return
@@ -296,12 +306,6 @@ class SelectionMarker:
             self._actors["members"].GetMapper().SetInputData(
                 _rings(np.zeros((0, 2)), 1.0)
             )
-        ends, start = (), xy[0]
-        if len(self.links) and self.link_from is not None:
-            lxy, lok = self._project(self.links)
-            fxy, fok = self._project(self.link_from[None, :])
-            start, ends = fxy[0], lxy[lok] if fok[0] else ()
-        self._actors["links"].GetMapper().SetInputData(_lines(start, ends))
         if len(self.near):
             nxy, nok = self._project(self.near)
             r = np.full(len(nxy), 0.55 * r_target)
