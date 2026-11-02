@@ -170,6 +170,7 @@ def selection_card(server) -> None:
                 color="cyan",
                 click=ctrl.sel_go,
                 title="Fly to it (10 h^-1 Mpc; in HD, to it in close-up)",
+                classes="sage-main",
             )
             v3.VBtn(
                 "Isolate",
@@ -285,13 +286,13 @@ def selection_card(server) -> None:
                 )
             html.Div(style="flex:1;")
             v3.VBtn(
-                "{{ sel_rings ? 'Hide rings' : 'Show rings' }}",
+                "{{ sel_rings ? 'Hide indicators' : 'Show indicators' }}",
                 size="x-small",
                 variant="text",
                 color="#9ca3af",
                 click=ctrl.sel_clear_marker,
                 title=(
-                    "Rings off or on (the galaxy stays selected; stays as "
+                    "Indicators off or on (the galaxy stays selected; stays as "
                     "set through HD, Gas and new selections)"
                 ),
             )
@@ -514,7 +515,7 @@ def build_selection(server, scene) -> None:
             # the identity.)
             gid=(
                 int(galaxies.galaxy_id[i])
-                if galaxies.galaxy_id[i] and not cone
+                if np.any(galaxies.galaxy_id) and not cone
                 else None
             ),
             idx=i,
@@ -624,6 +625,9 @@ def build_selection(server, scene) -> None:
             # The galaxy alone.
             marker.set_target(_drawn(galaxies, i, lead))
             marker.set_details("", [])
+        # A built track draws its own view over the selection's.
+        if sel.get("track_show") and int(snap) in (sel.get("track") or {}):
+            sel["track_show"](int(snap))
         _push()
 
     # Back / forward through what was selected: (GalaxyIndex, row).
@@ -892,12 +896,19 @@ def build_selection(server, scene) -> None:
             # snapshots, so the selection ends here.
             _sel_reset()
             return
+        # A built track says who is followed here: after a merger, the
+        # galaxy it merged into.
+        path = sel.get("track") or {}
+        gid = sel["gid"] = path.get(int(snap_num), gid)
         _, galaxies = _snap(int(snap_num))
         hit = np.flatnonzero(galaxies.galaxy_id == gid)
         if len(hit) == 0:
             # Kept (by GalaxyIndex) for a snapshot it is in, but nothing
             # here acts on a row that is now another galaxy.
-            scene.camera.marker.clear()
+            if int(snap_num) not in path:
+                scene.camera.marker.clear()
+            elif sel.get("track_show"):
+                sel["track_show"](int(snap_num))
             sel.update(idx=None, mem=None)
             if state.nav_gal_idx is not None:
                 sel["echo"] = None
@@ -1042,6 +1053,38 @@ def build_selection(server, scene) -> None:
         i = sel.get("idx")
         if i is not None and state.sel_active:
             _select(i)
+
+    @ctrl.set("sel_track_target")
+    def _sel_track_target():
+        """The GalaxyIndex a track follows: a halo follows its central."""
+        i = sel.get("idx")
+        if i is None or not state.sel_active:
+            return None
+        if state.sel_kind != "halo":
+            return sel.get("gid")
+        central = _snap()[1].central_id
+        return int(central[i]) if np.any(central) else sel.get("gid")
+
+    @state.change("sel_rings")
+    def _on_rings(sel_rings=True, **_):
+        scene.camera.marker.set_enabled(bool(sel_rings))
+        _push()
+
+    @ctrl.set("sel_galaxy")
+    def _sel_galaxy():
+        """The selected galaxy's GalaxyIndex, even with its halo in view."""
+        return sel.get("gid") if sel.get("idx") is not None else None
+
+    @ctrl.set("sel_follow_track")
+    def _sel_follow_track(path=None, show=None):
+        """{snapshot: GalaxyIndex} of a built track, and what draws its view
+        at a snapshot; None when it's left."""
+        sel.update(track=path, track_show=show)
+
+    @ctrl.set("sel_host_halo")
+    def _sel_host_halo(snap, position):
+        """The halo at a central's position, in that snapshot."""
+        return _host_halo(_snap(snap)[0], position, snap)
 
     @ctrl.set("sel_close")
     def _sel_close():

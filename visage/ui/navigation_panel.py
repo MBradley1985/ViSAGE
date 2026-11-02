@@ -12,6 +12,9 @@ from visage.utils import labels
 from visage.scene.scene import Scene
 from visage.ui import plotting
 from visage.ui import regions as _regions
+from visage.ui import tracking
+from visage.utils.gif import dithered, each_format, shared_palette
+from visage.utils.image_files import SCREENSHOT_FORMATS, save_image
 from visage.utils.filters import galaxy_mask
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
@@ -531,8 +534,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.last_movie = ""
     state.movie_fps = 10
     state.movie_resolution = "native"  # native | hd | uhd
-    state.movie_format = "gif"  # gif | mov | png
+    state.movie_formats = ["gif"]  # any of gif, mov, png
     state.screenshot_label = ""
+    state.screenshot_formats = ["png"]  # any of SCREENSHOT_FORMATS
     state.movie_label = ""
     state.movie_loop = True  # only used for GIF output
 
@@ -2044,13 +2048,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             else:
                 pil = _vtk_to_pil_ssaa(_SCREENSHOT_SUPERSAMPLE)
             pil = _composite_console_overlay(pil)
-            ext_out = str(path).lower().rsplit(".", 1)[-1]
-            if ext_out in ("jpg", "jpeg"):
-                pil.save(str(path), "JPEG", quality=95)
-            elif ext_out in ("tif", "tiff"):
-                pil.save(str(path), "TIFF")
-            else:
-                pil.save(str(path), "PNG")
+            save_image(pil, path)
             state.last_screenshot = str(path)
         except Exception as e:
             state.last_screenshot = f"ERROR: {e!s}"
@@ -2058,19 +2056,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("take_screenshot")
     def on_take_screenshot():
-        _take_screenshot("png")
-
-    @ctrl.set("screenshot_png")
-    def on_screenshot_png():
-        _take_screenshot("png")
-
-    @ctrl.set("screenshot_jpg")
-    def on_screenshot_jpg():
-        _take_screenshot("jpg")
-
-    @ctrl.set("screenshot_tiff")
-    def on_screenshot_tiff():
-        _take_screenshot("tiff")
+        for ext in list(state.screenshot_formats) or ["png"]:
+            _take_screenshot(ext)
 
     # ------------------------------------------------------------------
     # Recording — PNG frames during playback, finalized to GIF/MOV at stop
@@ -2286,7 +2273,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "dir": frames_dir,
                 "frames": 0,
                 "fps": fps,
-                "format": str(state.movie_format),
+                "formats": list(state.movie_formats) or ["gif"],
                 "scale": scale,
                 "movie_base": movie_base,
                 "session": sess,
@@ -2448,16 +2435,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ew = _w0 if _w0 % 2 == 0 else _w0 - 1
                 eh = _h0 if _h0 % 2 == 0 else _h0 - 1
                 need_crop = ew != _w0 or eh != _h0
-                # Floyd-Steinberg dithering distributes quantisation error to
-                # neighbouring pixels, which prevents hard contour lines on
-                # smooth gaussian-splat gradients (a visible artefact with the
-                # default median-cut quantiser and no dithering).
-                try:
-                    _dither = _PilGif.Dither.FLOYDSTEINBERG
-                    _adaptive = _PilGif.Palette.ADAPTIVE
-                except AttributeError:
-                    _dither = 3  # FLOYDSTEINBERG numeric value
-                    _adaptive = 1  # ADAPTIVE numeric value
+                _palette = shared_palette(frames)
                 pil_frames = []
                 for p in frames:
                     img = _PilGif.open(str(p)).convert("RGB")
@@ -2472,9 +2450,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         except AttributeError:
                             _gif_rs = _PilGif.LANCZOS
                         img = img.resize((ew, eh), _gif_rs)
-                    pil_frames.append(
-                        img.convert("P", palette=_adaptive, dither=_dither)
-                    )
+                    pil_frames.append(dithered(img, _palette))
                     img.close()
                 duration_ms = max(1, int(1000 / fps))
                 # loop=0 = infinite, loop=1 = play once
@@ -2573,14 +2549,72 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         def _do_finalize():
             try:
-                result = _finalize_movie(
-                    frames_dir=snap["dir"],
-                    session_dir=snap["session"],
-                    movie_base=snap["movie_base"],
-                    fps=snap["fps"],
-                    fmt=snap["format"],
-                    gif_loop=bool(state.movie_loop),
-                    snap_files=snap.get("snap_files") or [],
+                result = each_format(
+                    snap["formats"],
+                    snap["dir"],
+                    snap.get("snap_files") or [],
+                    lambda fmt, here, files: _finalize_movie(
+                        frames_dir=here,
+                        session_dir=snap["session"],
+                        movie_base=snap["movie_base"],
+                        fps=snap["fps"],
+                        fmt=fmt,
+                        gif_loop=bool(state.movie_loop),
+                        snap_files=files,
+                    ),
+                )
+            except Exception as exc:
+                result = f"ERROR (finalize): {exc!s}"
+            loop.call_soon_threadsafe(_publish, result)
+
+        threading.Thread(target=_do_finalize, daemon=True).start()
+
+    @ctrl.set("track_save")
+    def on_track_save():
+        """A built track as a movie, encoded like a playback recording."""
+        import threading
+
+        images = ctrl.track_images()
+        if not images or state.track_saving:
+            return
+        sess = _get_session_dir()
+        movie_base = _resolve_name(state.movie_label, "track")
+        frames_dir = sess / f"_{movie_base}_frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        snap_files = []
+        for i, image in enumerate(images):
+            path = frames_dir / f"snap_{i:05d}.jpg"
+            path.write_bytes(image)
+            snap_files.append({"file": str(path), "count": 6})
+        formats = list(state.movie_formats) or ["gif"]
+        fps = max(1, int(state.movie_fps))
+        loop_flag = bool(state.movie_loop)
+        state.track_saving = True
+        state.track_saved = "Encoding…"
+        state.flush()
+        loop = asyncio.get_running_loop()
+
+        def _publish(result):
+            state.track_saving = False
+            state.track_saved = result
+            state.library_files = _scan_library()
+            state.flush()
+
+        def _do_finalize():
+            try:
+                result = each_format(
+                    formats,
+                    frames_dir,
+                    snap_files,
+                    lambda fmt, here, files: _finalize_movie(
+                        frames_dir=here,
+                        session_dir=sess,
+                        movie_base=movie_base,
+                        fps=fps,
+                        fmt=fmt,
+                        gif_loop=loop_flag,
+                        snap_files=files,
+                    ),
                 )
             except Exception as exc:
                 result = f"ERROR (finalize): {exc!s}"
@@ -3134,6 +3168,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 pass
         state.library_files = _scan_library()
         state.flush()
+
+    tracking.setup(server, scene)
 
     plotting.setup(
         server,
@@ -3956,6 +3992,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         import numpy as np
         from visage.utils.group_info import member_indices
 
+        if not state.isolate_active and (
+            state.track_ready or state.track_busy
+        ):
+            return  # a track and Isolate don't go together
         if bool(state.isolate_active):
             # Turning OFF — drop the mask entirely.
             _clear_draw_widgets()
@@ -5120,6 +5160,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         # ── Icon rail: each tab, and a click on the open one closes it ──
         _phot = [("Photometry", "photometry")] if scene.is_lightcone else []
+        _track = (
+            []
+            if scene.is_lightcone
+            else [("Track", "track", "mdi-map-marker-path")]
+        )
         with html.Div(classes="sage-rail"):
             for label, value, icon in (
                 ("Structure", "layers", "mdi-layers-outline"),
@@ -5130,6 +5175,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ("Console", "console", "mdi-console"),
                 ("Library", "library", "mdi-folder-outline"),
                 ("Plotting", "plotting", "mdi-chart-line"),
+                *_track,
             ):
                 with html.Button(
                     classes=(
@@ -5178,7 +5224,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "mdi-magnify",
                     ctrl.toggle_isolate,
                     "isolate_active",
-                    "!sel_active && !isolate_active",
+                    "(!sel_active || track_busy || track_ready)"
+                    " && !isolate_active",
                 ),
                 (
                     "Observer" if scene.is_lightcone else "Box Centre",
@@ -5244,6 +5291,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         variant="outlined",
                         color="#c084fc",
                         density="compact",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                 with v3.VSheet(
                     color="transparent",
@@ -5252,13 +5300,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("halo_colormap",),
                         items=(_CMAPS,),
-                        classes="sage-left sage-sel-halo",
+                        label="Colormap",
+                        classes="sage-right sage-sel-halo",
                         hide_details=True,
                         variant="outlined",
                         color="#c084fc",
                         density="compact",
                         disabled=("halo_color_mode === 'mvir'",),
                         style="flex:1;min-width:0;",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VCheckbox(
                         v_model=("halo_cmap_reverse",),
@@ -5267,7 +5317,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         color="#c084fc",
                         disabled=("halo_color_mode === 'mvir'",),
-                        style="flex:0 0 auto;font-size:0.75rem;",
+                        classes="sage-inline-toggle",
+                        style="flex:0 0 auto;",
                     )
                 with v3.VSheet(
                     color="transparent", style="padding:4px 0 8px;"
@@ -5343,6 +5394,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         variant="outlined",
                         color="#FFD700",
                         density="compact",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                 with v3.VSheet(
                     color="transparent",
@@ -5351,7 +5403,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("galaxy_colormap",),
                         items=(_CMAPS,),
-                        classes="sage-left sage-sel-gal",
+                        label="Colormap",
+                        classes="sage-right sage-sel-gal",
                         hide_details=True,
                         variant="outlined",
                         color="#FFD700",
@@ -5366,6 +5419,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "galaxy_color_mode === 'type'",
                         ),
                         style="flex:1;min-width:0;",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VCheckbox(
                         v_model=("galaxy_cmap_reverse",),
@@ -5377,7 +5431,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "galaxy_color_mode === 'structure' || "
                             "galaxy_color_mode === 'type'",
                         ),
-                        style="flex:0 0 auto;font-size:0.75rem;",
+                        classes="sage-inline-toggle",
+                        style="flex:0 0 auto;",
                     )
                 with v3.VSheet(
                     color="transparent", style="padding:4px 0 8px;"
@@ -5546,6 +5601,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             variant="outlined",
                             color="#7FDBFF",
                             density="compact",
+                            menu_props=("{contentClass: 'sage-menu'}",),
                         )
                     # Legend: one swatch per ticked filter, in its own colour.
                     with v3.VSheet(
@@ -5600,6 +5656,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             disabled=("nav_gal_idx === null",),
                             click=ctrl.create_spectrum,
                             id="btn-spectrum",
+                            classes="sage-main",
                         )
 
                 with html.Div(
@@ -5629,6 +5686,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VSelect(
@@ -5639,6 +5697,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         v3.VBtn(
                             "Export catalogue",
@@ -5649,6 +5708,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             loading=("survey_busy",),
                             click=ctrl.export_survey,
                             id="btn-survey",
+                            classes="sage-main",
                         )
                         html.Div(
                             "{{ survey_note }}",
@@ -5668,6 +5728,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 loading=("spec_busy",),
                                 click=ctrl.make_fibre_spectra,
                                 id="btn-fibre",
+                                classes="sage-main",
                             )
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'image'",)
@@ -5697,6 +5758,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VSelect(
@@ -5707,6 +5769,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VCheckbox(
@@ -5731,6 +5794,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         for model, label in (
                             ("mock_patch", "Random patch of sky"),
@@ -5766,6 +5830,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         html.Div(
                             "Centred on {{ mock_patch ? "
@@ -5781,6 +5846,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             loading=("mock_busy",),
                             click=ctrl.create_mock_image,
                             id="btn-mock-image",
+                            classes="sage-main",
                         )
 
             # ── CONSOLE tab — multi-session REPL ────────────────────
@@ -6026,6 +6092,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 prepend_icon="mdi-play",
                                 click=ctrl.console_submit,
                                 id="btn-console-run",
+                                classes="sage-main",
                             )
                         with v3.VCol(style="padding:0;"):
                             v3.VBtn(
@@ -6036,6 +6103,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 density="compact",
                                 prepend_icon="mdi-delete-sweep-outline",
                                 click=ctrl.console_clear,
+                                classes="sage-danger",
                             )
                     v3.VBtn(
                         "Pop-out",
@@ -6048,6 +6116,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
 
             plotting.tab(ctrl)
+            if not scene.is_lightcone:
+                tracking.tab(ctrl)
 
             # ── LIBRARY tab — browse stored media ──────────────
             with v3.VSheet(
@@ -6213,6 +6283,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 size="small",
                                 prepend_icon="mdi-close-circle-outline",
                                 click=ctrl.library_close,
+                                classes="sage-danger",
                             )
 
             # ── FILTERS tab ────────────────────────────────────
@@ -6990,7 +7061,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("filter_gal_type",),
                         label="Type",
-                        classes="sage-right sage-sel-cyan sage-head-white",
+                        classes="sage-right sage-sel-gal",
                         items=(
                             [
                                 {"title": "All", "value": "both"},
@@ -7003,11 +7074,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="cyan",
                         density="compact",
                         style=_FSEL,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VSelect(
                         v_model=("filter_gal_ffb",),
                         label="FFB regime",
-                        classes="sage-right sage-sel-cyan sage-head-white",
+                        classes="sage-right sage-sel-gal",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
@@ -7021,11 +7093,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         disabled=("!model_fields.ffb_regime",),
                         style=_FSEL,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VSelect(
                         v_model=("filter_gal_cgm",),
                         label="Gas regime",
-                        classes="sage-right sage-sel-cyan sage-head-white",
+                        classes="sage-right sage-sel-gal",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
@@ -7039,6 +7112,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         disabled=("!model_fields.cgm_regime",),
                         style=_FSEL,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
 
                 v3.VDivider(style="margin:6px 0 4px;")
@@ -7052,6 +7126,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     size="small",
                     prepend_icon="mdi-restore",
                     click=ctrl.reset_filters,
+                    classes="sage-danger",
                 )
 
                 # Find: galaxies worth a look, by preset; a click selects.
@@ -7082,6 +7157,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     variant="outlined",
                     color="cyan",
                     density="compact",
+                    menu_props=("{contentClass: 'sage-menu'}",),
                 )
                 with html.Div(
                     v_show=("find_preset === 'id'",),
@@ -7107,6 +7183,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="cyan",
                         density="compact",
                         style="height:40px;",
+                        classes="sage-main",
                     )
                 html.Div(
                     "{{ find_note }}",
@@ -7134,196 +7211,174 @@ def build_navigation_panel(server, scene: Scene) -> None:
             with v3.VSheet(
                 color="transparent",
                 v_show=("nav_active_tab === 'record'",),
+                style="display:flex;flex-direction:column;flex:1;min-height:0;",
             ):
-                v3.VLabel(
-                    "SCREENSHOT",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with html.Div(
-                    raw_attrs=['data-enter-click="btn-take-screenshot"'],
-                ):
-                    v3.VTextField(
-                        v_model=("screenshot_label",),
-                        label="File name (optional)",
+                with html.Div(style="flex:1;min-height:0;overflow-y:auto;"):
+                    v3.VLabel(
+                        "SCREENSHOT",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#06b6d4;padding:6px 0 8px;display:block;"
+                        ),
+                    )
+                    with html.Div(
+                        raw_attrs=['data-enter-click="btn-take-screenshot"'],
+                    ):
+                        v3.VTextField(
+                            v_model=("screenshot_label",),
+                            label="File name (optional)",
+                            hide_details=True,
+                            variant="outlined",
+                            bg_color="#1a1a2e",
+                            density="compact",
+                            style="padding-bottom:8px;",
+                            keydown_enter=ctrl.take_screenshot,
+                        )
+                    html.Div("File format", classes="sage-file-head")
+                    with html.Div(classes="sage-formats"):
+                        for kind in SCREENSHOT_FORMATS:
+                            v3.VCheckbox(
+                                v_model=("screenshot_formats",),
+                                value=kind,
+                                label=kind.upper(),
+                                density="compact",
+                                hide_details=True,
+                                color="cyan",
+                            )
+                    v3.VBtn(
+                        "Take Screenshot",
+                        block=True,
+                        color="cyan",
+                        density="compact",
+                        prepend_icon="mdi-camera",
+                        click=ctrl.take_screenshot,
+                        id="btn-take-screenshot",
+                        classes="sage-main",
+                    )
+                    v3.VLabel(
+                        "Saved to sage_outputs/session_*/ in your working directory",
+                        style="font-size:0.62rem;color:#6b7280;display:block;padding:6px 0 2px;",
+                    )
+                    v3.VLabel(
+                        "{{ last_screenshot ? 'Last: ' + last_screenshot : '' }}",
+                        style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;",
+                    )
+
+                    v3.VDivider(style="margin:14px 0;")
+
+                    v3.VLabel(
+                        "RECORD MOVIE",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#06b6d4;padding:6px 0 8px;display:block;"
+                        ),
+                    )
+                    with html.Div(
+                        raw_attrs=['data-enter-click="btn-start-recording"'],
+                    ):
+                        v3.VTextField(
+                            v_model=("movie_label",),
+                            label="File name (optional)",
+                            hide_details=True,
+                            variant="outlined",
+                            bg_color="#1a1a2e",
+                            density="compact",
+                            style="padding-bottom:8px;",
+                            keydown_enter=ctrl.start_recording,
+                        )
+                    v3.VLabel(
+                        "FPS (output)  {{ '— ' + movie_fps }}",
+                        classes="sage-select-head",
+                        style="font-size:0.6rem;color:#9ca3af;display:block;padding:4px 0 2px;",
+                    )
+                    v3.VSlider(
+                        v_model=("movie_fps",),
+                        min=1,
+                        max=60,
+                        step=1,
+                        thumb_label=True,
+                        color="cyan",
+                        density="compact",
+                        hide_details=True,
+                    )
+                    v3.VSelect(
+                        v_model=("movie_resolution",),
+                        label="Resolution",
+                        classes="sage-right sage-sel-cyan",
+                        items=(
+                            [
+                                {"title": "Native  (1×)", "value": "native"},
+                                {"title": "High   (2× window)", "value": "hd"},
+                                {
+                                    "title": "Ultra  (4× window)",
+                                    "value": "uhd",
+                                },
+                            ],
+                        ),
                         hide_details=True,
                         variant="outlined",
-                        bg_color="#1a1a2e",
+                        color="cyan",
                         density="compact",
-                        style="padding-bottom:8px;",
-                        keydown_enter=ctrl.take_screenshot,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
-                v3.VBtn(
-                    "Take Screenshot",
-                    block=True,
-                    color="cyan",
-                    density="compact",
-                    prepend_icon="mdi-camera",
-                    click=ctrl.take_screenshot,
-                    id="btn-take-screenshot",
-                )
-                with v3.VRow(
-                    no_gutters=True, style="gap:6px;padding-top:6px;"
-                ):
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "PNG",
-                            block=True,
-                            variant="outlined",
-                            color="cyan",
-                            density="compact",
-                            click=ctrl.screenshot_png,
-                        )
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "JPG",
-                            block=True,
-                            variant="outlined",
-                            color="cyan",
-                            density="compact",
-                            click=ctrl.screenshot_jpg,
-                        )
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "TIFF",
-                            block=True,
-                            variant="outlined",
-                            color="cyan",
-                            density="compact",
-                            click=ctrl.screenshot_tiff,
-                        )
-                v3.VLabel(
-                    "Saved to sage_outputs/session_*/ in your working directory",
-                    style="font-size:0.62rem;color:#6b7280;display:block;padding:6px 0 2px;",
-                )
-                v3.VLabel(
-                    "{{ last_screenshot ? 'Last: ' + last_screenshot : '' }}",
-                    style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;",
-                )
 
-                v3.VDivider(style="margin:14px 0;")
-
-                v3.VLabel(
-                    "RECORD MOVIE",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with html.Div(
-                    raw_attrs=['data-enter-click="btn-start-recording"'],
-                ):
-                    v3.VTextField(
-                        v_model=("movie_label",),
-                        label="File name (optional)",
+                    html.Div("Output format", classes="sage-file-head")
+                    with html.Div(classes="sage-formats"):
+                        for kind, name in (
+                            ("gif", "GIF"),
+                            ("mov", "MOV"),
+                            ("png", "PNG"),
+                        ):
+                            v3.VCheckbox(
+                                v_model=("movie_formats",),
+                                value=kind,
+                                label=name,
+                                density="compact",
+                                hide_details=True,
+                                color="cyan",
+                            )
+                    v3.VCheckbox(
+                        v_model=("movie_loop",),
+                        label="Loop GIF forever",
+                        v_show=("movie_formats.includes('gif')",),
+                        color="cyan",
+                        density="compact",
                         hide_details=True,
-                        variant="outlined",
-                        bg_color="#1a1a2e",
-                        density="compact",
-                        style="padding-bottom:8px;",
-                        keydown_enter=ctrl.start_recording,
+                        style="padding-top:4px;",
                     )
-                v3.VLabel(
-                    "FPS (output)  {{ '— ' + movie_fps }}",
-                    classes="sage-select-head",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:4px 0 2px;",
-                )
-                v3.VSlider(
-                    v_model=("movie_fps",),
-                    min=1,
-                    max=60,
-                    step=1,
-                    thumb_label=True,
-                    color="cyan",
-                    density="compact",
-                    hide_details=True,
-                )
+                with html.Div(style="flex:none;padding-top:6px;"):
+                    with v3.VRow(
+                        no_gutters=True, style="gap:6px;padding-top:10px;"
+                    ):
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "Start",
+                                block=True,
+                                color="red",
+                                density="compact",
+                                prepend_icon="mdi-record-circle-outline",
+                                click=ctrl.start_recording,
+                                disabled=("recording_active",),
+                                id="btn-start-recording",
+                                classes="sage-main",
+                            )
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "Stop",
+                                block=True,
+                                color="#6b7280",
+                                density="compact",
+                                prepend_icon="mdi-stop",
+                                click=ctrl.stop_recording,
+                                disabled=("!recording_active",),
+                                classes="sage-danger",
+                            )
 
-                v3.VLabel(
-                    "Resolution",
-                    classes="sage-select-head",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                )
-                v3.VSelect(
-                    v_model=("movie_resolution",),
-                    classes="sage-left sage-sel-cyan",
-                    items=(
-                        [
-                            {"title": "Native  (1×)", "value": "native"},
-                            {"title": "High   (2× window)", "value": "hd"},
-                            {"title": "Ultra  (4× window)", "value": "uhd"},
-                        ],
-                    ),
-                    hide_details=True,
-                    variant="outlined",
-                    color="cyan",
-                    density="compact",
-                )
-
-                v3.VLabel(
-                    "Output format",
-                    classes="sage-select-head",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                )
-                v3.VSelect(
-                    v_model=("movie_format",),
-                    classes="sage-left sage-sel-cyan",
-                    items=(
-                        [
-                            {"title": "GIF", "value": "gif"},
-                            {"title": "MOV  (H.264)", "value": "mov"},
-                            {"title": "PNG sequence", "value": "png"},
-                        ],
-                    ),
-                    hide_details=True,
-                    variant="outlined",
-                    color="cyan",
-                    density="compact",
-                )
-
-                # GIF-only: repeat (loop) checkbox
-                v3.VCheckbox(
-                    v_model=("movie_loop",),
-                    label="Loop GIF forever",
-                    v_show=("movie_format === 'gif'",),
-                    color="cyan",
-                    density="compact",
-                    hide_details=True,
-                    style="padding-top:4px;",
-                )
-
-                with v3.VRow(
-                    no_gutters=True, style="gap:6px;padding-top:10px;"
-                ):
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "Start",
-                            block=True,
-                            color="red",
-                            density="compact",
-                            prepend_icon="mdi-record-circle-outline",
-                            click=ctrl.start_recording,
-                            disabled=("recording_active",),
-                            id="btn-start-recording",
-                        )
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "Stop",
-                            block=True,
-                            color="#6b7280",
-                            density="compact",
-                            prepend_icon="mdi-stop",
-                            click=ctrl.stop_recording,
-                            disabled=("!recording_active",),
-                        )
-
-                v3.VLabel(
-                    "{{ recording_active ? '● Recording — ' + recording_frames + ' frames' : 'Idle' }}",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                )
-                v3.VLabel(
-                    "{{ last_movie ? 'Last: ' + last_movie : '' }}",
-                    style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;padding:4px 0;",
-                )
+                    v3.VLabel(
+                        "{{ recording_active ? '● Recording — ' + recording_frames + ' frames' : 'Idle' }}",
+                        style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
+                    )
+                    v3.VLabel(
+                        "{{ last_movie ? 'Last: ' + last_movie : '' }}",
+                        style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;padding:4px 0;",
+                    )

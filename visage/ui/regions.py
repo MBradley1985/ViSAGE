@@ -534,7 +534,7 @@ def tab(ctrl) -> None:
     )
     with html.Div(v_show=("region_shape === 'sphere'",)):
         html.Div("CENTRE", style=_HEAD)
-        with html.Div(style=_ROW):
+        with html.Div(classes="sage-xyz", style=_ROW):
             for a in "xyz":
                 _field(f"nav_{a}", a.upper())
         _centre_buttons(ctrl, "sphere")
@@ -544,18 +544,18 @@ def tab(ctrl) -> None:
     with html.Div(v_show=("region_shape === 'box'",)):
         with html.Div(v_show=("!box_minmax",)):
             html.Div("CENTRE", style=_HEAD)
-            with html.Div(style=_ROW):
+            with html.Div(classes="sage-xyz", style=_ROW):
                 for a in "xyz":
                     _box_axis_field(a, True)
             _centre_buttons(ctrl, "box")
             html.Div("SIZE (h^-1 Mpc)", style=_HEAD)
-            with html.Div(style=_ROW):
+            with html.Div(classes="sage-xyz", style=_ROW):
                 for a in "xyz":
                     _box_axis_field(a, False)
         with html.Div(v_show=("box_minmax",)):
             html.Div("BOUNDS (h^-1 Mpc)", style=_HEAD)
             for a in "xyz":
-                with html.Div(style=_ROW):
+                with html.Div(classes="sage-xyz", style=_ROW):
                     _field(f"nav_box_{a}min", f"{a.upper()} min")
                     _field(f"nav_box_{a}max", f"{a.upper()} max")
         _tick("box_minmax", "Enter min and max")
@@ -577,6 +577,7 @@ def tab(ctrl) -> None:
         )
         with html.Div(style=_ROW + "margin-top:10px;"):
             _field("slice_depth", "Position (h^-1 Mpc)")
+        with html.Div(style=_ROW):
             _field("slice_thickness", "Thickness")
         _tick("slice_sweep", "Animate through the volume")
         with html.Div(style=_ROW + "margin-top:6px;"):
@@ -598,9 +599,12 @@ def tab(ctrl) -> None:
             "Go",
             ctrl.region_go,
             variant="flat",
+            classes="sage-main",
             id="btn-region-go",
         )
-        _button("Clear", ctrl.region_clear, color="#ef4444")
+        _button(
+            "Clear", ctrl.region_clear, color="#ef4444", classes="sage-danger"
+        )
     html.Div(
         "{{ region_note }}",
         style=(
@@ -609,7 +613,7 @@ def tab(ctrl) -> None:
         ),
     )
     html.Div("SAVED", style=_HEAD + "margin-top:8px;")
-    with html.Div(style=_ROW):
+    with html.Div(style=_ROW + "align-items:center;"):
         v3.VTextField(
             v_model=("region_name",),
             label="Name",

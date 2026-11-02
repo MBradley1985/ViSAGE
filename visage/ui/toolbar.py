@@ -210,6 +210,8 @@ def build_toolbar(server, scene: Scene) -> None:
     def on_snap_slider(snap_num, **_):
         if _play_task[0] is None or _play_task[0].done():
             scene.set_snapshot(int(snap_num))
+            if _track_on():
+                _track_view(int(snap_num))
             state.snap_label = scene.snap_label
             state.flush()
             _push()
@@ -220,6 +222,30 @@ def build_toolbar(server, scene: Scene) -> None:
 
     # Per-snapshot frame cache + the camera/rotation/scene-state signature it's valid for.
     _frames: dict = {"key": None, "data": {}}
+    # A built track: its frames sit in _frames under this key, so anything
+    # that drops the cached frames also ends the track.
+    _track: dict = {"order": [], "views": {}, "show": None}
+
+    def _track_on() -> bool:
+        return _frames["key"] == "track" and bool(_track["order"])
+
+    def _track_view(snap: int) -> None:
+        """Put the view on the track at ``snap``."""
+        view = _track["views"].get(snap)
+        if view is None:
+            return
+        centre, offset = view
+        scene.camera.marker.set_target(centre)
+        focus = scene._focus_region
+        if focus is not None and focus["type"] == "sphere":
+            scene.set_focus_sphere(tuple(centre), focus["radius"])
+        if offset is not None:
+            cam = scene.plotter.camera
+            cam.focal_point = tuple(centre)
+            cam.position = tuple(np.add(centre, offset))
+            scene.plotter.renderer.ResetCameraClippingRange()
+        if _track["show"] is not None:
+            _track["show"](snap)
 
     def _scene_hash() -> int:
         """Integer fingerprint of all visual-affecting scene state.
@@ -367,6 +393,123 @@ def build_toolbar(server, scene: Scene) -> None:
             state.load_card_show = False
             state.flush()
 
+    def _stamp(img: np.ndarray, lines: list[str]) -> np.ndarray:
+        """``lines`` written on a frame, bottom left, for saved movies."""
+        from PIL import Image, ImageDraw, ImageFont
+
+        pic = Image.fromarray(img[..., :3].copy())
+        draw = ImageDraw.Draw(pic, "RGBA")
+        size = max(14, pic.height // 40)
+        font = ImageFont.load_default(size=size)
+        y = pic.height - 16 - round(size * 1.4) * len(lines)
+        for line in lines:
+            left, top, right, bottom = draw.textbbox((16, y), line, font=font)
+            draw.rectangle(
+                (left - 6, top - 3, right + 6, bottom + 3),
+                fill=(8, 10, 16, 170),
+            )
+            draw.text((16, y), line, fill=(226, 232, 240), font=font)
+            y += round(size * 1.4)
+        return np.asarray(pic)
+
+    @ctrl.set("track_render")
+    async def track_render(order, views, texts, show, stopped, at) -> bool:
+        """Render the frames of a track, then hand over the live view at
+        snapshot ``at``.  False if ``stopped`` said to give up."""
+        from PIL import Image
+
+        cam = scene.plotter.camera
+        before = (cam.position, cam.focal_point, int(state.snap_num))
+        ring = scene.camera.marker.target
+        _cancel_rotate()
+        _frames.update(key="track", data={})
+        _track.update(order=[], views=views, show=show)
+        _suppress_snap[0] = True
+        state.prerender_busy = True
+        rw = scene.plotter.ren_win
+        offscreen = rw.GetOffScreenRendering()
+        rw.SetOffScreenRendering(1)
+        try:
+            for done, s in enumerate(order, 1):
+                if stopped():
+                    break
+                scene.set_snapshot(s)
+                _track_view(s)
+                lines = [scene._snap_table.label(s)]
+                if s in texts:
+                    lines.insert(0, texts[s])
+                buf = io.BytesIO()
+                Image.fromarray(_stamp(_capture_frame(), lines)).save(
+                    buf, format="JPEG", quality=95
+                )
+                url = "data:image/jpeg;base64," + base64.b64encode(
+                    buf.getvalue()
+                ).decode("ascii")
+                _frames["data"][s] = url
+                if s == order[0]:
+                    state.playback_frame = url
+                    state.playback_active = True
+                state.load_card_text = f"Building track…  {done}/{len(order)}"
+                state.load_card_percent = int(100 * done / len(order))
+                state.load_card_skip = False
+                state.load_card_show = True
+                state.flush()
+                await asyncio.sleep(0)
+            finished = len(_frames["data"]) == len(order)
+        finally:
+            rw.SetOffScreenRendering(offscreen)
+            _suppress_snap[0] = False
+            state.prerender_busy = False
+            state.load_card_show = False
+            state.flush()
+        if finished:
+            _track["order"] = list(order)
+            _end_playback_to(at if at in order else order[0])
+            return True
+        _frames.update(key=None, data={})
+        _track.update(order=[], views={}, show=None)
+        cam.position, cam.focal_point = before[:2]
+        if ring is not None:
+            scene.camera.marker.set_target(ring)
+        _end_playback_to(before[2])
+        return False
+
+    @ctrl.set("track_clear")
+    def track_clear() -> None:
+        """Back to the ordinary play bar."""
+        if _frames["key"] == "track":
+            _frames.update(key=None, data={})
+        _track.update(order=[], views={}, show=None)
+
+    @ctrl.set("track_images")
+    def track_images() -> list:
+        """The built frames in order, as JPEG bytes."""
+        if not _track_on():
+            return []
+        return [
+            base64.b64decode(_frames["data"][s].split(",", 1)[1])
+            for s in _track["order"]
+        ]
+
+    async def _play_track() -> None:
+        order = _track["order"]
+        start = int(state.snap_num)
+        at = order.index(start) if start in order else 0
+        if _ctl["reverse"]:
+            run = order[at::-1] if at else order[::-1]
+        else:
+            run = order[at:] if at < len(order) - 1 else order
+        await _image_playback(run)
+        last = int(state.snap_num)
+        scene.set_snapshot(last)
+        _track_view(last)
+        _push()
+        state.snap_label = scene.snap_label
+        state.flush()
+        await asyncio.sleep(0.2)
+        state.playback_active = False
+        state.flush()
+
     async def _image_playback(order: list[int]) -> None:
         stop_evt = _get_stop_evt()
         n = len(order)
@@ -410,6 +553,9 @@ def build_toolbar(server, scene: Scene) -> None:
         _cancel_rotate()
         await _await_preload()
         if stop_evt.is_set():
+            return
+        if _track_on():
+            await _play_track()
             return
         # Play from the current slider position toward z=0 (forward) or toward
         # high-z (reverse). Only that range is rendered.
@@ -504,6 +650,8 @@ def build_toolbar(server, scene: Scene) -> None:
         state.playback_active = True
         # Render the live view at `snap` behind the overlay.
         scene.set_snapshot(snap)
+        if _track_on():
+            _track_view(snap)
         state.snap_num = snap
         state.snap_label = scene.snap_label
         state.flush()
@@ -532,7 +680,7 @@ def build_toolbar(server, scene: Scene) -> None:
 
     @ctrl.set("stop")
     def on_stop():
-        _end_playback_to(_snap_hi[0])
+        _end_playback_to(_track["order"][-1] if _track_on() else _snap_hi[0])
 
     @ctrl.set("snap_prev")
     def on_snap_prev():

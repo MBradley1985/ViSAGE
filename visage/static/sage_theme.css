@@ -606,3 +606,425 @@ body,
     grid-template-columns: 1fr 1fr;
     column-gap: 16px;
 }
+
+/* ── Panel controls ────────────────────────────────────────────────
+   One look for the panels and the info card; the toolbar and rail keep
+   their own.  Controls are solid: only a disabled one is dimmed.
+   Buttons: helpers by default, .sage-main and .sage-danger as tagged. */
+
+:is(.sage-panel, #sel-card) .v-btn:where(:not(.v-btn--icon):not(.v-btn-toggle .v-btn)) {
+    height: 28px !important;
+    min-height: 28px !important;
+    padding: 0 10px;
+    border-radius: 8px !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    background: transparent !important;
+    color: #e2e8f0 !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    box-shadow: none !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn .v-btn__overlay,
+:is(.sage-panel, #sel-card) .v-btn .v-btn__underlay {
+    opacity: 0 !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn:where(:not(.v-btn--icon):not(.v-btn-toggle .v-btn)):hover {
+    border-color: rgba(255, 255, 255, 0.45) !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn.sage-main:not(.v-btn--icon),
+:is(.sage-panel, #sel-card) .v-btn.sage-danger:not(.v-btn--icon) {
+    height: 34px !important;
+    min-height: 34px !important;
+    border-radius: 10px !important;
+    font-size: 13px !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn.sage-main:not(.v-btn--icon) {
+    background: #22d3ee !important;
+    border-color: transparent !important;
+    color: #04121a !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn.sage-danger:not(.v-btn--icon) {
+    background: #7f1d1d !important;
+    border-color: transparent !important;
+    color: #fee2e2 !important;
+}
+
+/* Small buttons: zooms, tabs, modes.  Filled when chosen. */
+:is(.sage-panel, #sel-card) .v-btn.v-btn--size-x-small:not(.v-btn--icon) {
+    height: 26px !important;
+    min-height: 26px !important;
+    min-width: 0 !important;
+    padding: 0 7px !important;
+    font-size: 12px !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn.v-btn--size-x-small.v-btn--variant-flat,
+.sel-actions .v-btn.v-btn--variant-flat {
+    background: #22d3ee !important;
+    border-color: transparent !important;
+    color: #04121a !important;
+}
+
+#sel-card .sel-actions .v-btn:not(.v-btn--icon) {
+    height: 30px !important;
+    min-height: 30px !important;
+}
+
+:is(.sage-panel, #sel-card) .v-btn--disabled {
+    opacity: 0.45 !important;
+}
+
+/* Two or three choices: dots, like the On and Off of a toggle. */
+.sage-panel .v-btn-toggle {
+    height: 30px !important;
+    gap: 14px;
+    justify-content: flex-start;
+    overflow: visible;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.sage-panel .v-btn-toggle .v-btn {
+    flex: none !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 30px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #94a3b8 !important;
+    font-size: 13px !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+.sage-panel .v-btn-toggle .v-btn .v-btn__content::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px #64748b;
+}
+
+.sage-panel .v-btn-toggle .v-btn--active {
+    color: #22d3ee !important;
+}
+
+.sage-panel .v-btn-toggle .v-btn--active .v-btn__content::before {
+    background: #22d3ee;
+    box-shadow: 0 0 6px #22d3ee;
+}
+
+/* Dropdowns: a plain row, label left, value right, open or closed. */
+.sage-panel .v-select .v-field,
+.sage-panel .v-select .v-field:hover,
+.sage-panel .v-select .v-field--focused {
+    height: 34px !important;
+    min-height: 34px !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+}
+
+.sage-panel .v-select .v-field__overlay {
+    opacity: 0 !important;
+}
+
+.sage-panel .v-field__outline {
+    --v-field-border-opacity: 0 !important;
+}
+
+.sage-panel .v-field__outline__start,
+.sage-panel .v-field__outline__end,
+.sage-panel .v-field__outline__notch::before,
+.sage-panel .v-field__outline__notch::after {
+    border-color: transparent !important;
+}
+
+.sage-panel .v-field__outline__notch {
+    position: static !important;
+    max-width: none !important;
+}
+
+.sage-panel .v-field-label--floating {
+    position: absolute !important;
+    left: 0 !important;
+    right: auto !important;
+    top: 50% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 60%;
+    transform: translateY(-50%) !important;
+    background: none !important;
+    color: #e2e8f0 !important;
+    font-size: 13px !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.sage-panel .v-field:not(.v-field--active) .v-field__outline .v-field-label--floating {
+    visibility: hidden !important;
+}
+
+.sage-panel .v-field-label:not(.v-field-label--floating) {
+    left: 0 !important;
+    right: auto !important;
+    top: 50% !important;
+    margin: 0 !important;
+    transform: translateY(-50%) !important;
+    color: #94a3b8 !important;
+    font-size: 13px !important;
+}
+
+/* A dropdown's label takes its section's colour; its value is white. */
+.sage-panel .v-select .v-field-label {
+    color: #22d3ee !important;
+}
+
+.sage-panel .sage-sel-halo .v-field-label {
+    color: #c084fc !important;
+}
+
+.sage-panel .sage-sel-gal .v-field-label {
+    color: #ffd700 !important;
+}
+
+.sage-panel .v-field__input {
+    min-height: 32px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-inline-start: 0 !important;
+    align-items: center;
+    font-size: 13px !important;
+}
+
+.sage-panel .v-select .v-field__input {
+    justify-content: flex-end !important;
+    padding-inline-end: 2px !important;
+}
+
+.sage-panel .v-select__selection-text,
+.sage-panel .v-select__selection-text * {
+    color: #fff !important;
+    font-size: 13px !important;
+}
+
+.sage-panel .v-select__menu-icon {
+    margin-inline-start: 2px !important;
+    color: #94a3b8 !important;
+    font-size: 18px !important;
+    opacity: 1 !important;
+}
+
+.sage-panel .v-select__menu-icon::before {
+    content: "\F0140" !important;
+}
+
+.sage-menu .v-list {
+    margin-top: 4px;
+    padding: 4px !important;
+    background: #07090e !important;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 10px !important;
+    box-shadow: none !important;
+}
+
+.sage-menu .v-list-item {
+    min-height: 30px !important;
+    padding: 0 10px !important;
+    color: #94a3b8 !important;
+}
+
+.sage-menu .v-list-item__overlay {
+    opacity: 0 !important;
+}
+
+.sage-menu .v-list-item:hover,
+.sage-menu .v-list-item--active {
+    color: #fff !important;
+}
+
+.sage-menu .v-list-item-title {
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    text-align: left;
+}
+
+.sage-menu .v-list-item--active .v-list-item-title {
+    font-weight: 600 !important;
+}
+
+/* Text boxes: a line underneath. */
+.sage-panel .v-text-field:not(.v-select) .v-field {
+    height: 34px !important;
+    min-height: 34px !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+    border-radius: 0 !important;
+}
+
+.sage-panel .v-text-field:not(.v-select) + .v-text-field:not(.v-select) {
+    margin-inline-start: 12px;
+}
+
+.sage-panel .v-text-field:not(.v-select) .v-field--focused {
+    border-bottom-color: #22d3ee !important;
+}
+
+.sage-panel .v-text-field:not(.v-select) input {
+    padding-inline-end: 0 !important;
+    color: #fff !important;
+    font-size: 13px !important;
+    text-align: right !important;
+}
+
+.sage-panel .sage-xyz {
+    gap: 18px !important;
+}
+
+.sage-panel .sage-xyz .v-field-label {
+    color: #22d3ee !important;
+}
+
+/* On and off: the word and a dot, near the label, dots in a column. */
+.sage-panel .v-checkbox {
+    height: 30px !important;
+    min-height: 30px !important;
+    margin-bottom: 0 !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control {
+    min-height: 30px !important;
+    gap: 10px;
+    justify-content: flex-end !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control .v-label {
+    flex: none !important;
+    width: auto !important;
+    min-width: 92px;
+    color: #e2e8f0;
+    font-size: 13px !important;
+    line-height: 1.2;
+}
+
+.sage-panel .sage-plot-list .v-checkbox .v-selection-control .v-label {
+    flex: 1 1 auto !important;
+    min-width: 0;
+}
+
+.sage-panel .sage-formats .v-checkbox .v-selection-control .v-label {
+    min-width: 44px;
+}
+
+.sage-panel .sage-inline-toggle .v-selection-control .v-label {
+    min-width: 0;
+}
+
+.sage-panel .v-checkbox .v-selection-control__wrapper {
+    width: 44px !important;
+    height: 18px !important;
+    overflow: visible !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control__input {
+    width: 44px !important;
+    height: 18px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+}
+
+/* The word and the dot are one target. */
+.sage-panel .v-checkbox .v-selection-control__input input {
+    top: -6px !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 30px !important;
+    cursor: pointer;
+    z-index: 2;
+}
+
+.sage-panel .v-checkbox .v-selection-control__input::before {
+    content: "Off" !important;
+    position: absolute !important;
+    inset: auto !important;
+    top: 0 !important;
+    right: 17px !important;
+    width: auto !important;
+    height: auto !important;
+    background: none !important;
+    color: #64748b !important;
+    font-size: 13px !important;
+    line-height: 18px !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    opacity: 1 !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control__input::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 0;
+    left: auto;
+    width: 12px;
+    height: 12px;
+    border: 0 !important;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px #64748b;
+    opacity: 1 !important;
+    transform: none !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control--dirty .v-selection-control__input {
+    background: transparent !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control--dirty .v-selection-control__input::before {
+    content: "On" !important;
+    left: auto !important;
+    background: none !important;
+    color: currentColor !important;
+}
+
+.sage-panel .v-checkbox .v-selection-control--dirty .v-selection-control__input::after {
+    background: currentColor;
+    box-shadow: 0 0 6px currentColor;
+}
+
+.sage-panel .v-input--disabled .v-selection-control,
+.sage-panel .v-field--disabled {
+    opacity: 0.45 !important;
+}
+
+/* Sliders. */
+.sage-panel .v-slider-thumb__surface {
+    width: 12px !important;
+    height: 12px !important;
+}
+
+.sage-panel .v-slider-track__background,
+.sage-panel .v-slider-track__fill {
+    height: 3px !important;
+}
+
+.sage-file-head {
+    padding: 8px 0 2px;
+    color: #9ca3af;
+    font-size: 0.72rem;
+    text-align: left;
+}
