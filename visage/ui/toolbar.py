@@ -418,6 +418,7 @@ def build_toolbar(server, scene: Scene) -> None:
 
         cam = scene.plotter.camera
         before = (cam.position, cam.focal_point, int(state.snap_num))
+        ring = scene.camera.marker.target
         _cancel_rotate()
         _frames.update(key="track", data={})
         _track.update(order=[], views=views)
@@ -466,6 +467,8 @@ def build_toolbar(server, scene: Scene) -> None:
         _frames.update(key=None, data={})
         _track.update(order=[], views={})
         cam.position, cam.focal_point = before[:2]
+        if ring is not None:
+            scene.camera.marker.set_target(ring)
         _end_playback_to(before[2])
         return False
 
