@@ -10,7 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Opening a model shows a gold merger tree growing over stars and purple gas.
+- The Opening screen's trees have thinner lines and grow faster.
 
 ### Fixed
 

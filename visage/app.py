@@ -388,7 +388,6 @@ def create_app(
             # which calls katex.render() for Story Mode equation overlays.
             "scripts": [
                 _bust("sage_static/katex/katex.min.js"),
-                _bust("sage_static/opening_tree.js"),
                 _bust("sage_static/visage.js"),
             ],
             "styles": [
