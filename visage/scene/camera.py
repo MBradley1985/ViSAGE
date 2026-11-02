@@ -79,6 +79,18 @@ class CameraController:
     # radius: far enough to read as sky, near enough to stay inside the
     # far clipping plane.
     _STAR_DISTANCE = 25.0
+    # Stars dimmer than this (0-255) aren't drawn.  A star can only add
+    # light where it is: one dimmer than what lies behind it, a glow or
+    # the sky haze, shows as a dark dot.
+    _STAR_FLOOR = 30
+
+    def move_sparkle_clearing(self, center, extent: float) -> None:
+        """The object moved: keep the sky clear of it."""
+        st = self._sparkle_state
+        if st is not None:
+            st["center"] = np.asarray(center, dtype=float)
+            st["extent"] = float(extent)
+            self._reposition_sparkles()
 
     def clear_sparkles(self) -> None:
         if self._sparkle_obs is not None:
@@ -101,12 +113,14 @@ class CameraController:
         n_stars: int = 90_000,
         seed: int = 12345,
         point_size: float = 3.0,
+        extent: float = 0.0,
     ) -> None:
         """A star backdrop behind the isolated object.
 
         `n_stars` covers the whole sphere around the camera, of which the
         field of view shows about 3-4%, so the count is far higher than the
-        number on screen at any moment (~3,000 of 90,000).
+        number on screen at any moment (~3,000 of 90,000).  `extent` is how
+        far the object reaches from `center`: the sky stays clear of it all.
 
         The stars are anchored to the camera rather than scattered around
         the object: a shell centred on the object puts half of its stars
@@ -133,6 +147,7 @@ class CameraController:
 
         colors = (star_field(n_stars, rng) * 255).astype(np.uint8)
         cloud = pv.PolyData(np.zeros((n_stars, 3)))
+        cloud.point_data["rgb"] = (colors * 0.9).astype(np.uint8)
 
         self._sparkle_state = {
             "dirs": dirs,
@@ -140,9 +155,10 @@ class CameraController:
             "distance": max(float(radius), 1e-6) * self._STAR_DISTANCE,
             "center": np.asarray(center, dtype=float),
             "radius": max(float(radius), 1e-6),
-            "rgba": np.concatenate(
-                [colors, np.full((n_stars, 1), 255, np.uint8)], axis=1
-            ),
+            "extent": float(extent),
+            "bright": colors.max(axis=1) * 0.9 >= self._STAR_FLOOR,
+            # Each star's place in the thinning around the object.
+            "keep": rng.random(n_stars),
             "cloud": cloud,
             "cam_key": None,
         }
@@ -151,11 +167,10 @@ class CameraController:
         self._sparkle_actors.append(
             self._pl.add_mesh(
                 cloud,
-                scalars="rgba",
+                scalars="rgb",
                 rgb=True,
                 point_size=point_size,
                 render_points_as_spheres=True,
-                opacity=0.9,
                 # Flat: a two-pixel dot has no shading to show, and a
                 # white specular highlight would wash the reds out.
                 lighting=False,
@@ -164,6 +179,7 @@ class CameraController:
                 reset_camera=False,
             )
         )
+        self._stars_first()
         try:
             self._sparkle_obs = (
                 self._pl.renderer.GetActiveCamera().AddObserver(
@@ -178,6 +194,22 @@ class CameraController:
         # Show them straight away — without this the stars only turn up on
         # the next render the view happens to do (e.g. a camera move).
         self._pl.render()
+
+    def _stars_first(self) -> None:
+        """Put the stars first in the drawing order, behind everything.
+        Props are drawn as added: last in, a faint star is a nearly black
+        dot painted over a galaxy's glow."""
+        ren = self._pl.renderer
+        props = ren.GetViewProps()
+        others = [
+            props.GetItemAsObject(i)
+            for i in range(props.GetNumberOfItems())
+            if props.GetItemAsObject(i) not in self._sparkle_actors
+        ]
+        for prop in others:
+            ren.RemoveViewProp(prop)
+        for prop in others:
+            ren.AddViewProp(prop)
 
     def _camera_key(self) -> tuple:
         cam = self._pl.camera
@@ -207,18 +239,19 @@ class CameraController:
         # Emissive galaxies add light rather than blocking it, so a star
         # behind one shines straight through the glow.  Rather than empty
         # the object's line of sight — which leaves a hard-edged hole in
-        # the field — the stars fade out as they approach that direction,
-        # so the field simply thins where the object is.
+        # the field — the stars thin out as they approach that direction.
+        # Thinned, not dimmed: a dimmed star is a dark dot on the glow.
         to_obj = st["center"] - cam
         obj_dist = float(np.linalg.norm(to_obj))
-        rgba = st["rgba"].copy()
+        show = st["bright"]
         if obj_dist > 1e-9:
             axis = to_obj / obj_dist
             # Tight: the object itself, then full sky just beyond it.  A
             # wide ramp dims most of the frame at the isolate framing,
             # where the object already subtends a good part of the view.
-            inner = np.arctan2(st["radius"] * 0.4, obj_dist)
-            outer = np.arctan2(st["radius"] * 0.9, obj_dist)
+            reach = st["extent"]
+            inner = np.arctan2(max(st["radius"] * 0.4, reach * 1.1), obj_dist)
+            outer = np.arctan2(max(st["radius"] * 0.9, reach * 1.4), obj_dist)
             # Element-wise rather than a matmul: Accelerate raises a
             # spurious divide-by-zero warning for this shape, and this
             # runs on every camera move.
@@ -229,8 +262,11 @@ class CameraController:
             )
             # Smoothstep, so there is no visible edge where it starts.
             fade = fade * fade * (3.0 - 2.0 * fade)
-            rgba[:, 3] = (rgba[:, 3] * fade).astype(np.uint8)
-        st["cloud"].point_data["rgba"] = rgba
+            show = show & (fade > st["keep"])
+        idx = np.flatnonzero(show)
+        st["cloud"].verts = np.column_stack(
+            (np.ones(len(idx), dtype=np.int64), idx)
+        ).ravel()
         st["cam_key"] = self._camera_key()
         # Keep the far plane out past the backdrop.  This fires the
         # camera's ModifiedEvent, but the key above has already been

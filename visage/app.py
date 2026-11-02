@@ -704,9 +704,9 @@ def create_app(
 
         server.state.model_loading = True
         server.state.flush()
-        await asyncio.sleep(
-            0
-        )  # yield so the browser receives model_loading=True
+        # Long enough for the browser to receive model_loading=True: a
+        # zero yield only schedules the send, and the load blocks first.
+        await asyncio.sleep(0.05)
         try:
             if not scene.has_model(name):
                 entry = discovered_by_name.get(name)
@@ -745,9 +745,9 @@ def create_app(
 
         server.state.model_loading = True
         server.state.flush()
-        await asyncio.sleep(
-            0
-        )  # yield so the browser receives model_loading=True
+        # Long enough for the browser to receive model_loading=True: a
+        # zero yield only schedules the send, and the load blocks first.
+        await asyncio.sleep(0.05)
         try:
             if not scene.has_model(name):
                 entry = discovered_by_name.get(name)
@@ -780,9 +780,9 @@ def create_app(
             return
         server.state.model_loading = True
         server.state.flush()
-        await asyncio.sleep(
-            0
-        )  # yield so the browser receives model_loading=True
+        # Long enough for the browser to receive model_loading=True: a
+        # zero yield only schedules the send, and the load blocks first.
+        await asyncio.sleep(0.05)
         try:
             is_now_adj, err = scene.toggle_adjacent(par_path)
             if err:

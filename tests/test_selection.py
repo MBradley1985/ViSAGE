@@ -594,3 +594,31 @@ def test_a_zoom_only_moves_the_view_from_the_track_panel(panel):
     state.track_zoom = 3
     state.flush()
     ctrl.track_refresh()
+
+
+def test_isolates_stars_are_drawn_behind_everything(panel):
+    _, scene = panel
+    camera = scene.camera
+    camera.add_sparkles((1.0, 1.0, 1.0), 2.0, n_stars=50)
+    props = scene.plotter.renderer.GetViewProps()
+    assert props.GetItemAsObject(0) in camera._sparkle_actors
+    assert props.GetNumberOfItems() > 1
+    camera.clear_sparkles()
+
+
+def test_isolates_stars_are_hidden_not_darkened(panel):
+    _, scene = panel
+    camera = scene.camera
+    cam = np.asarray(scene.plotter.camera.position, dtype=float)
+    focal = np.asarray(scene.plotter.camera.focal_point, dtype=float)
+    camera.add_sparkles(focal, 2.0, n_stars=5000, extent=1.0)
+    st = camera._sparkle_state
+    cloud = st["cloud"]
+    drawn = cloud.verts.reshape(-1, 2)[:, 1]
+    # Every drawn star is bright enough to add light, never a dark dot.
+    assert cloud.point_data["rgb"][drawn].max(axis=1).min() >= 30
+    # Toward the object the stars are gone rather than dimmed.
+    axis = (focal - cam) / np.linalg.norm(focal - cam)
+    assert ((st["dirs"][drawn] * axis).sum(axis=1) < np.cos(0.01)).all()
+    assert 0 < len(drawn) < 5000
+    camera.clear_sparkles()

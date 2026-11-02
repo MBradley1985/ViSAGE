@@ -51,6 +51,12 @@ _ROTATE_ITEMS = [
 
 _ROT_RATE_FPS = MOTION_FPS  # rotation render rate (paced by the wall clock)
 
+# A flush only schedules the send: after sleep(0) the next blocking
+# render starts before the message has left, so a card shown that way
+# arrives with its own hide.  A real pause lets it out first.
+_CARD_YIELD = 0.05
+_FRAME_YIELD = 0.02
+
 # All trame state variables that affect what a rendered frame looks like.
 # Checked in _scene_hash() so the frame cache is invalidated when any of these
 # change (filters, environment, box/sphere selection, options, etc.).
@@ -345,7 +351,12 @@ def build_toolbar(server, scene: Scene) -> None:
             return
 
         state.prerender_busy = True
+        state.load_card_text = f"Preparing playback…  0/{total}"
+        state.load_card_percent = 0
+        state.load_card_skip = False
+        state.load_card_show = True
         state.flush()
+        await asyncio.sleep(_CARD_YIELD)
         # Off-screen rendering writes to an FBO we can actually read back —
         # the on-screen/back buffer comes out black on this setup.
         rw = pl.ren_win
@@ -383,7 +394,7 @@ def build_toolbar(server, scene: Scene) -> None:
                 state.load_card_skip = False
                 state.load_card_show = True
                 state.flush()
-                await asyncio.sleep(0)
+                await asyncio.sleep(_FRAME_YIELD)
         finally:
             rw.SetOffScreenRendering(prev_offscreen)
             cam.position = tuple(pos0)
@@ -426,6 +437,12 @@ def build_toolbar(server, scene: Scene) -> None:
         _track.update(order=[], views=views, show=show)
         _suppress_snap[0] = True
         state.prerender_busy = True
+        state.load_card_text = f"Building track…  0/{len(order)}"
+        state.load_card_percent = 0
+        state.load_card_skip = False
+        state.load_card_show = True
+        state.flush()
+        await asyncio.sleep(_CARD_YIELD)
         rw = scene.plotter.ren_win
         offscreen = rw.GetOffScreenRendering()
         rw.SetOffScreenRendering(1)
@@ -454,7 +471,7 @@ def build_toolbar(server, scene: Scene) -> None:
                 state.load_card_skip = False
                 state.load_card_show = True
                 state.flush()
-                await asyncio.sleep(0)
+                await asyncio.sleep(_FRAME_YIELD)
             finished = len(_frames["data"]) == len(order)
         finally:
             rw.SetOffScreenRendering(offscreen)
