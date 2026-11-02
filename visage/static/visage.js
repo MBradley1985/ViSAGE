@@ -438,27 +438,133 @@
     var _relaunchWatch   = false;  // watching for the server to restart with a model
     var _lastWizActive   = null;
 
-    // A card that covers the page while ViSAGE restarts on another model.
-    // Plain DOM on <body>, so it outlives the app's own "Connection closed"
-    // screen until the page reloads.
+    // What covers the page while ViSAGE restarts on another model: the
+    // cosmic web growing from the centre and drifting, with the model's
+    // name.  Plain DOM on <body>, so it outlives the app's own "Connection
+    // closed" screen until the page reloads.
     function _showRelaunchCard(name) {
       if (document.getElementById('visage-relaunch')) return;
       var d = document.createElement('div');
       d.id = 'visage-relaunch';
       d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;' +
-        'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
-        'gap:18px;font-family:system-ui,sans-serif;color:#e2e8f0;';
-      var sp = document.createElement('div');
-      sp.style.cssText = 'width:46px;height:46px;border-radius:50%;' +
-        'border:3px solid #1e293b;border-top-color:#22d3ee;' +
-        'animation:visage-spin 0.9s linear infinite;';
+        'overflow:hidden;font-family:Roboto,system-ui,sans-serif;color:#fff;';
+      var cv = document.createElement('canvas');
+      cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      var fade = document.createElement('div');
+      fade.style.cssText = 'position:absolute;inset:0;' +
+        'background:linear-gradient(transparent 62%,#000 88%);';
+      var text = document.createElement('div');
+      text.style.cssText = 'position:absolute;left:0;right:0;bottom:8%;' +
+        'padding:0 24px;text-align:center;';
+      var over = document.createElement('div');
+      over.style.cssText = 'font-size:0.8rem;letter-spacing:0.14em;' +
+        'color:#94a3b8;margin-bottom:6px;';
+      over.textContent = 'OPENING';
       var t = document.createElement('div');
-      t.style.cssText = 'font-size:1.35rem;font-weight:700;';
-      t.textContent = 'Opening ' + name;
+      t.style.cssText = 'font-size:1.6rem;font-weight:600;word-break:break-word;';
+      t.textContent = name;
+      text.appendChild(over);
+      text.appendChild(t);
+      var line = document.createElement('div');
+      line.style.cssText = 'position:absolute;left:0;right:0;bottom:0;' +
+        'height:2px;overflow:hidden;';
+      var run = document.createElement('i');
+      run.style.cssText = 'position:absolute;height:100%;width:28%;' +
+        'background:#22d3ee;animation:visage-run 1.8s ease-in-out infinite;';
+      line.appendChild(run);
       var st = document.createElement('style');
-      st.textContent = '@keyframes visage-spin{to{transform:rotate(360deg)}}';
-      d.appendChild(st); d.appendChild(sp); d.appendChild(t);
+      st.textContent = '@keyframes visage-run{from{left:-28%}to{left:100%}}';
+      d.appendChild(st);
+      d.appendChild(cv);
+      d.appendChild(fade);
+      d.appendChild(text);
+      d.appendChild(line);
       document.body.appendChild(d);
+
+      var COL = ['#22d3ee', '#c084fc', '#ffd700', '#fb7185', '#34d399'];
+      var seed = 41;
+      function rnd() {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+      }
+      function far(p) {  // how far from the centre, on a 16:9 screen
+        return Math.hypot((p.x - 0.5) * 1.78, p.y - 0.5);
+      }
+      var nodes = [], links = [], i, j;
+      for (i = 0; i < 70; i++) {
+        nodes.push({
+          x: rnd(), y: rnd(), c: COL[i % 5],
+          p: rnd() * 6, s: 0.6 + rnd(),
+        });
+      }
+      for (i = 0; i < 70; i++) {
+        for (j = i + 1; j < 70; j++) {
+          var a = nodes[i], b = nodes[j];
+          if (Math.hypot((a.x - b.x) * 1.78, a.y - b.y) < 0.24) {
+            links.push({ a: a, b: b, d: Math.max(far(a), far(b)) });
+          }
+        }
+      }
+      var c = cv.getContext('2d'), start = null;
+      function dot(x, y, r, col, al) {
+        c.globalAlpha = al;
+        c.fillStyle = col;
+        c.beginPath();
+        c.arc(x, y, r, 0, 7);
+        c.fill();
+        c.globalAlpha = 1;
+      }
+      function frame(ms) {
+        if (!d.isConnected) return;
+        if (start === null) start = ms;
+        var t = (ms - start) / 1000;
+        var ratio = window.devicePixelRatio || 1;
+        var w = window.innerWidth, h = window.innerHeight;
+        if (cv.width !== Math.round(w * ratio)) {
+          cv.width = Math.round(w * ratio);
+          cv.height = Math.round(h * ratio);
+        }
+        c.setTransform(ratio, 0, 0, ratio, 0, 0);
+        c.clearRect(0, 0, w, h);
+        // Grows to the edges, then keeps drifting rather than restarting.
+        var grown = Math.min(1.3, t / 6);
+        var shown = function (dist) {
+          return Math.max(0, Math.min(1, (grown - dist) * 6));
+        };
+        var zoom = 1.1 + 0.12 * Math.sin(t * 0.25);
+        var dx = Math.sin(t * 0.18) * 0.05, dy = Math.cos(t * 0.14) * 0.04;
+        var X = function (v) { return w / 2 + (v - 0.5 + dx) * w * zoom; };
+        var Y = function (v) { return h / 2 + (v - 0.5 + dy) * h * zoom; };
+        var size = h / 316;  // as the preview was drawn
+        c.lineWidth = size;
+        links.forEach(function (l, k) {
+          var al = shown(l.d);
+          if (al <= 0) return;
+          c.strokeStyle = 'rgba(148,163,184,' + 0.24 * al + ')';
+          c.beginPath();
+          c.moveTo(X(l.a.x), Y(l.a.y));
+          c.lineTo(X(l.b.x), Y(l.b.y));
+          c.stroke();
+          var f = (t * 0.25 + k * 0.13) % 1;
+          dot(X(l.a.x + (l.b.x - l.a.x) * f), Y(l.a.y + (l.b.y - l.a.y) * f),
+              1.8 * size, l.a.c, al);
+        });
+        nodes.forEach(function (n) {
+          var al = shown(far(n));
+          if (al <= 0) return;
+          var r = (14 + 4 * Math.sin(t * 2 + n.p)) * n.s * size;
+          var x = X(n.x), y = Y(n.y);
+          var g = c.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, n.c + 'bb');
+          g.addColorStop(1, 'transparent');
+          c.globalAlpha = al;
+          c.fillStyle = g;
+          c.fillRect(x - r, y - r, 2 * r, 2 * r);
+          dot(x, y, 2 * size, '#fff', al);
+        });
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
     }
 
     function _getState(key) {
