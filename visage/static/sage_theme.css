@@ -666,7 +666,7 @@ body,
 }
 
 :is(.sage-panel, #sel-card) .v-btn.v-btn--size-x-small.v-btn--variant-flat,
-.sel-actions .v-btn.v-btn--variant-flat {
+#sel-card .sel-actions .v-btn.v-btn--variant-flat {
     background: #22d3ee !important;
     border-color: transparent !important;
     color: #04121a !important;
@@ -679,6 +679,12 @@ body,
 
 :is(.sage-panel, #sel-card) .v-btn--disabled {
     opacity: 0.45 !important;
+}
+
+#sel-card .sel-actions .v-btn.sage-gas-on {
+    background: #a3e635 !important;
+    border-color: transparent !important;
+    color: #04121a !important;
 }
 
 /* Two or three choices: dots, like the On and Off of a toggle. */

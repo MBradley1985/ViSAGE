@@ -194,6 +194,7 @@ def selection_card(server) -> None:
                 size="small",
                 variant=("hd_gas ? 'flat' : 'outlined'",),
                 color=("hd_gas ? '#a3e635' : '#cbd5e1'",),
+                classes=("hd_gas ? 'sage-gas-on' : ''",),
                 click="hd_gas = !hd_gas",
                 title="HD halo gas: CGM, hot gas, winds and jets",
             )
@@ -279,8 +280,8 @@ def selection_card(server) -> None:
                 v3.VBtn(
                     label,
                     size="x-small",
-                    variant="outlined",
-                    color="#cbd5e1",
+                    variant=(f"sel_zoom === {label} ? 'flat' : 'outlined'",),
+                    color=(f"sel_zoom === {label} ? 'cyan' : '#cbd5e1'",),
                     click=fn,
                     style="min-width:0;",
                 )
