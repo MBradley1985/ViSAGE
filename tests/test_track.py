@@ -220,15 +220,34 @@ def test_the_end_of_a_branch_has_no_caption():
     assert captions(t) == {}
 
 
-def test_framing_keeps_the_cameras_direction():
+def test_as_go_keeps_the_offset_go_chose():
     from types import SimpleNamespace
 
     from visage.ui.tracking import views
 
-    cam = SimpleNamespace(position=(0, 0, 20), focal_point=(0, 0, 0))
-    got = views({1: (5, 5, 5)}, "close", cam)
+    cam = SimpleNamespace(position=(0, 0, 4), focal_point=(0, 0, 1))
+    got = views({1: (5, 5, 5)}, "go", cam)
     assert got[1][0] == (5, 5, 5)
     np.testing.assert_allclose(got[1][1], (0, 0, 3))
+
+
+def test_group_framing_keeps_the_direction():
+    from types import SimpleNamespace
+
+    from visage.ui.tracking import GROUP_DISTANCE, views
+
+    cam = SimpleNamespace(position=(0, 0, 4), focal_point=(0, 0, 1))
+    np.testing.assert_allclose(
+        views({1: (5, 5, 5)}, "group", cam)[1][1], (0, 0, GROUP_DISTANCE)
+    )
+
+
+def test_the_whole_box_leaves_the_camera_alone():
+    from types import SimpleNamespace
+
+    from visage.ui.tracking import views
+
+    cam = SimpleNamespace(position=(0, 0, 4), focal_point=(0, 0, 1))
     assert views({1: (5, 5, 5)}, "box", cam)[1] == ((5, 5, 5), None)
 
 

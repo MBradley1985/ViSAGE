@@ -11,10 +11,9 @@ from trame.widgets import vuetify3 as v3
 from visage.ui.plotting import _step
 from visage.utils.track import Track, camera_centres, captions, follow
 
-# How far the camera sits from the galaxy, in Mpc/h; None leaves it alone.
-FRAMINGS = {"close": 3.0, "group": 10.0, "box": None}
+GROUP_DISTANCE = 10.0  # Mpc/h from the galaxy, for the Group framing
 FRAMING_ITEMS = [
-    {"title": "Close: the galaxy", "value": "close"},
+    {"title": "As Go: the galaxy", "value": "go"},
     {"title": "Group: its surroundings", "value": "group"},
     {"title": "Whole box: camera stays put", "value": "box"},
 ]
@@ -53,13 +52,14 @@ def track_ids(track: Track) -> dict:
 
 
 def views(centres: dict, framing: str, camera) -> dict:
-    """snapshot: (centre, camera offset), keeping the current direction."""
-    radius = FRAMINGS[framing]
-    if radius is None:
+    """snapshot: (centre, camera offset).  The camera has just been put on
+    the galaxy by Go, so As Go keeps its offset as it stands."""
+    if framing == "box":
         return {s: (c, None) for s, c in centres.items()}
     away = np.subtract(camera.position, camera.focal_point)
-    length = float(np.linalg.norm(away)) or 1.0
-    return {s: (c, tuple(away / length * radius)) for s, c in centres.items()}
+    if framing == "group":
+        away = away / (float(np.linalg.norm(away)) or 1.0) * GROUP_DISTANCE
+    return {s: (c, tuple(away)) for s, c in centres.items()}
 
 
 def setup(server, scene) -> None:
@@ -68,7 +68,7 @@ def setup(server, scene) -> None:
     state.track_ready = False
     state.track_saving = False
     state.track_saved = ""
-    state.track_framing = "close"
+    state.track_framing = "go"
     state.track_framings = FRAMING_ITEMS
     state.track_percent = 0
     state.track_status = ""
@@ -113,6 +113,8 @@ def setup(server, scene) -> None:
             if centres:
                 state.track_status = "Rendering frames…"
                 state.flush()
+                if state.track_framing != "box":
+                    ctrl.go_frame()
                 state.track_ready = await ctrl.track_render(
                     sorted(centres),
                     views(
@@ -123,6 +125,8 @@ def setup(server, scene) -> None:
                     captions(track),
                     lambda: run["stop"],
                 )
+                if not state.track_ready and state.track_framing != "box":
+                    ctrl.go_frame()  # stay on it, focus and all
         state.track_busy = False
         if run["stop"]:
             state.track_status = "Stopped."

@@ -236,6 +236,9 @@ def build_toolbar(server, scene: Scene) -> None:
             return
         centre, offset = view
         scene.camera.marker.set_target(centre)
+        focus = scene._focus_region
+        if focus is not None and focus["type"] == "sphere":
+            scene.set_focus_sphere(tuple(centre), focus["radius"])
         if offset is not None:
             cam = scene.plotter.camera
             cam.focal_point = tuple(centre)
