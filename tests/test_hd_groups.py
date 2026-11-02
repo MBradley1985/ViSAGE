@@ -113,3 +113,20 @@ def test_galaxies_are_named_by_their_galaxy_index():
     g.galaxy_id = np.zeros(6, np.int64)
     assert galaxy_label(g, 2) == "row 2"
     assert row_for_galaxy_index(g, 3) == 3
+
+
+def test_a_groups_mass_from_its_velocities():
+    from visage.utils.group_info import gapper, group_summary, sigma_mass
+
+    rng = np.random.default_rng(0)
+    assert abs(gapper(rng.normal(0, 500, 4000)) - 500) < 20
+    # Munari et al. (2013): 1177 km/s is a 1e15 Msun halo at h(z) = 1.
+    assert abs(sigma_mass(1177.0, 1.0, 0.0, 0.3) / 1e15 - 1) < 1e-6
+    assert sigma_mass(600.0, 0.7, 1.0, 0.3) < sigma_mass(600.0, 0.7, 0.0, 0.3)
+    g = _snap()
+    assert "Dynamical mass (σ)" not in dict(
+        group_summary(g, np.arange(6), 0.7)
+    )
+    g.extra["Velz"] = g.extra["Velx"]  # seen moving along the line of sight
+    rows = dict(group_summary(g, np.arange(6), 0.7))
+    assert rows["Dynamical mass (σ)"].endswith("× Mvir")
