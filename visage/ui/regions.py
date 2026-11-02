@@ -544,18 +544,18 @@ def tab(ctrl) -> None:
     with html.Div(v_show=("region_shape === 'box'",)):
         with html.Div(v_show=("!box_minmax",)):
             html.Div("CENTRE", style=_HEAD)
-            with html.Div(style=_ROW):
+            with html.Div(classes="sage-xyz", style=_ROW):
                 for a in "xyz":
                     _box_axis_field(a, True)
             _centre_buttons(ctrl, "box")
             html.Div("SIZE (h^-1 Mpc)", style=_HEAD)
-            with html.Div(style=_ROW):
+            with html.Div(classes="sage-xyz", style=_ROW):
                 for a in "xyz":
                     _box_axis_field(a, False)
         with html.Div(v_show=("box_minmax",)):
             html.Div("BOUNDS (h^-1 Mpc)", style=_HEAD)
             for a in "xyz":
-                with html.Div(style=_ROW):
+                with html.Div(classes="sage-xyz", style=_ROW):
                     _field(f"nav_box_{a}min", f"{a.upper()} min")
                     _field(f"nav_box_{a}max", f"{a.upper()} max")
         _tick("box_minmax", "Enter min and max")
@@ -577,6 +577,7 @@ def tab(ctrl) -> None:
         )
         with html.Div(style=_ROW + "margin-top:10px;"):
             _field("slice_depth", "Position (h^-1 Mpc)")
+        with html.Div(style=_ROW):
             _field("slice_thickness", "Thickness")
         _tick("slice_sweep", "Animate through the volume")
         with html.Div(style=_ROW + "margin-top:6px;"):
