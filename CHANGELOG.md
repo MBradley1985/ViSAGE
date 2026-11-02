@@ -8,6 +8,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Halo card: a History section with when the halo formed (half its mass), how much it has grown since z = 1 and 2, and its last major merger, from the merger trees.
+- Halo card: the group's dynamical mass from its members' line-of-sight velocities (Munari et al. 2013), against the true Mvir.
+
+### Changed
+
+- Jellyfish tails (HD) on 12% of satellites in hot haloes (was 24% on SAGE26).
+
 ### Fixed
 
 - ViSAGE always stops when told to (Ctrl+C, SIGTERM), even with an HD build still finishing.

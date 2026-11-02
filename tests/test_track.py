@@ -334,3 +334,37 @@ def test_a_group_across_the_box_edge_is_drawn_together():
     np.testing.assert_allclose(
         nearest_image([[9.5, 0, 0]], (0.5, 0, 0), 10), [[-0.5, 0, 0]]
     )
+
+
+def _halo_run(path):
+    """Galaxy A's halo (forest 5) grows 1 -> 2 -> 4 -> 8; B's halo (1)
+    falls in at 3, a 1:2 merger; C's (0.5) at 4, 1:8.  Columns:
+    (GalaxyIndex, CentralGalaxyIndex, Type, Mvir)."""
+    snaps = {
+        1: [(A, A, 0, 1.0), (B, B, 0, 1.5), (C, C, 0, 0.2)],
+        2: [(A, A, 0, 2.0), (B, B, 0, 1.0), (C, C, 0, 0.5)],
+        3: [(A, A, 0, 4.0), (B, A, 1, 1.0), (C, C, 0, 0.5)],
+        4: [(A, A, 0, 8.0), (B, A, 1, 2.0), (C, A, 1, 0.5)],
+    }
+    with h5py.File(path, "w") as f:
+        f.create_group("TreeInfo").attrs["ForestNr_Mulfac"] = MUL
+        for snap, rows in snaps.items():
+            g = f.create_group(f"Snap_{snap}")
+            g["GalaxyIndex"] = np.array([r[0] for r in rows], np.int64)
+            g["CentralGalaxyIndex"] = np.array([r[1] for r in rows], np.int64)
+            g["Type"] = np.array([r[2] for r in rows], np.int32)
+            g["Mvir"] = np.array([r[3] for r in rows], np.float32)
+    return path
+
+
+def test_a_halos_history_is_its_growth_formation_and_mergers(tmp_path):
+    from visage.utils.track import halo_history
+
+    past = halo_history(_halo_run(tmp_path / "h.hdf5"), A, 4)
+    assert past.snaps == [1, 2, 3, 4]
+    assert past.mvir == [1.0, 2.0, 4.0, 8.0]
+    assert past.formed() == 3  # first at half of 8
+    assert past.mergers == [(3, 0.5), (4, 0.125)]
+    assert past.last_major() == (3, 0.5)  # 1:8 is minor
+    # Up to an earlier snapshot, its mass then is what counts.
+    assert halo_history(tmp_path / "h.hdf5", A, 2).formed() == 1

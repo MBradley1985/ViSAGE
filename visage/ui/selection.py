@@ -38,6 +38,7 @@ def _init_state(state) -> None:
         "sel_props": [],
         "sel_members": [],
         "sel_group_props": [],
+        "sel_history": [],  # the halo's past (Halo only)
         # HD's drawing of each member, by row: "HD" / "glow" / "extra".
         "hd_member_tags": {},
         "sel_note": "",
@@ -391,6 +392,29 @@ def selection_card(server) -> None:
                     "{{ p.value }}",
                     style="font-family:monospace;text-align:right;",
                 )
+            # The halo's past.
+            html.Div(
+                "HISTORY",
+                v_show=("sel_kind === 'halo' && sel_history.length",),
+                style=(
+                    "font-size:0.7rem;letter-spacing:0.08em;color:#c084fc;"
+                    "margin:10px 0 4px;font-weight:700;"
+                ),
+            )
+            with html.Div(
+                v_for="(p, i) in sel_history",
+                key="i",
+                v_show=("sel_kind === 'halo'",),
+                style=(
+                    "display:flex;justify-content:space-between;gap:8px;"
+                    "font-size:0.74rem;padding:1px 0;"
+                ),
+            ):
+                html.Span("{{ p.label }}", style="color:#c4b5fd;")
+                html.Span(
+                    "{{ p.value }}",
+                    style="font-family:monospace;text-align:right;",
+                )
             # Every member (the card scrolls).
             with html.Div(
                 v_show=("sel_members.length > 1",),
@@ -539,6 +563,78 @@ def build_selection(server, scene) -> None:
         # (Where it is first, its look and dust after the basics.)
         return head[:2] + props + head[2:]
 
+    def _redshift(galaxies, i: int, snap: int) -> float:
+        zs = getattr(galaxies, "redshifts", None)
+        if zs is not None and i < len(zs):
+            return float(zs[i])  # its own on a lightcone
+        return float(scene.active_model.snap_table.snap_to_z(int(snap)))
+
+    histories: dict = {}
+
+    def _fill_history(galaxies, lead: int, snap: int, show: bool) -> None:
+        """The halo's past on the card: how it grew, when it formed and
+        its last major merger, from the merger trees."""
+        state.sel_history = []
+        gid = int(galaxies.galaxy_id[lead]) if show else 0
+        if not gid:
+            return
+        key = (scene.active_model.name, gid, int(snap))
+        if key not in histories:
+            from visage.utils.track import halo_history
+
+            try:
+                histories[key] = halo_history(
+                    scene.active_model.cfg.hdf5_path, gid, int(snap)
+                )
+            except Exception:
+                histories[key] = None
+        past = histories[key]
+        if past is None or len(past.snaps) < 2:
+            return
+        table = scene.active_model.snap_table
+        h = float(scene._cfg.hubble_h)
+
+        om = float(getattr(scene._cfg, "omega", 0.25))
+        from visage.hd.adapter import cosmic_time_gyr
+
+        def when(s: int) -> str:
+            ago = cosmic_time_gyr(
+                table.snap_to_a(snap), h, om
+            ) - cosmic_time_gyr(table.snap_to_a(s), h, om)
+            return f"z = {table.snap_to_z(s):.2f} (−{ago:.1f} Gyr)"
+
+        rows = [("Formed (½ mass)", when(past.formed()))]
+        z_now = table.snap_to_z(snap)
+        grown = []
+        for z_then in (1, 2):
+            then = [
+                m
+                for s, m in zip(past.snaps, past.mvir, strict=True)
+                if table.snap_to_z(s) >= z_then
+            ]
+            if z_now < z_then and then and then[-1] > 0:
+                grown.append((z_then, past.mvir[-1] / then[-1]))
+        if grown:
+            rows.append(
+                (
+                    "Grown since z = " + " / ".join(str(z) for z, _ in grown),
+                    " / ".join(f"×{g:.1f}" for _, g in grown),
+                )
+            )
+        # (Major: at least 1:3.)
+        major = past.last_major()
+        rows.append(
+            (
+                "Last major merger",
+                (
+                    f"{when(major[0])} · 1:{1 / major[1]:.1f}"
+                    if major
+                    else "none"
+                ),
+            )
+        )
+        state.sel_history = [{"label": a, "value": b} for a, b in rows]
+
     def _select(i: int, note: str = "", snap=None) -> None:
         snap = scene.active_model.current_snap if snap is None else snap
         halos, galaxies = _snap(snap)
@@ -615,6 +711,7 @@ def build_selection(server, scene) -> None:
             if host is not None
             else "Host halo below the halo mass cut"
         )
+        om = float(getattr(scene._cfg, "omega", 0.25))
         total = float(galaxies.stellar_mass[mem].sum())
         state.sel_group = (
             f"{kind}, {len(mem)} members · ΣM* {_fmt(total, ' M☉')}"
@@ -628,10 +725,15 @@ def build_selection(server, scene) -> None:
         state.sel_group_props = [
             {"label": a, "value": b}
             for a, b in (
-                group_summary(galaxies, mem, h) if len(mem) > 1 else []
+                group_summary(
+                    galaxies, mem, h, _redshift(galaxies, lead, snap), om
+                )
+                if len(mem) > 1
+                else []
             )
         ]
         listed = mem
+        _fill_history(galaxies, lead, snap, halo_ctx and not cone)
         state.sel_members = [
             {
                 "idx": int(k),

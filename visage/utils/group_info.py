@@ -18,6 +18,34 @@ QUENCHED_SSFR = 1e-11
 # A fossil group: the brightest two members >= 2 mag apart in r (Jones
 # et al. 2003, MNRAS 343, 627).
 FOSSIL_GAP = 2.0
+# Mass from the members' line-of-sight velocities, as an observer would
+# weigh a group: the gapper dispersion (Beers, Flynn & Gebhardt 1990, AJ
+# 100, 32), robust for a few members, through the galaxy sigma-M200
+# relation of Munari et al. (2013, MNRAS 430, 2638; AGN run):
+# sigma = A [h(z) M200 / 1e15 Msun]^alpha.
+SIGMA_A = 1177.0  # km/s
+SIGMA_ALPHA = 0.364
+SIGMA_MIN_MEMBERS = 5
+
+
+def gapper(v) -> float:
+    """The gapper estimate of the dispersion of velocities ``v``."""
+    v = np.sort(np.asarray(v, float))
+    n = len(v)
+    if n < 2:
+        return 0.0
+    i = np.arange(1, n)
+    return float(
+        np.sqrt(np.pi) / (n * (n - 1)) * np.sum(i * (n - i) * np.diff(v))
+    )
+
+
+def sigma_mass(
+    sigma: float, hubble_h: float, redshift: float, omega_m: float
+) -> float:
+    """M200 (Msun) of a halo whose galaxies move with dispersion ``sigma``."""
+    hz = hubble_h * np.sqrt(omega_m * (1 + redshift) ** 3 + 1 - omega_m)
+    return float(1e15 / hz * (sigma / SIGMA_A) ** (1 / SIGMA_ALPHA))
 
 
 def _classify(host_mvir_msun: float, n_bright: int) -> str:
@@ -166,7 +194,13 @@ def _cone_members(galaxies, idx: int, rows: np.ndarray) -> np.ndarray:
     return np.array(sorted(keep.values()), dtype=np.int64)
 
 
-def group_summary(galaxies, members, hubble_h: float) -> list:
+def group_summary(
+    galaxies,
+    members,
+    hubble_h: float,
+    redshift: float = 0.0,
+    omega_m: float = 0.25,
+) -> list:
     """(label, value) rows describing the FOF group `members` (central
     first): its halo, richness, dynamics and stellar content, as an
     observer of groups and clusters would quote them."""
@@ -202,6 +236,16 @@ def group_summary(galaxies, members, hubble_h: float) -> list:
         )
         sig = float(np.sqrt(np.sum(np.var(v, axis=0)) / 3.0))
         out.append(("Velocity dispersion (σ, 1D)", f"{sig:.0f} km s^-1"))
+        # Seen along the box's z axis, as a redshift survey would.
+        s_los = gapper(v[:, 2])
+        if len(members) >= SIGMA_MIN_MEMBERS and mvir > 0 and s_los > 0:
+            m_dyn = sigma_mass(s_los, h, redshift, omega_m)
+            out.append(
+                (
+                    "Dynamical mass (σ)",
+                    f"{m_dyn:.2e} M☉ · {m_dyn / mvir:.2f}× Mvir",
+                )
+            )
     tot = float(sm.sum())
     out.append(("Total stellar mass (M*)", f"{tot:.2e} M☉"))
     order = np.argsort(-sm)
