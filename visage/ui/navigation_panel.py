@@ -3995,8 +3995,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
             pts = np.vstack(pts)
             center = pts.mean(axis=0) if halo_indices else pts[0]
             cam = scene.plotter.camera
-            dist = GO_DISTANCE
-            radius = dist * np.tan(np.deg2rad(cam.view_angle) / 2.0)
+            # Back far enough for a whole group, with sky around it.
+            extent = float(np.linalg.norm(pts - center, axis=1).max())
+            half = np.tan(np.deg2rad(cam.view_angle) / 2.0)
+            dist = max(GO_DISTANCE, 1.6 * extent / half)
+            radius = dist * half
             cx, cy, cz = (float(c) for c in center)
             cam.focal_point = (cx, cy, cz)
             cam.position = (cx, cy, cz + dist)
@@ -4004,9 +4007,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             scene.plotter.renderer.ResetCameraClippingRange()
             _sparkle_target["center"] = (cx, cy, cz)
             _sparkle_target["radius"] = radius
-            _sparkle_target["extent"] = float(
-                np.linalg.norm(pts - center, axis=1).max()
-            )
+            _sparkle_target["extent"] = extent
             return (cx, cy, cz), radius
         except Exception:
             _sparkle_target["center"] = None
