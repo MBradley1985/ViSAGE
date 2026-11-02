@@ -160,3 +160,26 @@ def test_progress_and_cancel(tmp_path):
     assert seen == [(1, 4), (2, 4), (3, 4), (4, 4)]
     t = follow(path, A, 2, [1, 2, 3, 4], cancelled=lambda: True)
     assert t.cancelled and t.snaps == []
+
+
+def test_the_panel_keeps_only_the_range_asked_for():
+    from visage.ui.tracking import trim
+    from visage.utils.track import Track
+
+    t = Track(
+        snaps=[1, 2, 3],
+        galaxy_id=[A, A, B],
+        pos=[(0, 0, 0)] * 3,
+        events=[{"kind": "minor merger", "snap": 3, "into": B}],
+    )
+    assert trim(t, 1, 2).snaps == [1, 2]
+    assert trim(t, 1, 2).events == []
+
+
+def test_the_history_reads_plainly():
+    from visage.ui.tracking import event_text
+
+    assert event_text({"kind": "major merger", "snap": 46, "into": 7}) == (
+        "Snapshot 46: major merger into galaxy 7"
+    )
+    assert "no merger on record" in event_text({"kind": "ended", "snap": 3})

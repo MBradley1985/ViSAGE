@@ -12,6 +12,7 @@ from visage.utils import labels
 from visage.scene.scene import Scene
 from visage.ui import plotting
 from visage.ui import regions as _regions
+from visage.ui import tracking
 from visage.utils.filters import galaxy_mask
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
@@ -3135,6 +3136,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.library_files = _scan_library()
         state.flush()
 
+    tracking.setup(server, scene)
+
     plotting.setup(
         server,
         scene,
@@ -5120,6 +5123,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         # ── Icon rail: each tab, and a click on the open one closes it ──
         _phot = [("Photometry", "photometry")] if scene.is_lightcone else []
+        _track = (
+            []
+            if scene.is_lightcone
+            else [("Track", "track", "mdi-map-marker-path")]
+        )
         with html.Div(classes="sage-rail"):
             for label, value, icon in (
                 ("Structure", "layers", "mdi-layers-outline"),
@@ -5130,6 +5138,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ("Console", "console", "mdi-console"),
                 ("Library", "library", "mdi-folder-outline"),
                 ("Plotting", "plotting", "mdi-chart-line"),
+                *_track,
             ):
                 with html.Button(
                     classes=(
@@ -6048,6 +6057,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     )
 
             plotting.tab(ctrl)
+            if not scene.is_lightcone:
+                tracking.tab(ctrl)
 
             # ── LIBRARY tab — browse stored media ──────────────
             with v3.VSheet(

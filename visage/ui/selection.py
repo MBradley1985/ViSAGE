@@ -1043,6 +1043,16 @@ def build_selection(server, scene) -> None:
         if i is not None and state.sel_active:
             _select(i)
 
+    @ctrl.set("sel_track_target")
+    def _sel_track_target():
+        """The GalaxyIndex a track follows: a halo follows its central."""
+        i = sel.get("idx")
+        if i is None or not state.sel_active:
+            return None
+        if state.sel_kind != "halo":
+            return sel.get("gid")
+        return int(_snap()[1].central_id[i]) or sel.get("gid")
+
     @ctrl.set("sel_close")
     def _sel_close():
         """Hide the card (the selection stays)."""
