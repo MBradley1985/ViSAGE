@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.19.4] — 2026-11-02
+
 ### Fixed
 
 - Hide indicators and the card's Galaxy and Halo + group no longer reset the view or leave Isolate. Only choosing a zoom in the Track panel moves the view.
