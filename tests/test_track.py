@@ -295,11 +295,11 @@ def test_contributors_are_those_that_end_up_in_it(tmp_path):
     assert got[3] == [A]
 
 
-def test_contributors_follow_who_is_followed_at_each_snapshot(tmp_path):
+def test_contributors_count_towards_the_end_of_the_track(tmp_path):
     path = _tree(tmp_path / "m.hdf5")
     got = contributors(path, {1: C, 2: B, 3: A}, [1, 2, 3])
-    assert got[1] == [C]  # not B or A: nothing merges into C
-    assert sorted(got[2]) == [B]
+    assert sorted(got[1]) == [A, B, C]  # A too, though C is followed here
+    assert sorted(got[2]) == [A, B]
 
 
 def test_a_halo_counts_its_whole_group_at_the_end(tmp_path):

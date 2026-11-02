@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.19.3] — 2026-11-02
+
+### Changed
+
+- The Opening screen's trees have thinner lines and grow faster.
+
+### Fixed
+
+- Whole halo tracks no longer rebuild in a loop for a galaxy whose halo isn't found at some snapshot.
+- FoF links stay when indicators are hidden.
+- Switching a built track from Whole halo to Galaxy returns to the galaxy chosen, not its central.
+- Only contributors counts everything that ends up in the galaxy at the end of the track, as Whole halo does.
+
+---
+
 ## [2.19.2] — 2026-11-02
 
 ### Fixed

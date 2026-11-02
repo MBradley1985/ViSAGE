@@ -1061,15 +1061,23 @@ def build_selection(server, scene) -> None:
         i = sel.get("idx")
         if i is None or not state.sel_active:
             return None
-        if state.sel_kind != "halo":
+        if state.track_kind != "halo":
             return sel.get("gid")
-        central = _snap()[1].central_id
-        return int(central[i]) if np.any(central) else sel.get("gid")
+        return ctrl.sel_central_id()
 
     @state.change("sel_rings")
     def _on_rings(sel_rings=True, **_):
         scene.camera.marker.set_enabled(bool(sel_rings))
         _push()
+
+    @ctrl.set("sel_central_id")
+    def _sel_central_id():
+        """The GalaxyIndex of the selected galaxy's central."""
+        i = sel.get("idx")
+        central = _snap()[1].central_id
+        if i is None or not np.any(central):
+            return sel.get("gid")
+        return int(central[i])
 
     @ctrl.set("sel_galaxy")
     def _sel_galaxy():

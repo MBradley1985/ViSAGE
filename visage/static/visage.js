@@ -585,7 +585,7 @@
         var X = function (v) { return w / 2 + (v + dx) * h * zoom * wide; };
         var Y = function (v) { return h / 2 + (v + dy) * h * zoom; };
         var size = h / 316;  // lines and dots keep their share of the screen
-        var grown = now / 2.3;
+        var grown = now / 1.1;
         nodes.forEach(function (n, i) {
           if (!n.par || n.hide) return;
           var a = Math.max(0, Math.min(1, grown - (n.d - 1)));
@@ -600,7 +600,7 @@
           };
           c.strokeStyle = n.c;
           c.globalAlpha = 0.34;
-          c.lineWidth = Math.max(0.45, 2.6 - n.d * 0.34) * size;
+          c.lineWidth = Math.max(0.3, 1.5 - n.d * 0.2) * size;
           c.beginPath();
           c.moveTo(X(p.x), Y(p.y));
           for (var f = 0.1; f <= a + 0.001; f += 0.1) {
@@ -622,7 +622,7 @@
         });
         var shown = Math.max(0, Math.min(1, grown - DEPTH));
         if (shown > 0) {
-          c.lineWidth = 0.6 * size;
+          c.lineWidth = 0.4 * size;
           c.strokeStyle = 'rgba(148,163,184,' + 0.3 * shown + ')';
           threads.forEach(function (l, k) {
             var a = l[0], b = l[1];
