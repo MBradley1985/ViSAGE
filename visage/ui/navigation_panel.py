@@ -5266,17 +5266,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 color="transparent",
                 v_show=("nav_active_tab === 'layers'",),
             ):
-                html.Div(
-                    "DARK MATTER HALOES",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#c084fc;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_FIELD):
+                with html.Div(classes="sage-head-toggle"):
+                    html.Div(
+                        "DARK MATTER HALOES",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#c084fc;padding:6px 0 8px;display:block;"
+                        ),
+                    )
                     v3.VCheckbox(
                         v_model=("halos_visible",),
-                        label="Haloes",
                         color="#c084fc",
                         hide_details=True,
                         density="compact",
@@ -5342,17 +5341,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 v3.VDivider(style="margin:14px 0;")
 
-                v3.VLabel(
-                    "GALAXIES",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#FFD700;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with v3.VSheet(color="transparent", style=_TICK):
+                with html.Div(classes="sage-head-toggle"):
+                    v3.VLabel(
+                        "GALAXIES",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#FFD700;padding:6px 0 8px;display:block;"
+                        ),
+                    )
                     v3.VCheckbox(
                         v_model=("galaxies_visible",),
-                        label="Galaxies",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
@@ -5577,7 +5575,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VCheckbox(
                             v_model=("photometry_visible",),
-                            label="Photometry",
+                            label="Visible",
                             color="#7FDBFF",
                             hide_details=True,
                             density="compact",

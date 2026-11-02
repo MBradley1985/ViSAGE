@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from trame.app import get_server
@@ -141,6 +142,31 @@ from visage.ui.story_mode import (
     build_story_overlays,
     init_story_mode,
 )
+
+
+@contextmanager
+def _progress_card(anim: str, title: str, detail: str, percent: str):
+    """A long job's card: a ring, what is happening, and an animation that
+    says which job it is (visage.js draws it).  Each argument is a client
+    expression; any buttons go in the body."""
+    with v3.VCard(classes="sage-progress", elevation=0):
+        with v3.VProgressCircular(
+            model_value=(percent,),
+            indeterminate=(f"{percent} < 0",),
+            size=52,
+            width=4,
+            color="cyan",
+            bg_color="#232a38",
+        ):
+            html.Span(
+                "{{ " + percent + " >= 0 ? " + percent + " + '%' : '' }}",
+                classes="sage-progress-percent",
+            )
+        with html.Div(classes="sage-progress-text"):
+            html.Div("{{ " + title + " }}", classes="sage-progress-title")
+            html.Div("{{ " + detail + " }}", classes="sage-progress-detail")
+            yield
+        html.Canvas(classes=(f"'sage-anim sage-anim-' + ({anim})",))
 
 
 def _jpeg_quality() -> int:
@@ -1508,49 +1534,18 @@ def create_app(
                             "justify-content:center;pointer-events:none;"
                         ),
                     ):
-                        with v3.VCard(
-                            style=(
-                                "padding:22px 30px;min-width:420px;"
-                                "background:rgba(10,10,26,0.88);"
-                                "border:1px solid #06b6d4;"
-                                "pointer-events:auto;"
-                            ),
+                        with _progress_card(
+                            "'spiral'",
+                            "hd_progress.split('…')[0]",
+                            "(hd_progress.split('…')[1] || '').trim()"
+                            ".replace('/', ' of ')",
+                            "hd_percent",
                         ):
-                            html.Div(
-                                "{{ hd_progress }}",
-                                style=(
-                                    "font-size:1.5rem;font-weight:600;"
-                                    "color:#e2e8f0;margin-bottom:12px;"
-                                ),
+                            v3.VBtn(
+                                "Cancel",
+                                click="trigger('hd_cancel')",
+                                title="Stop building (Esc)",
                             )
-                            v3.VProgressLinear(
-                                model_value=("hd_percent",),
-                                indeterminate=("hd_percent < 0",),
-                                color="cyan",
-                                height=10,
-                                rounded=True,
-                            )
-                            with html.Div(
-                                style=(
-                                    "display:flex;align-items:center;"
-                                    "margin-top:8px;"
-                                ),
-                            ):
-                                v3.VBtn(
-                                    "Cancel",
-                                    size="small",
-                                    variant="outlined",
-                                    color="#9ca3af",
-                                    click="trigger('hd_cancel')",
-                                    title="Stop building (Esc)",
-                                )
-                                html.Div(
-                                    "{{ hd_percent >= 0 ? hd_percent + '%' : '' }}",
-                                    style=(
-                                        "flex:1;font-size:1.1rem;"
-                                        "color:#67e8f9;text-align:right;"
-                                    ),
-                                )
 
                     # Spectrum build message (Photometry tab's Make
                     # spectrum): what is happening and how far.
@@ -1562,55 +1557,17 @@ def create_app(
                             "justify-content:center;pointer-events:none;"
                         ),
                     ):
-                        with v3.VCard(
-                            style=(
-                                "padding:22px 30px;min-width:420px;"
-                                "background:rgba(10,10,26,0.88);"
-                                "border:1px solid #06b6d4;"
-                                "pointer-events:auto;"
-                            ),
+                        with _progress_card(
+                            "'wave'",
+                            "spec_title",
+                            "spec_progress",
+                            "spec_percent",
                         ):
-                            html.Div(
-                                "{{ spec_title }}",
-                                style=(
-                                    "font-size:1.5rem;font-weight:600;"
-                                    "color:#e2e8f0;margin-bottom:4px;"
-                                ),
+                            v3.VBtn(
+                                "Cancel",
+                                click="trigger('spectrum_cancel')",
+                                title="Stop making the spectrum",
                             )
-                            html.Div(
-                                "{{ spec_progress }}",
-                                style=(
-                                    "font-size:0.95rem;color:#a3adbb;"
-                                    "margin-bottom:12px;"
-                                ),
-                            )
-                            v3.VProgressLinear(
-                                model_value=("spec_percent",),
-                                color="cyan",
-                                height=10,
-                                rounded=True,
-                            )
-                            with html.Div(
-                                style=(
-                                    "display:flex;align-items:center;"
-                                    "margin-top:8px;"
-                                ),
-                            ):
-                                v3.VBtn(
-                                    "Cancel",
-                                    size="small",
-                                    variant="outlined",
-                                    color="#9ca3af",
-                                    click="trigger('spectrum_cancel')",
-                                    title="Stop making the spectrum",
-                                )
-                                html.Div(
-                                    "{{ spec_percent }}%",
-                                    style=(
-                                        "flex:1;font-size:1.1rem;"
-                                        "color:#67e8f9;text-align:right;"
-                                    ),
-                                )
 
                     # Loading card: every snapshot loading into memory (or
                     # playback frames being prepared), over a dimmed view.
@@ -1623,58 +1580,22 @@ def create_app(
                             "background:rgba(0,0,0,0.35);"
                         ),
                     ):
-                        with v3.VCard(
-                            style=(
-                                "padding:22px 30px;min-width:420px;"
-                                "background:rgba(10,10,26,0.88);"
-                                "border:1px solid #06b6d4;"
-                            ),
+                        with _progress_card(
+                            "load_card_text.startsWith('Building') ? 'track' "
+                            ": load_card_text.startsWith('Preparing') "
+                            "? 'orbits' : 'web'",
+                            "load_card_text.split('…')[0]",
+                            "(load_card_text.split('…')[1] || '').trim()"
+                            ".replace('/', ' of ')",
+                            "load_card_percent",
                         ):
-                            html.Div(
-                                "{{ load_card_text }}",
-                                style=(
-                                    "font-size:1.5rem;font-weight:600;"
-                                    "color:#e2e8f0;margin-bottom:4px;"
-                                ),
-                            )
-                            html.Div(
-                                "Loaded once, so moving through time is "
-                                "instant afterwards.",
+                            v3.VBtn(
+                                "Continue now",
                                 v_show=("load_card_skip",),
-                                style=(
-                                    "font-size:0.8rem;color:#9ca3af;"
-                                    "margin-bottom:10px;"
-                                ),
+                                click=server.controller.load_card_continue,
+                                title="Use ViSAGE now; the rest loads "
+                                "in the background",
                             )
-                            v3.VProgressLinear(
-                                model_value=("load_card_percent",),
-                                color="cyan",
-                                height=10,
-                                rounded=True,
-                            )
-                            with html.Div(
-                                style=(
-                                    "display:flex;align-items:center;"
-                                    "margin-top:8px;"
-                                ),
-                            ):
-                                v3.VBtn(
-                                    "Continue now",
-                                    v_show=("load_card_skip",),
-                                    size="small",
-                                    variant="outlined",
-                                    color="#9ca3af",
-                                    click=server.controller.load_card_continue,
-                                    title="Use ViSAGE now; the rest loads "
-                                    "in the background",
-                                )
-                                html.Div(
-                                    "{{ load_card_percent }}%",
-                                    style=(
-                                        "flex:1;font-size:1.1rem;"
-                                        "color:#67e8f9;text-align:right;"
-                                    ),
-                                )
 
                     # Pre-rendered playback overlay — shown only during
                     # playback, where it flips through the cached frames. While

@@ -1046,3 +1046,89 @@ body,
     font-size: 0.72rem;
     text-align: left;
 }
+
+/* A heading that carries its own Show and Hide. */
+.sage-head-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* The same width for each, so their toggles line up. */
+.sage-head-toggle > :first-child {
+    flex: none;
+    width: 192px;
+}
+
+.sage-head-toggle > .v-label {
+    opacity: 1;
+}
+
+.sage-panel .sage-head-toggle .v-checkbox {
+    flex: none;
+    width: 52px;
+    margin: 0 !important;
+}
+
+.sage-panel .sage-head-toggle .v-selection-control .v-label {
+    display: none;
+}
+
+/* The card of a long job. */
+.sage-progress.v-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 400px;
+    min-height: 92px;
+    padding: 12px 12px 12px 18px;
+    overflow: hidden;
+    background: #0c0f16 !important;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px !important;
+    color: #fff;
+    pointer-events: auto;
+}
+
+.sage-progress-percent {
+    color: #fff;
+    font-size: 12px;
+}
+
+.sage-progress-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.sage-progress-title {
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.sage-progress-detail {
+    margin-top: 2px;
+    color: #94a3b8;
+    font-size: 12.5px;
+}
+
+.sage-progress .v-btn {
+    height: 28px !important;
+    margin-top: 8px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #e2e8f0 !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+.sage-anim {
+    flex: none;
+    width: 120px;
+    height: 80px;
+}

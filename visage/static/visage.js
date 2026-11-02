@@ -1277,3 +1277,142 @@
   });
   window.addEventListener('load', function () { scan(document.body); });
 })();
+
+// The animation on a long job's card, one for each kind of job.  It only
+// runs while a card is on screen.
+(function () {
+  var W = 120, H = 80;
+  var COL = ['#22d3ee', '#c084fc', '#ffd700', '#fb7185', '#34d399'];
+
+  function dot(c, x, y, r, col, a) {
+    c.globalAlpha = a === undefined ? 1 : a;
+    c.fillStyle = col;
+    c.beginPath();
+    c.arc(x, y, r, 0, 7);
+    c.fill();
+    c.globalAlpha = 1;
+  }
+  function glow(c, x, y, r, col) {
+    var g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, col);
+    g.addColorStop(1, 'transparent');
+    c.fillStyle = g;
+    c.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+
+  var nodes = [], links = [], arms = [];
+  (function () {
+    var i, j, seed = 7;
+    function rnd() {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    }
+    for (i = 0; i < 14; i++) {
+      nodes.push({
+        x: 8 + rnd() * 104, y: 6 + rnd() * 68,
+        c: COL[i % 5], p: rnd() * 6,
+      });
+    }
+    for (i = 0; i < 14; i++) {
+      for (j = i + 1; j < 14; j++) {
+        var d = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
+        if (d < 44) links.push([i, j]);
+      }
+    }
+    for (i = 0; i < 150; i++) {
+      arms.push({
+        a: (i % 2) * Math.PI + (i / 150) * 5,
+        r: 2 + (i / 150) * 34, f: i / 150, j: rnd() * 2,
+      });
+    }
+  })();
+
+  function web(c, t, pulses) {
+    c.lineWidth = 0.6;
+    c.strokeStyle = 'rgba(148,163,184,0.28)';
+    links.forEach(function (l, k) {
+      var a = nodes[l[0]], b = nodes[l[1]];
+      c.beginPath();
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+      c.stroke();
+      if (pulses) {
+        var f = (t * 0.35 + k * 0.13) % 1;
+        dot(c, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, 1.2, a.c);
+      }
+    });
+    nodes.forEach(function (n) {
+      glow(c, n.x, n.y, 6 + 1.8 * Math.sin(t * 2 + n.p), n.c + 'cc');
+      dot(c, n.x, n.y, 1.4, '#fff');
+    });
+  }
+
+  var DRAW = {
+    web: function (c, t) { web(c, t, true); },
+    // One galaxy travelling the web, leaving a trail.
+    track: function (c, t) {
+      web(c, t, false);
+      var at = function (u) {
+        var n = links.length, f = u % n, i = Math.floor(f), l = links[i];
+        var a = nodes[l[0]], b = nodes[l[1]], g = f - i;
+        return [a.x + (b.x - a.x) * g, a.y + (b.y - a.y) * g];
+      };
+      for (var k = 14; k >= 0; k--) {
+        var p = at(t * 1.1 - k * 0.05);
+        dot(c, p[0], p[1], 2.4 - k * 0.14, '#ffd700', 1 - k / 15);
+      }
+    },
+    orbits: function (c, t) {
+      var x = W / 2, y = H / 2;
+      glow(c, x, y, 14, '#ffd70099');
+      dot(c, x, y, 2.6, '#fff');
+      COL.forEach(function (col, i) {
+        var r = 11 + i * 6.5, w = 1.6 / (1 + i * 0.45);
+        for (var k = 0; k < 12; k++) {
+          var a = t * w + i * 1.3 - k * 0.07;
+          dot(c, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.6,
+              1.9 - k * 0.13, col, 1 - k / 12);
+        }
+      });
+    },
+    spiral: function (c, t) {
+      var x = W / 2, y = H / 2;
+      glow(c, x, y, 20, '#ffd70088');
+      arms.forEach(function (s) {
+        var a = s.a + t * 0.6;
+        var col = s.f < 0.3 ? '#ffd700' : s.f < 0.6 ? '#fb7185'
+          : s.f < 0.8 ? '#c084fc' : '#22d3ee';
+        dot(c, x + Math.cos(a) * s.r + s.j - 1,
+            y + Math.sin(a) * s.r * 0.55 + s.j - 1, 0.9, col, 0.9);
+      });
+    },
+    // A spectrum: a wave running through the colours.
+    wave: function (c, t) {
+      for (var x = 2; x < W - 2; x += 2) {
+        var f = x / W, e = Math.sin(f * Math.PI);
+        var y = H / 2 + Math.sin(f * 14 - t * 3) * 22 * e;
+        dot(c, x, y, 1.3, 'hsl(' + (280 - f * 280) + ',90%,65%)');
+      }
+    },
+  };
+
+  function frame(ms) {
+    var shown = 0;
+    document.querySelectorAll('canvas.sage-anim').forEach(function (cv) {
+      if (cv.offsetParent === null) return;
+      shown++;
+      if (cv.width !== W * 2) {
+        cv.width = W * 2;
+        cv.height = H * 2;
+      }
+      var kind = (cv.className.match(/sage-anim-(\w+)/) || [])[1];
+      var c = cv.getContext('2d');
+      c.setTransform(2, 0, 0, 2, 0, 0);
+      c.clearRect(0, 0, W, H);
+      if (DRAW[kind]) DRAW[kind](c, ms / 1000);
+    });
+    if (shown) requestAnimationFrame(frame);
+    else setTimeout(function () { requestAnimationFrame(frame); }, 300);
+  }
+  requestAnimationFrame(frame);
+})();
