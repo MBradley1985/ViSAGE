@@ -140,9 +140,7 @@ class CameraController:
             "distance": max(float(radius), 1e-6) * self._STAR_DISTANCE,
             "center": np.asarray(center, dtype=float),
             "radius": max(float(radius), 1e-6),
-            "rgba": np.concatenate(
-                [colors, np.full((n_stars, 1), 255, np.uint8)], axis=1
-            ),
+            "rgb": colors,
             "cloud": cloud,
             "cam_key": None,
         }
@@ -151,11 +149,10 @@ class CameraController:
         self._sparkle_actors.append(
             self._pl.add_mesh(
                 cloud,
-                scalars="rgba",
+                scalars="rgb",
                 rgb=True,
                 point_size=point_size,
                 render_points_as_spheres=True,
-                opacity=0.9,
                 # Flat: a two-pixel dot has no shading to show, and a
                 # white specular highlight would wash the reds out.
                 lighting=False,
@@ -164,6 +161,7 @@ class CameraController:
                 reset_camera=False,
             )
         )
+        self._stars_first()
         try:
             self._sparkle_obs = (
                 self._pl.renderer.GetActiveCamera().AddObserver(
@@ -178,6 +176,22 @@ class CameraController:
         # Show them straight away — without this the stars only turn up on
         # the next render the view happens to do (e.g. a camera move).
         self._pl.render()
+
+    def _stars_first(self) -> None:
+        """Put the stars first in the drawing order, behind everything.
+        Props are drawn as added: last in, a faint star is a nearly black
+        dot painted over a galaxy's glow."""
+        ren = self._pl.renderer
+        props = ren.GetViewProps()
+        others = [
+            props.GetItemAsObject(i)
+            for i in range(props.GetNumberOfItems())
+            if props.GetItemAsObject(i) not in self._sparkle_actors
+        ]
+        for prop in others:
+            ren.RemoveViewProp(prop)
+        for prop in others:
+            ren.AddViewProp(prop)
 
     def _camera_key(self) -> tuple:
         cam = self._pl.camera
@@ -211,7 +225,7 @@ class CameraController:
         # so the field simply thins where the object is.
         to_obj = st["center"] - cam
         obj_dist = float(np.linalg.norm(to_obj))
-        rgba = st["rgba"].copy()
+        rgb = st["rgb"].astype(float) * 0.9
         if obj_dist > 1e-9:
             axis = to_obj / obj_dist
             # Tight: the object itself, then full sky just beyond it.  A
@@ -229,8 +243,8 @@ class CameraController:
             )
             # Smoothstep, so there is no visible edge where it starts.
             fade = fade * fade * (3.0 - 2.0 * fade)
-            rgba[:, 3] = (rgba[:, 3] * fade).astype(np.uint8)
-        st["cloud"].point_data["rgba"] = rgba
+            rgb *= fade[:, None]  # on a black sky, the same as fading out
+        st["cloud"].point_data["rgb"] = rgb.astype(np.uint8)
         st["cam_key"] = self._camera_key()
         # Keep the far plane out past the backdrop.  This fires the
         # camera's ModifiedEvent, but the key above has already been

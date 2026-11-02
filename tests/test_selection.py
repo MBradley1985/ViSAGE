@@ -594,3 +594,13 @@ def test_a_zoom_only_moves_the_view_from_the_track_panel(panel):
     state.track_zoom = 3
     state.flush()
     ctrl.track_refresh()
+
+
+def test_isolates_stars_are_drawn_behind_everything(panel):
+    _, scene = panel
+    camera = scene.camera
+    camera.add_sparkles((1.0, 1.0, 1.0), 2.0, n_stars=50)
+    props = scene.plotter.renderer.GetViewProps()
+    assert props.GetItemAsObject(0) in camera._sparkle_actors
+    assert props.GetNumberOfItems() > 1
+    camera.clear_sparkles()

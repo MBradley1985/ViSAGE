@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Isolate's stars no longer show as black dots over galaxies.
+
 ---
 
 ## [2.19.4] — 2026-11-02
