@@ -4313,10 +4313,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         _sparkle_target["center"] = (cx, cy, cz)
         _sparkle_target["radius"] = max(radius, 1e-3)
+        # The model reaches `radius`: clear the sky of all of it, as
+        # Isolate does, or faint stars sit on its disk as dark specks.
+        _sparkle_target["extent"] = radius
         state.focus_active = True
         state.isolate_active = True
         state.hd_active = True
-        _start_sparkles(_sparkle_target["center"], _sparkle_target["radius"])
+        _start_sparkles(
+            _sparkle_target["center"],
+            _sparkle_target["radius"],
+            _sparkle_target["extent"],
+        )
         _push()
 
     def _group_members(galaxies, gidx):
