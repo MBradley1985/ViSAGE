@@ -8,6 +8,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The progress card is larger.
+- Opening a model shows trees growing in from every side towards its name, joined by threads like the cosmic web.
+
 ---
 
 ## [2.19.0] — 2026-11-02
