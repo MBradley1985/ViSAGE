@@ -432,6 +432,47 @@ def build_selection(server, scene) -> None:
         model = scene.active_model
         return model.loader.get(model.current_snap if snap is None else snap)
 
+    # {GalaxyIndex: {snapshot: what it is there}}: itself, the galaxy it
+    # merged into, or None (not formed yet, or lost).
+    chains: dict = {}
+
+    @ctrl.set("sel_followed")
+    def _followed(gid, snap: int):
+        """The GalaxyIndex `gid` goes by at `snap`: its own while it lasts,
+        then the galaxy it merged into.  None before it formed, or when
+        the trail is lost."""
+        if gid is None:
+            return None
+        snap = int(snap)
+        chain = chains.setdefault(int(gid), {})
+        if snap in chain:
+            return chain[snap]
+        _, galaxies = _snap(snap)
+        if np.any(galaxies.galaxy_id == gid):
+            chain[snap] = int(gid)
+            return chain[snap]
+        # Gone: carry on from the last snapshot it was seen in.
+        seen = [s for s, g in chain.items() if g is not None and s < snap]
+        chain[snap] = None
+        if not seen or scene.is_lightcone:
+            return None
+        start = max(seen)
+        from visage.utils.track import follow
+
+        try:
+            trail = follow(
+                scene.active_model.cfg.hdf5_path,
+                chain[start],
+                start,
+                list(range(start, snap + 1)),
+            )
+        except Exception:
+            return None
+        for s, g in zip(trail.snaps, trail.galaxy_id, strict=True):
+            if s > start:
+                chain[s] = int(g)
+        return chain[snap]
+
     def _members(galaxies, i: int) -> np.ndarray:
         from visage.utils.group_info import member_indices
 
@@ -523,6 +564,8 @@ def build_selection(server, scene) -> None:
             pos=pos,
             mem=mem,
         )
+        if sel["gid"] is not None:
+            chains.setdefault(sel["gid"], {})[int(snap)] = sel["gid"]
         _remember(sel["gid"], i)
         if host is not None and host != _int(state.nav_halo_idx):
             sel["halo_echo"] = host
@@ -901,8 +944,14 @@ def build_selection(server, scene) -> None:
         # galaxy it merged into.
         path = sel.get("track") or {}
         gid = sel["gid"] = path.get(int(snap_num), gid)
+        # Past a merger, the galaxy it merged into.
+        here = _followed(gid, int(snap_num))
         _, galaxies = _snap(int(snap_num))
-        hit = np.flatnonzero(galaxies.galaxy_id == gid)
+        hit = (
+            np.flatnonzero(galaxies.galaxy_id == here)
+            if here is not None
+            else np.zeros(0, int)
+        )
         if len(hit) == 0:
             # Kept (by GalaxyIndex) for a snapshot it is in, but nothing
             # here acts on a row that is now another galaxy.
@@ -913,6 +962,7 @@ def build_selection(server, scene) -> None:
             sel.update(idx=None, mem=None)
             if state.nav_gal_idx is not None:
                 sel["echo"] = None
+                sel["kind_next"] = state.sel_kind  # (Galaxy / Halo stays)
                 state.nav_gal_idx = None
             state.sel_note = (
                 "Not in this snapshot (not formed yet, or merged into "
@@ -922,6 +972,12 @@ def build_selection(server, scene) -> None:
             return
         i = int(hit[0])
         _select(i, snap=int(snap_num))
+        # Still the galaxy picked: stepping back finds it again.
+        sel["gid"] = gid
+        if here != gid:
+            state.sel_note = (
+                f"Galaxy {gid} merged into galaxy {here}: following it."
+            )
         # (Its row number may differ in this snapshot; the galaxy / halo
         # context carries over.)
         if _int(state.nav_gal_idx) != i:

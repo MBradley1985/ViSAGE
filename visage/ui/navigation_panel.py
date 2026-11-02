@@ -3898,7 +3898,31 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _push()
 
     # What Isolate holds, by GalaxyIndex: rows differ between snapshots.
-    _isolated: dict = {"gid": None, "halo": False}
+    _isolated: dict = {"gid": None, "halo": False, "centre": None}
+
+    def _isolate_follow_camera(centre, extent: float) -> None:
+        """Move the camera with what Isolate holds, keeping the user's view
+        of it, and back off if a group has spread out of the frame.  (HD
+        frames its own.)"""
+        import numpy as np
+
+        old = _isolated["centre"]
+        _isolated["centre"] = centre
+        if old is None or state.hd_active:
+            return
+        cam = scene.plotter.camera
+        shift = centre - old
+        pos = np.asarray(cam.position, float) + shift
+        focal = np.asarray(cam.focal_point, float) + shift
+        back = pos - focal
+        dist = float(np.linalg.norm(back))
+        half = np.tan(np.deg2rad(cam.view_angle) / 2.0)
+        need = 1.6 * extent / half
+        if dist > 1e-9 and dist < need:
+            pos = focal + back * (need / dist)
+        cam.focal_point = tuple(float(v) for v in focal)
+        cam.position = tuple(float(v) for v in pos)
+        scene.plotter.renderer.ResetCameraClippingRange()
 
     def _isolate_follow(snap) -> None:
         """Isolate the same galaxy or group at this snapshot."""
@@ -3908,10 +3932,23 @@ def build_navigation_panel(server, scene: Scene) -> None:
         gid = _isolated["gid"]
         if not state.isolate_active or gid is None or scene.is_lightcone:
             return
+        # Past a merger, the galaxy it merged into.
+        here = ctrl.sel_followed(gid, snap)
         _, galaxies = scene.active_model.loader.get(snap)
-        hit = np.flatnonzero(galaxies.galaxy_id == gid)
+        hit = (
+            np.flatnonzero(galaxies.galaxy_id == here)
+            if here is not None
+            else np.zeros(0, int)
+        )
         if len(hit) == 0:
             scene.set_focus_indices([], [])
+            if not state.hd_active:  # (HD says so itself)
+                state.notice_text = (
+                    "Isolate: the galaxy isn't in this snapshot (not "
+                    "formed yet, or merged)."
+                )
+                state.notice_color = "info"
+                state.notice_show = True
             return
         row = int(hit[0])
         rows = np.array([row], dtype=np.int64)
@@ -3928,11 +3965,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 halos = [] if host is None else [host]
         scene.set_focus_indices(halos, rows)
-        pts = galaxies.positions[rows] + off
+        centre, extent = _isolate_reach(galaxies, rows)
+        _isolate_follow_camera(centre, extent)
+        scene.camera.move_sparkle_clearing(centre, extent)
+
+    def _isolate_reach(galaxies, rows):
+        """Centre of the isolated galaxies and how far they reach from it."""
+        import numpy as np
+
+        pts = galaxies.positions[rows] + scene.active_model.offset
         centre = pts.mean(axis=0)
-        scene.camera.move_sparkle_clearing(
-            centre, float(np.linalg.norm(pts - centre, axis=1).max())
-        )
+        return centre, float(np.linalg.norm(pts - centre, axis=1).max())
 
     scene.register_snap_change_callback(_isolate_follow)
 
@@ -4065,7 +4108,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.set_focus_indices(
             halo_indices=halo_indices, galaxy_indices=gal_indices
         )
-        _isolated.update(gid=ctrl.sel_galaxy(), halo=bool(halo_indices))
+        gid = ctrl.sel_galaxy()
+        ctrl.sel_followed(gid, scene.current_snap)  # where its trail starts
+        _isolated.update(
+            gid=gid,
+            halo=bool(halo_indices),
+            centre=(
+                _isolate_reach(galaxies, gal_indices)[0]
+                if len(gal_indices)
+                else None
+            ),
+        )
         # Frame what survived (as Go does).
         _frame_targets(halos, galaxies, halo_indices, gal_indices)
 

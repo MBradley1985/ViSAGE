@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- ViSAGE always stops when told to (Ctrl+C, SIGTERM), even with an HD build still finishing.
+- The card and Isolate follow a galaxy through a merger, on to the galaxy it merged into.
+- The card keeps Galaxy or Halo + group when its galaxy isn't in a snapshot, so Isolate's group keeps its rings.
+- Isolate's camera moves with the galaxy or group from snapshot to snapshot.
+- Isolate says when its galaxy isn't in the snapshot.
+
 ---
 
 ## [2.19.5] — 2026-11-02

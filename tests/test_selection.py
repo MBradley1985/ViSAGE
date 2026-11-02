@@ -107,6 +107,42 @@ def test_the_selection_follows_the_galaxy_through_snapshots(panel):
     assert "Not in this snapshot" in state.sel_note
 
 
+def test_the_selection_follows_a_merger_and_keeps_its_context(
+    panel, monkeypatch
+):
+    import visage.utils.track as track
+
+    server, scene = panel
+    state = server.state
+    model = scene.active_model
+    before = model.loader.get(62)[1]
+    now = model.loader.get(63)[1]
+    before.galaxy_id[:] = np.arange(5000, 5000 + before.count)
+    now.galaxy_id[:] = np.arange(1000, 1000 + now.count)
+    # Galaxy 5011 (row 11 at 62) has merged into 1004 (row 4) by 63.
+    monkeypatch.setattr(
+        track,
+        "follow",
+        lambda *a, **k: track.Track(snaps=[62, 63], galaxy_id=[5011, 1004]),
+    )
+    scene.set_snapshot(62)
+    state.snap_num = 62
+    state.nav_gal_idx = 11
+    state.flush()
+    state.sel_kind = "halo"
+    state.flush()
+    kind = state.sel_kind
+    state.snap_num = 63
+    state.flush()
+    assert state.nav_gal_idx == 4
+    assert "merged into galaxy 1004" in state.sel_note
+    assert state.sel_kind == kind
+    # Back before the merger: the galaxy picked, not what it became.
+    state.snap_num = 62
+    state.flush()
+    assert state.nav_gal_idx == 11 and state.sel_kind == kind
+
+
 def test_hd_offers_its_galaxies_for_picking(panel):
     server, scene = panel
     state, ctrl = server.state, server.controller
