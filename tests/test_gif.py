@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import numpy as np
 from PIL import Image
 
-from visage.utils.gif import dithered, shared_palette
+from visage.utils.gif import dithered, each_format, shared_palette
 
 
 def _glow(tmp_path, name="a.png"):
@@ -66,3 +69,20 @@ def test_every_frame_shares_the_palette(tmp_path):
     one = dithered(Image.open(a), palette).getpalette()
     two = dithered(Image.open(b), palette).getpalette()
     assert one == two
+
+
+def test_every_format_gets_frames_of_its_own(tmp_path):
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    (frames / "snap_0.jpg").write_bytes(b"x")
+    files = [{"file": str(frames / "snap_0.jpg"), "count": 6}]
+
+    def encode(fmt, here, snap_files):
+        # Encoding deletes what it read.
+        assert Path(snap_files[0]["file"]).read_bytes() == b"x"
+        shutil.rmtree(here)
+        return f"made.{fmt}"
+
+    got = each_format(["gif", "mov", "png"], frames, files, encode)
+    assert got == "made.gif; made.mov; made.png"
+    assert list(tmp_path.iterdir()) == []

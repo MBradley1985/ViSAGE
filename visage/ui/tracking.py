@@ -22,12 +22,10 @@ from visage.utils.track import (
 FRAMING_ITEMS = [
     {"title": "Galaxy", "value": "galaxy"},
     {"title": "Surroundings", "value": "surroundings"},
-    {"title": "FoF links", "value": "fof"},
-    {"title": "Contributors", "value": "contributors"},
     {"title": "Whole box", "value": "box"},
 ]
 # Mpc/h from the galaxy each framing starts at; the zoom buttons change it.
-DEFAULT_ZOOM = {"galaxy": 3, "surroundings": 10, "fof": 5, "contributors": 10}
+DEFAULT_ZOOM = {"galaxy": 3, "surroundings": 10}
 KEEP = 0  # the Keep zoom: as far away as the view is now
 ZOOMS = [
     {"title": "Keep", "value": KEEP},
@@ -93,6 +91,8 @@ def setup(server, scene) -> None:
     state.track_framing = "galaxy"
     state.track_framings = FRAMING_ITEMS
     state.track_zoom = DEFAULT_ZOOM["galaxy"]
+    state.track_links = False
+    state.track_contrib = False
     state.track_zooms = ZOOMS
     state.track_percent = 0
     state.track_status = ""
@@ -103,15 +103,15 @@ def setup(server, scene) -> None:
         path: dict,
         sets: dict,
         centres: dict,
-        framing: str,
         halo: bool,
-        iso: bool,
+        links: bool,
+        only: bool,
     ):
         """What draws the view at a snapshot: which galaxies are shown, and
         the indicators on them.  Rows differ from one snapshot to the next,
-        so this runs for each."""
-        grouped = halo or framing == "fof"
-        masked = iso or framing in ("fof", "contributors")
+        so this runs for each.  ``links`` adds the group and its lines;
+        ``only`` shows just the contributors."""
+        grouped = halo or links
 
         def show(snap: int) -> None:
             model = scene.active_model
@@ -121,48 +121,54 @@ def setup(server, scene) -> None:
                 marker.set_target(centres[snap])
             hit = np.flatnonzero(galaxies.galaxy_id == path.get(snap))
             row = int(hit[0]) if len(hit) else None
-            members = np.zeros(0, dtype=np.int64)
-            if row is not None:
-                members = (
-                    member_indices(galaxies, row)
-                    if grouped
-                    else np.array([row], dtype=np.int64)
+            group = np.zeros(0, dtype=np.int64)
+            if row is not None and grouped:
+                group = member_indices(galaxies, row)
+            box = scene.primary.box_size
+            near = lambda rows: nearest_image(  # noqa: E731
+                galaxies.positions[rows] + model.offset, marker.target, box
+            )
+            central = None
+            if len(group):
+                lead = np.flatnonzero(
+                    galaxies.galaxy_id == galaxies.central_id[row]
                 )
-            if framing == "contributors":
-                members = np.flatnonzero(
+                if len(lead):
+                    central = near(lead)[0]
+            members = group
+            if only:
+                chosen = np.flatnonzero(
                     np.isin(galaxies.galaxy_id, sets.get(snap, ()))
                 )
-            if masked:
-                halo_rows = []
-                if grouped and row is not None:
-                    central = galaxies.positions[members[0]] + model.offset
+                members = np.union1d(chosen, group).astype(np.int64)
+                host = None
+                if central is not None:
                     host = ctrl.sel_host_halo(snap, central)
-                    halo_rows = [] if host is None else [host]
-                scene.set_focus_indices(halo_rows, members)
-            box = scene.primary.box_size
-            points = nearest_image(
-                galaxies.positions[members] + model.offset,
-                marker.target,
-                box,
-            )
+                scene.set_focus_indices(
+                    [] if host is None else [host], members
+                )
+            points = near(members)
             away = np.linalg.norm(points - marker.target, axis=1) > 1e-6
             marker.set_details(
                 "", points[away], style="full" if grouped else "small"
             )
-            marker.set_links(points[away] if framing == "fof" else None)
+            lined = near(group) if links else np.zeros((0, 3))
+            if central is not None and len(lined):
+                lined = lined[np.linalg.norm(lined - central, axis=1) > 1e-6]
+            marker.set_links(lined, central)
 
         return show
 
     def settle() -> None:
         """Stay on what was followed, focus and all, with a view that holds
         at any snapshot: a track's rows only hold at its own."""
-        framing, iso = run.get("framing"), run.get("iso")
+        framing = run.get("framing")
         scene.camera.marker.set_links(None)
-        if iso:
-            state.isolate_active = False
-            ctrl.toggle_isolate()
-        elif framing not in (None, "box"):
+        if framing not in (None, "box"):
             ctrl.go_frame()
+        elif run.get("only"):
+            scene.clear_focus()
+            state.focus_active = False
         away = run.get("away")
         if away is not None and framing != "box":
             cam = scene.plotter.camera
@@ -170,14 +176,18 @@ def setup(server, scene) -> None:
             scene.plotter.renderer.ResetCameraClippingRange()
             ctrl.view_update()
 
-    async def build(gid: int, own: int, first: int, last: int) -> None:
-        # The galaxy is known to exist at the current snapshot, so the walk
+    async def build(
+        gid: int, own: int, first: int, last: int, now: int, at: int
+    ) -> None:
+        # The galaxy is known to exist at snapshot ``now``, so the walk
         # starts there even if that is outside the range asked for.
-        now = int(scene.current_snap)
         snaps = list(range(min(first, now), max(last, now) + 1))
         framing = str(state.track_framing)
         halo = str(state.sel_kind) == "halo"
-        iso = bool(state.isolate_active)
+        links, only = bool(state.track_links), bool(state.track_contrib)
+        run["origin"] = (gid, own, now)
+        if state.isolate_active:
+            ctrl.toggle_isolate()
         path_file = scene._cfg.hdf5_path
         run.update(stop=False, done=0, total=len(snaps), track=None)
         state.track_busy = True
@@ -220,12 +230,12 @@ def setup(server, scene) -> None:
                 track,
                 list(range(first, last + 1)),
                 scene.primary.box_size,
-                halo=halo or framing == "fof",
+                halo=halo,
             )
             if centres:
                 path = track_ids(track)
                 sets = {}
-                if framing == "contributors":
+                if only:
                     state.track_status = "Finding its contributors…"
                     state.flush()
                     sets = await asyncio.to_thread(
@@ -239,31 +249,31 @@ def setup(server, scene) -> None:
                     centres, framing, away, float(state.track_zoom)
                 )
                 offset = next(iter(planned.values()))[1]
-                run.update(framing=framing, iso=iso, away=offset)
-                if framing in ("galaxy", "surroundings") and not iso:
-                    ctrl.go_frame()
+                run.update(framing=framing, only=only, away=offset)
                 if framing != "box":
+                    ctrl.go_frame()
                     state.focus_active = True
-                show = shower(path, sets, centres, framing, halo, iso)
+                elif only:
+                    state.focus_active = True
+                show = shower(path, sets, centres, halo, links, only)
+                ctrl.sel_follow_track(own_path, show)
                 state.track_ready = await ctrl.track_render(
                     sorted(centres),
                     planned,
                     captions(track, halo=halo),
                     show,
                     lambda: run["stop"],
+                    at,
                 )
                 if not state.track_ready:
+                    ctrl.sel_follow_track(None)
                     settle()
         state.track_busy = False
         if run["stop"]:
             state.track_status = "Stopped."
             state.track_events = []
         elif state.track_ready:
-            ctrl.sel_follow_track(own_path, show)
-            state.track_status = (
-                f"Ready: {len(track.snaps)} snapshots, {track.snaps[0]} to "
-                f"{track.snaps[-1]}. Play from the bar above."
-            )
+            state.track_status = ""
         else:
             state.track_status = "It isn't in that range."
         state.flush()
@@ -280,9 +290,69 @@ def setup(server, scene) -> None:
             return
         first, last = sorted((int(state.track_from), int(state.track_to)))
         own = ctrl.sel_galaxy()
+        now = int(scene.current_snap)
         asyncio.get_running_loop().create_task(
-            build(gid, gid if own is None else own, first, last)
+            build(gid, gid if own is None else own, first, last, now, now)
         )
+
+    def options() -> tuple:
+        return (
+            state.track_zoom,
+            state.track_framing,
+            state.track_links,
+            state.track_contrib,
+            state.sel_kind,
+            state.sel_rings,
+        )
+
+    def refresh() -> None:
+        """An option changed: the view moves now, and a built track is
+        rendered again to match, from the galaxy it started with (the
+        selection may have moved on to a merger's target)."""
+        run["pending"] = False
+        now = options()
+        changed = now != run["options"]
+        run["options"] = now
+        if not changed or state.track_busy:
+            return
+        was_built = bool(state.track_ready)
+        if was_built:
+            ctrl.track_clear()
+            ctrl.sel_follow_track(None)
+            state.track_ready = False
+        zoom = float(state.track_zoom)
+        if state.track_framing != "box" and zoom:
+            cam = scene.plotter.camera
+            away = np.subtract(cam.position, cam.focal_point)
+            if state.sel_active and not was_built:
+                ctrl.go_frame()
+                state.focus_active = True
+            length = float(np.linalg.norm(away)) or 1.0
+            cam.position = tuple(np.add(cam.focal_point, away / length * zoom))
+            scene.plotter.renderer.ResetCameraClippingRange()
+            ctrl.view_update()
+        origin = run.get("origin")
+        if was_built and origin:
+            first, last = sorted((int(state.track_from), int(state.track_to)))
+            asyncio.get_running_loop().create_task(
+                build(
+                    *origin[:2],
+                    first,
+                    last,
+                    origin[2],
+                    int(scene.current_snap),
+                )
+            )
+
+    def option_changed(**_):
+        if run.get("pending"):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        run["pending"] = True
+        loop.call_later(0.05, refresh)
 
     @ctrl.set("track_stop")
     def track_stop():
@@ -313,16 +383,16 @@ def setup(server, scene) -> None:
 
     whole_run()
     scene.register_model_change_callback(whole_run)
-    # Frames hold what they were built with: changing any of these needs
-    # another Build.
+    run["options"] = options()
+    state.change("track_from", "track_to")(forget)
     state.change(
-        "track_from",
-        "track_to",
-        "track_framing",
         "track_zoom",
+        "track_framing",
+        "track_links",
+        "track_contrib",
         "sel_kind",
         "sel_rings",
-    )(forget)
+    )(option_changed)
 
 
 def tab(ctrl) -> None:
@@ -371,7 +441,7 @@ def tab(ctrl) -> None:
             v3.VSelect(
                 v_model=("track_framing",),
                 items=("track_framings",),
-                classes="sage-sel-cyan",
+                classes="sage-right sage-sel-cyan",
                 color="cyan",
                 density="compact",
                 hide_details=True,
@@ -402,39 +472,20 @@ def tab(ctrl) -> None:
                         click="track_zoom = z.value",
                         style="min-width:0;flex:none;",
                     )
-            with html.Div(style="padding:2px 0 4px;text-align:left;"):
-                v3.VBtn(
-                    "{{ sel_rings ? 'Hide indicators' : 'Show indicators' }}",
-                    size="x-small",
-                    variant="text",
-                    color="#9ca3af",
-                    disabled=("track_busy",),
-                    click=ctrl.sel_clear_marker,
-                    style="flex:none;",
-                )
-            v3.VBtn(
-                "Build",
-                block=True,
-                variant="outlined",
-                color="cyan",
-                density="compact",
-                prepend_icon="mdi-map-marker-path",
-                disabled=("!sel_active || track_busy",),
-                click=ctrl.track_build,
-                style="margin-top:8px;",
-            )
-            with html.Div(v_show=("track_busy",), style="padding-top:8px;"):
-                v3.VProgressLinear(
-                    model_value=("track_percent",), color="cyan", height=4
-                )
-                v3.VBtn(
-                    "Stop",
-                    block=True,
-                    variant="text",
-                    color="#ef4444",
-                    density="compact",
-                    click=ctrl.track_stop,
-                )
+            with html.Div(classes="sage-formats sage-track-options"):
+                for model, label in (
+                    ("sel_rings", "Indicators"),
+                    ("track_links", "FoF links"),
+                    ("track_contrib", "Contributors"),
+                ):
+                    v3.VCheckbox(  # the app's CSS draws these as switches
+                        v_model=(model,),
+                        label=label,
+                        density="compact",
+                        hide_details=True,
+                        color="cyan",
+                        disabled=("track_busy",),
+                    )
             html.Div(
                 "{{ track_status }}",
                 v_show=("track_status",),
@@ -452,32 +503,59 @@ def tab(ctrl) -> None:
                     "text-align:left;"
                 ),
             )
-            with html.Div(v_show=("track_ready",), style="padding-top:10px;"):
-                v3.VSelect(
-                    v_model=("movie_format",),
-                    items=("['gif', 'mov', 'png']",),
-                    label="Save as",
-                    classes="sage-sel-cyan",
-                    color="cyan",
-                    density="compact",
-                    hide_details=True,
-                    variant="outlined",
+        with html.Div(style="flex:none;padding-top:8px;"):
+            v3.VBtn(
+                "Build",
+                v_show=("!track_busy",),
+                block=True,
+                variant="outlined",
+                color="cyan",
+                density="compact",
+                prepend_icon="mdi-map-marker-path",
+                disabled=("!sel_active",),
+                click=ctrl.track_build,
+            )
+            with html.Div(v_show=("track_busy",)):
+                v3.VProgressLinear(
+                    model_value=("track_percent",), color="cyan", height=4
                 )
-                html.Div(style="height:8px;")
+                v3.VBtn(
+                    "Stop",
+                    block=True,
+                    variant="text",
+                    color="#ef4444",
+                    density="compact",
+                    click=ctrl.track_stop,
+                )
+            with html.Div(v_show=("track_ready",), style="padding-top:6px;"):
+                with html.Div(classes="sage-formats"):
+                    for kind, name in (
+                        ("gif", "GIF"),
+                        ("mov", "MOV"),
+                        ("png", "PNG"),
+                    ):
+                        v3.VCheckbox(
+                            v_model=("movie_formats",),
+                            value=kind,
+                            label=name,
+                            density="compact",
+                            hide_details=True,
+                            color="cyan",
+                        )
                 v3.VBtn(
                     "Save movie",
                     block=True,
                     variant="outlined",
                     color="cyan",
                     density="compact",
-                    disabled=("track_saving",),
+                    disabled=("track_saving || !movie_formats.length",),
                     click=ctrl.track_save,
                 )
                 v3.VBtn(
                     "Leave track",
                     block=True,
                     variant="text",
-                    color="#9ca3af",
+                    color="#ef4444",
                     density="compact",
                     click=ctrl.track_leave,
                 )

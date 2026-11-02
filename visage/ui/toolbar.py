@@ -413,9 +413,9 @@ def build_toolbar(server, scene: Scene) -> None:
         return np.asarray(pic)
 
     @ctrl.set("track_render")
-    async def track_render(order, views, texts, show, stopped) -> bool:
-        """Render the frames of a track, then hand the first one's live
-        view over.  False if ``stopped`` said to give up."""
+    async def track_render(order, views, texts, show, stopped, at) -> bool:
+        """Render the frames of a track, then hand over the live view at
+        snapshot ``at``.  False if ``stopped`` said to give up."""
         from PIL import Image
 
         cam = scene.plotter.camera
@@ -464,7 +464,7 @@ def build_toolbar(server, scene: Scene) -> None:
             state.flush()
         if finished:
             _track["order"] = list(order)
-            _end_playback_to(order[0])
+            _end_playback_to(at if at in order else order[0])
             return True
         _frames.update(key=None, data={})
         _track.update(order=[], views={}, show=None)

@@ -8,6 +8,9 @@ colours shimmering from one frame to the next.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 from PIL import Image
 
 _SAMPLES = 12  # frames the palette is drawn from
@@ -41,3 +44,22 @@ def dithered(frame: Image.Image, palette: Image.Image) -> Image.Image:
     return frame.convert("RGB").quantize(
         palette=palette, dither=Image.Dither.FLOYDSTEINBERG
     )
+
+
+def each_format(formats, frames_dir, snap_files, encode) -> str:
+    """``encode(format, frames_dir, snap_files)`` for each of ``formats``.
+    Encoding uses up its frames, so all but the last get their own copy.
+    Returns the results, one per format."""
+    frames_dir = Path(frames_dir)
+    results = []
+    for i, fmt in enumerate(formats):
+        here, files = frames_dir, snap_files
+        if i < len(formats) - 1:
+            here = frames_dir.with_name(f"{frames_dir.name}_{fmt}")
+            shutil.copytree(frames_dir, here)
+            files = [
+                {**e, "file": str(here / Path(e["file"]).name)}
+                for e in snap_files
+            ]
+        results.append(encode(fmt, here, files))
+    return "; ".join(results)

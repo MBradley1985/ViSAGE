@@ -114,7 +114,8 @@ class SelectionMarker:
         self.target: np.ndarray | None = None
         self.members = np.zeros((0, 3))
         self.near = np.zeros((0, 3))  # the next hops, nearest first
-        self.links = np.zeros((0, 3))  # lines out from the target to these
+        self.links = np.zeros((0, 3))  # lines out to these from link_from
+        self.link_from = None
         # "small": the group's other members as small rings (the galaxy
         # selected); "full": as full rings like the target (the halo and
         # its whole group selected).
@@ -161,8 +162,9 @@ class SelectionMarker:
         )
         self.update()
 
-    def set_links(self, positions=None) -> None:
-        """A line from the target to each of ``positions``."""
+    def set_links(self, positions=None, origin=None) -> None:
+        """A line from ``origin`` to each of ``positions``."""
+        self.link_from = None if origin is None else np.asarray(origin, float)
         self.links = (
             np.zeros((0, 3))
             if positions is None or len(positions) == 0
@@ -294,10 +296,12 @@ class SelectionMarker:
             self._actors["members"].GetMapper().SetInputData(
                 _rings(np.zeros((0, 2)), 1.0)
             )
-        lxy, lok = self._project(self.links) if len(self.links) else ([], [])
-        self._actors["links"].GetMapper().SetInputData(
-            _lines(xy[0], np.asarray(lxy)[lok] if ok[0] and len(lxy) else ())
-        )
+        ends, start = (), xy[0]
+        if len(self.links) and self.link_from is not None:
+            lxy, lok = self._project(self.links)
+            fxy, fok = self._project(self.link_from[None, :])
+            start, ends = fxy[0], lxy[lok] if fok[0] else ()
+        self._actors["links"].GetMapper().SetInputData(_lines(start, ends))
         if len(self.near):
             nxy, nok = self._project(self.near)
             r = np.full(len(nxy), 0.55 * r_target)

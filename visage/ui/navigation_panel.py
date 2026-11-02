@@ -13,7 +13,7 @@ from visage.scene.scene import Scene
 from visage.ui import plotting
 from visage.ui import regions as _regions
 from visage.ui import tracking
-from visage.utils.gif import dithered, shared_palette
+from visage.utils.gif import dithered, each_format, shared_palette
 from visage.utils.filters import galaxy_mask
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
@@ -533,7 +533,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.last_movie = ""
     state.movie_fps = 10
     state.movie_resolution = "native"  # native | hd | uhd
-    state.movie_format = "gif"  # gif | mov | png
+    state.movie_formats = ["gif"]  # any of gif, mov, png
     state.screenshot_label = ""
     state.movie_label = ""
     state.movie_loop = True  # only used for GIF output
@@ -2288,7 +2288,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "dir": frames_dir,
                 "frames": 0,
                 "fps": fps,
-                "format": str(state.movie_format),
+                "formats": list(state.movie_formats) or ["gif"],
                 "scale": scale,
                 "movie_base": movie_base,
                 "session": sess,
@@ -2564,14 +2564,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         def _do_finalize():
             try:
-                result = _finalize_movie(
-                    frames_dir=snap["dir"],
-                    session_dir=snap["session"],
-                    movie_base=snap["movie_base"],
-                    fps=snap["fps"],
-                    fmt=snap["format"],
-                    gif_loop=bool(state.movie_loop),
-                    snap_files=snap.get("snap_files") or [],
+                result = each_format(
+                    snap["formats"],
+                    snap["dir"],
+                    snap.get("snap_files") or [],
+                    lambda fmt, here, files: _finalize_movie(
+                        frames_dir=here,
+                        session_dir=snap["session"],
+                        movie_base=snap["movie_base"],
+                        fps=snap["fps"],
+                        fmt=fmt,
+                        gif_loop=bool(state.movie_loop),
+                        snap_files=files,
+                    ),
                 )
             except Exception as exc:
                 result = f"ERROR (finalize): {exc!s}"
@@ -2596,7 +2601,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             path = frames_dir / f"snap_{i:05d}.jpg"
             path.write_bytes(image)
             snap_files.append({"file": str(path), "count": 6})
-        fmt, fps = str(state.movie_format), max(1, int(state.movie_fps))
+        formats = list(state.movie_formats) or ["gif"]
+        fps = max(1, int(state.movie_fps))
         loop_flag = bool(state.movie_loop)
         state.track_saving = True
         state.track_saved = "Encoding…"
@@ -2611,14 +2617,19 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         def _do_finalize():
             try:
-                result = _finalize_movie(
-                    frames_dir=frames_dir,
-                    session_dir=sess,
-                    movie_base=movie_base,
-                    fps=fps,
-                    fmt=fmt,
-                    gif_loop=loop_flag,
-                    snap_files=snap_files,
+                result = each_format(
+                    formats,
+                    frames_dir,
+                    snap_files,
+                    lambda fmt, here, files: _finalize_movie(
+                        frames_dir=here,
+                        session_dir=sess,
+                        movie_base=movie_base,
+                        fps=fps,
+                        fmt=fmt,
+                        gif_loop=loop_flag,
+                        snap_files=files,
+                    ),
                 )
             except Exception as exc:
                 result = f"ERROR (finalize): {exc!s}"
@@ -3996,6 +4007,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         import numpy as np
         from visage.utils.group_info import member_indices
 
+        if not state.isolate_active and (
+            state.track_ready or state.track_busy
+        ):
+            return  # a track and Isolate don't go together
         if bool(state.isolate_active):
             # Turning OFF — drop the mask entirely.
             _clear_draw_widgets()
@@ -5224,7 +5239,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "mdi-magnify",
                     ctrl.toggle_isolate,
                     "isolate_active",
-                    "!sel_active && !isolate_active",
+                    "(!sel_active || track_busy || track_ready)"
+                    " && !isolate_active",
                 ),
                 (
                     "Observer" if scene.is_lightcone else "Box Centre",
@@ -7182,196 +7198,198 @@ def build_navigation_panel(server, scene: Scene) -> None:
             with v3.VSheet(
                 color="transparent",
                 v_show=("nav_active_tab === 'record'",),
+                style="display:flex;flex-direction:column;flex:1;min-height:0;",
             ):
-                v3.VLabel(
-                    "SCREENSHOT",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with html.Div(
-                    raw_attrs=['data-enter-click="btn-take-screenshot"'],
-                ):
-                    v3.VTextField(
-                        v_model=("screenshot_label",),
-                        label="File name (optional)",
+                with html.Div(style="flex:1;min-height:0;overflow-y:auto;"):
+                    v3.VLabel(
+                        "SCREENSHOT",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#06b6d4;padding:6px 0 8px;display:block;"
+                        ),
+                    )
+                    with html.Div(
+                        raw_attrs=['data-enter-click="btn-take-screenshot"'],
+                    ):
+                        v3.VTextField(
+                            v_model=("screenshot_label",),
+                            label="File name (optional)",
+                            hide_details=True,
+                            variant="outlined",
+                            bg_color="#1a1a2e",
+                            density="compact",
+                            style="padding-bottom:8px;",
+                            keydown_enter=ctrl.take_screenshot,
+                        )
+                    v3.VBtn(
+                        "Take Screenshot",
+                        block=True,
+                        color="cyan",
+                        density="compact",
+                        prepend_icon="mdi-camera",
+                        click=ctrl.take_screenshot,
+                        id="btn-take-screenshot",
+                    )
+                    with v3.VRow(
+                        no_gutters=True, style="gap:6px;padding-top:6px;"
+                    ):
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "PNG",
+                                block=True,
+                                variant="outlined",
+                                color="cyan",
+                                density="compact",
+                                click=ctrl.screenshot_png,
+                            )
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "JPG",
+                                block=True,
+                                variant="outlined",
+                                color="cyan",
+                                density="compact",
+                                click=ctrl.screenshot_jpg,
+                            )
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "TIFF",
+                                block=True,
+                                variant="outlined",
+                                color="cyan",
+                                density="compact",
+                                click=ctrl.screenshot_tiff,
+                            )
+                    v3.VLabel(
+                        "Saved to sage_outputs/session_*/ in your working directory",
+                        style="font-size:0.62rem;color:#6b7280;display:block;padding:6px 0 2px;",
+                    )
+                    v3.VLabel(
+                        "{{ last_screenshot ? 'Last: ' + last_screenshot : '' }}",
+                        style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;",
+                    )
+
+                    v3.VDivider(style="margin:14px 0;")
+
+                    v3.VLabel(
+                        "RECORD MOVIE",
+                        style=(
+                            "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
+                            "color:#06b6d4;padding:6px 0 8px;display:block;"
+                        ),
+                    )
+                    with html.Div(
+                        raw_attrs=['data-enter-click="btn-start-recording"'],
+                    ):
+                        v3.VTextField(
+                            v_model=("movie_label",),
+                            label="File name (optional)",
+                            hide_details=True,
+                            variant="outlined",
+                            bg_color="#1a1a2e",
+                            density="compact",
+                            style="padding-bottom:8px;",
+                            keydown_enter=ctrl.start_recording,
+                        )
+                    v3.VLabel(
+                        "FPS (output)  {{ '— ' + movie_fps }}",
+                        classes="sage-select-head",
+                        style="font-size:0.6rem;color:#9ca3af;display:block;padding:4px 0 2px;",
+                    )
+                    v3.VSlider(
+                        v_model=("movie_fps",),
+                        min=1,
+                        max=60,
+                        step=1,
+                        thumb_label=True,
+                        color="cyan",
+                        density="compact",
+                        hide_details=True,
+                    )
+
+                    v3.VLabel(
+                        "Resolution",
+                        classes="sage-select-head",
+                        style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
+                    )
+                    v3.VSelect(
+                        v_model=("movie_resolution",),
+                        classes="sage-left sage-sel-cyan",
+                        items=(
+                            [
+                                {"title": "Native  (1×)", "value": "native"},
+                                {"title": "High   (2× window)", "value": "hd"},
+                                {
+                                    "title": "Ultra  (4× window)",
+                                    "value": "uhd",
+                                },
+                            ],
+                        ),
                         hide_details=True,
                         variant="outlined",
-                        bg_color="#1a1a2e",
+                        color="cyan",
                         density="compact",
-                        style="padding-bottom:8px;",
-                        keydown_enter=ctrl.take_screenshot,
                     )
-                v3.VBtn(
-                    "Take Screenshot",
-                    block=True,
-                    color="cyan",
-                    density="compact",
-                    prepend_icon="mdi-camera",
-                    click=ctrl.take_screenshot,
-                    id="btn-take-screenshot",
-                )
-                with v3.VRow(
-                    no_gutters=True, style="gap:6px;padding-top:6px;"
-                ):
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "PNG",
-                            block=True,
-                            variant="outlined",
-                            color="cyan",
-                            density="compact",
-                            click=ctrl.screenshot_png,
-                        )
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "JPG",
-                            block=True,
-                            variant="outlined",
-                            color="cyan",
-                            density="compact",
-                            click=ctrl.screenshot_jpg,
-                        )
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "TIFF",
-                            block=True,
-                            variant="outlined",
-                            color="cyan",
-                            density="compact",
-                            click=ctrl.screenshot_tiff,
-                        )
-                v3.VLabel(
-                    "Saved to sage_outputs/session_*/ in your working directory",
-                    style="font-size:0.62rem;color:#6b7280;display:block;padding:6px 0 2px;",
-                )
-                v3.VLabel(
-                    "{{ last_screenshot ? 'Last: ' + last_screenshot : '' }}",
-                    style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;",
-                )
 
-                v3.VDivider(style="margin:14px 0;")
-
-                v3.VLabel(
-                    "RECORD MOVIE",
-                    style=(
-                        "font-size:0.95rem;font-weight:700;letter-spacing:0.08em;"
-                        "color:#06b6d4;padding:6px 0 8px;display:block;"
-                    ),
-                )
-                with html.Div(
-                    raw_attrs=['data-enter-click="btn-start-recording"'],
-                ):
-                    v3.VTextField(
-                        v_model=("movie_label",),
-                        label="File name (optional)",
+                    html.Div(
+                        "Output format",
+                        classes="sage-select-head",
+                        style="font-size:0.6rem;color:#9ca3af;padding:10px 0 2px;",
+                    )
+                    with html.Div(classes="sage-formats"):
+                        for kind, name in (
+                            ("gif", "GIF"),
+                            ("mov", "MOV"),
+                            ("png", "PNG"),
+                        ):
+                            v3.VCheckbox(
+                                v_model=("movie_formats",),
+                                value=kind,
+                                label=name,
+                                density="compact",
+                                hide_details=True,
+                                color="cyan",
+                            )
+                    v3.VCheckbox(
+                        v_model=("movie_loop",),
+                        label="Loop GIF forever",
+                        v_show=("movie_formats.includes('gif')",),
+                        color="cyan",
+                        density="compact",
                         hide_details=True,
-                        variant="outlined",
-                        bg_color="#1a1a2e",
-                        density="compact",
-                        style="padding-bottom:8px;",
-                        keydown_enter=ctrl.start_recording,
+                        style="padding-top:4px;",
                     )
-                v3.VLabel(
-                    "FPS (output)  {{ '— ' + movie_fps }}",
-                    classes="sage-select-head",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:4px 0 2px;",
-                )
-                v3.VSlider(
-                    v_model=("movie_fps",),
-                    min=1,
-                    max=60,
-                    step=1,
-                    thumb_label=True,
-                    color="cyan",
-                    density="compact",
-                    hide_details=True,
-                )
+                with html.Div(style="flex:none;padding-top:6px;"):
+                    with v3.VRow(
+                        no_gutters=True, style="gap:6px;padding-top:10px;"
+                    ):
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "Start",
+                                block=True,
+                                color="red",
+                                density="compact",
+                                prepend_icon="mdi-record-circle-outline",
+                                click=ctrl.start_recording,
+                                disabled=("recording_active",),
+                                id="btn-start-recording",
+                            )
+                        with v3.VCol(style="padding:0;"):
+                            v3.VBtn(
+                                "Stop",
+                                block=True,
+                                color="#6b7280",
+                                density="compact",
+                                prepend_icon="mdi-stop",
+                                click=ctrl.stop_recording,
+                                disabled=("!recording_active",),
+                            )
 
-                v3.VLabel(
-                    "Resolution",
-                    classes="sage-select-head",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                )
-                v3.VSelect(
-                    v_model=("movie_resolution",),
-                    classes="sage-left sage-sel-cyan",
-                    items=(
-                        [
-                            {"title": "Native  (1×)", "value": "native"},
-                            {"title": "High   (2× window)", "value": "hd"},
-                            {"title": "Ultra  (4× window)", "value": "uhd"},
-                        ],
-                    ),
-                    hide_details=True,
-                    variant="outlined",
-                    color="cyan",
-                    density="compact",
-                )
-
-                v3.VLabel(
-                    "Output format",
-                    classes="sage-select-head",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                )
-                v3.VSelect(
-                    v_model=("movie_format",),
-                    classes="sage-left sage-sel-cyan",
-                    items=(
-                        [
-                            {"title": "GIF", "value": "gif"},
-                            {"title": "MOV  (H.264)", "value": "mov"},
-                            {"title": "PNG sequence", "value": "png"},
-                        ],
-                    ),
-                    hide_details=True,
-                    variant="outlined",
-                    color="cyan",
-                    density="compact",
-                )
-
-                # GIF-only: repeat (loop) checkbox
-                v3.VCheckbox(
-                    v_model=("movie_loop",),
-                    label="Loop GIF forever",
-                    v_show=("movie_format === 'gif'",),
-                    color="cyan",
-                    density="compact",
-                    hide_details=True,
-                    style="padding-top:4px;",
-                )
-
-                with v3.VRow(
-                    no_gutters=True, style="gap:6px;padding-top:10px;"
-                ):
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "Start",
-                            block=True,
-                            color="red",
-                            density="compact",
-                            prepend_icon="mdi-record-circle-outline",
-                            click=ctrl.start_recording,
-                            disabled=("recording_active",),
-                            id="btn-start-recording",
-                        )
-                    with v3.VCol(style="padding:0;"):
-                        v3.VBtn(
-                            "Stop",
-                            block=True,
-                            color="#6b7280",
-                            density="compact",
-                            prepend_icon="mdi-stop",
-                            click=ctrl.stop_recording,
-                            disabled=("!recording_active",),
-                        )
-
-                v3.VLabel(
-                    "{{ recording_active ? '● Recording — ' + recording_frames + ' frames' : 'Idle' }}",
-                    style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                )
-                v3.VLabel(
-                    "{{ last_movie ? 'Last: ' + last_movie : '' }}",
-                    style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;padding:4px 0;",
-                )
+                    v3.VLabel(
+                        "{{ recording_active ? '● Recording — ' + recording_frames + ' frames' : 'Idle' }}",
+                        style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
+                    )
+                    v3.VLabel(
+                        "{{ last_movie ? 'Last: ' + last_movie : '' }}",
+                        style="font-size:0.6rem;color:#6b7280;display:block;word-break:break-all;padding:4px 0;",
+                    )

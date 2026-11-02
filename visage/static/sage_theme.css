@@ -606,3 +606,11 @@ body,
     grid-template-columns: 1fr 1fr;
     column-gap: 16px;
 }
+
+.sage-track-options {
+    column-gap: 10px;
+}
+
+.sage-track-options .v-label {
+    font-size: 0.82rem;
+}

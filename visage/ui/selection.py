@@ -1064,6 +1064,11 @@ def build_selection(server, scene) -> None:
         central = _snap()[1].central_id
         return int(central[i]) if np.any(central) else sel.get("gid")
 
+    @state.change("sel_rings")
+    def _on_rings(sel_rings=True, **_):
+        scene.camera.marker.set_enabled(bool(sel_rings))
+        _push()
+
     @ctrl.set("sel_galaxy")
     def _sel_galaxy():
         """The selected galaxy's GalaxyIndex, even with its halo in view."""
