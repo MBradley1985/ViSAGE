@@ -285,13 +285,13 @@ def selection_card(server) -> None:
                 )
             html.Div(style="flex:1;")
             v3.VBtn(
-                "{{ sel_rings ? 'Hide rings' : 'Show rings' }}",
+                "{{ sel_rings ? 'Hide indicators' : 'Show indicators' }}",
                 size="x-small",
                 variant="text",
                 color="#9ca3af",
                 click=ctrl.sel_clear_marker,
                 title=(
-                    "Rings off or on (the galaxy stays selected; stays as "
+                    "Indicators off or on (the galaxy stays selected; stays as "
                     "set through HD, Gas and new selections)"
                 ),
             )
@@ -624,6 +624,9 @@ def build_selection(server, scene) -> None:
             # The galaxy alone.
             marker.set_target(_drawn(galaxies, i, lead))
             marker.set_details("", [])
+        # A built track draws its own view over the selection's.
+        if sel.get("track_show") and int(snap) in (sel.get("track") or {}):
+            sel["track_show"](int(snap))
         _push()
 
     # Back / forward through what was selected: (GalaxyIndex, row).
@@ -903,6 +906,8 @@ def build_selection(server, scene) -> None:
             # here acts on a row that is now another galaxy.
             if int(snap_num) not in path:
                 scene.camera.marker.clear()
+            elif sel.get("track_show"):
+                sel["track_show"](int(snap_num))
             sel.update(idx=None, mem=None)
             if state.nav_gal_idx is not None:
                 sel["echo"] = None
@@ -1059,10 +1064,21 @@ def build_selection(server, scene) -> None:
         central = _snap()[1].central_id
         return int(central[i]) if np.any(central) else sel.get("gid")
 
+    @ctrl.set("sel_galaxy")
+    def _sel_galaxy():
+        """The selected galaxy's GalaxyIndex, even with its halo in view."""
+        return sel.get("gid") if sel.get("idx") is not None else None
+
     @ctrl.set("sel_follow_track")
-    def _sel_follow_track(path=None):
-        """{snapshot: GalaxyIndex} of a built track; None when it's left."""
-        sel["track"] = path
+    def _sel_follow_track(path=None, show=None):
+        """{snapshot: GalaxyIndex} of a built track, and what draws its view
+        at a snapshot; None when it's left."""
+        sel.update(track=path, track_show=show)
+
+    @ctrl.set("sel_host_halo")
+    def _sel_host_halo(snap, position):
+        """The halo at a central's position, in that snapshot."""
+        return _host_halo(_snap(snap)[0], position, snap)
 
     @ctrl.set("sel_close")
     def _sel_close():

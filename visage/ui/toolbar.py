@@ -224,7 +224,7 @@ def build_toolbar(server, scene: Scene) -> None:
     _frames: dict = {"key": None, "data": {}}
     # A built track: its frames sit in _frames under this key, so anything
     # that drops the cached frames also ends the track.
-    _track: dict = {"order": [], "views": {}}
+    _track: dict = {"order": [], "views": {}, "show": None}
 
     def _track_on() -> bool:
         return _frames["key"] == "track" and bool(_track["order"])
@@ -244,6 +244,8 @@ def build_toolbar(server, scene: Scene) -> None:
             cam.focal_point = tuple(centre)
             cam.position = tuple(np.add(centre, offset))
             scene.plotter.renderer.ResetCameraClippingRange()
+        if _track["show"] is not None:
+            _track["show"](snap)
 
     def _scene_hash() -> int:
         """Integer fingerprint of all visual-affecting scene state.
@@ -411,7 +413,7 @@ def build_toolbar(server, scene: Scene) -> None:
         return np.asarray(pic)
 
     @ctrl.set("track_render")
-    async def track_render(order, views, texts, stopped) -> bool:
+    async def track_render(order, views, texts, show, stopped) -> bool:
         """Render the frames of a track, then hand the first one's live
         view over.  False if ``stopped`` said to give up."""
         from PIL import Image
@@ -421,7 +423,7 @@ def build_toolbar(server, scene: Scene) -> None:
         ring = scene.camera.marker.target
         _cancel_rotate()
         _frames.update(key="track", data={})
-        _track.update(order=[], views=views)
+        _track.update(order=[], views=views, show=show)
         _suppress_snap[0] = True
         state.prerender_busy = True
         rw = scene.plotter.ren_win
@@ -465,7 +467,7 @@ def build_toolbar(server, scene: Scene) -> None:
             _end_playback_to(order[0])
             return True
         _frames.update(key=None, data={})
-        _track.update(order=[], views={})
+        _track.update(order=[], views={}, show=None)
         cam.position, cam.focal_point = before[:2]
         if ring is not None:
             scene.camera.marker.set_target(ring)
@@ -477,7 +479,7 @@ def build_toolbar(server, scene: Scene) -> None:
         """Back to the ordinary play bar."""
         if _frames["key"] == "track":
             _frames.update(key=None, data={})
-        _track.update(order=[], views={})
+        _track.update(order=[], views={}, show=None)
 
     @ctrl.set("track_images")
     def track_images() -> list:

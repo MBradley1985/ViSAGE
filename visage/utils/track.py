@@ -38,6 +38,9 @@ class Track:
     snaps: list[int] = field(default_factory=list)
     galaxy_id: list[int] = field(default_factory=list)
     pos: list[tuple[float, float, float]] = field(default_factory=list)
+    # The central of its group at each snapshot, for following a halo.
+    central_id: list[int] = field(default_factory=list)
+    central_pos: list[tuple[float, float, float]] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
     cancelled: bool = False
 
@@ -70,6 +73,20 @@ def _row(group, gid: int) -> tuple:
 
 def _position(group, row: int) -> tuple[float, float, float]:
     return tuple(float(group[c][row]) for c in ("Posx", "Posy", "Posz"))
+
+
+def _entry(group, ids: np.ndarray, row: int, snap: int) -> tuple:
+    """(snapshot, galaxy, its position, its central, the central's position)."""
+    gid = int(ids[row])
+    central = int(_column(group, "CentralGalaxyIndex", row, gid))
+    hit = np.flatnonzero(ids == central)
+    return (
+        snap,
+        gid,
+        _position(group, row),
+        central,
+        _position(group, int(hit[0]) if len(hit) else row),
+    )
 
 
 def follow(
@@ -109,9 +126,9 @@ def follow(
             return track
         with open_snapshot(first, snap) as group:
             if group is not None:
-                _, row = _row(group, galaxy_id)
+                ids, row = _row(group, galaxy_id)
                 if row is not None:
-                    before.append((snap, galaxy_id, _position(group, row)))
+                    before.append(_entry(group, ids, row, snap))
         tick()
 
     gid = galaxy_id
@@ -147,7 +164,7 @@ def follow(
                 gid, pending = target, None
                 _, row = _row(group, gid)
             if row is not None:
-                after.append((snap, gid, _position(group, row)))
+                after.append(_entry(group, ids, row, snap))
                 into = int(_column(group, "mergeIntoID", row))
                 kind = int(_column(group, "mergeType", row, 0))
                 if kind > 0 and into < 0:
@@ -178,23 +195,29 @@ def follow(
             {"kind": "ended", "snap": after[-1][0], "galaxy_id": after[-1][1]}
         )
 
-    for snap, gid, pos in [*reversed(before), *after]:
+    for snap, gid, pos, central, central_pos in [*reversed(before), *after]:
         track.snaps.append(snap)
         track.galaxy_id.append(gid)
         track.pos.append(pos)
+        track.central_id.append(central)
+        track.central_pos.append(central_pos)
     track.events = events
     return track
 
 
-def camera_centres(track: Track, snaps: list[int], box: float) -> dict:
-    """Where to look at each of ``snaps`` the track covers.
+def camera_centres(
+    track: Track, snaps: list[int], box: float, halo: bool = False
+) -> dict:
+    """Where to look at each of ``snaps`` the track covers: the galaxy, or
+    with ``halo`` the central of its group.
 
     A snapshot in a gap gets a point on the line between its neighbours,
     the short way round the periodic box."""
     if not track.snaps:
         return {}
     known = np.asarray(track.snaps, dtype=float)
-    pos = np.unwrap(np.asarray(track.pos, float), axis=0, period=box)
+    points = track.central_pos if halo else track.pos
+    pos = np.unwrap(np.asarray(points, float), axis=0, period=box)
     out = {}
     for snap in snaps:
         if known[0] <= snap <= known[-1]:
@@ -205,10 +228,19 @@ def camera_centres(track: Track, snaps: list[int], box: float) -> dict:
     return out
 
 
-def captions(track: Track, hold: int = 3) -> dict:
+def captions(track: Track, hold: int = 3, halo: bool = False) -> dict:
     """What the view says at each snapshot: an event, for ``hold``
     snapshots from when it happened."""
     out: dict[int, str] = {}
+    if halo:
+        steps = zip(track.snaps, track.central_id, strict=False)
+        last = None
+        for i, (snap, central) in enumerate(steps):
+            joined = last is not None and central != last
+            if joined and central != track.galaxy_id[i]:
+                for held in range(snap, snap + hold):
+                    out[held] = f"Now in the halo of galaxy {central}"
+            last = central
     for event in track.events:
         if event["kind"] in ("ended", "lost"):
             continue
@@ -217,3 +249,87 @@ def captions(track: Track, hold: int = 3) -> dict:
         for snap in range(event["snap"], event["snap"] + hold):
             out[snap] = text
     return {s: out[s] for s in track.snaps if s in out}
+
+
+def nearest_image(points, centre, box: float) -> np.ndarray:
+    """``points`` at their images nearest ``centre`` in the periodic box."""
+    centre = np.asarray(centre, float)
+    return (
+        centre + (np.asarray(points, float) - centre + box / 2) % box - box / 2
+    )
+
+
+def merge_chains(first: str | Path, galaxy_id: int, snaps: list[int]):
+    """The merger links of ``galaxy_id``'s forest.  Mergers stay inside a
+    forest, so nothing else is read.  Returns ({snapshot: GalaxyIndex of the
+    forest's rows, in file order}, {galaxy: the galaxy it merged into})."""
+    mulfac = forest_mulfac(first)
+    forest = galaxy_id // mulfac
+    rows, merged = {}, []
+    for snap in sorted(snaps):
+        with open_snapshot(first, snap) as group:
+            if group is None:
+                continue
+            ids = np.asarray(group["GalaxyIndex"]).astype(np.int64)
+            here = np.flatnonzero(ids // mulfac == forest)
+            rows[snap] = ids[here]
+            if "mergeIntoID" not in group or "mergeIntoSnapNum" not in group:
+                continue
+            into = np.asarray(group["mergeIntoID"])[here]
+            at = np.asarray(group["mergeIntoSnapNum"])[here]
+            for i in np.flatnonzero(into >= 0):
+                merged.append((int(ids[here[i]]), int(at[i]), int(into[i])))
+    links = {}
+    for gid, snap, row in merged:
+        if snap in rows and row < len(rows[snap]):
+            links[gid] = int(rows[snap][row])
+    return rows, links
+
+
+def reaches(gid: int, targets: set, links: dict) -> bool:
+    """Does ``gid`` end up in one of ``targets``, or is it one?"""
+    seen = set()
+    while gid not in seen:
+        if gid in targets:
+            return True
+        seen.add(gid)
+        if gid not in links:
+            return False
+        gid = links[gid]
+    return False
+
+
+def group_members(first: str | Path, galaxy_id: int, snap: int) -> set:
+    """The GalaxyIndex of every galaxy in ``galaxy_id``'s group at ``snap``."""
+    with open_snapshot(first, snap) as group:
+        if group is None:
+            return {galaxy_id}
+        ids, row = _row(group, galaxy_id)
+        if row is None or "CentralGalaxyIndex" not in group:
+            return {galaxy_id}
+        centrals = np.asarray(group["CentralGalaxyIndex"])
+        return {int(g) for g in ids[centrals == centrals[row]]}
+
+
+def contributors(
+    first: str | Path, path: dict, snaps: list[int], halo: bool = False
+) -> dict:
+    """{snapshot: the galaxies there that end up in what is followed}.
+
+    ``path`` is {snapshot: GalaxyIndex followed}.  A galaxy counts for the
+    one followed at that snapshot; with ``halo``, for every member of the
+    group at the end of the track, satellites as well as mergers."""
+    if not path:
+        return {}
+    end = max(path)
+    rows, links = merge_chains(first, path[end], snaps)
+    group = group_members(first, path[end], end) if halo else None
+    out = {}
+    for snap in sorted(path):
+        targets = group if halo else {path[snap]}
+        out[snap] = [
+            int(g)
+            for g in rows.get(snap, ())
+            if reaches(int(g), targets, links)
+        ]
+    return out

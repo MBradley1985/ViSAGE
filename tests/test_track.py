@@ -9,9 +9,13 @@ from visage.utils.track import (
     Track,
     camera_centres,
     captions,
+    contributors,
     follow,
     forest_mulfac,
+    merge_chains,
     merge_target,
+    nearest_image,
+    reaches,
 )
 
 MUL = 10**9
@@ -220,35 +224,34 @@ def test_the_end_of_a_branch_has_no_caption():
     assert captions(t) == {}
 
 
-def test_as_go_keeps_the_offset_go_chose():
-    from types import SimpleNamespace
-
+def test_zoom_keeps_the_direction_of_the_view():
     from visage.ui.tracking import views
 
-    cam = SimpleNamespace(position=(0, 0, 4), focal_point=(0, 0, 1))
-    got = views({1: (5, 5, 5)}, "go", cam)
+    got = views({1: (5, 5, 5)}, "galaxy", (0, 0, 20), 3)
     assert got[1][0] == (5, 5, 5)
     np.testing.assert_allclose(got[1][1], (0, 0, 3))
 
 
-def test_group_framing_keeps_the_direction():
-    from types import SimpleNamespace
+def test_the_keep_zoom_keeps_the_distance_too():
+    from visage.ui.tracking import KEEP, views
 
-    from visage.ui.tracking import GROUP_DISTANCE, views
-
-    cam = SimpleNamespace(position=(0, 0, 4), focal_point=(0, 0, 1))
-    np.testing.assert_allclose(
-        views({1: (5, 5, 5)}, "group", cam)[1][1], (0, 0, GROUP_DISTANCE)
-    )
+    got = views({1: (5, 5, 5)}, "surroundings", (0, 3, 4), KEEP)
+    np.testing.assert_allclose(got[1][1], (0, 3, 4))
 
 
 def test_the_whole_box_leaves_the_camera_alone():
-    from types import SimpleNamespace
-
     from visage.ui.tracking import views
 
-    cam = SimpleNamespace(position=(0, 0, 4), focal_point=(0, 0, 1))
-    assert views({1: (5, 5, 5)}, "box", cam)[1] == ((5, 5, 5), None)
+    assert views({1: (5, 5, 5)}, "box", (0, 0, 4), 3)[1] == ((5, 5, 5), None)
+
+
+def test_every_framing_but_the_box_starts_at_a_zoom_offered():
+    from visage.ui.tracking import DEFAULT_ZOOM, FRAMING_ITEMS, ZOOMS
+
+    offered = {z["value"] for z in ZOOMS}
+    named = {f["value"] for f in FRAMING_ITEMS} - {"box"}
+    assert named == set(DEFAULT_ZOOM)
+    assert set(DEFAULT_ZOOM.values()) <= offered
 
 
 def test_a_gap_keeps_the_galaxy_before_it():
@@ -256,3 +259,78 @@ def test_a_gap_keeps_the_galaxy_before_it():
 
     t = Track(snaps=[1, 3], galaxy_id=[A, B])
     assert track_ids(t) == {1: A, 2: A, 3: B}
+
+
+def _tree(path):
+    """B merges into A at 3; C merges into B at 2; A stays, OTHER apart."""
+    return _run(
+        path,
+        {
+            1: [(A, 0, -1, -1, 1), (B, 0, -1, -1, 2), (C, 1, 1, 2, 3)],
+            2: [(A, 0, -1, -1, 1), (B, 1, 0, 3, 2), (6 * MUL, 0, -1, -1, 9)],
+            3: [(A, 0, -1, -1, 1), (6 * MUL, 0, -1, -1, 9)],
+        },
+    )
+
+
+def test_links_join_a_forest_up_to_its_mergers(tmp_path):
+    rows, links = merge_chains(_tree(tmp_path / "m.hdf5"), A, [1, 2, 3])
+    assert links == {C: B, B: A}
+    assert list(rows[3]) == [A]
+
+
+def test_a_galaxy_reaches_what_it_merges_into_through_a_chain():
+    links = {C: B, B: A}
+    assert reaches(C, {A}, links)
+    assert not reaches(A, {C}, links)
+    assert not reaches(OTHER, {A}, links)
+    assert not reaches(C, {OTHER}, {C: B, B: C})  # never hangs on a loop
+
+
+def test_contributors_are_those_that_end_up_in_it(tmp_path):
+    path = _tree(tmp_path / "m.hdf5")
+    got = contributors(path, {1: A, 2: A, 3: A}, [1, 2, 3])
+    assert sorted(got[1]) == [A, B, C]
+    assert sorted(got[2]) == [A, B]
+    assert got[3] == [A]
+
+
+def test_contributors_follow_who_is_followed_at_each_snapshot(tmp_path):
+    path = _tree(tmp_path / "m.hdf5")
+    got = contributors(path, {1: C, 2: B, 3: A}, [1, 2, 3])
+    assert got[1] == [C]  # not B or A: nothing merges into C
+    assert sorted(got[2]) == [B]
+
+
+def test_a_halo_counts_its_whole_group_at_the_end(tmp_path):
+    path = tmp_path / "m.hdf5"
+    _run(
+        path,
+        {
+            1: [(A, 0, -1, -1, 1), (B, 0, -1, -1, 2), (C, 0, -1, -1, 3)],
+            2: [(A, 0, -1, -1, 1), (B, 0, -1, -1, 2), (C, 0, -1, -1, 3)],
+        },
+    )
+    with h5py.File(path, "a") as f:
+        f["Snap_2/CentralGalaxyIndex"] = np.array([A, A, C])
+    got = contributors(path, {1: A, 2: A}, [1, 2], halo=True)
+    assert sorted(got[1]) == [A, B]
+
+
+def test_a_halo_is_centred_on_its_central():
+    t = Track(
+        snaps=[1], pos=[(5, 0, 0)], central_pos=[(2, 0, 0)], central_id=[A]
+    )
+    assert camera_centres(t, [1], 10, halo=True)[1] == (2, 0, 0)
+
+
+def test_joining_a_larger_halo_is_captioned():
+    t = Track(snaps=[1, 2], galaxy_id=[A, A], central_id=[A, B], events=[])
+    assert captions(t, halo=True)[2] == f"Now in the halo of galaxy {B}"
+    assert captions(t) == {}
+
+
+def test_a_group_across_the_box_edge_is_drawn_together():
+    np.testing.assert_allclose(
+        nearest_image([[9.5, 0, 0]], (0.5, 0, 0), 10), [[-0.5, 0, 0]]
+    )

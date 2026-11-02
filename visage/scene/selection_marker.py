@@ -89,6 +89,23 @@ def merge_rings(xy: np.ndarray, r: float, avoid=None, avoid_r: float = 0.0):
     return kc, radii
 
 
+def _lines(origin, ends):
+    """Polydata of a line from ``origin`` to each of ``ends`` (screen px)."""
+    import vtk
+
+    points = vtk.vtkPoints()
+    cells = vtk.vtkCellArray()
+    points.InsertNextPoint(float(origin[0]), float(origin[1]), 0.0)
+    for x, y in ends:
+        cells.InsertNextCell(2)
+        cells.InsertCellPoint(0)
+        cells.InsertCellPoint(points.InsertNextPoint(float(x), float(y), 0.0))
+    poly = vtk.vtkPolyData()
+    poly.SetPoints(points)
+    poly.SetLines(cells)
+    return poly
+
+
 class SelectionMarker:
     """Target ring + label + member rings, kept in screen space."""
 
@@ -97,6 +114,7 @@ class SelectionMarker:
         self.target: np.ndarray | None = None
         self.members = np.zeros((0, 3))
         self.near = np.zeros((0, 3))  # the next hops, nearest first
+        self.links = np.zeros((0, 3))  # lines out from the target to these
         # "small": the group's other members as small rings (the galaxy
         # selected); "full": as full rings like the target (the halo and
         # its whole group selected).
@@ -118,6 +136,7 @@ class SelectionMarker:
             self.label = ""
             self.members = np.zeros((0, 3))
             self.near = np.zeros((0, 3))
+            self.links = np.zeros((0, 3))
         self.target = p
         self._ensure()
         self.update()
@@ -142,11 +161,21 @@ class SelectionMarker:
         )
         self.update()
 
+    def set_links(self, positions=None) -> None:
+        """A line from the target to each of ``positions``."""
+        self.links = (
+            np.zeros((0, 3))
+            if positions is None or len(positions) == 0
+            else np.asarray(positions, float).reshape(-1, 3)
+        )
+        self.update()
+
     def clear(self) -> None:
         self.target = None
         self.label = ""
         self.members = np.zeros((0, 3))
         self.near = np.zeros((0, 3))
+        self.links = np.zeros((0, 3))
         for a in self._actors.values():
             self._pl.renderer.RemoveViewProp(a)
         self._actors = {}
@@ -173,6 +202,7 @@ class SelectionMarker:
             ("target", _TARGET_RGB, 2.5, 1.0),
             ("members", _MEMBER_RGB, 1.5, 0.7),
             ("near", _NEAR_RGB, 1.5, 0.9),
+            ("links", _MEMBER_RGB, 1.0, 0.55),
         ):
             mapper = vtk.vtkPolyDataMapper2D()
             mapper.SetInputData(vtk.vtkPolyData())
@@ -227,7 +257,7 @@ class SelectionMarker:
             return
         if not self.enabled:
             empty = _rings(np.zeros((0, 2)), 1.0)
-            for name in ("target", "members", "near"):
+            for name in ("target", "members", "near", "links"):
                 self._actors[name].GetMapper().SetInputData(empty)
             self._actors["label"].SetInput("")
             return
@@ -264,6 +294,10 @@ class SelectionMarker:
             self._actors["members"].GetMapper().SetInputData(
                 _rings(np.zeros((0, 2)), 1.0)
             )
+        lxy, lok = self._project(self.links) if len(self.links) else ([], [])
+        self._actors["links"].GetMapper().SetInputData(
+            _lines(xy[0], np.asarray(lxy)[lok] if ok[0] and len(lxy) else ())
+        )
         if len(self.near):
             nxy, nok = self._project(self.near)
             r = np.full(len(nxy), 0.55 * r_target)
