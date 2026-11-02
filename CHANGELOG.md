@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.19.3] — 2026-11-02
+
 ### Changed
 
 - The Opening screen's trees have thinner lines and grow faster.
