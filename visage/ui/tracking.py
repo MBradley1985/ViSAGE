@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import asyncio
 
+import numpy as np
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
 from visage.ui.plotting import _step
-from visage.utils.track import Track, follow
+from visage.utils.track import Track, camera_centres, captions, follow
+
+# How far the camera sits from the galaxy, in Mpc/h; None leaves it alone.
+FRAMINGS = {"close": 3.0, "group": 10.0, "box": None}
+FRAMING_ITEMS = [
+    {"title": "Close: the galaxy", "value": "close"},
+    {"title": "Group: its surroundings", "value": "group"},
+    {"title": "Whole box: camera stays put", "value": "box"},
+]
 
 
 def trim(track: Track, first: int, last: int) -> Track:
@@ -33,9 +42,34 @@ def event_text(event: dict) -> str:
     return f"{snap}: {kind} into galaxy {event['into']}"
 
 
+def track_ids(track: Track) -> dict:
+    """{snapshot: the GalaxyIndex followed there}, gaps filled by the galaxy
+    that came before."""
+    ids = dict(zip(track.snaps, track.galaxy_id, strict=True))
+    for snap in range(track.snaps[0] + 1, track.snaps[-1]):
+        if snap not in ids:
+            ids[snap] = ids[snap - 1]
+    return ids
+
+
+def views(centres: dict, framing: str, camera) -> dict:
+    """snapshot: (centre, camera offset), keeping the current direction."""
+    radius = FRAMINGS[framing]
+    if radius is None:
+        return {s: (c, None) for s, c in centres.items()}
+    away = np.subtract(camera.position, camera.focal_point)
+    length = float(np.linalg.norm(away)) or 1.0
+    return {s: (c, tuple(away / length * radius)) for s, c in centres.items()}
+
+
 def setup(server, scene) -> None:
     state, ctrl = server.state, server.controller
     state.track_busy = False
+    state.track_ready = False
+    state.track_saving = False
+    state.track_saved = ""
+    state.track_framing = "close"
+    state.track_framings = FRAMING_ITEMS
     state.track_percent = 0
     state.track_status = ""
     state.track_events = []
@@ -50,6 +84,7 @@ def setup(server, scene) -> None:
         state.track_busy = True
         state.track_percent = 0
         state.track_events = []
+        state.track_ready = False
         state.track_status = "Following the galaxy…"
         state.flush()
         work = asyncio.create_task(
@@ -68,25 +103,49 @@ def setup(server, scene) -> None:
             state.track_percent = round(100 * run["done"] / run["total"])
             state.flush()
         track = await work
-        state.track_busy = False
-        if track.cancelled:
-            state.track_status = "Stopped."
-        else:
+        if not track.cancelled:
             track = trim(track, first, last)
             run["track"] = track
             state.track_events = [event_text(e) for e in track.events]
-            state.track_status = (
-                f"Followed through {len(track.snaps)} snapshots, "
-                f"{track.snaps[0]} to {track.snaps[-1]}."
-                if track.snaps
-                else "The galaxy isn't in that range."
+            centres = camera_centres(
+                track, list(range(first, last + 1)), scene.primary.box_size
             )
+            if centres:
+                state.track_status = "Rendering frames…"
+                state.flush()
+                state.track_ready = await ctrl.track_render(
+                    sorted(centres),
+                    views(
+                        centres,
+                        state.track_framing,
+                        scene.plotter.camera,
+                    ),
+                    captions(track),
+                    lambda: run["stop"],
+                )
+        state.track_busy = False
+        if run["stop"]:
+            state.track_status = "Stopped."
+            state.track_events = []
+        elif state.track_ready:
+            ctrl.sel_follow_track(track_ids(track))
+            state.track_status = (
+                f"Ready: {len(track.snaps)} snapshots, {track.snaps[0]} to "
+                f"{track.snaps[-1]}. Play from the bar above."
+            )
+        else:
+            state.track_status = "The galaxy isn't in that range."
         state.flush()
 
     @ctrl.set("track_build")
     def track_build():
         gid = ctrl.sel_track_target()
-        if gid is None or bool(state.track_busy):
+        if bool(state.track_busy):
+            return
+        if gid is None:
+            state.track_status = (
+                "It isn't in this snapshot: move to one it is in."
+            )
             return
         first, last = sorted((int(state.track_from), int(state.track_to)))
         asyncio.get_running_loop().create_task(build(gid, first, last))
@@ -95,10 +154,16 @@ def setup(server, scene) -> None:
     def track_stop():
         run["stop"] = True
 
+    @ctrl.set("track_leave")
     def forget(**_):
+        if state.track_ready:
+            ctrl.track_clear()
+            ctrl.sel_follow_track(None)
         run["track"] = None
+        state.track_ready = False
         state.track_events = []
         state.track_status = ""
+        state.track_saved = ""
 
     def whole_run():
         model = scene.active_model
@@ -108,7 +173,7 @@ def setup(server, scene) -> None:
 
     whole_run()
     scene.register_model_change_callback(whole_run)
-    state.change("sel_title", "track_from", "track_to")(forget)
+    state.change("track_from", "track_to", "track_framing")(forget)
 
 
 def tab(ctrl) -> None:
@@ -141,6 +206,18 @@ def tab(ctrl) -> None:
                         variant="outlined",
                         disabled=("track_busy",),
                     )
+            _step(3, "Choose framing")
+            v3.VSelect(
+                v_model=("track_framing",),
+                items=("track_framings",),
+                classes="sage-sel-cyan",
+                color="cyan",
+                density="compact",
+                hide_details=True,
+                variant="outlined",
+                disabled=("track_busy",),
+                style="margin:6px 0;",
+            )
             v3.VBtn(
                 "Build",
                 block=True,
@@ -181,3 +258,40 @@ def tab(ctrl) -> None:
                     "text-align:left;"
                 ),
             )
+            with html.Div(v_show=("track_ready",), style="padding-top:10px;"):
+                v3.VSelect(
+                    v_model=("movie_format",),
+                    items=("['gif', 'mov', 'png']",),
+                    label="Save as",
+                    classes="sage-sel-cyan",
+                    color="cyan",
+                    density="compact",
+                    hide_details=True,
+                    variant="outlined",
+                )
+                html.Div(style="height:8px;")
+                v3.VBtn(
+                    "Save movie",
+                    block=True,
+                    variant="outlined",
+                    color="cyan",
+                    density="compact",
+                    disabled=("track_saving",),
+                    click=ctrl.track_save,
+                )
+                v3.VBtn(
+                    "Leave track",
+                    block=True,
+                    variant="text",
+                    color="#9ca3af",
+                    density="compact",
+                    click=ctrl.track_leave,
+                )
+                html.Div(
+                    "{{ track_saved }}",
+                    v_show=("track_saved",),
+                    style=(
+                        "font-size:0.7rem;color:#9ca3af;padding-top:6px;"
+                        "text-align:left;word-break:break-all;"
+                    ),
+                )

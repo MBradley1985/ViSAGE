@@ -514,7 +514,7 @@ def build_selection(server, scene) -> None:
             # the identity.)
             gid=(
                 int(galaxies.galaxy_id[i])
-                if galaxies.galaxy_id[i] and not cone
+                if np.any(galaxies.galaxy_id) and not cone
                 else None
             ),
             idx=i,
@@ -892,12 +892,17 @@ def build_selection(server, scene) -> None:
             # snapshots, so the selection ends here.
             _sel_reset()
             return
+        # A built track says who is followed here: after a merger, the
+        # galaxy it merged into.
+        path = sel.get("track") or {}
+        gid = sel["gid"] = path.get(int(snap_num), gid)
         _, galaxies = _snap(int(snap_num))
         hit = np.flatnonzero(galaxies.galaxy_id == gid)
         if len(hit) == 0:
             # Kept (by GalaxyIndex) for a snapshot it is in, but nothing
             # here acts on a row that is now another galaxy.
-            scene.camera.marker.clear()
+            if int(snap_num) not in path:
+                scene.camera.marker.clear()
             sel.update(idx=None, mem=None)
             if state.nav_gal_idx is not None:
                 sel["echo"] = None
@@ -1051,7 +1056,13 @@ def build_selection(server, scene) -> None:
             return None
         if state.sel_kind != "halo":
             return sel.get("gid")
-        return int(_snap()[1].central_id[i]) or sel.get("gid")
+        central = _snap()[1].central_id
+        return int(central[i]) if np.any(central) else sel.get("gid")
+
+    @ctrl.set("sel_follow_track")
+    def _sel_follow_track(path=None):
+        """{snapshot: GalaxyIndex} of a built track; None when it's left."""
+        sel["track"] = path
 
     @ctrl.set("sel_close")
     def _sel_close():

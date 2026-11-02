@@ -5,7 +5,14 @@ from __future__ import annotations
 import h5py
 import numpy as np
 
-from visage.utils.track import follow, forest_mulfac, merge_target
+from visage.utils.track import (
+    Track,
+    camera_centres,
+    captions,
+    follow,
+    forest_mulfac,
+    merge_target,
+)
 
 MUL = 10**9
 
@@ -164,7 +171,6 @@ def test_progress_and_cancel(tmp_path):
 
 def test_the_panel_keeps_only_the_range_asked_for():
     from visage.ui.tracking import trim
-    from visage.utils.track import Track
 
     t = Track(
         snaps=[1, 2, 3],
@@ -183,3 +189,51 @@ def test_the_history_reads_plainly():
         "Snapshot 46: major merger into galaxy 7"
     )
     assert "no merger on record" in event_text({"kind": "ended", "snap": 3})
+
+
+def test_the_camera_crosses_a_gap_in_a_line():
+    t = Track(snaps=[1, 3], pos=[(2, 0, 0), (4, 0, 0)])
+    assert camera_centres(t, [1, 2, 3], 10)[2] == (3, 0, 0)
+
+
+def test_the_camera_crosses_a_gap_the_short_way_round_the_box():
+    t = Track(snaps=[1, 3], pos=[(9, 0, 0), (1, 0, 0)])
+    assert camera_centres(t, [2], 10)[2] == (0, 0, 0)
+
+
+def test_the_camera_has_no_view_outside_the_track():
+    t = Track(snaps=[2, 3], pos=[(1, 0, 0), (2, 0, 0)])
+    assert sorted(camera_centres(t, [1, 2, 3, 4], 10)) == [2, 3]
+
+
+def test_a_merger_is_captioned_for_a_few_snapshots():
+    t = Track(
+        snaps=[4, 5, 6, 7, 8],
+        events=[{"kind": "major merger", "snap": 5, "into": 7}],
+    )
+    assert sorted(captions(t)) == [5, 6, 7]
+    assert captions(t)[5] == "Major merger: now following galaxy 7"
+
+
+def test_the_end_of_a_branch_has_no_caption():
+    t = Track(snaps=[4], events=[{"kind": "ended", "snap": 4}])
+    assert captions(t) == {}
+
+
+def test_framing_keeps_the_cameras_direction():
+    from types import SimpleNamespace
+
+    from visage.ui.tracking import views
+
+    cam = SimpleNamespace(position=(0, 0, 20), focal_point=(0, 0, 0))
+    got = views({1: (5, 5, 5)}, "close", cam)
+    assert got[1][0] == (5, 5, 5)
+    np.testing.assert_allclose(got[1][1], (0, 0, 3))
+    assert views({1: (5, 5, 5)}, "box", cam)[1] == ((5, 5, 5), None)
+
+
+def test_a_gap_keeps_the_galaxy_before_it():
+    from visage.ui.tracking import track_ids
+
+    t = Track(snaps=[1, 3], galaxy_id=[A, B])
+    assert track_ids(t) == {1: A, 2: A, 3: B}

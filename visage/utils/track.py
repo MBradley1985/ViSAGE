@@ -184,3 +184,36 @@ def follow(
         track.pos.append(pos)
     track.events = events
     return track
+
+
+def camera_centres(track: Track, snaps: list[int], box: float) -> dict:
+    """Where to look at each of ``snaps`` the track covers.
+
+    A snapshot in a gap gets a point on the line between its neighbours,
+    the short way round the periodic box."""
+    if not track.snaps:
+        return {}
+    known = np.asarray(track.snaps, dtype=float)
+    pos = np.unwrap(np.asarray(track.pos, float), axis=0, period=box)
+    out = {}
+    for snap in snaps:
+        if known[0] <= snap <= known[-1]:
+            out[int(snap)] = tuple(
+                float(np.interp(snap, known, pos[:, c]) % box)
+                for c in range(3)
+            )
+    return out
+
+
+def captions(track: Track, hold: int = 3) -> dict:
+    """What the view says at each snapshot: an event, for ``hold``
+    snapshots from when it happened."""
+    out: dict[int, str] = {}
+    for event in track.events:
+        if event["kind"] in ("ended", "lost"):
+            continue
+        name = event["kind"].capitalize()
+        text = f"{name}: now following galaxy {event['into']}"
+        for snap in range(event["snap"], event["snap"] + hold):
+            out[snap] = text
+    return {s: out[s] for s in track.snaps if s in out}

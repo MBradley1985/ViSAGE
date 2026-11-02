@@ -13,6 +13,7 @@ from visage.scene.scene import Scene
 from visage.ui import plotting
 from visage.ui import regions as _regions
 from visage.ui import tracking
+from visage.utils.gif import dithered, shared_palette
 from visage.utils.filters import galaxy_mask
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
@@ -2449,16 +2450,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 ew = _w0 if _w0 % 2 == 0 else _w0 - 1
                 eh = _h0 if _h0 % 2 == 0 else _h0 - 1
                 need_crop = ew != _w0 or eh != _h0
-                # Floyd-Steinberg dithering distributes quantisation error to
-                # neighbouring pixels, which prevents hard contour lines on
-                # smooth gaussian-splat gradients (a visible artefact with the
-                # default median-cut quantiser and no dithering).
-                try:
-                    _dither = _PilGif.Dither.FLOYDSTEINBERG
-                    _adaptive = _PilGif.Palette.ADAPTIVE
-                except AttributeError:
-                    _dither = 3  # FLOYDSTEINBERG numeric value
-                    _adaptive = 1  # ADAPTIVE numeric value
+                _palette = shared_palette(frames)
                 pil_frames = []
                 for p in frames:
                     img = _PilGif.open(str(p)).convert("RGB")
@@ -2473,9 +2465,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         except AttributeError:
                             _gif_rs = _PilGif.LANCZOS
                         img = img.resize((ew, eh), _gif_rs)
-                    pil_frames.append(
-                        img.convert("P", palette=_adaptive, dither=_dither)
-                    )
+                    pil_frames.append(dithered(img, _palette))
                     img.close()
                 duration_ms = max(1, int(1000 / fps))
                 # loop=0 = infinite, loop=1 = play once
@@ -2582,6 +2572,53 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     fmt=snap["format"],
                     gif_loop=bool(state.movie_loop),
                     snap_files=snap.get("snap_files") or [],
+                )
+            except Exception as exc:
+                result = f"ERROR (finalize): {exc!s}"
+            loop.call_soon_threadsafe(_publish, result)
+
+        threading.Thread(target=_do_finalize, daemon=True).start()
+
+    @ctrl.set("track_save")
+    def on_track_save():
+        """A built track as a movie, encoded like a playback recording."""
+        import threading
+
+        images = ctrl.track_images()
+        if not images or state.track_saving:
+            return
+        sess = _get_session_dir()
+        movie_base = _resolve_name(state.movie_label, "track")
+        frames_dir = sess / f"_{movie_base}_frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        snap_files = []
+        for i, image in enumerate(images):
+            path = frames_dir / f"snap_{i:05d}.jpg"
+            path.write_bytes(image)
+            snap_files.append({"file": str(path), "count": 6})
+        fmt, fps = str(state.movie_format), max(1, int(state.movie_fps))
+        loop_flag = bool(state.movie_loop)
+        state.track_saving = True
+        state.track_saved = "Encoding…"
+        state.flush()
+        loop = asyncio.get_running_loop()
+
+        def _publish(result):
+            state.track_saving = False
+            state.track_saved = result
+            state.library_files = _scan_library()
+            state.flush()
+
+        def _do_finalize():
+            try:
+                result = _finalize_movie(
+                    frames_dir=frames_dir,
+                    session_dir=sess,
+                    movie_base=movie_base,
+                    fps=fps,
+                    fmt=fmt,
+                    gif_loop=loop_flag,
+                    snap_files=snap_files,
                 )
             except Exception as exc:
                 result = f"ERROR (finalize): {exc!s}"

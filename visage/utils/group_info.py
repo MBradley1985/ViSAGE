@@ -56,7 +56,7 @@ def galaxy_label(galaxies, i: int) -> str:
     the loaded catalogue are internal), or its row only in a catalogue
     without GalaxyIndex."""
     gid = getattr(galaxies, "galaxy_id", None)
-    if gid is not None and i < len(gid) and int(gid[i]):
+    if gid is not None and i < len(gid) and np.any(gid):
         return str(int(gid[i]))
     return f"row {int(i)}"
 
