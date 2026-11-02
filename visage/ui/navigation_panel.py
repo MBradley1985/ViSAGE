@@ -3893,9 +3893,48 @@ def build_navigation_panel(server, scene: Scene) -> None:
             scene.camera.clear_sparkles()
             _push()
 
-    def _start_sparkles(center, radius: float) -> None:
-        scene.camera.add_sparkles(center, float(radius))
+    def _start_sparkles(center, radius: float, extent: float = 0.0) -> None:
+        scene.camera.add_sparkles(center, float(radius), extent=float(extent))
         _push()
+
+    # What Isolate holds, by GalaxyIndex: rows differ between snapshots.
+    _isolated: dict = {"gid": None, "halo": False}
+
+    def _isolate_follow(snap) -> None:
+        """Isolate the same galaxy or group at this snapshot."""
+        import numpy as np
+        from visage.utils.group_info import member_indices
+
+        gid = _isolated["gid"]
+        if not state.isolate_active or gid is None or scene.is_lightcone:
+            return
+        _, galaxies = scene.active_model.loader.get(snap)
+        hit = np.flatnonzero(galaxies.galaxy_id == gid)
+        if len(hit) == 0:
+            scene.set_focus_indices([], [])
+            return
+        row = int(hit[0])
+        rows = np.array([row], dtype=np.int64)
+        halos = []
+        off = scene.active_model.offset
+        if _isolated["halo"] and np.any(galaxies.central_id):
+            rows = member_indices(galaxies, row)
+            lead = np.flatnonzero(
+                galaxies.galaxy_id == galaxies.central_id[row]
+            )
+            if len(lead):
+                host = ctrl.sel_host_halo(
+                    snap, galaxies.positions[int(lead[0])] + off
+                )
+                halos = [] if host is None else [host]
+        scene.set_focus_indices(halos, rows)
+        pts = galaxies.positions[rows] + off
+        centre = pts.mean(axis=0)
+        scene.camera.move_sparkle_clearing(
+            centre, float(np.linalg.norm(pts - centre, axis=1).max())
+        )
+
+    scene.register_snap_change_callback(_isolate_follow)
 
     @state.change("isolate_active")
     def on_isolate_active_change(isolate_active=False, **_):
@@ -3965,6 +4004,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
             scene.plotter.renderer.ResetCameraClippingRange()
             _sparkle_target["center"] = (cx, cy, cz)
             _sparkle_target["radius"] = radius
+            _sparkle_target["extent"] = float(
+                np.linalg.norm(pts - center, axis=1).max()
+            )
             return (cx, cy, cz), radius
         except Exception:
             _sparkle_target["center"] = None
@@ -4022,6 +4064,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.set_focus_indices(
             halo_indices=halo_indices, galaxy_indices=gal_indices
         )
+        _isolated.update(gid=ctrl.sel_galaxy(), halo=bool(halo_indices))
         # Frame what survived (as Go does).
         _frame_targets(halos, galaxies, halo_indices, gal_indices)
 
@@ -4033,7 +4076,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.isolate_active = True
         if _sparkle_target["center"] is not None:
             _start_sparkles(
-                _sparkle_target["center"], _sparkle_target["radius"]
+                _sparkle_target["center"],
+                _sparkle_target["radius"],
+                _sparkle_target["extent"],
             )
         _push()
 

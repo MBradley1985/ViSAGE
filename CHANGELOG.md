@@ -11,6 +11,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Isolate's stars no longer show as black dots over galaxies.
+- Isolate's clear patch of sky reaches the whole group.
+- Isolate keeps the same galaxy or group when the snapshot changes.
 
 ---
 

@@ -80,6 +80,14 @@ class CameraController:
     # far clipping plane.
     _STAR_DISTANCE = 25.0
 
+    def move_sparkle_clearing(self, center, extent: float) -> None:
+        """The object moved: keep the sky clear of it."""
+        st = self._sparkle_state
+        if st is not None:
+            st["center"] = np.asarray(center, dtype=float)
+            st["extent"] = float(extent)
+            self._reposition_sparkles()
+
     def clear_sparkles(self) -> None:
         if self._sparkle_obs is not None:
             try:
@@ -101,12 +109,14 @@ class CameraController:
         n_stars: int = 90_000,
         seed: int = 12345,
         point_size: float = 3.0,
+        extent: float = 0.0,
     ) -> None:
         """A star backdrop behind the isolated object.
 
         `n_stars` covers the whole sphere around the camera, of which the
         field of view shows about 3-4%, so the count is far higher than the
-        number on screen at any moment (~3,000 of 90,000).
+        number on screen at any moment (~3,000 of 90,000).  `extent` is how
+        far the object reaches from `center`: the sky stays clear of it all.
 
         The stars are anchored to the camera rather than scattered around
         the object: a shell centred on the object puts half of its stars
@@ -140,6 +150,7 @@ class CameraController:
             "distance": max(float(radius), 1e-6) * self._STAR_DISTANCE,
             "center": np.asarray(center, dtype=float),
             "radius": max(float(radius), 1e-6),
+            "extent": float(extent),
             "rgb": colors,
             "cloud": cloud,
             "cam_key": None,
@@ -231,8 +242,9 @@ class CameraController:
             # Tight: the object itself, then full sky just beyond it.  A
             # wide ramp dims most of the frame at the isolate framing,
             # where the object already subtends a good part of the view.
-            inner = np.arctan2(st["radius"] * 0.4, obj_dist)
-            outer = np.arctan2(st["radius"] * 0.9, obj_dist)
+            reach = st["extent"]
+            inner = np.arctan2(max(st["radius"] * 0.4, reach * 1.1), obj_dist)
+            outer = np.arctan2(max(st["radius"] * 0.9, reach * 1.4), obj_dist)
             # Element-wise rather than a matmul: Accelerate raises a
             # spurious divide-by-zero warning for this shape, and this
             # runs on every camera move.
