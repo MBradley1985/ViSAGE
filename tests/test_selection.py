@@ -539,3 +539,58 @@ def test_the_card_choosing_the_halo_sets_what_a_track_follows(panel):
     assert state.track_kind == "halo"
     state.track_kind = "galaxy"
     state.flush()
+
+
+def _view(scene, state):
+    cam = scene.plotter.camera
+    return (
+        tuple(cam.position),
+        tuple(cam.focal_point),
+        state.focus_active,
+        state.isolate_active,
+    )
+
+
+def test_the_cards_buttons_leave_the_view_alone(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 6
+    state.flush()
+    ctrl.toggle_isolate()
+    scene.plotter.camera.position = (40.0, 41.0, 42.0)
+    before = _view(scene, state)
+    assert state.isolate_active
+    ctrl.sel_clear_marker()
+    state.flush()
+    ctrl.track_refresh()
+    assert _view(scene, state) == before
+    ctrl.sel_clear_marker()
+    state.track_kind = "halo"
+    state.flush()
+    ctrl.track_refresh()
+    assert _view(scene, state) == before
+    state.track_kind = "galaxy"
+    state.flush()
+    ctrl.track_refresh()
+    ctrl.toggle_isolate()
+
+
+def test_a_zoom_only_moves_the_view_from_the_track_panel(panel):
+    server, scene = panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 6
+    state.nav_active_tab = "layers"
+    state.flush()
+    before = _view(scene, state)
+    state.track_zoom = 10
+    state.flush()
+    ctrl.track_refresh()
+    assert _view(scene, state) == before
+    state.nav_active_tab = "track"
+    state.track_zoom = 5
+    state.flush()
+    ctrl.track_refresh()
+    assert _view(scene, state) != before
+    state.track_zoom = 3
+    state.flush()
+    ctrl.track_refresh()

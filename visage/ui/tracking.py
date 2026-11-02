@@ -311,26 +311,31 @@ def setup(server, scene) -> None:
             state.sel_rings,
         )
 
+    @ctrl.set("track_refresh")
     def refresh() -> None:
-        """An option changed: the view moves now, and a built track is
-        rendered again to match, from the galaxy it started with (the
-        selection may have moved on to a merger's target)."""
+        """An option changed: a built track is rendered again to match, from
+        the galaxy it started with (the selection may have moved on to a
+        merger's target).  Only choosing a zoom in this panel moves the view:
+        these options are shared with the card, which must leave it alone."""
         run["pending"] = False
-        now = options()
-        changed = now != run["options"]
-        run["options"] = now
-        if not changed or state.track_busy:
+        if state.track_busy or state.is_playing:
+            option_changed()  # after the job in hand
             return
+        was, now = run["options"], options()
+        if now == was:
+            return
+        run["options"] = now
         was_built = bool(state.track_ready)
         if was_built:
             ctrl.track_clear()
             ctrl.sel_follow_track(None)
             state.track_ready = False
         zoom = float(state.track_zoom)
-        if state.track_framing != "box" and zoom:
+        chosen = now[0] != was[0] and state.nav_active_tab == "track"
+        if chosen and state.track_framing != "box" and zoom:
             cam = scene.plotter.camera
             away = np.subtract(cam.position, cam.focal_point)
-            if state.sel_active and not was_built:
+            if state.sel_active and not was_built and not state.isolate_active:
                 ctrl.go_frame()
                 state.focus_active = True
             length = float(np.linalg.norm(away)) or 1.0
@@ -359,7 +364,7 @@ def setup(server, scene) -> None:
         except RuntimeError:
             return
         run["pending"] = True
-        loop.call_later(0.05, refresh)
+        loop.call_later(0.05, ctrl.track_refresh)
 
     @ctrl.set("track_stop")
     def track_stop():

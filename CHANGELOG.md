@@ -8,6 +8,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Hide indicators and the card's Galaxy and Halo + group no longer reset the view or leave Isolate. Only choosing a zoom in the Track panel moves the view.
+- Changing a Track option during playback or a build takes effect when it ends.
+
 ---
 
 ## [2.19.3] — 2026-11-02
