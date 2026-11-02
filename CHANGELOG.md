@@ -14,7 +14,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Isolate's stars no longer show as black dots over galaxies, in HD too.
+- Isolate's stars no longer show as black dots, on galaxies or the sky, in HD too.
 - Isolate's clear patch of sky reaches the whole group.
 - Isolate and Go on a halo pull back far enough to show the whole group.
 - Isolate keeps the same galaxy or group when the snapshot changes.

@@ -79,6 +79,10 @@ class CameraController:
     # radius: far enough to read as sky, near enough to stay inside the
     # far clipping plane.
     _STAR_DISTANCE = 25.0
+    # Stars dimmer than this (0-255) aren't drawn.  A star can only add
+    # light where it is: one dimmer than what lies behind it, a glow or
+    # the sky haze, shows as a dark dot.
+    _STAR_FLOOR = 30
 
     def move_sparkle_clearing(self, center, extent: float) -> None:
         """The object moved: keep the sky clear of it."""
@@ -143,6 +147,7 @@ class CameraController:
 
         colors = (star_field(n_stars, rng) * 255).astype(np.uint8)
         cloud = pv.PolyData(np.zeros((n_stars, 3)))
+        cloud.point_data["rgb"] = (colors * 0.9).astype(np.uint8)
 
         self._sparkle_state = {
             "dirs": dirs,
@@ -151,7 +156,9 @@ class CameraController:
             "center": np.asarray(center, dtype=float),
             "radius": max(float(radius), 1e-6),
             "extent": float(extent),
-            "rgb": colors,
+            "bright": colors.max(axis=1) * 0.9 >= self._STAR_FLOOR,
+            # Each star's place in the thinning around the object.
+            "keep": rng.random(n_stars),
             "cloud": cloud,
             "cam_key": None,
         }
@@ -232,11 +239,11 @@ class CameraController:
         # Emissive galaxies add light rather than blocking it, so a star
         # behind one shines straight through the glow.  Rather than empty
         # the object's line of sight — which leaves a hard-edged hole in
-        # the field — the stars fade out as they approach that direction,
-        # so the field simply thins where the object is.
+        # the field — the stars thin out as they approach that direction.
+        # Thinned, not dimmed: a dimmed star is a dark dot on the glow.
         to_obj = st["center"] - cam
         obj_dist = float(np.linalg.norm(to_obj))
-        rgb = st["rgb"].astype(float) * 0.9
+        show = st["bright"]
         if obj_dist > 1e-9:
             axis = to_obj / obj_dist
             # Tight: the object itself, then full sky just beyond it.  A
@@ -255,8 +262,11 @@ class CameraController:
             )
             # Smoothstep, so there is no visible edge where it starts.
             fade = fade * fade * (3.0 - 2.0 * fade)
-            rgb *= fade[:, None]  # on a black sky, the same as fading out
-        st["cloud"].point_data["rgb"] = rgb.astype(np.uint8)
+            show = show & (fade > st["keep"])
+        idx = np.flatnonzero(show)
+        st["cloud"].verts = np.column_stack(
+            (np.ones(len(idx), dtype=np.int64), idx)
+        ).ravel()
         st["cam_key"] = self._camera_key()
         # Keep the far plane out past the backdrop.  This fires the
         # camera's ModifiedEvent, but the key above has already been
