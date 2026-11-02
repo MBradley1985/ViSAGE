@@ -438,27 +438,211 @@
     var _relaunchWatch   = false;  // watching for the server to restart with a model
     var _lastWizActive   = null;
 
-    // A card that covers the page while ViSAGE restarts on another model.
-    // Plain DOM on <body>, so it outlives the app's own "Connection closed"
-    // screen until the page reloads.
+    // What covers the page while ViSAGE restarts on another model: trees
+    // growing in from every side towards the model's name, joined by threads
+    // like the cosmic web.  Plain DOM on <body>, so it outlives the app's own
+    // "Connection closed" screen until the page reloads.
     function _showRelaunchCard(name) {
       if (document.getElementById('visage-relaunch')) return;
       var d = document.createElement('div');
       d.id = 'visage-relaunch';
       d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;' +
-        'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
-        'gap:18px;font-family:system-ui,sans-serif;color:#e2e8f0;';
-      var sp = document.createElement('div');
-      sp.style.cssText = 'width:46px;height:46px;border-radius:50%;' +
-        'border:3px solid #1e293b;border-top-color:#22d3ee;' +
-        'animation:visage-spin 0.9s linear infinite;';
+        'overflow:hidden;font-family:Roboto,system-ui,sans-serif;color:#fff;';
+      var cv = document.createElement('canvas');
+      cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      var text = document.createElement('div');
+      text.style.cssText = 'position:absolute;left:0;right:0;top:50%;' +
+        'transform:translateY(-50%);padding:0 24px;text-align:center;';
+      var over = document.createElement('div');
+      over.style.cssText = 'font-size:0.8rem;letter-spacing:0.14em;' +
+        'color:#94a3b8;margin-bottom:6px;';
+      over.textContent = 'OPENING';
       var t = document.createElement('div');
-      t.style.cssText = 'font-size:1.35rem;font-weight:700;';
-      t.textContent = 'Opening ' + name;
+      t.style.cssText = 'font-size:1.6rem;font-weight:600;word-break:break-word;';
+      t.textContent = name;
+      text.appendChild(over);
+      text.appendChild(t);
+      var line = document.createElement('div');
+      line.style.cssText = 'position:absolute;left:0;right:0;bottom:0;' +
+        'height:2px;overflow:hidden;';
+      var run = document.createElement('i');
+      run.style.cssText = 'position:absolute;height:100%;width:28%;' +
+        'background:#22d3ee;animation:visage-run 1.8s ease-in-out infinite;';
+      line.appendChild(run);
       var st = document.createElement('style');
-      st.textContent = '@keyframes visage-spin{to{transform:rotate(360deg)}}';
-      d.appendChild(st); d.appendChild(sp); d.appendChild(t);
+      st.textContent = '@keyframes visage-run{from{left:-28%}to{left:100%}}';
+      d.appendChild(st);
+      d.appendChild(cv);
+      d.appendChild(text);
+      d.appendChild(line);
       document.body.appendChild(d);
+
+      var COL = ['#22d3ee', '#c084fc', '#ffd700', '#fb7185', '#34d399'];
+      var DEPTH = 6, CLEAR = [0.42, 0.17], GAP = 0.034, REACH = 0.16;
+      var seed = 331;
+      function rnd() {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+      }
+      var nodes = [];
+      function grow(x, y, ang, len, depth, par, tree) {
+        var n = {
+          x: x, y: y, d: DEPTH - depth, par: par, tree: tree,
+          c: par ? par.c : COL[0], b: (rnd() - 0.5) * 0.3, p: rnd() * 6,
+          leaf: depth === 0, big: rnd() < 0.12, hide: false,
+        };
+        if (par && rnd() < 0.3) n.c = COL[Math.floor(rnd() * 5)];
+        nodes.push(n);
+        if (!depth) return;
+        var m = rnd() < 0.14 ? 3 : rnd() < 0.2 ? 1 : 2;
+        for (var i = 0; i < m; i++) {
+          var a = ang + (m === 1 ? 0 : (i / (m - 1) - 0.5) * 1.0) +
+            (rnd() - 0.5) * 0.4;
+          var l = len * (0.76 + rnd() * 0.22);
+          grow(x + Math.cos(a) * l, y + Math.sin(a) * l, a, l, depth - 1, n,
+               tree);
+        }
+      }
+      // Trunks in units of the screen's height, centred: about +-0.89 by
+      // +-0.5 on a 16:9 screen.
+      var UP = -Math.PI / 2;
+      [
+        [-0.42, -0.52, -UP + 0.15, 0.17], [0.42, -0.52, -UP - 0.15, 0.17],
+        [-0.93, 0, 0, 0.2], [0.93, 0, Math.PI, 0.2],
+        [-0.56, 0.52, UP + 0.2, 0.17], [0.56, 0.52, UP - 0.2, 0.17],
+      ].forEach(function (k, tree) {
+        var first = nodes.length;
+        grow(k[0], k[1], k[2], k[3], DEPTH, null, tree);
+        nodes[first].root = true;
+        nodes[first].c = COL[tree % 5];
+        nodes[first + 1].c = COL[(tree + 1) % 5];
+      });
+      // Thin crowded tips so nothing clumps, and keep the middle clear.
+      var kept = [];
+      nodes.forEach(function (n) {
+        if ((n.par && n.par.hide) ||
+            Math.pow(n.x / CLEAR[0], 2) + Math.pow(n.y / CLEAR[1], 2) < 1) {
+          n.hide = true;
+        } else if (n.d >= DEPTH - 2) {
+          n.hide = kept.some(function (k) {
+            return Math.hypot(k.x - n.x, k.y - n.y) < GAP;
+          });
+          if (!n.hide) kept.push(n);
+        }
+      });
+      // Each tip gets one thread at most, and only to another tree.
+      var tips = nodes.filter(function (n) {
+        return !n.hide && n.d >= DEPTH - 1;
+      });
+      var threads = [], used = [];
+      tips.forEach(function (a) {
+        if (used.indexOf(a) >= 0) return;
+        var best = null, near = REACH;
+        tips.forEach(function (b) {
+          if (a === b || a.tree === b.tree || used.indexOf(b) >= 0) return;
+          var gap = Math.hypot(a.x - b.x, a.y - b.y);
+          if (gap < near && gap > 0.05) { near = gap; best = b; }
+        });
+        if (best) {
+          used.push(a, best);
+          threads.push([a, best]);
+        }
+      });
+
+      var c = cv.getContext('2d'), start = null;
+      function dot(x, y, r, col, al) {
+        c.globalAlpha = al;
+        c.fillStyle = col;
+        c.beginPath();
+        c.arc(x, y, r, 0, 7);
+        c.fill();
+        c.globalAlpha = 1;
+      }
+      function glow(x, y, r, col, al) {
+        var g = c.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, col);
+        g.addColorStop(1, 'transparent');
+        c.globalAlpha = al;
+        c.fillStyle = g;
+        c.fillRect(x - r, y - r, 2 * r, 2 * r);
+        c.globalAlpha = 1;
+      }
+      function frame(ms) {
+        if (!d.isConnected) return;
+        if (start === null) start = ms;
+        var now = (ms - start) / 1000;
+        var ratio = window.devicePixelRatio || 1;
+        var w = window.innerWidth, h = window.innerHeight;
+        if (cv.width !== Math.round(w * ratio)) {
+          cv.width = Math.round(w * ratio);
+          cv.height = Math.round(h * ratio);
+        }
+        c.setTransform(ratio, 0, 0, ratio, 0, 0);
+        c.clearRect(0, 0, w, h);
+        var zoom = 1.05 + 0.05 * Math.sin(now * 0.1);
+        var dx = Math.sin(now * 0.07) * 0.02, dy = Math.cos(now * 0.06) * 0.015;
+        var wide = (w / h) / 1.78;  // reach the sides of any screen
+        var X = function (v) { return w / 2 + (v + dx) * h * zoom * wide; };
+        var Y = function (v) { return h / 2 + (v + dy) * h * zoom; };
+        var size = h / 316;  // lines and dots keep their share of the screen
+        var grown = now / 2.3;
+        nodes.forEach(function (n, i) {
+          if (!n.par || n.hide) return;
+          var a = Math.max(0, Math.min(1, grown - (n.d - 1)));
+          if (a <= 0) return;
+          var p = n.par;
+          var mx = (p.x + n.x) / 2 + n.b * (n.y - p.y) * 4;
+          var my = (p.y + n.y) / 2 - n.b * (n.x - p.x) * 4;
+          var on = function (f) {
+            var u = 1 - f;
+            return [u * u * p.x + 2 * f * u * mx + f * f * n.x,
+                    u * u * p.y + 2 * f * u * my + f * f * n.y];
+          };
+          c.strokeStyle = n.c;
+          c.globalAlpha = 0.34;
+          c.lineWidth = Math.max(0.45, 2.6 - n.d * 0.34) * size;
+          c.beginPath();
+          c.moveTo(X(p.x), Y(p.y));
+          for (var f = 0.1; f <= a + 0.001; f += 0.1) {
+            var q = on(f);
+            c.lineTo(X(q[0]), Y(q[1]));
+          }
+          c.stroke();
+          c.globalAlpha = 1;
+          if (a < 1) return;
+          var m = on((now * 0.16 + i * 0.31) % 1);
+          dot(X(m[0]), Y(m[1]), 1.4 * size, n.c, 0.95);
+          if (n.big || n.leaf) {
+            var r = (n.big ? 1.5 : 1) * (9 + 3 * Math.sin(now * 0.8 + n.p));
+            glow(X(n.x), Y(n.y), r * size, n.c + 'bb', 1);
+            dot(X(n.x), Y(n.y), (n.big ? 2 : 1.3) * size, '#fff', 1);
+          } else {
+            dot(X(n.x), Y(n.y), size, n.c, 0.9);
+          }
+        });
+        var shown = Math.max(0, Math.min(1, grown - DEPTH));
+        if (shown > 0) {
+          c.lineWidth = 0.6 * size;
+          c.strokeStyle = 'rgba(148,163,184,' + 0.3 * shown + ')';
+          threads.forEach(function (l, k) {
+            var a = l[0], b = l[1];
+            c.beginPath();
+            c.moveTo(X(a.x), Y(a.y));
+            c.lineTo(X(b.x), Y(b.y));
+            c.stroke();
+            var f = (now * 0.1 + k * 0.17) % 1;
+            dot(X(a.x + (b.x - a.x) * f), Y(a.y + (b.y - a.y) * f),
+                1.1 * size, a.c, 0.9 * shown);
+          });
+        }
+        nodes.forEach(function (n) {
+          if (!n.root) return;
+          glow(X(n.x), Y(n.y), 22 * size, '#ffd700aa', Math.min(1, grown));
+          dot(X(n.x), Y(n.y), 2.6 * size, '#fff', 1);
+        });
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
     }
 
     function _getState(key) {
@@ -1401,13 +1585,13 @@
     document.querySelectorAll('canvas.sage-anim').forEach(function (cv) {
       if (cv.offsetParent === null) return;
       shown++;
-      if (cv.width !== W * 2) {
-        cv.width = W * 2;
-        cv.height = H * 2;
+      if (cv.width !== W * 3) {
+        cv.width = W * 3;
+        cv.height = H * 3;
       }
       var kind = (cv.className.match(/sage-anim-(\w+)/) || [])[1];
       var c = cv.getContext('2d');
-      c.setTransform(2, 0, 0, 2, 0, 0);
+      c.setTransform(3, 0, 0, 3, 0, 0);
       c.clearRect(0, 0, W, H);
       if (DRAW[kind]) DRAW[kind](c, ms / 1000);
     });
