@@ -247,6 +247,13 @@ def resolve_snap(value, count: int, table=None) -> int:
     return max(0, min(last, int(value)))
 
 
+# A flush only schedules the send: after sleep(0) the next blocking
+# render starts before the message has left, so a card shown that way
+# arrives with its own hide.  A real pause lets it out first.
+_CARD_YIELD = 0.05
+_FRAME_YIELD = 0.02
+
+
 def _load_card(st, text, done: int = 0, total: int = 0) -> None:
     """Show progress on the loading card (`text` None: hide it)."""
     if text is None:
@@ -1245,6 +1252,8 @@ class StoryPlayer:
         # One warm-up render after switching context so points_gaussian shaders
         # compile in the off-screen FBO before we start capturing frames.
         rw.Render()
+        _load_card(st, "Pre-rendering z-evolution…", 0, len(order))
+        await asyncio.sleep(_CARD_YIELD)
         try:
             for k, s in enumerate(order):
                 if not self._playing:
@@ -1258,7 +1267,7 @@ class StoryPlayer:
                     st.playback_frame = frames[0]
                     st.playback_active = True
                 _load_card(st, "Pre-rendering z-evolution…", k + 1, len(order))
-                await asyncio.sleep(0)
+                await asyncio.sleep(_FRAME_YIELD)
         finally:
             rw.SetOffScreenRendering(prev_off)
             _load_card(st, None)

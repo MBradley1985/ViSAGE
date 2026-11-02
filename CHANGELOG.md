@@ -18,6 +18,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Isolate's clear patch of sky reaches the whole group.
 - Isolate and Go on a halo pull back far enough to show the whole group.
 - Isolate keeps the same galaxy or group when the snapshot changes.
+- Progress cards for playback, tracks, story renders and model switches show from the start.
 
 ---
 
