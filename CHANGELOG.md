@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.19.1] — 2026-11-02
+
 ### Changed
 
 - The progress card is larger.
