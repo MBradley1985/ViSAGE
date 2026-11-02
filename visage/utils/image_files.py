@@ -20,8 +20,6 @@ def save_image(image: Image.Image, path: str | Path) -> None:
     rgb = image.convert("RGB")
     if kind in ("jpg", "jpeg"):
         rgb.save(path, "JPEG", quality=95)
-    elif kind in ("tif", "tiff"):
-        rgb.save(path, "TIFF")
     elif kind == "pdf":
         rgb.save(path, "PDF", resolution=100.0)
     elif kind == "svg":
