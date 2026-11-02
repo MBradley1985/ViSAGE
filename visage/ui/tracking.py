@@ -476,7 +476,7 @@ def tab(ctrl) -> None:
                         click="track_zoom = z.value",
                         style="min-width:0;flex:none;",
                     )
-            with html.Div(classes="sage-formats sage-track-options"):
+            with html.Div():
                 for model, label in (
                     ("sel_rings", "Indicators"),
                     ("track_links", "FoF links"),

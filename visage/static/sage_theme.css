@@ -607,14 +607,6 @@ body,
     column-gap: 16px;
 }
 
-.sage-track-options {
-    column-gap: 10px;
-}
-
-.sage-track-options .v-label {
-    font-size: 0.82rem;
-}
-
 /* ── Panel controls ────────────────────────────────────────────────
    One look for the panels and the info card; the toolbar and rail keep
    their own.  Controls are solid: only a disabled one is dimmed.
