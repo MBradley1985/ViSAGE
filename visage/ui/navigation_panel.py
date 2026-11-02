@@ -5276,10 +5276,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 with v3.VSheet(color="transparent", style=_FIELD):
                     v3.VCheckbox(
                         v_model=("halos_visible",),
-                        label="Visible",
+                        label="Haloes",
                         color="#c084fc",
                         hide_details=True,
                         density="compact",
+                        classes="sage-show-hide",
                     )
                 with v3.VSheet(color="transparent", style=_FIELD):
                     v3.VSelect(
@@ -5351,10 +5352,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 with v3.VSheet(color="transparent", style=_TICK):
                     v3.VCheckbox(
                         v_model=("galaxies_visible",),
-                        label="Visible",
+                        label="Galaxies",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
+                        classes="sage-show-hide",
                     )
                 with v3.VSheet(
                     v_show=("dust_glow_ok",),
@@ -5364,7 +5366,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("dust_glow",),
                         label="Dusty",
-                        classes="sage-dusty",
+                        classes="sage-dusty sage-show-hide",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
@@ -5377,7 +5379,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VCheckbox(
                         v_model=("disc_shapes",),
                         label="Dark 'n Dusty",
-                        classes="sage-dark-dusty",
+                        classes="sage-dark-dusty sage-show-hide",
                         color="#FFD700",
                         hide_details=True,
                         density="compact",
@@ -5474,6 +5476,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
+                    classes="sage-show-hide",
                 )
                 v3.VCheckbox(
                     v_model=("env_show_isolated",),
@@ -5483,6 +5486,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
+                    classes="sage-show-hide",
                 )
                 v3.VCheckbox(
                     v_model=("env_show_pairs",),
@@ -5492,6 +5496,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
+                    classes="sage-show-hide",
                 )
                 v3.VCheckbox(
                     v_model=("env_show_group",),
@@ -5501,6 +5506,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
+                    classes="sage-show-hide",
                 )
                 v3.VCheckbox(
                     v_model=("env_show_cluster",),
@@ -5510,6 +5516,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     color="cyan",
                     disabled=("!model_fields.central_mvir",),
                     style=_ENV_CB_STYLE,
+                    classes="sage-show-hide",
                 )
 
             # Regions
@@ -5570,10 +5577,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VCheckbox(
                             v_model=("photometry_visible",),
-                            label="Visible",
+                            label="Photometry",
                             color="#7FDBFF",
                             hide_details=True,
                             density="compact",
+                            classes="sage-show-hide",
                         )
                     with v3.VSheet(color="transparent", style=_FIELD):
                         v3.VSlider(

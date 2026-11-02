@@ -476,15 +476,16 @@ def tab(ctrl) -> None:
                         click="track_zoom = z.value",
                         style="min-width:0;flex:none;",
                     )
-            with html.Div():
-                for model, label in (
-                    ("sel_rings", "Indicators"),
-                    ("track_links", "FoF links"),
-                    ("track_contrib", "Contributors"),
+            with html.Div(classes="sage-track-toggles"):
+                for model, label, kind in (
+                    ("sel_rings", "Indicators", "sage-show-hide"),
+                    ("track_links", "FoF links", "sage-show-hide"),
+                    ("track_contrib", "Only contributors", ""),
                 ):
                     v3.VCheckbox(  # the app's CSS draws these as switches
                         v_model=(model,),
                         label=label,
+                        classes=kind,
                         density="compact",
                         hide_details=True,
                         color="cyan",
