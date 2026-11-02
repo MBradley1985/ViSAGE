@@ -15,7 +15,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Jellyfish tails (HD) on 12% of satellites in hot haloes (was 24% on SAGE26).
+- Jellyfish tails (HD) look like real ones: faint blue and magenta threads of young stars, some curling, wrapped in CGM-like gas, with long thin blue plumes twisting and fading out.
+- Jellyfish tails (HD) where ram pressure strips a disk galaxy on its first infall: a disk, fell in under 1 Gyr ago, more than a quarter of its gas stripped (Gunn & Gott 1972). 15% of satellites in hot haloes on SAGE26, and no ellipticals.
 
 ### Fixed
 
@@ -23,7 +24,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - The card and Isolate follow a galaxy through a merger, on to the galaxy it merged into.
 - The card keeps Galaxy or Halo + group when its galaxy isn't in a snapshot, so Isolate's group keeps its rings.
 - Isolate's camera moves with the galaxy or group from snapshot to snapshot.
-- Isolate says when its galaxy isn't in the snapshot.
 
 ---
 

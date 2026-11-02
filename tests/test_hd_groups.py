@@ -130,3 +130,41 @@ def test_a_groups_mass_from_its_velocities():
     g.extra["Velz"] = g.extra["Velx"]  # seen moving along the line of sight
     rows = dict(group_summary(g, np.arange(6), 0.7))
     assert rows["Dynamical mass (σ)"].endswith("× Mvir")
+
+
+def test_jellyfish_are_disks_stripped_on_first_infall():
+    from visage.hd.group import satellite_context, stripped_fraction
+
+    host = _disk(stellar_mass=3e11, hot_gas=5e13, rvir_kpc=1500.0)
+    sat = _disk(
+        galaxy_index=7, gtype=1, t_since_infall_gyr=0.5, vel=(1500.0, 0, 0)
+    )
+    # Fast through the core strips more than slow in the outskirts.
+    assert stripped_fraction(sat, host, 200.0, 1500.0) > 0.25
+    assert stripped_fraction(sat, host, 1400.0, 200.0) < 0.25
+
+    def ctx(g):
+        entries = [
+            {"gal": host, "center": (0.0, 0.0, 0.0), "quality": "full"},
+            {
+                "gal": g,
+                "center": (0.15, 0.0, 0.0),
+                "quality": "full",
+                "role": "member",
+            },
+        ]
+        return satellite_context(entries, 0.73).get(1, {})
+
+    assert "ram" in ctx(sat)
+    old = _disk(
+        galaxy_index=8, gtype=1, t_since_infall_gyr=4.0, vel=(1500.0, 0, 0)
+    )
+    assert "ram" not in ctx(old)  # long since stripped
+    ell = _disk(
+        galaxy_index=9,
+        gtype=1,
+        t_since_infall_gyr=0.5,
+        vel=(1500.0, 0, 0),
+        bulge_mass=4.5e10,
+    )
+    assert "ram" not in ctx(ell)  # an elliptical

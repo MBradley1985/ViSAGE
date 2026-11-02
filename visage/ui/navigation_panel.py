@@ -3942,13 +3942,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         if len(hit) == 0:
             scene.set_focus_indices([], [])
-            if not state.hd_active:  # (HD says so itself)
-                state.notice_text = (
-                    "Isolate: the galaxy isn't in this snapshot (not "
-                    "formed yet, or merged)."
-                )
-                state.notice_color = "info"
-                state.notice_show = True
             return
         row = int(hit[0])
         rows = np.array([row], dtype=np.int64)

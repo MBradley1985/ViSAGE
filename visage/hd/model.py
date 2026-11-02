@@ -661,6 +661,14 @@ def _extras(
     return out
 
 
+def is_elliptical(g: SageGalaxy) -> bool:
+    """HD draws `g` as an elliptical, not a disk.  Morphology: bulge
+    fraction decides, Regime only breaks ties in the ambiguous middle
+    (hot-mode haloes with a big bulge and no gas)."""
+    gas_frac = g.cold_gas / max(g.cold_gas + g.stellar_mass, 1.0)
+    return g.bt > 0.75 or (g.bt > 0.5 and g.regime == 1 and gas_frac < 0.02)
+
+
 def recipe_from_sage(
     g: SageGalaxy, arm_class: str | None = None
 ) -> GalaxyRecipe:
@@ -672,9 +680,7 @@ def recipe_from_sage(
     lm = np.log10(max(g.stellar_mass, 1.0))
     rd, r50e, notes = display_sizes(g)
 
-    # Morphology: bulge fraction decides, Regime only breaks ties in the
-    # ambiguous middle (hot-mode haloes with a big bulge and no gas).
-    elliptical = bt > 0.75 or (bt > 0.5 and g.regime == 1 and gas_frac < 0.02)
+    elliptical = is_elliptical(g)
     notes.append(
         f"B/T={bt:.2f}, regime={'hot' if g.regime else 'cold'}, "
         f"f_gas={gas_frac:.3f} -> {'elliptical' if elliptical else 'disk'}"
@@ -1915,15 +1921,26 @@ def tidal_points(
     return Points(pos, lum, np.tile(rgb, (n, 1)), np.full(n, 1.2), "tidal")
 
 
-# Jellyfish tails, after real ones (Ebeling et al. 2014; Poggianti et al.
-# 2017; Sun et al. 2010): clumps of young stars streaking off the disc over
-# a faint broad glow. Each is set by the galaxy: how many clumps by its cold
-# gas, how packed by its sSFR, how long by ram pressure and time since
-# infall, the glow by its gas fraction.
-JELLY_BLUE = np.array([0.55, 0.72, 1.0])
-JELLY_PINK = np.array([1.0, 0.45, 0.68])
-JELLY_GLOW = np.array([0.48, 0.46, 1.0])
-JELLY_PINK_SHARE = 0.25  # of the clumps, H-alpha bright
+# Jellyfish tails, after real ones: threads of young stars trailing off
+# the disc, blue and H-alpha magenta, a few long ones curling (JW100,
+# JO206: Poggianti et al. 2017, 2019); the stripped gas round them, drawn
+# as HD draws the CGM; and long thin twisting plumes of gas in a range of
+# blues, trailing off (ESO 137-001: Sun et al. 2006, 2010).  Each is set
+# by the galaxy: how many threads by its cold gas, how bright by its
+# sSFR, how long by ram pressure and time since infall, the gas by its
+# gas fraction.  Lengths are in disk scale lengths.
+JELLY_BLUES = (
+    (0.55, 0.6, 1.0),
+    (0.45, 0.78, 1.0),
+    (0.35, 0.42, 1.0),
+    (0.7, 0.85, 1.0),
+    (0.3, 0.45, 0.95),
+    (0.4, 0.7, 0.95),
+)
+JELLY_MAGENTA = np.array([0.9, 0.35, 0.85])
+JELLY_MAGENTA_SHARE = 0.35  # of the threads
+JELLY_STARS = 0.2  # brightness of threads and plumes
+JELLY_GAS = 0.5  # brightness of the gas round the threads
 
 
 def jelly_look(g: SageGalaxy, strength: float) -> dict:
@@ -1941,6 +1958,130 @@ def jelly_look(g: SageGalaxy, strength: float) -> dict:
     )
 
 
+def _jelly_frame(u):
+    a = np.cross(u, [0.0, 0.0, 1.0])
+    if np.linalg.norm(a) < 1e-3:
+        a = np.cross(u, [1.0, 0.0, 0.0])
+    a /= np.linalg.norm(a)
+    return a, np.cross(u, a)
+
+
+def _jelly_threads(rng, u, n, reach):
+    """Threads off the trailing half of the disc: lengths spread widely,
+    some curling, three long blue ones curling round; one faint knot
+    each.  Returns their points and paths."""
+    a, b = _jelly_frame(u)
+    blues = np.array(JELLY_BLUES[:3])
+    pos, lum, rgb, paths = [], [], [], []
+    for j in range(n + 3):
+        long_one = j >= n
+        th = rng.uniform(0, 2 * np.pi)
+        if np.array([np.cos(th), np.sin(th), 0.0]) @ u < -0.1:
+            continue
+        r = rng.uniform(1.6 if long_one else 0.8, 2.6)
+        start = np.array([r * np.cos(th), r * np.sin(th), 0.0])
+        d = u + rng.normal(0, 0.15, 3)
+        d /= np.linalg.norm(d)
+        if long_one:
+            length = reach * rng.uniform(5, 8)
+        else:
+            length = reach * float(np.clip(rng.lognormal(0.3, 0.9), 0.3, 6.0))
+        m = int(120 + 60 * length)
+        s = np.sort(rng.random(m)) * length
+        if long_one or rng.random() < 0.5:
+            w = rng.uniform(0.9, 1.4) if long_one else rng.uniform(1.5, 3.5)
+            amp = rng.uniform(0.6, 1.0) if long_one else rng.uniform(0.25, 0.5)
+            amp = amp * s / length
+            off = amp[:, None] * (
+                np.cos(w * s)[:, None] * a + np.sin(w * s)[:, None] * b
+            )
+        else:
+            bend = rng.normal(0, 0.12, 2)
+            off = (s**2 / length)[:, None] * (bend[0] * a + bend[1] * b)
+        path = start + s[:, None] * d + off
+        k = rng.integers(0, m)
+        p = np.vstack(
+            [
+                path + rng.normal(0, 0.006, (m, 3)),
+                path[k] + rng.normal(0, 0.015, (6, 3)),
+            ]
+        )
+        bright = np.r_[
+            (1 - 0.7 * s / length) * rng.uniform(0.7, 1.3), [1.3] * 6
+        ]
+        if long_one:
+            c = blues[0] * rng.uniform(0.9, 1.1)
+        elif rng.random() < JELLY_MAGENTA_SHARE:
+            c = JELLY_MAGENTA
+        else:
+            c = blues[rng.integers(3)] * rng.uniform(0.9, 1.1)
+        pos.append(p)
+        lum.append(bright)
+        rgb.append(np.tile(c, (len(bright), 1)))
+        paths.append(path)
+    return np.vstack(pos), np.concatenate(lum), np.vstack(rgb), paths
+
+
+def _jelly_gas(rng, paths):
+    """The stripped gas round the threads, as HD's CGM (gpu_gas.py): a
+    soft envelope with a ridged filament network and lognormal
+    clumping."""
+    from visage.hd.gpu import vnoise_baked
+
+    def fbm(x):
+        return sum(0.5**o * vnoise_baked(x * 2**o) for o in range(3))
+
+    pos = []
+    for path in paths:
+        k = rng.integers(0, len(path), 12 * len(path))
+        t = k / max(len(path) - 1, 1)
+        w = 0.3 * (1 + 1.5 * t)
+        pos.append(path[k] + rng.normal(0, 1, (len(k), 3)) * w[:, None])
+    p = np.vstack(pos)
+    ridge = np.exp(-((fbm(p / 2.0 + 37.0) / 0.5 / 0.35) ** 2))
+    z = np.clip(fbm(p / 0.6 + 51.0) / 0.5, -3.0, 1.2)
+    return p, (0.12 + 1.2 * ridge) * np.exp(0.55 * z)
+
+
+def _jelly_plumes(rng, u, reach):
+    """Eight long thin plumes trailing off: two twisting more, and one
+    pair braided round each other."""
+    a, b = _jelly_frame(u)
+    pos, lum, rgb = [], [], []
+    start, phase = np.zeros(2), 0.0
+    for j in range(8):
+        twist, turns = (1.0, (3, 6)) if j in (4, 5) else (0.6, (2, 4))
+        if j == 7:  # braided round plume 6
+            phase += np.pi
+        else:
+            start = rng.normal(0, 1.0, 2)
+            phase = rng.uniform(0, 2 * np.pi)
+        if j in (6, 7):
+            twist = 0.8
+        m = 6000
+        t = rng.random(m)
+        length = reach * rng.uniform(12, 32)
+        k = rng.uniform(*turns) * 2 * np.pi
+        amp = twist * rng.uniform(0.6, 1.2) * (0.3 + t)
+        x = (
+            start[0]
+            + amp * np.cos(k * t + phase)
+            + 0.3 * twist * np.sin(2.7 * k * t)
+        )
+        y = 0.5 * start[1] + 0.6 * amp * np.sin(k * t + phase)
+        pos.append(
+            (0.5 + t * length)[:, None] * u
+            + (x + rng.normal(0, 0.012, m))[:, None] * a
+            + (y + rng.normal(0, 0.012, m))[:, None] * b
+        )
+        # An equal share each, fading to nothing at its end.
+        fade = np.clip((1 - t) / 0.6, 0, 1) ** 1.5
+        lum.append(fade / fade.sum())
+        c = JELLY_BLUES[rng.integers(len(JELLY_BLUES))]
+        rgb.append(np.tile(np.array(c) * rng.uniform(0.9, 1.1), (m, 1)))
+    return np.vstack(pos), np.concatenate(lum), np.vstack(rgb)
+
+
 def jelly_points(
     rc: GalaxyRecipe,
     g: SageGalaxy,
@@ -1950,94 +2091,45 @@ def jelly_points(
     gain: float = 1.0,
 ) -> list[Points]:
     """A ram-pressure-stripped ("jellyfish") tail trailing along `direction`
-    (model frame, away from the motion): streaks of young stars on curved
-    streamers, over a faint glow of the stripped gas, as `jelly_look`.
-    `gain` brightens it to undo a group's shared exposure."""
+    (model frame, away from the motion): its gas, threads and plumes, as
+    `jelly_look`.  `gain` brightens it to undo a group's shared exposure."""
     look = jelly_look(g, strength)
     rng = np.random.default_rng(seed)
     u = np.asarray(direction, float)
     u = u / max(np.linalg.norm(u), 1e-9)
-    a = np.cross(u, [0.0, 0.0, 1.0])
-    if np.linalg.norm(a) < 1e-3:
-        a = np.cross(u, [1.0, 0.0, 0.0])
-    a /= np.linalg.norm(a)
-    b = np.cross(u, a)
-    e = rc.extent
-    length = (1.0 + 3.2 * look["length"]) * e
     light = (
         1.05 * gain * (rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0)
     )
+    young = (0.25 + 0.75 * look["packed"]) * 0.9 * light
+    n = int(round(70 * (0.3 + look["clumps"]) / 0.95))
+    reach = 0.8 + 1.7 * look["length"]
 
-    def along(t, x, y):
-        return (
-            (0.1 * e + t * length)[:, None] * u
-            + x[:, None] * a
-            + y[:, None] * b
-        )
-
-    # Streamers: each leaves the trailing side of the disc and curves away.
-    n_streams = int(4 + 6 * look["clumps"])
-    angle = rng.uniform(0, 2 * np.pi, n_streams)
-    radius = 0.8 * e * np.sqrt(rng.random(n_streams))
-    start = np.c_[radius * np.cos(angle), radius * np.sin(angle)]
-    bend = rng.normal(0, 0.5 * e, (n_streams, 2))
-    reach = rng.uniform(0.5, 1.0, n_streams)
-
-    # Clumps along them, each a short streak of stars.
-    n_clumps = int(14 + 130 * look["clumps"])
-    on = rng.integers(0, n_streams, n_clumps)
-    t = reach[on] * rng.random(n_clumps) ** (1.8 - 0.6 * look["packed"])
-    x = start[on, 0] * (1 + 0.8 * t) + bend[on, 0] * t**2
-    y = start[on, 1] * (1 + 0.8 * t) + bend[on, 1] * t**2
-    centre = along(t, x, y)
-    heading = length * u + 2 * t[:, None] * (
-        bend[on, 0, None] * a + bend[on, 1, None] * b
-    )
-    heading /= np.linalg.norm(heading, axis=1, keepdims=True)
-    per = int(9 + 26 * look["packed"])
-    stars = rng.integers(max(per // 3, 2), per, n_clumps)
-    clump = np.repeat(np.arange(n_clumps), stars)
-    m = len(clump)
-    streak = (0.06 + 0.09 * look["length"]) * e
-    pos = (
-        centre[clump]
-        + (
-            rng.normal(0, 1, m)
-            * streak
-            * rng.uniform(0.4, 1.4, n_clumps)[clump]
-        )[:, None]
-        * heading[clump]
-        + rng.normal(0, 0.012 * e, (m, 3))
-    )
-    weight = np.minimum(rng.pareto(1.5, n_clumps) + 1, 20) * (1 - 0.55 * t)
-    lum = (weight / stars)[clump]
-    lum *= (0.25 + 0.75 * look["packed"]) * 0.9 * light / lum.sum()
-    pink = rng.random(n_clumps) < JELLY_PINK_SHARE
-    rgb = np.where(pink[clump, None], JELLY_PINK, JELLY_BLUE)
-    knots = Points(
+    pos, lum, rgb, paths = _jelly_threads(rng, u, n, reach)
+    threads = Points(
         pos,
-        lum,
-        rgb * rng.uniform(0.9, 1.15, (m, 1)),
-        rng.uniform(0.5, 1.0, m),
+        lum / lum.sum() * JELLY_STARS * 0.5 * young,
+        rgb,
+        np.full(len(lum), 0.5),
         "jellyknots",
     )
-
-    # The stripped gas: broad, soft, fading down the tail.
-    n = 40000
-    t = rng.random(n)
-    width = (0.35 + 0.5 * t) * e * 0.6 * (0.7 + 0.7 * look["glow"])
-    x = rng.normal(0, 1, n) * width
-    y = rng.normal(0, 1, n) * width * 0.7
-    lum = (1 - t) ** 1.4 + 0.02
-    lum *= (0.04 + 0.42 * look["glow"]) * light / lum.sum()
+    pos, lum = _jelly_gas(rng, paths)
+    gas_light = JELLY_GAS * 3.0 * young * (0.5 + look["glow"]) / 0.78
     gas = Points(
-        along(t, x, y),
-        lum,
-        np.tile(JELLY_GLOW, (n, 1)),
-        np.full(n, 1.0),
+        pos,
+        lum / lum.sum() * gas_light,
+        np.tile(CGM_RGB, (len(lum), 1)),
+        np.full(len(lum), 1.0),
         "jelly",
     )
-    return [gas, knots]
+    pos, lum, rgb = _jelly_plumes(rng, u, reach)
+    plumes = Points(
+        pos,
+        lum / lum.sum() * JELLY_STARS * 0.3 * young,
+        rgb,
+        np.full(len(lum), 0.5),
+        "jellyknots",
+    )
+    return [gas, threads, plumes]
 
 
 def strip_points(

@@ -29,6 +29,7 @@ from visage.hd.model import (
     OLD_LIGHT,
     SageGalaxy,
     display_sizes,
+    is_elliptical,
 )
 
 # Light scale for a shared exposure.
@@ -131,31 +132,41 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
     }
 
 
-# Ram pressure: log10(rho_ICM v^2 / (Sigma_* Sigma_gas)) in the units of
-# `ram_pressure`, mapped to a 0-1 tail strength.  Set so about one in
-# eight satellites in hot haloes has a tail: more than the few per cent
-# of cluster galaxies seen as jellyfish candidates (e.g. Poggianti et al.
-# 2016, AJ 151, 78), so they are easier to come across.  On Millennium
-# SAGE26 (millennium_beta_clock_075_h2_deplete) at z = 0: 12% any tail,
-# 5% a strong one (>0.5), 2% a full one (was -5.5: 24%, 11%, 4%).
-RAM_LO = -4.7
-RAM_SPAN = 2.0
+# Jellyfish: ram-pressure stripping (Gunn & Gott 1972) of a disk galaxy on
+# its first infall, as observed jellyfish are (Poggianti et al. 2016,
+# AJ 151, 78; Jaffe et al. 2018, MNRAS 476, 4753): a tail when more than
+# JELLY_STRIPPED of its cold gas is being stripped and it fell in less
+# than JELLY_INFALL_GYR ago.  On Millennium SAGE26 at z = 0, 15% of
+# satellites in hot haloes.
+JELLY_STRIPPED = 0.25
+JELLY_INFALL_GYR = 1.0
+ICM_CORE = 0.1  # the hot gas's core radius, in Rvir
+G_KPC = 4.30091e-6  # kpc (km/s)^2 / Msun
 
 
-def ram_pressure(
+def stripped_fraction(
     sat: SageGalaxy, host: SageGalaxy, r_kpc: float, v_kms: float
 ) -> float:
-    """Ram pressure on a satellite's gas against what holds it, as a
-    0-1 tail strength: the host's hot gas (an isothermal core profile)
-    times the speed squared, over the disk's star x gas surface density."""
+    """The fraction of a satellite's cold gas ram pressure strips (Gunn &
+    Gott 1972): the host's hot gas, a cored isothermal sphere (Cavaliere &
+    Fusco-Femiano 1976) holding HotGas within Rvir, pushes at speed^2
+    against 2 pi G Sigma_* Sigma_gas of exponential star and gas disks of
+    scale DiskRadius.  Gas goes beyond r_s, where they balance: (1 + x)
+    e^-x of it, x = r_s / Rd."""
     if host.hot_gas <= 0 or sat.cold_gas <= 0 or v_kms <= 0:
         return 0.0
-    rc = 0.1 * max(host.rvir_kpc, 20.0)
-    rho = host.hot_gas / rc**3 / (1 + (r_kpc / rc) ** 2)
-    rd, _, _ = display_sizes(sat)
-    restore = sat.stellar_mass * sat.cold_gas / max(rd, 0.1) ** 4
-    lam = np.log10(rho * v_kms**2 / max(restore, 1e-30))
-    return float(np.clip((lam - RAM_LO) / RAM_SPAN, 0.0, 1.0))
+    rv = max(host.rvir_kpc, 20.0)
+    rc = ICM_CORE * rv
+    rho = host.hot_gas / (4 * np.pi * rc**2 * (rv - rc * np.arctan(rv / rc)))
+    rho /= 1 + (r_kpc / rc) ** 2
+    rd = max(sat.disk_radius_kpc, 0.1)
+    area = 2 * np.pi * rd**2
+    stars = max(sat.stellar_mass - sat.bulge_mass, 0.0)
+    hold = 2 * np.pi * G_KPC * (stars / area) * (sat.cold_gas / area)
+    if hold <= 0:
+        return 1.0
+    x = max(0.5 * np.log(hold / (rho * v_kms**2)), 0.0)
+    return float((1 + x) * np.exp(-x))
 
 
 # Tidal stripping of satellites, by "dm" (subhalo mass lost since
@@ -230,10 +241,16 @@ def satellite_context(entries, hubble_h: float) -> dict:
             continue
         vdir = v / speed
         ctx = {}
-        if hg.regime == 1:
-            st = ram_pressure(g, hg, r_kpc, speed)
-            if st > 0.05:
-                ctx["ram"] = (-vdir, st)  # the tail trails the motion
+        if (
+            hg.regime == 1
+            and not is_elliptical(g)
+            and 0 <= g.t_since_infall_gyr < JELLY_INFALL_GYR
+        ):
+            f = stripped_fraction(g, hg, r_kpc, speed)
+            if f > JELLY_STRIPPED:
+                # The tail trails the motion.
+                st = (f - JELLY_STRIPPED) / (1 - JELLY_STRIPPED)
+                ctx["ram"] = (-vdir, st)
         strip = 0.0
         if STRIP_MODE in ("dm", "both") and g.infall_mvir > 0 and g.mvir > 0:
             f_dm = g.mvir / g.infall_mvir
