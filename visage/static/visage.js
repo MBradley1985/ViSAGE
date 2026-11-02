@@ -1401,13 +1401,13 @@
     document.querySelectorAll('canvas.sage-anim').forEach(function (cv) {
       if (cv.offsetParent === null) return;
       shown++;
-      if (cv.width !== W * 2) {
-        cv.width = W * 2;
-        cv.height = H * 2;
+      if (cv.width !== W * 3) {
+        cv.width = W * 3;
+        cv.height = H * 3;
       }
       var kind = (cv.className.match(/sage-anim-(\w+)/) || [])[1];
       var c = cv.getContext('2d');
-      c.setTransform(2, 0, 0, 2, 0, 0);
+      c.setTransform(3, 0, 0, 3, 0, 0);
       c.clearRect(0, 0, W, H);
       if (DRAW[kind]) DRAW[kind](c, ms / 1000);
     });

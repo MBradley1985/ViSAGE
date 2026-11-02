@@ -153,8 +153,8 @@ def _progress_card(anim: str, title: str, detail: str, percent: str):
         with v3.VProgressCircular(
             model_value=(percent,),
             indeterminate=(f"{percent} < 0",),
-            size=52,
-            width=4,
+            size=68,
+            width=5,
             color="cyan",
             bg_color="#232a38",
         ):
