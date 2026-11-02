@@ -794,6 +794,19 @@ body,
     font-size: 13px !important;
 }
 
+/* A dropdown's label takes its section's colour; its value is white. */
+.sage-panel .v-select .v-field-label {
+    color: #22d3ee !important;
+}
+
+.sage-panel .sage-sel-halo .v-field-label {
+    color: #c084fc !important;
+}
+
+.sage-panel .sage-sel-gal .v-field-label {
+    color: #ffd700 !important;
+}
+
 .sage-panel .v-field__input {
     min-height: 32px !important;
     padding-top: 0 !important;

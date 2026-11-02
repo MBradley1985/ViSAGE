@@ -7061,7 +7061,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("filter_gal_type",),
                         label="Type",
-                        classes="sage-right sage-sel-cyan sage-head-white",
+                        classes="sage-right sage-sel-gal",
                         items=(
                             [
                                 {"title": "All", "value": "both"},
@@ -7079,7 +7079,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("filter_gal_ffb",),
                         label="FFB regime",
-                        classes="sage-right sage-sel-cyan sage-head-white",
+                        classes="sage-right sage-sel-gal",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
@@ -7098,7 +7098,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("filter_gal_cgm",),
                         label="Gas regime",
-                        classes="sage-right sage-sel-cyan sage-head-white",
+                        classes="sage-right sage-sel-gal",
                         items=(
                             [
                                 {"title": "Any", "value": "any"},
