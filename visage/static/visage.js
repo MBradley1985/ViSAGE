@@ -438,10 +438,10 @@
     var _relaunchWatch   = false;  // watching for the server to restart with a model
     var _lastWizActive   = null;
 
-    // What covers the page while ViSAGE restarts on another model: trees
-    // growing in from every side towards the model's name, joined by threads
-    // like the cosmic web.  Plain DOM on <body>, so it outlives the app's own
-    // "Connection closed" screen until the page reloads.
+    // What covers the page while ViSAGE restarts on another model: a gold
+    // merger tree (opening_tree.js) growing over stars and purple gas.  Plain DOM on <body>, so it
+    // outlives the app's own "Connection closed" screen until the page
+    // reloads.
     function _showRelaunchCard(name) {
       if (document.getElementById('visage-relaunch')) return;
       var d = document.createElement('div');
@@ -450,9 +450,12 @@
         'overflow:hidden;font-family:Roboto,system-ui,sans-serif;color:#fff;';
       var cv = document.createElement('canvas');
       cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      var fade = document.createElement('div');
+      fade.style.cssText = 'position:absolute;inset:0;' +
+        'background:linear-gradient(transparent 70%,rgba(0,0,0,0.88) 88%);';
       var text = document.createElement('div');
-      text.style.cssText = 'position:absolute;left:0;right:0;top:50%;' +
-        'transform:translateY(-50%);padding:0 24px;text-align:center;';
+      text.style.cssText = 'position:absolute;left:0;right:0;bottom:6%;' +
+        'padding:0 24px;text-align:center;';
       var over = document.createElement('div');
       over.style.cssText = 'font-size:0.8rem;letter-spacing:0.14em;' +
         'color:#94a3b8;margin-bottom:6px;';
@@ -467,179 +470,137 @@
         'height:2px;overflow:hidden;';
       var run = document.createElement('i');
       run.style.cssText = 'position:absolute;height:100%;width:28%;' +
-        'background:#22d3ee;animation:visage-run 1.8s ease-in-out infinite;';
+        'background:#e8a317;animation:visage-run 1.8s ease-in-out infinite;';
       line.appendChild(run);
       var st = document.createElement('style');
       st.textContent = '@keyframes visage-run{from{left:-28%}to{left:100%}}';
       d.appendChild(st);
       d.appendChild(cv);
+      d.appendChild(fade);
       d.appendChild(text);
       d.appendChild(line);
       document.body.appendChild(d);
 
-      var COL = ['#22d3ee', '#c084fc', '#ffd700', '#fb7185', '#34d399'];
-      var DEPTH = 6, CLEAR = [0.42, 0.17], GAP = 0.034, REACH = 0.16;
-      var seed = 331;
+      var GROW = 12;  // seconds for the tree to grow
+      var ratio = window.devicePixelRatio || 1;
+      var w = window.innerWidth, h = window.innerHeight;
+      var W = Math.round(w * ratio), H = Math.round(h * ratio);
+      cv.width = W;
+      cv.height = H;
+      var c = cv.getContext('2d');
+      function layer() {
+        var e = document.createElement('canvas');
+        e.width = W;
+        e.height = H;
+        var x = e.getContext('2d');
+        x.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return x;
+      }
+
+      // The sky, drawn once.
+      var seed = 7;
       function rnd() {
         seed = (seed * 16807) % 2147483647;
         return seed / 2147483647;
       }
-      var nodes = [];
-      function grow(x, y, ang, len, depth, par, tree) {
-        var n = {
-          x: x, y: y, d: DEPTH - depth, par: par, tree: tree,
-          c: par ? par.c : COL[0], b: (rnd() - 0.5) * 0.3, p: rnd() * 6,
-          leaf: depth === 0, big: rnd() < 0.12, hide: false,
-        };
-        if (par && rnd() < 0.3) n.c = COL[Math.floor(rnd() * 5)];
-        nodes.push(n);
-        if (!depth) return;
-        var m = rnd() < 0.14 ? 3 : rnd() < 0.2 ? 1 : 2;
-        for (var i = 0; i < m; i++) {
-          var a = ang + (m === 1 ? 0 : (i / (m - 1) - 0.5) * 1.0) +
-            (rnd() - 0.5) * 0.4;
-          var l = len * (0.76 + rnd() * 0.22);
-          grow(x + Math.cos(a) * l, y + Math.sin(a) * l, a, l, depth - 1, n,
-               tree);
-        }
-      }
-      // Trunks in units of the screen's height, centred: about +-0.89 by
-      // +-0.5 on a 16:9 screen.
-      var UP = -Math.PI / 2;
-      [
-        [-0.42, -0.52, -UP + 0.15, 0.17], [0.42, -0.52, -UP - 0.15, 0.17],
-        [-0.93, 0, 0, 0.2], [0.93, 0, Math.PI, 0.2],
-        [-0.56, 0.52, UP + 0.2, 0.17], [0.56, 0.52, UP - 0.2, 0.17],
-      ].forEach(function (k, tree) {
-        var first = nodes.length;
-        grow(k[0], k[1], k[2], k[3], DEPTH, null, tree);
-        nodes[first].root = true;
-        nodes[first].c = COL[tree % 5];
-        nodes[first + 1].c = COL[(tree + 1) % 5];
-      });
-      // Thin crowded tips so nothing clumps, and keep the middle clear.
-      var kept = [];
-      nodes.forEach(function (n) {
-        if ((n.par && n.par.hide) ||
-            Math.pow(n.x / CLEAR[0], 2) + Math.pow(n.y / CLEAR[1], 2) < 1) {
-          n.hide = true;
-        } else if (n.d >= DEPTH - 2) {
-          n.hide = kept.some(function (k) {
-            return Math.hypot(k.x - n.x, k.y - n.y) < GAP;
-          });
-          if (!n.hide) kept.push(n);
-        }
-      });
-      // Each tip gets one thread at most, and only to another tree.
-      var tips = nodes.filter(function (n) {
-        return !n.hide && n.d >= DEPTH - 1;
-      });
-      var threads = [], used = [];
-      tips.forEach(function (a) {
-        if (used.indexOf(a) >= 0) return;
-        var best = null, near = REACH;
-        tips.forEach(function (b) {
-          if (a === b || a.tree === b.tree || used.indexOf(b) >= 0) return;
-          var gap = Math.hypot(a.x - b.x, a.y - b.y);
-          if (gap < near && gap > 0.05) { near = gap; best = b; }
-        });
-        if (best) {
-          used.push(a, best);
-          threads.push([a, best]);
-        }
-      });
-
-      var c = cv.getContext('2d'), start = null;
-      function dot(x, y, r, col, al) {
-        c.globalAlpha = al;
-        c.fillStyle = col;
-        c.beginPath();
-        c.arc(x, y, r, 0, 7);
-        c.fill();
-        c.globalAlpha = 1;
-      }
-      function glow(x, y, r, col, al) {
-        var g = c.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, col);
+      var sky = layer(), i;
+      [[0.14, 0.3, 0.42], [0.86, 0.62, 0.46], [0.56, 0.1, 0.36],
+       [0.34, 0.82, 0.34], [0.7, 0.3, 0.28], [0.08, 0.8, 0.3]
+      ].forEach(function (n) {
+        var r = Math.max(w, h) * n[2];
+        var g = sky.createRadialGradient(n[0] * w, n[1] * h, 0,
+                                         n[0] * w, n[1] * h, r);
+        g.addColorStop(0, 'rgba(88,32,140,0.62)');
+        g.addColorStop(0.5, 'rgba(58,22,104,0.3)');
         g.addColorStop(1, 'transparent');
-        c.globalAlpha = al;
-        c.fillStyle = g;
-        c.fillRect(x - r, y - r, 2 * r, 2 * r);
-        c.globalAlpha = 1;
+        sky.fillStyle = g;
+        sky.fillRect(0, 0, w, h);
+      });
+      for (i = 0; i < 700; i++) {
+        sky.globalAlpha = 0.2 + rnd() * 0.5;
+        sky.fillStyle = '#cbd5e1';
+        sky.beginPath();
+        sky.arc(rnd() * w, rnd() * h, 0.3 + rnd() * 0.8, 0, 7);
+        sky.fill();
       }
+
+      // Deep amber for small galaxies, up to white-hot for the largest.
+      var STOPS = [[90, 42, 10], [168, 89, 15], [232, 163, 23],
+                   [255, 215, 106], [255, 246, 214]];
+      function gold(v, al) {
+        var f = Math.min(0.999, v) * 4, k = Math.floor(f), u = f - k;
+        var p = STOPS[k], q = STOPS[k + 1], rgb = [0, 1, 2].map(function (n) {
+          return Math.round(p[n] + (q[n] - p[n]) * u);
+        });
+        return 'rgba(' + rgb.join(',') + ',' + al + ')';
+      }
+      var tree = window.VISAGE_OPENING_TREE || [];
+      var cx = w / 2, cy = h * 0.46, scale = h / 2.5, size = h / 387;
+      var first = 64, parts = [];
+      tree.forEach(function (b) { first = Math.min(first, b[0]); });
+      tree.forEach(function (b) {
+        for (var n = 1; n < b[1].length; n++) {
+          parts.push({
+            s: b[0] + n - 1, x0: b[1][n - 1], y0: b[2][n - 1],
+            x1: b[1][n], y1: b[2][n], v: b[3][n],
+          });
+        }
+      });
+      parts.sort(function (a, b) { return a.s - b.s; });
+
+      // Lines are laid down once as they come due, and only copied after.
+      var ink = layer(), done = 0, start = null;
+      ink.lineCap = 'round';
+      function lay(p) {
+        var width = (0.3 + 2.4 * Math.pow(p.v, 1.6)) * size;
+        [[4.5, 0.05], [2.4, 0.13], [1, 0.95]].forEach(function (g) {
+          ink.strokeStyle = gold(p.v, g[1]);
+          ink.lineWidth = width * g[0];
+          ink.beginPath();
+          ink.moveTo(cx + p.x0 * scale, cy - p.y0 * scale);
+          ink.lineTo(cx + p.x1 * scale, cy - p.y1 * scale);
+          ink.stroke();
+        });
+      }
+      var sparks = tree.filter(function (b) { return b[1].length > 6; });
       function frame(ms) {
         if (!d.isConnected) return;
         if (start === null) start = ms;
         var now = (ms - start) / 1000;
-        var ratio = window.devicePixelRatio || 1;
-        var w = window.innerWidth, h = window.innerHeight;
-        if (cv.width !== Math.round(w * ratio)) {
-          cv.width = Math.round(w * ratio);
-          cv.height = Math.round(h * ratio);
-        }
+        var due = first + (63 - first) * Math.min(1, now / GROW);
+        while (done < parts.length && parts[done].s <= due) lay(parts[done++]);
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.clearRect(0, 0, W, H);
+        c.drawImage(sky.canvas, 0, 0);
+        // A slow turn about the galaxy at the centre.
+        var px = cx * ratio, py = cy * ratio;
+        c.translate(px, py);
+        c.rotate(Math.sin(now * 0.05) * 0.1);
+        c.translate(-px, -py);
+        c.drawImage(ink.canvas, 0, 0);
         c.setTransform(ratio, 0, 0, ratio, 0, 0);
-        c.clearRect(0, 0, w, h);
-        var zoom = 1.05 + 0.05 * Math.sin(now * 0.1);
-        var dx = Math.sin(now * 0.07) * 0.02, dy = Math.cos(now * 0.06) * 0.015;
-        var wide = (w / h) / 1.78;  // reach the sides of any screen
-        var X = function (v) { return w / 2 + (v + dx) * h * zoom * wide; };
-        var Y = function (v) { return h / 2 + (v + dy) * h * zoom; };
-        var size = h / 316;  // lines and dots keep their share of the screen
-        var grown = now / 2.3;
-        nodes.forEach(function (n, i) {
-          if (!n.par || n.hide) return;
-          var a = Math.max(0, Math.min(1, grown - (n.d - 1)));
-          if (a <= 0) return;
-          var p = n.par;
-          var mx = (p.x + n.x) / 2 + n.b * (n.y - p.y) * 4;
-          var my = (p.y + n.y) / 2 - n.b * (n.x - p.x) * 4;
-          var on = function (f) {
-            var u = 1 - f;
-            return [u * u * p.x + 2 * f * u * mx + f * f * n.x,
-                    u * u * p.y + 2 * f * u * my + f * f * n.y];
-          };
-          c.strokeStyle = n.c;
-          c.globalAlpha = 0.34;
-          c.lineWidth = Math.max(0.45, 2.6 - n.d * 0.34) * size;
+        c.translate(cx, cy);
+        c.rotate(Math.sin(now * 0.05) * 0.1);
+        // Sparks running in along the branches, once they are there.
+        sparks.forEach(function (b, k) {
+          var f = (now * 0.09 + k * 0.37) % 1, n = b[1].length - 1;
+          var at = f * n, j = Math.floor(at), u = at - j;
+          if (b[0] + j > due) return;
+          var x = (b[1][j] + (b[1][j + 1] - b[1][j]) * u) * scale;
+          var y = (b[2][j] + (b[2][j + 1] - b[2][j]) * u) * scale;
+          c.fillStyle = 'rgba(255,246,214,' + 0.9 * Math.sin(f * 3.14) + ')';
           c.beginPath();
-          c.moveTo(X(p.x), Y(p.y));
-          for (var f = 0.1; f <= a + 0.001; f += 0.1) {
-            var q = on(f);
-            c.lineTo(X(q[0]), Y(q[1]));
-          }
-          c.stroke();
-          c.globalAlpha = 1;
-          if (a < 1) return;
-          var m = on((now * 0.16 + i * 0.31) % 1);
-          dot(X(m[0]), Y(m[1]), 1.4 * size, n.c, 0.95);
-          if (n.big || n.leaf) {
-            var r = (n.big ? 1.5 : 1) * (9 + 3 * Math.sin(now * 0.8 + n.p));
-            glow(X(n.x), Y(n.y), r * size, n.c + 'bb', 1);
-            dot(X(n.x), Y(n.y), (n.big ? 2 : 1.3) * size, '#fff', 1);
-          } else {
-            dot(X(n.x), Y(n.y), size, n.c, 0.9);
-          }
+          c.arc(x, -y, 1.1 * size, 0, 7);
+          c.fill();
         });
-        var shown = Math.max(0, Math.min(1, grown - DEPTH));
-        if (shown > 0) {
-          c.lineWidth = 0.6 * size;
-          c.strokeStyle = 'rgba(148,163,184,' + 0.3 * shown + ')';
-          threads.forEach(function (l, k) {
-            var a = l[0], b = l[1];
-            c.beginPath();
-            c.moveTo(X(a.x), Y(a.y));
-            c.lineTo(X(b.x), Y(b.y));
-            c.stroke();
-            var f = (now * 0.1 + k * 0.17) % 1;
-            dot(X(a.x + (b.x - a.x) * f), Y(a.y + (b.y - a.y) * f),
-                1.1 * size, a.c, 0.9 * shown);
-          });
+        var r = (10 + 2 * Math.sin(now * 0.8)) * size * Math.min(1, now / GROW);
+        if (r > 0) {
+          var g = c.createRadialGradient(0, 0, 0, 0, 0, r);
+          g.addColorStop(0, 'rgba(255,246,214,0.9)');
+          g.addColorStop(1, 'transparent');
+          c.fillStyle = g;
+          c.fillRect(-r, -r, 2 * r, 2 * r);
         }
-        nodes.forEach(function (n) {
-          if (!n.root) return;
-          glow(X(n.x), Y(n.y), 22 * size, '#ffd700aa', Math.min(1, grown));
-          dot(X(n.x), Y(n.y), 2.6 * size, '#fff', 1);
-        });
         requestAnimationFrame(frame);
       }
       requestAnimationFrame(frame);

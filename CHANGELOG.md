@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Opening a model shows a gold merger tree growing over stars and purple gas.
+
 ### Fixed
 
 - Whole halo tracks no longer rebuild in a loop for a galaxy whose halo isn't found at some snapshot.
