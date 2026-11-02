@@ -14,6 +14,7 @@ from visage.ui import plotting
 from visage.ui import regions as _regions
 from visage.ui import tracking
 from visage.utils.gif import dithered, each_format, shared_palette
+from visage.utils.image_files import SCREENSHOT_FORMATS, save_image
 from visage.utils.filters import galaxy_mask
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
@@ -535,6 +536,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.movie_resolution = "native"  # native | hd | uhd
     state.movie_formats = ["gif"]  # any of gif, mov, png
     state.screenshot_label = ""
+    state.screenshot_formats = ["png"]  # any of SCREENSHOT_FORMATS
     state.movie_label = ""
     state.movie_loop = True  # only used for GIF output
 
@@ -2046,13 +2048,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             else:
                 pil = _vtk_to_pil_ssaa(_SCREENSHOT_SUPERSAMPLE)
             pil = _composite_console_overlay(pil)
-            ext_out = str(path).lower().rsplit(".", 1)[-1]
-            if ext_out in ("jpg", "jpeg"):
-                pil.save(str(path), "JPEG", quality=95)
-            elif ext_out in ("tif", "tiff"):
-                pil.save(str(path), "TIFF")
-            else:
-                pil.save(str(path), "PNG")
+            save_image(pil, path)
             state.last_screenshot = str(path)
         except Exception as e:
             state.last_screenshot = f"ERROR: {e!s}"
@@ -2060,19 +2056,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("take_screenshot")
     def on_take_screenshot():
-        _take_screenshot("png")
-
-    @ctrl.set("screenshot_png")
-    def on_screenshot_png():
-        _take_screenshot("png")
-
-    @ctrl.set("screenshot_jpg")
-    def on_screenshot_jpg():
-        _take_screenshot("jpg")
-
-    @ctrl.set("screenshot_tiff")
-    def on_screenshot_tiff():
-        _take_screenshot("tiff")
+        for ext in list(state.screenshot_formats) or ["png"]:
+            _take_screenshot(ext)
 
     # ------------------------------------------------------------------
     # Recording — PNG frames during playback, finalized to GIF/MOV at stop
@@ -5306,6 +5291,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         variant="outlined",
                         color="#c084fc",
                         density="compact",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                 with v3.VSheet(
                     color="transparent",
@@ -5314,13 +5300,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("halo_colormap",),
                         items=(_CMAPS,),
-                        classes="sage-left sage-sel-halo",
+                        label="Colormap",
+                        classes="sage-right sage-sel-halo",
                         hide_details=True,
                         variant="outlined",
                         color="#c084fc",
                         density="compact",
                         disabled=("halo_color_mode === 'mvir'",),
                         style="flex:1;min-width:0;",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VCheckbox(
                         v_model=("halo_cmap_reverse",),
@@ -5329,7 +5317,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         color="#c084fc",
                         disabled=("halo_color_mode === 'mvir'",),
-                        style="flex:0 0 auto;font-size:0.75rem;",
+                        classes="sage-inline-toggle",
+                        style="flex:0 0 auto;",
                     )
                 with v3.VSheet(
                     color="transparent", style="padding:4px 0 8px;"
@@ -5405,6 +5394,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         variant="outlined",
                         color="#FFD700",
                         density="compact",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                 with v3.VSheet(
                     color="transparent",
@@ -5413,7 +5403,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v3.VSelect(
                         v_model=("galaxy_colormap",),
                         items=(_CMAPS,),
-                        classes="sage-left sage-sel-gal",
+                        label="Colormap",
+                        classes="sage-right sage-sel-gal",
                         hide_details=True,
                         variant="outlined",
                         color="#FFD700",
@@ -5428,6 +5419,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "galaxy_color_mode === 'type'",
                         ),
                         style="flex:1;min-width:0;",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VCheckbox(
                         v_model=("galaxy_cmap_reverse",),
@@ -5439,7 +5431,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             "galaxy_color_mode === 'structure' || "
                             "galaxy_color_mode === 'type'",
                         ),
-                        style="flex:0 0 auto;font-size:0.75rem;",
+                        classes="sage-inline-toggle",
+                        style="flex:0 0 auto;",
                     )
                 with v3.VSheet(
                     color="transparent", style="padding:4px 0 8px;"
@@ -5608,6 +5601,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             variant="outlined",
                             color="#7FDBFF",
                             density="compact",
+                            menu_props=("{contentClass: 'sage-menu'}",),
                         )
                     # Legend: one swatch per ticked filter, in its own colour.
                     with v3.VSheet(
@@ -5662,6 +5656,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             disabled=("nav_gal_idx === null",),
                             click=ctrl.create_spectrum,
                             id="btn-spectrum",
+                            classes="sage-main",
                         )
 
                 with html.Div(
@@ -5691,6 +5686,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VSelect(
@@ -5701,6 +5697,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         v3.VBtn(
                             "Export catalogue",
@@ -5711,6 +5708,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             loading=("survey_busy",),
                             click=ctrl.export_survey,
                             id="btn-survey",
+                            classes="sage-main",
                         )
                         html.Div(
                             "{{ survey_note }}",
@@ -5730,6 +5728,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 loading=("spec_busy",),
                                 click=ctrl.make_fibre_spectra,
                                 id="btn-fibre",
+                                classes="sage-main",
                             )
                 with html.Div(
                     v_show=("has_sed_data && phot_view === 'image'",)
@@ -5759,6 +5758,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VSelect(
@@ -5769,6 +5769,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         with v3.VSheet(color="transparent", style=_FIELD):
                             v3.VCheckbox(
@@ -5793,6 +5794,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         for model, label in (
                             ("mock_patch", "Random patch of sky"),
@@ -5828,6 +5830,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 variant="outlined",
                                 color="#7FDBFF",
                                 density="compact",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                         html.Div(
                             "Centred on {{ mock_patch ? "
@@ -5843,6 +5846,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             loading=("mock_busy",),
                             click=ctrl.create_mock_image,
                             id="btn-mock-image",
+                            classes="sage-main",
                         )
 
             # ── CONSOLE tab — multi-session REPL ────────────────────
@@ -6088,6 +6092,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 prepend_icon="mdi-play",
                                 click=ctrl.console_submit,
                                 id="btn-console-run",
+                                classes="sage-main",
                             )
                         with v3.VCol(style="padding:0;"):
                             v3.VBtn(
@@ -6098,6 +6103,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 density="compact",
                                 prepend_icon="mdi-delete-sweep-outline",
                                 click=ctrl.console_clear,
+                                classes="sage-danger",
                             )
                     v3.VBtn(
                         "Pop-out",
@@ -6277,6 +6283,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 size="small",
                                 prepend_icon="mdi-close-circle-outline",
                                 click=ctrl.library_close,
+                                classes="sage-danger",
                             )
 
             # ── FILTERS tab ────────────────────────────────────
@@ -7067,6 +7074,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="cyan",
                         density="compact",
                         style=_FSEL,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VSelect(
                         v_model=("filter_gal_ffb",),
@@ -7085,6 +7093,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         disabled=("!model_fields.ffb_regime",),
                         style=_FSEL,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
                     v3.VSelect(
                         v_model=("filter_gal_cgm",),
@@ -7103,6 +7112,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         disabled=("!model_fields.cgm_regime",),
                         style=_FSEL,
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
 
                 v3.VDivider(style="margin:6px 0 4px;")
@@ -7116,6 +7126,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     size="small",
                     prepend_icon="mdi-restore",
                     click=ctrl.reset_filters,
+                    classes="sage-danger",
                 )
 
                 # Find: galaxies worth a look, by preset; a click selects.
@@ -7146,6 +7157,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     variant="outlined",
                     color="cyan",
                     density="compact",
+                    menu_props=("{contentClass: 'sage-menu'}",),
                 )
                 with html.Div(
                     v_show=("find_preset === 'id'",),
@@ -7171,6 +7183,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         color="cyan",
                         density="compact",
                         style="height:40px;",
+                        classes="sage-main",
                     )
                 html.Div(
                     "{{ find_note }}",
@@ -7221,6 +7234,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
                             style="padding-bottom:8px;",
                             keydown_enter=ctrl.take_screenshot,
                         )
+                    html.Div("File format", classes="sage-file-head")
+                    with html.Div(classes="sage-formats"):
+                        for kind in SCREENSHOT_FORMATS:
+                            v3.VCheckbox(
+                                v_model=("screenshot_formats",),
+                                value=kind,
+                                label=kind.upper(),
+                                density="compact",
+                                hide_details=True,
+                                color="cyan",
+                            )
                     v3.VBtn(
                         "Take Screenshot",
                         block=True,
@@ -7229,37 +7253,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         prepend_icon="mdi-camera",
                         click=ctrl.take_screenshot,
                         id="btn-take-screenshot",
+                        classes="sage-main",
                     )
-                    with v3.VRow(
-                        no_gutters=True, style="gap:6px;padding-top:6px;"
-                    ):
-                        with v3.VCol(style="padding:0;"):
-                            v3.VBtn(
-                                "PNG",
-                                block=True,
-                                variant="outlined",
-                                color="cyan",
-                                density="compact",
-                                click=ctrl.screenshot_png,
-                            )
-                        with v3.VCol(style="padding:0;"):
-                            v3.VBtn(
-                                "JPG",
-                                block=True,
-                                variant="outlined",
-                                color="cyan",
-                                density="compact",
-                                click=ctrl.screenshot_jpg,
-                            )
-                        with v3.VCol(style="padding:0;"):
-                            v3.VBtn(
-                                "TIFF",
-                                block=True,
-                                variant="outlined",
-                                color="cyan",
-                                density="compact",
-                                click=ctrl.screenshot_tiff,
-                            )
                     v3.VLabel(
                         "Saved to sage_outputs/session_*/ in your working directory",
                         style="font-size:0.62rem;color:#6b7280;display:block;padding:6px 0 2px;",
@@ -7306,15 +7301,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         hide_details=True,
                     )
-
-                    v3.VLabel(
-                        "Resolution",
-                        classes="sage-select-head",
-                        style="font-size:0.6rem;color:#9ca3af;display:block;padding:10px 0 2px;",
-                    )
                     v3.VSelect(
                         v_model=("movie_resolution",),
-                        classes="sage-left sage-sel-cyan",
+                        label="Resolution",
+                        classes="sage-right sage-sel-cyan",
                         items=(
                             [
                                 {"title": "Native  (1×)", "value": "native"},
@@ -7329,13 +7319,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         variant="outlined",
                         color="cyan",
                         density="compact",
+                        menu_props=("{contentClass: 'sage-menu'}",),
                     )
 
-                    html.Div(
-                        "Output format",
-                        classes="sage-select-head",
-                        style="font-size:0.6rem;color:#9ca3af;padding:10px 0 2px;",
-                    )
+                    html.Div("Output format", classes="sage-file-head")
                     with html.Div(classes="sage-formats"):
                         for kind, name in (
                             ("gif", "GIF"),
@@ -7373,6 +7360,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 click=ctrl.start_recording,
                                 disabled=("recording_active",),
                                 id="btn-start-recording",
+                                classes="sage-main",
                             )
                         with v3.VCol(style="padding:0;"):
                             v3.VBtn(
@@ -7383,6 +7371,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                                 prepend_icon="mdi-stop",
                                 click=ctrl.stop_recording,
                                 disabled=("!recording_active",),
+                                classes="sage-danger",
                             )
 
                     v3.VLabel(

@@ -441,6 +441,7 @@ def tab(ctrl) -> None:
             v3.VSelect(
                 v_model=("track_framing",),
                 items=("track_framings",),
+                label="Framing",
                 classes="sage-right sage-sel-cyan",
                 color="cyan",
                 density="compact",
@@ -448,6 +449,7 @@ def tab(ctrl) -> None:
                 variant="outlined",
                 disabled=("track_busy",),
                 style="margin:6px 0;",
+                menu_props=("{contentClass: 'sage-menu'}",),
             )
             with html.Div(
                 v_show=("track_framing !== 'box'",),
@@ -466,7 +468,9 @@ def tab(ctrl) -> None:
                         v_for=("z in track_zooms",),
                         key=("z.value",),
                         size="x-small",
-                        variant="outlined",
+                        variant=(
+                            "track_zoom === z.value ? 'flat' : 'outlined'",
+                        ),
                         color=("track_zoom === z.value ? 'cyan' : '#cbd5e1'",),
                         disabled=("track_busy",),
                         click="track_zoom = z.value",
@@ -514,6 +518,7 @@ def tab(ctrl) -> None:
                 prepend_icon="mdi-map-marker-path",
                 disabled=("!sel_active",),
                 click=ctrl.track_build,
+                classes="sage-main",
             )
             with html.Div(v_show=("track_busy",)):
                 v3.VProgressLinear(
@@ -526,6 +531,7 @@ def tab(ctrl) -> None:
                     color="#ef4444",
                     density="compact",
                     click=ctrl.track_stop,
+                    classes="sage-danger",
                 )
             with html.Div(v_show=("track_ready",), style="padding-top:6px;"):
                 with html.Div(classes="sage-formats"):
@@ -550,6 +556,7 @@ def tab(ctrl) -> None:
                     density="compact",
                     disabled=("track_saving || !movie_formats.length",),
                     click=ctrl.track_save,
+                    classes="sage-main",
                 )
                 v3.VBtn(
                     "Leave track",
@@ -558,6 +565,7 @@ def tab(ctrl) -> None:
                     color="#ef4444",
                     density="compact",
                     click=ctrl.track_leave,
+                    classes="sage-danger",
                 )
                 html.Div(
                     "{{ track_saved }}",

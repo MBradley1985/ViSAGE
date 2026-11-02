@@ -170,6 +170,7 @@ def selection_card(server) -> None:
                 color="cyan",
                 click=ctrl.sel_go,
                 title="Fly to it (10 h^-1 Mpc; in HD, to it in close-up)",
+                classes="sage-main",
             )
             v3.VBtn(
                 "Isolate",

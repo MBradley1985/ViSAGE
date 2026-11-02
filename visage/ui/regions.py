@@ -534,7 +534,7 @@ def tab(ctrl) -> None:
     )
     with html.Div(v_show=("region_shape === 'sphere'",)):
         html.Div("CENTRE", style=_HEAD)
-        with html.Div(style=_ROW):
+        with html.Div(classes="sage-xyz", style=_ROW):
             for a in "xyz":
                 _field(f"nav_{a}", a.upper())
         _centre_buttons(ctrl, "sphere")
@@ -598,9 +598,12 @@ def tab(ctrl) -> None:
             "Go",
             ctrl.region_go,
             variant="flat",
+            classes="sage-main",
             id="btn-region-go",
         )
-        _button("Clear", ctrl.region_clear, color="#ef4444")
+        _button(
+            "Clear", ctrl.region_clear, color="#ef4444", classes="sage-danger"
+        )
     html.Div(
         "{{ region_note }}",
         style=(
@@ -609,7 +612,7 @@ def tab(ctrl) -> None:
         ),
     )
     html.Div("SAVED", style=_HEAD + "margin-top:8px;")
-    with html.Div(style=_ROW):
+    with html.Div(style=_ROW + "align-items:center;"):
         v3.VTextField(
             v_model=("region_name",),
             label="Name",

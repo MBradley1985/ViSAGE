@@ -279,9 +279,6 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
             procs.stop_group(run["proc"])
 
 
-_FORMAT_HEAD = "font-size:0.72rem;color:#9ca3af;padding:12px 0 2px;"
-
-
 def _step(number: int, title: str) -> None:
     with html.Div(classes="sage-step"):
         html.Span(str(number))
@@ -336,12 +333,14 @@ def tab(ctrl) -> None:
             _step(2, "Choose galaxies")
             v3.VSelect(
                 v_model=("plot_region",),
-                classes="sage-left sage-sel-cyan",
+                label="Galaxies",
+                classes="sage-right sage-sel-cyan",
                 color="cyan",
                 items=("plot_regions",),
                 density="compact",
                 hide_details=True,
                 variant="outlined",
+                menu_props=("{contentClass: 'sage-menu'}",),
             )
             v3.VCheckbox(
                 v_model=("plot_filters",),
@@ -385,6 +384,7 @@ def tab(ctrl) -> None:
                 hide_details=True,
                 variant="outlined",
                 style="margin-top:8px;",
+                menu_props=("{contentClass: 'sage-menu'}",),
             )
             with v3.VExpansionPanels(
                 variant="accordion", style="margin-top:8px;"
@@ -406,6 +406,7 @@ def tab(ctrl) -> None:
                                 hide_details=True,
                                 variant="outlined",
                                 style="margin:8px 0;",
+                                menu_props=("{contentClass: 'sage-menu'}",),
                             )
                             with html.Div(style="display:flex;gap:8px;"):
                                 for end in ("min", "max"):
@@ -417,9 +418,7 @@ def tab(ctrl) -> None:
                                         hide_details=True,
                                         variant="outlined",
                                     )
-            html.Div(
-                "File format", classes="sage-select-head", style=_FORMAT_HEAD
-            )
+            html.Div("File format", classes="sage-file-head")
             with html.Div(classes="sage-formats"):
                 for kind in FORMATS:
                     v3.VCheckbox(
@@ -448,6 +447,7 @@ def tab(ctrl) -> None:
                 disabled=("!plot_selected.length",),
                 click=ctrl.plot_make,
                 style="text-transform:none;letter-spacing:0;",
+                classes="sage-main",
             )
             with html.Div(v_show=("plot_busy",)):
                 v3.VProgressLinear(
@@ -460,6 +460,7 @@ def tab(ctrl) -> None:
                     color="#ef4444",
                     density="compact",
                     click=ctrl.plot_cancel,
+                    classes="sage-danger",
                 )
             html.Div(
                 "{{ plot_status }}",
