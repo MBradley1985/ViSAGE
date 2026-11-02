@@ -216,6 +216,7 @@ def main(argv: list[str] | None = None) -> None:
             _explore_mode(args)
     finally:
         procs.cleanup()
+        procs.exit_after(5.0)
 
 
 def _launch_mode(args) -> None:

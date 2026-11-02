@@ -239,6 +239,23 @@ def cleanup() -> None:
             pass
 
 
+def exit_after(seconds: float) -> None:
+    """End the process `seconds` from now if it is still here.  Called
+    once the server has stopped and `cleanup` has run: Python then waits
+    for any thread-pool job still running (a snapshot load, a
+    to_thread call) before it exits, and no further signal can stop
+    that wait."""
+
+    def end():
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
+    timer = threading.Timer(seconds, end)
+    timer.daemon = True
+    timer.start()
+
+
 def _on_signal(signum, _frame) -> None:
     cleanup()
     # Then end as that signal would have.

@@ -121,6 +121,30 @@ def test_tree_goes_when_the_viewer_is_stopped(tmp_path, sig):
     assert _wait_gone([leader, grandchild]) == []
 
 
+def test_a_busy_thread_cannot_keep_the_viewer_alive(tmp_path):
+    # The server has returned (stopped by a signal) but a thread-pool job
+    # is still running: Python would wait on it before exiting, deaf to
+    # any further signal.  The viewer ends anyway, its tree gone first.
+    script = _viewer_script(
+        tmp_path,
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        ThreadPoolExecutor(1).submit(time.sleep, 300)
+        try:
+            pass  # the server, stopped
+        finally:
+            procs.cleanup()
+            procs.exit_after(1.0)
+        """,
+    )
+    viewer = subprocess.Popen(
+        [sys.executable, str(script)], stdout=subprocess.PIPE, text=True
+    )
+    leader, grandchild = map(int, viewer.stdout.readline().split())
+    viewer.wait(15)
+    assert _wait_gone([leader, grandchild]) == []
+
+
 def test_tree_goes_on_a_normal_exit(tmp_path):
     script = _viewer_script(tmp_path, "sys.exit(0)\n")
     out = subprocess.run(
