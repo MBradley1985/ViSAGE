@@ -383,6 +383,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Nothing selected until the user picks something (None = no selection).
     state.nav_halo_idx = None
     state.nav_gal_idx = None
+    state.sel_zoom = 0  # the card's zoom in use (3, 5, 10), 0 for none
     state.nav_gal_last_radius = 10.0  # radius of the last galaxy zoom (focus)
     state.nav_x = round(scene._cfg.box_size / 2, 2)
     state.nav_y = round(scene._cfg.box_size / 2, 2)
@@ -1175,6 +1176,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     def _go_to_galaxy_at_radius(radius: float) -> None:
         try:
             state.nav_gal_last_radius = radius
+            state.sel_zoom = int(radius)
             center = scene.camera.go_to_galaxy(int(state.nav_gal_idx), radius)
             if center != (0.0, 0.0, 0.0):
                 scene.set_focus_sphere(center, radius)
@@ -2629,6 +2631,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         scene.camera.set_panel(bool(panel_open))
         _push()
 
+    @state.change("sel_title")
+    def on_new_selection(**_):
+        state.sel_zoom = 0
+
     @ctrl.set("reset_camera")
     def on_reset():
         """Back to how the app opened (the snapshot aside): out of HD and
@@ -2638,6 +2644,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         _stop_hd()
         _stop_sparkles()
         _clear_draw_widgets()
+        state.sel_zoom = 0
         ctrl.region_clear()
         ctrl.sel_reset()
         scene.camera._clear_member_indicators()
@@ -3975,6 +3982,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _push()
             return
         center, _ = framed
+        state.sel_zoom = 0
         scene.set_focus_sphere(center, _GALAXY_GO_RADIUS)
         state.focus_active = True
         state.isolate_active = False
