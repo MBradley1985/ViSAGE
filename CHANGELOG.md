@@ -10,6 +10,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.19.0] — 2026-11-02
+
+### Added
+
+- A new progress card for long jobs, with a ring and an animation for each kind of job: a cosmic web for loading snapshots, a galaxy travelling the web for building a track, orbits for preparing playback, a spiral galaxy for HD and a wave for spectra.
+
+### Changed
+
+- Toggles for what appears in the view say Show and Hide; settings keep On and Off.
+- Structure's Dark Matter Haloes and Galaxies headings carry their own Show and Hide, in place of Visible.
+- Track's Contributors switch is now Only contributors.
+
+---
+
 ## [2.18.0] — 2026-11-02
 
 ### Added
