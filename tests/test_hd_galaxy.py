@@ -798,3 +798,17 @@ def test_merger_times_are_read_as_sage26_writes_them():
     # At z = 1 the same field counts back from z = 0, not from z = 1.
     assert _since_myr(snap, "T", 1, h, 1.0, om) == pytest.approx(300.0)
     assert _since_myr(snap, "T", 2, h, 1.0, om) == -1.0  # never merged
+
+
+def test_hd_off_goes_back_to_isolate_if_it_was_on(hd_panel):
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+    ctrl.toggle_isolate()
+    assert state.isolate_active
+    ctrl.toggle_hd()
+    assert state.hd_active
+    ctrl.toggle_hd()
+    state.flush()
+    assert not state.hd_active
+    assert state.isolate_active  # still isolated, as before HD

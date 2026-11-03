@@ -819,6 +819,25 @@ body,
     padding-inline-end: 2px !important;
 }
 
+/* A labelled dropdown keeps clear of its label; a value too long to fit
+   ends in an ellipsis rather than running under it. */
+.sage-panel .v-select .v-field:has(.v-field-label) .v-field__input {
+    /* (--sage-label-w: the label's own width, set by visage.js) */
+    padding-inline-start: var(--sage-label-w, 78px) !important;
+    min-width: 0;
+}
+
+.sage-panel .v-select .v-select__selection {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sage-panel .v-select .v-select__selection-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .sage-panel .v-select__selection-text,
 .sage-panel .v-select__selection-text * {
     color: #fff !important;

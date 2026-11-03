@@ -1253,6 +1253,17 @@ def build_toolbar(server, scene: Scene) -> None:
         ),
         id="btn-hd-galaxy",
     )
+    # HD's halo gas, as the card's Gas button.
+    v3.VBtn(
+        "Gas",
+        variant=("hd_gas ? 'flat' : 'outlined'",),
+        density="compact",
+        color=("hd_gas ? '#a3e635' : 'white'",),
+        click="hd_gas = !hd_gas",
+        disabled=("!hd_available",),
+        classes=("hd_gas ? 'sage-bar-btn sage-gas-on' : 'sage-bar-btn'",),
+        title="HD halo gas: CGM, hot gas, winds and jets",
+    )
     v3.VBtn(
         "Reset",
         variant="outlined",

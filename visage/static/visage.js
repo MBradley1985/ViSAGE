@@ -1102,6 +1102,25 @@
     window.__sageXtermsOut = _xtermsOut;
   })();
 
+  // ─── Labelled dropdowns: values keep clear of their label ─────────────
+  // A panel dropdown's label sits inside its box on the left; the value
+  // (right-aligned) starts after it, however long the label.
+  function sageLabelRoom() {
+    document.querySelectorAll('.sage-panel .v-select .v-field').forEach(function (f) {
+      var lab = Array.prototype.find.call(
+        f.querySelectorAll('.v-field-label'),
+        function (l) { return l.offsetParent && l.offsetWidth; });
+      if (!lab) return;
+      var w = lab.offsetWidth + 8 + 'px';
+      if (f.style.getPropertyValue('--sage-label-w') !== w) {
+        f.style.setProperty('--sage-label-w', w);
+      }
+    });
+  }
+  (new MutationObserver(function () {
+    requestAnimationFrame(sageLabelRoom);
+  })).observe(document.body, { childList: true, subtree: true });
+
   // ─── GIF animation restart ────────────────────────────────────────────
   // The browser starts playing a GIF as soon as the <img> src is set, but
   // the card may not be visible yet (Vue render cycle + compositing delay).

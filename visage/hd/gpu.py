@@ -39,6 +39,14 @@ from visage.hd.model import (
 # ----------------------------------------------------------------------
 
 
+# The exposure, as deep imaging stretches it: the asinh tone map's softening
+# (q) and the diffuse light's white level against the base exposure
+# (white), so faint light -- satellites beside a bright central, merger
+# debris, streams, intracluster light -- shows at its true brightness
+# ("Deep B"; was q 40, white 1).
+DEEP = dict(q=400.0, white=0.25)
+
+
 def float_texture(
     rgb: np.ndarray, interpolate: bool = True, mipmap: bool = False
 ):
@@ -649,7 +657,10 @@ _IMPL = """//VTK::Light::Impl
             * pint(y0, y0 + dt * rd.y, 0.02, dt);
       }
     }
-    if (inI) e += uLIcl * hernq(p, uIclA, 0.85, vec3(1.0)) * (uOldRGB * 0.9 + 0.08) * dt;
+    // (Faded to nothing at its sphere's edge, so no rim shows.)
+    if (inI) e += uLIcl * hernq(p, uIclA, 0.85, vec3(1.0))
+                  * pow(max(1.0 - dot(p, p) / (uIclR * uIclR), 0.0), 2.0)
+                  * (uOldRGB * 0.9 + 0.08) * dt;
     if (inA) {
       // 3D emissivity volume stored as a 2D atlas of z slices (inlined:
       // samplers are declared after the PositionVC::Dec block).
@@ -1164,10 +1175,10 @@ class GPUGalaxy:
         )
         u.SetUniform3f("uDustK", [float(v) for v in rc.dust_k])
         u.SetUniform3f("uColGain", [float(v) for v in rc.col_gain])
-        f("uWhite", float(white))
+        f("uWhite", float(white) * DEEP["white"])
         f("uWhite0", float(white))
         f("uPtsGain", 1.0)  # star sources on (component views switch it)
-        f("uQ", 40.0)
+        f("uQ", DEEP["q"])
         f("uSat", 1.05)
         f("uLNuc", float(rc.l_nucleus))
         f("uNucSig", float(rc.nucleus_sigma))
@@ -1295,7 +1306,7 @@ class GPUGalaxy:
     def set_white(self, white: float) -> None:
         """Tone-map white level (see `layer.Exposure`)."""
         if self._uni is not None:
-            self._uni.SetUniformf("uWhite", float(white))
+            self._uni.SetUniformf("uWhite", float(white) * DEEP["white"])
 
     def set_camera(
         self, cam_model: np.ndarray, pix_ang: float | None = None

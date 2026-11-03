@@ -282,6 +282,13 @@ class SageGalaxy:
     # Face-on V-band optical depth of its diffuse ISM from the lightcone's
     # synthetic photometry (TauV_ISM); <0: none, HD estimates its own.
     tau_v_ism: float = -1.0
+    # DustySAGEMode: dust masses (Msun); DarkSAGEMode: the disc's rotation
+    # (km/s) and shear (1 - dlnV/dlnR) at 2.2 Rd.  0: not in the run.
+    cold_dust: float = 0.0
+    hot_dust: float = 0.0
+    cgm_dust: float = 0.0
+    disc_vrot: float = 0.0
+    disc_shear: float = 0.0
     # Its observed-frame flux ratios in the bands standing in for HD's
     # I and B channels, relative to V (f_I / f_V, f_B / f_V), from the
     # lightcone's synthetic photometry; () = none.
@@ -737,6 +744,9 @@ def recipe_from_sage(
         core_frac = float(0.5 - 0.2 * mfac)
         n_gc = int(np.clip(30 * (g.stellar_mass / 1e10) ** 1.2, 20, 4000))
         dust = np.clip(np.log10(max(g.h2_gas, 1.0)) - 7.5, 0.0, 2.0) / 2.0
+        if g.cold_dust > 0:
+            # DustySAGE's dust (~1% of the gas: 10^7.5 Msun of H2 ~ 10^5.5).
+            dust = np.clip(np.log10(g.cold_dust) - 5.5, 0.0, 2.0) / 2.0
         if g.tau_v_ism == 0:
             dust = 0.0  # its photometry's dust: none
         notes.append(
@@ -782,7 +792,11 @@ def recipe_from_sage(
     # Pitch angle from the black hole (Davis et al. 2017: log M_BH = 7.01 -
     # 0.171 (|phi| - 15 deg), scatter ~3 deg); without one yet (SAGE26's
     # black holes start at zero), tighter arms with a bigger bulge.
-    if g.bh_mass > 0:
+    # With DarkSAGE's rotation curve, from the disc's shear instead (Seigar
+    # et al. 2006: pitch = 64.25 - 36.62 shear).
+    if g.disc_shear > 0:
+        pitch = 64.25 - 36.62 * g.disc_shear
+    elif g.bh_mass > 0:
         pitch = 15.0 + (7.01 - np.log10(g.bh_mass)) / 0.171
     else:
         pitch = 28.0 - 30.0 * bt
@@ -793,8 +807,9 @@ def recipe_from_sage(
     # Gas-rich disks, with fewer stars for their size, are barred less
     # often, as observed (Masters et al. 2012).
     bar_strength = 0.0
-    if g.vmax > 0 and disk_mass > 0:
-        eps = g.vmax / np.sqrt(4.30091e-6 * disk_mass / max(rd, 0.1))
+    v_bar = g.disc_vrot if g.disc_vrot > 0 else g.vmax
+    if v_bar > 0 and disk_mass > 0:
+        eps = v_bar / np.sqrt(4.30091e-6 * disk_mass / max(rd, 0.1))
         bar_strength = float(np.clip((1.1 - eps) / 0.4, 0.0, 1.0))
     barred = bar_strength > 0.05
     # Arm class (`arm_class` forces one): grand design, multi-arm (or 2 arms branching into 4),
@@ -810,19 +825,17 @@ def recipe_from_sage(
     drawn = str(
         rng.choice(["grand", "multi", "partial", "flocculent"], p=p_cls)
     )
-    # High-z gas-rich disks are turbulent and clumpy rather than spiral;
-    # a feedback-free starburst always is.
-    # (A Toomre-like score from redshift, gas fraction and turbulence,
-    # sigma / Vmax: decided by the galaxy, not by chance.)
-    turb = 1.0
-    if g.vmax > 0 and g.vel_disp > 0:
-        turb = float(np.clip((g.vel_disp / g.vmax) / 0.55, 0.7, 1.4))
+    # Clumpy star-forming disks: ~60% of star-forming galaxies at z ~ 2,
+    # fewer at higher mass and few below z ~ 0.5 (Guo et al. 2015), and
+    # gas-rich ones (SAGE26's cold-gas fraction); a feedback-free starburst
+    # always is.
     p_clumpy = float(
-        np.clip((g.redshift - 0.8) / 1.2, 0.0, 1.0)
-        * np.clip(gas_frac / 0.2, 0.3, 1.0)
-        * turb
+        0.6
+        * np.clip((g.redshift - 0.5) / 1.5, 0.0, 1.0)
+        * np.clip(gas_frac / 0.2, 0.0, 1.0)
+        * np.clip(1.0 - 0.3 * (lm - 9.5), 0.5, 1.0)
     )
-    if g.ffb or p_clumpy >= 0.45:
+    if g.ffb or rng.random() < p_clumpy:
         drawn = "clumpy"
     if DWARF["on"] and lm < DWARF["max_lm"] and gas_frac > 0.15:
         drawn = "irregular"
@@ -935,12 +948,16 @@ def recipe_from_sage(
     zfac = max(g.metallicity, 0.0)
     dgr = zfac if zfac >= 0.26 else 0.26 * (zfac / 0.26) ** 3.1
     gas_h = g.h2_gas + g.h1_gas
-    tau0 = float(
-        np.clip(0.061 * dgr * gas_h / (2 * np.pi * (rd * 1e3) ** 2), 0, 5)
-    )
+    area = 2 * np.pi * (rd * 1e3) ** 2  # pc^2
+    tau0 = float(np.clip(0.061 * dgr * gas_h / area, 0, 5))
     notes.append(
         f"H2+HI={gas_h:.2e} Msun, Z={zfac:.2f} Zsun -> tau0={tau0:.2f}"
     )
+    if g.cold_dust > 0:
+        # DustySAGE's own dust mass: the same Milky Way opacity, per unit
+        # dust (dust / H = 0.010: Draine 2011) instead of from metallicity.
+        tau0 = float(np.clip(0.061 / 0.010 * g.cold_dust / area, 0, 5))
+        notes.append(f"ColdDust={g.cold_dust:.2e} Msun -> tau0={tau0:.2f}")
     dust_k = tuple(DUST_K)
     if np.isfinite(g.tau_v_ism) and g.tau_v_ism >= 0:
         # The photometry's own dust (lightcone): the same optical depth
@@ -953,7 +970,9 @@ def recipe_from_sage(
         )
     # Thin dark lanes only in disks rotating faster than ~120 km/s
     # (Dalcanton et al. 2004; SAGE26's Vmax for the rotation).
-    fast = float(np.clip((g.vmax - 100.0) / 40.0, 0.0, 1.0))
+    # (The disc's own rotation where DarkSAGE has it, else the halo's Vmax.)
+    vrot = g.disc_vrot if g.disc_vrot > 0 else g.vmax
+    fast = float(np.clip((vrot - 100.0) / 40.0, 0.0, 1.0))
     lane = float(np.clip(tau0 / 2.0, 0.0, 2.5)) * fast
     if g.tau_v_ism == 0:
         lane = 0.0  # its photometry's dust: none
@@ -989,15 +1008,18 @@ def recipe_from_sage(
         notes,
         rng,
     )
-    # Star formation in the bulge: a nuclear starburst ring, just inside
-    # the bar ends / around the bulge (an inner Lindblad resonance ring).
+    # A nuclear star-forming ring at the bar's inner Lindblad resonance:
+    # bars funnel gas there, so rings sit in barred, gas-bearing disks
+    # (~20% of disks: Comeron et al. 2010), brighter the stronger the bar
+    # and the more of the star formation SAGE26 puts in the bulge.
     sfr_tot = g.sfr_disk + g.sfr_bulge
-    if g.sfr_bulge > 0.05 and g.sfr_bulge > 0.08 * sfr_tot:
-        ex["ring"] = float(np.clip(g.sfr_bulge / max(sfr_tot, 1e-9), 0.1, 1.0))
+    if bar_strength > 0.5 and g.h2_gas > 0 and sfr_tot > 0:
+        share = g.sfr_bulge / sfr_tot
+        ex["ring"] = float(np.clip(bar_strength * (0.4 + share), 0.1, 1.0))
         ex["ring_r"] = float(max(0.35 * bar_len, 3.0 * bulge_a, 0.25))
         notes.append(
-            f"SfrBulge={g.sfr_bulge:.2f} ({ex['ring']:.2f} of SFR) -> nuclear ring "
-            f"at {ex['ring_r']:.2f} Rd"
+            f"bar {bar_strength:.2f}, SfrBulge share {share:.2f} -> nuclear "
+            f"ring {ex['ring']:.2f} at {ex['ring_r']:.2f} Rd"
         )
 
     arms = arm_layout(
@@ -1270,12 +1292,12 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
     ok = (v > 0) & (edge >= MIN_ANNULUS)
     if ok.sum() < 3:
         return 1.0
-    r = np.maximum(r, edge[ok].min())
+    rc_ = np.maximum(r, edge[ok].min())
     lg = np.interp(
-        np.log(np.maximum(r, 1e-3)), np.log(edge[ok]), np.log(v[ok])
+        np.log(np.maximum(rc_, 1e-3)), np.log(edge[ok]), np.log(v[ok])
     )
     # Falls away beyond the last annulus with any of it.
-    lg = lg - 4.0 * np.clip(r - edge[ok].max(), 0, None)
+    lg = lg - 4.0 * np.clip(rc_ - edge[ok].max(), 0, None)
     want = np.exp(lg - np.interp(0.0, np.log(edge[ok]), np.log(v[ok])))
     return want / np.maximum(base / np.mean(base[np.abs(r - 1) < 0.05]), 1e-6)
 
@@ -1344,7 +1366,8 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     inner = 1 - np.exp(-((r / max(rc.hole, 0.2)) ** 4))
     arm_eff = arm * inner
 
-    exp_d = np.exp(-r / 0.85)
+    # (r in Rd, SAGE26's DiskRadius: the stars' exponential scale length.)
+    exp_d = np.exp(-r)
     outer_cut = 1 / (1 + np.exp((r - rc.extent * 1.05) / 0.25))
 
     old = (
@@ -1352,7 +1375,10 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         * (1 + rc.arm_old_amp * (arm_eff - arm_eff.mean()))
         * np.exp(0.08 * clumps)
     )
-    old = old * radial_scale(rc, 1, r, exp_d)
+    # (Faded smoothly to nothing between the disc's extent and the map's
+    # edge, so the square never shows however deep the exposure.)
+    s = np.clip((r - rc.extent) / (0.6 * rc.extent), 0.0, 1.0)
+    old = old * radial_scale(rc, 1, r, exp_d) * (1 - s * s * (3 - 2 * s))
     if rc.radial:
         # Annuli can stay bright further out than the exponential: fade them
         # gently, so neither a rim nor the square map's edge shows.
@@ -2187,12 +2213,22 @@ def strip_points(
     e = rc.extent
     n = int(6000 + 12000 * strength)
     sgn = np.where(rng.random(n) < 0.5, 1.0, -1.0)
-    t = rng.random(n) ** 0.8
     length = (2.0 + 4.0 * strength) * e
-    r = 0.7 * e + t * length
-    # Streams bend gently (the orbit curves).
-    pos = (sgn * r)[:, None] * u + (sgn * 0.12 * r**2 / length)[:, None] * side
-    pos += rng.normal(0, 1, (n, 3)) * (0.05 * e + 0.08 * e * t)[:, None]
+    # Along an arc of the orbit (curving round the host, which lies along
+    # `side`), thin, and bunched into clumps along it: the epicyclic
+    # overdensities of tidal streams (Kupper et al. 2012).
+    n_clump = 4 + int(3 * strength)
+    t = rng.random(3 * n) ** 0.8
+    keep = rng.random(3 * n) < 0.5 * (1 + np.cos(2 * np.pi * n_clump * t))
+    t = t[keep][:n]
+    n = len(t)
+    sgn = sgn[:n]
+    r_c = 2.5 * length  # radius of the orbit's curve
+    phi = sgn * (0.7 * e + t * length) / r_c
+    pos = (r_c * np.sin(phi))[:, None] * u + (r_c * (1 - np.cos(phi)))[
+        :, None
+    ] * side
+    pos += rng.normal(0, 1, (n, 3)) * (0.03 * e + 0.05 * e * t)[:, None]
     main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
     lum = (1.2 - t) * 0.05 * strength * main_light
     lum /= max(n, 1) * (1.2 - t).mean()

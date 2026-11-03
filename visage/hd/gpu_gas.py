@@ -364,20 +364,14 @@ class GasSpec:
             + rng.normal(0, 0.4, 3)
         )
 
-        # Radio jets: a black hole is radio-loud with the observed chance
-        # 0.01 (M_BH / 1e8)^1.6 (Best et al. 2005); the jet's power from
-        # SAGE26's radio-mode accretion rate (0.1 Mdot c^2, 10^42 to 10^46
-        # erg/s), faint without any this step.
+        # Radio jets where SAGE26 has radio-mode accretion this step, their
+        # power from its rate (0.1 Mdot c^2, 10^40 to 10^46 erg/s).
         self.jet = 0.0
-        if gal.bh_mass > 0:
-            p_loud = min(1.0, 0.01 * (gal.bh_mass / 1e8) ** 1.6)
-            if np.random.default_rng(rc.seed + 13).random() < p_loud:
-                self.jet = 0.15
-                dt = getattr(gal, "dt_myr", 0.0)
-                if gal.radio_accretion > 0 and dt > 0:
-                    mdot = gal.radio_accretion / (dt * 1e6)  # Msun/yr
-                    power = np.log10(0.1 * mdot * 5.66e46)  # erg/s
-                    self.jet = float(np.clip((power - 42.0) / 4.0, 0.15, 1.0))
+        dt = getattr(gal, "dt_myr", 0.0)
+        if gal.radio_accretion > 0 and dt > 0:
+            mdot = gal.radio_accretion / (dt * 1e6)  # Msun/yr
+            power = np.log10(0.1 * mdot * 5.66e46)  # erg/s
+            self.jet = float(np.clip((power - 40.0) / 6.0, 0.05, 1.0))
         # Jets reach about the radius the AGN heats (r_heat), in proportion
         # to the halo.
         reach = max(gal.r_heat_kpc, 0.08 * self.rvir)
@@ -461,6 +455,23 @@ class GasSpec:
             self.cgm_rgb = self.cgm_rgb * np.array(
                 [1.0, 1 + 0.1 * zc, 1 - 0.1 * zc]
             )
+        # DustySAGE's dust in the hot halo and CGM reddens their light: its
+        # mean column over the halo (pi Rvir^2), at the Milky Way's opacity
+        # per unit dust (tau_V = 6.1 per Msun/pc^2; Draine 2011).
+        from visage.hd.model import DUST_K
+
+        area = np.pi * (self.rvir * 1e3) ** 2  # pc^2
+        for dust, attr in (
+            (gal.hot_dust, "hot_rgb"),
+            (gal.cgm_dust, "cgm_rgb"),
+        ):
+            if dust > 0:
+                tau = 6.1 * dust / area
+                setattr(
+                    self,
+                    attr,
+                    getattr(self, attr) * np.exp(-tau * np.asarray(DUST_K)),
+                )
         # Heavier mass loading opens the cone wider (log, so the high
         # loadings of dwarfs don't all hit the same angle).
         self.wind_open = float(
@@ -485,7 +496,7 @@ class GasSpec:
             self.hi_rs = float(HI["size"] * 0.5 * d_hi / 3.0)
             self.hi_amp = float(
                 HI["gain"]
-                * np.clip((np.log10(gal.h1_gas) - 8.5) / 2.0, 0.1, 1)
+                * np.clip((np.log10(gal.h1_gas) - 7.0) / 3.5, 0.05, 1)
             )
             # Satellites warp more the longer they have felt the host's
             # tides; centrals a little.

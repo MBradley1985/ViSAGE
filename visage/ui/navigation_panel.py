@@ -15,7 +15,7 @@ from visage.ui import regions as _regions
 from visage.ui import tracking
 from visage.utils.gif import dithered, each_format, shared_palette
 from visage.utils.image_files import SCREENSHOT_FORMATS, save_image
-from visage.utils.filters import galaxy_mask
+from visage.utils.filters import galaxy_mask, host_halo_rows
 
 # Slider slots reserved for auto-discovered properties.  Trame needs one
 # state var per slider, so the pools are fixed and the UI shows as many of
@@ -779,6 +779,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Filter recompute — runs whenever any filter changes OR snapshot changes
     # ------------------------------------------------------------------
 
+    _hosts: dict = {}  # each galaxy's host halo, per snapshot
+
     def _apply_filters() -> None:
         import numpy as np
 
@@ -817,19 +819,36 @@ def build_navigation_panel(server, scene: Scene) -> None:
         )
         if full:
             h_mask = None
-        scene.halo_layer.set_filter_mask(h_mask)
 
         # Galaxy: stellar mass, sSFR, B/T, type
-        if galaxies.count == 0:
-            scene.galaxy_layer.set_filter_mask(None)
-        else:
+        g_mask = None
+        if galaxies.count:
             g_mask = galaxy_mask(
                 galaxies,
                 scene.active_model.fields_available,
                 state,
             )
-
-            scene.galaxy_layer.set_filter_mask(g_mask)
+        # Each filters the other: a galaxy shows if its host halo does, and
+        # (with a galaxy filter set) a halo shows if it hosts a galaxy that
+        # does.
+        if (
+            galaxies.count
+            and halos.count
+            and (h_mask is not None or not g_mask.all())
+        ):
+            key = (scene.active_model.name, scene.current_snap)
+            if _hosts.get("key") != key:
+                _hosts["key"] = key
+                _hosts["rows"] = host_halo_rows(halos, galaxies)
+            host = _hosts["rows"]
+            if h_mask is not None:
+                g_mask = g_mask & (host >= 0) & h_mask[np.maximum(host, 0)]
+            if not g_mask.all():
+                kept = np.zeros(halos.count, dtype=bool)
+                kept[host[g_mask & (host >= 0)]] = True
+                h_mask = kept if h_mask is None else h_mask & kept
+        scene.halo_layer.set_filter_mask(h_mask)
+        scene.galaxy_layer.set_filter_mask(g_mask if galaxies.count else None)
 
         _push()
 
@@ -4054,6 +4073,10 @@ def build_navigation_panel(server, scene: Scene) -> None:
         """The card's Go: fly to the selection, GO_DISTANCE away as Isolate
         is, everything else within the usual 10 Mpc/h focus sphere still
         shown."""
+        if bool(state.isolate_active):
+            # Isolate stays on: it moves to the new selection.
+            _isolate_selection()
+            return
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
         halo_indices, gal_indices = _selection_targets(halos, galaxies)
         framed = _frame_targets(halos, galaxies, halo_indices, gal_indices)
@@ -4076,9 +4099,6 @@ def build_navigation_panel(server, scene: Scene) -> None:
         than a sphere/box around it: every other halo and galaxy is
         hidden, and the camera is framed so what survives is in view.
         """
-        import numpy as np
-        from visage.utils.group_info import member_indices
-
         if not state.isolate_active and (
             state.track_ready or state.track_busy
         ):
@@ -4091,6 +4111,11 @@ def build_navigation_panel(server, scene: Scene) -> None:
             scene.clear_focus()
             _push()
             return
+        _isolate_selection()
+
+    def _isolate_selection() -> None:
+        """Isolate what's selected (Isolate's "on", and where it moves when
+        the selection changes while on)."""
 
         halos, galaxies = scene.active_model.loader.get(scene.current_snap)
         halo_indices, gal_indices = _selection_targets(halos, galaxies)
@@ -4186,13 +4211,17 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     def _hd_off() -> None:
         """HD button pressed while on: back out to the normal view of the
-        selection, framed as Go frames it."""
+        selection -- Isolated if it was, else framed as Go frames it."""
+        was_isolated = bool(_hd.get("was_isolated"))
         _clear_draw_widgets()
         state.isolate_active = False
         state.focus_active = False
         scene.clear_focus()
         _stop_hd()
-        on_go_frame()
+        if was_isolated:
+            _isolate_selection()
+        else:
+            on_go_frame()
 
     # ------------------------------------------------------------------
     # Components: labels on the parts of the HD galaxy (Galaxy context)
@@ -4301,6 +4330,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
             state.notice_color = "warning"
             state.notice_show = True
             return
+        # (HD isolates; turning it off goes back to Isolate only if it was.)
+        _hd["was_isolated"] = bool(state.isolate_active)
 
         try:
             gidx = int(state.nav_gal_idx)

@@ -966,8 +966,13 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("find_select")
     def _find_select(idx):
-        """A Find result clicked: select it and fly there."""
-        _go_row(int(idx))
+        """A Find result clicked: select it and fly there -- a group or a
+        pair as its halo with every member (so HD builds them all)."""
+        if state.find_preset in ("richest", "pairs"):
+            state.sel_kind = "halo"
+            _go_row(int(idx), keep_kind=True)
+        else:
+            _go_row(int(idx))
         if hasattr(ctrl, "sel_go"):
             ctrl.sel_go()
 

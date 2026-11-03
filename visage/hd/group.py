@@ -290,8 +290,11 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
     photometry on a lightcone, its stellar mass otherwise."""
     if gal.lum_v > 0:
         return float(gal.lum_v**LUM_POWER)
+    # Old stars (a bulge, an elliptical) give OLD_LIGHT of a disk's light
+    # per unit mass, the same for every kind.
     if kind == "disk":
-        ref = max(gal.stellar_mass - gal.bulge_mass, 1.0)
+        disk = max(gal.stellar_mass - gal.bulge_mass, 0.0)
+        ref = max(disk + OLD_LIGHT * gal.bulge_mass, 1.0)
     else:
         ref = max(gal.stellar_mass * OLD_LIGHT, 1.0)
     return float((ref / M_REF) ** LUM_POWER)
