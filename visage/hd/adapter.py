@@ -177,6 +177,19 @@ def cosmic_time_gyr(a: float, hubble_h: float, omega_m: float) -> float:
     )
 
 
+def _since_myr(snap, name: str, i: int, hubble_h, z, omega_m) -> float:
+    """Myr since the event SAGE26 times in `name`, or -1 if none.  SAGE26
+    writes the event's lookback time from z = 0, in Myr/h, so the time
+    since it is that less the lookback time to the galaxy's own epoch."""
+    t = _extra(snap, name, i, -1.0)
+    if t <= 0:
+        return -1.0
+    now = cosmic_time_gyr(1.0, hubble_h, omega_m) - cosmic_time_gyr(
+        1.0 / (1.0 + z), hubble_h, omega_m
+    )
+    return max(t / hubble_h - 1e3 * now, 0.0)
+
+
 def sage_galaxy_from_snapshot(
     snap,
     i: int,
@@ -195,7 +208,7 @@ def sage_galaxy_from_snapshot(
     mass = 1e10 / hubble_h
     # The snapshot's redshift, and (satellites) the time since infall: SAGE
     # writes TimeOfInfall as the snapshot it became a satellite.
-    z, t_inf = 0.0, -1.0
+    z, t_inf, dt = 0.0, -1.0, 0.0
     if snap_table is not None:
         # (A lightcone's galaxies are each from their own snapshot.)
         sn = (
@@ -205,6 +218,16 @@ def sage_galaxy_from_snapshot(
         )
         if 0 <= sn < snap_table.count:
             z = float(snap_table.snap_to_z(sn))
+            if sn > 0:
+                # The step from the previous snapshot (SAGE26's dT).
+                dt = 1e3 * (
+                    cosmic_time_gyr(
+                        snap_table.snap_to_a(sn), hubble_h, omega_m
+                    )
+                    - cosmic_time_gyr(
+                        snap_table.snap_to_a(sn - 1), hubble_h, omega_m
+                    )
+                )
             s_in = int(_field(snap, "time_of_infall", i))
             if 0 < s_in <= sn and int(_field(snap, "gal_type", i)) > 0:
                 t_inf = cosmic_time_gyr(
@@ -245,9 +268,15 @@ def sage_galaxy_from_snapshot(
         cgm_gas=_field(snap, "cgm_gas", i),
         rvir_kpc=_field(snap, "rvir", i) * kpc,
         metals_stellar_mass=_field(snap, "metals_stellar_mass", i),
-        t_major_myr=_extra(snap, "TimeOfLastMajorMerger", i, -1.0),
-        t_minor_myr=_extra(snap, "TimeOfLastMinorMerger", i, -1.0),
+        t_major_myr=_since_myr(
+            snap, "TimeOfLastMajorMerger", i, hubble_h, z, omega_m
+        ),
+        t_minor_myr=_since_myr(
+            snap, "TimeOfLastMinorMerger", i, hubble_h, z, omega_m
+        ),
         qso_accretion=_extra(snap, "QuasarModeBHaccretionMass", i) * mass,
+        dt_myr=dt,
+        radio_accretion=_extra(snap, "RadioModeBHaccretionMass", i) * mass,
         ics=_field(snap, "ics_mass", i),
         outflow_rate=_field(snap, "outflow_rate", i),
         mass_loading=_field(snap, "mass_loading", i, 1.5),
@@ -260,6 +289,7 @@ def sage_galaxy_from_snapshot(
         ffb=int(_field(snap, "ffb_regime", i)),
         vel=tuple(_extra(snap, f"Vel{c}", i) for c in "xyz"),
         vmax=_field(snap, "vmax", i),
+        vvir=_extra(snap, "Vvir", i),
         vel_disp=_extra(snap, "VelDisp", i),
         mvir=_field(snap, "mvir", i) * mass,
         infall_mvir=_extra(snap, "infallMvir", i) * mass,

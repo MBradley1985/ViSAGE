@@ -130,14 +130,14 @@ DWARF = dict(on=False, max_lm=9.3, lopsided=0.4, clumps=3)
 ICL_MODE = "threshold"
 # Streams of satellite debris feeding the ICL (off: removed by choice).
 ICL_STREAMS = False
-# The ICL's look: envelope brightness (x), glow brightness (x), the glow's
+# The ICL's look (its envelope's light is SAGE26's ICS): glow brightness (x), the glow's
 # and stripped stars' extent (0: the galaxy's size; >0: that many times the
 # envelope scale 0.12 Rvir), stripped-star count (x), colour (None: from
 # its metallicity).
 # mass: >0 scales the glow and envelope with the ICS mass itself (power).
 # Chosen from options on SAGE26 centrals ("D"): halo-wide, its glow and
 # envelope scaled by the ICS mass.
-ICL_LOOK = dict(env=0.45, glow=0.55, size=1.0, stars=1.0, rgb=None, mass=0.35)
+ICL_LOOK = dict(glow=0.55, size=1.0, stars=1.0, rgb=None, mass=0.35)
 
 # Inside-out gradient strength (0: none): the inner disk's colour weights
 # the older part of the history up by (age / mean age)^GRADIENT, the outer
@@ -212,9 +212,11 @@ class SageGalaxy:
     cgm_gas: float = 0.0  # Msun
     rvir_kpc: float = 200.0
     metals_stellar_mass: float = 0.0  # Msun
-    t_major_myr: float = -1.0  # lookback time of last major merger (<0: never)
+    t_major_myr: float = -1.0  # Myr since the last major merger (<0: never)
     t_minor_myr: float = -1.0
     qso_accretion: float = 0.0  # Msun accreted in quasar mode this step
+    dt_myr: float = 0.0  # Myr the step took (SAGE26's dT)
+    radio_accretion: float = 0.0  # Msun accreted in radio mode this step
     ics: float = 0.0  # IntraClusterStars, Msun
     outflow_rate: float = 0.0  # Msun/yr
     mdot_stream: float = 0.0  # cold-stream accretion through a hot halo
@@ -228,6 +230,7 @@ class SageGalaxy:
     ffb: int = 0  # feedback-free starburst halo (FFBRegime)
     vel: tuple = (0.0, 0.0, 0.0)  # km/s, box frame
     vmax: float = 0.0  # km/s (halo)
+    vvir: float = 0.0  # km/s (halo virial velocity)
     vel_disp: float = 0.0  # km/s (halo)
     mvir: float = 0.0  # Msun
     # -- satellites --
@@ -347,7 +350,8 @@ class GalaxyRecipe:
     col_gain: tuple = (1.0, 1.0, 1.0)
     # DarkSAGE's discs (model units): radii, then stars, HI, H2, SFR.
     radial: tuple = ()
-    lane: float = 1.0  # darkness of the arm dust lanes (dust column, log)
+    lane: float = 1.0  # darkness of the arm dust lanes
+    h2_share: float = 0.5  # of the dust: in the H2 (the rest with the HI)
     hii_group: int = 4  # HII regions per star-forming complex (up to)
     hii_spread: float = 0.06  # a complex's size, Rd
     n_clusters: int = 1500
@@ -408,12 +412,13 @@ class GalaxyRecipe:
 
 
 def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
-    """Disk scale length and elliptical half-light radius, in kpc.
-
-    The disc is drawn at the model's own DiskRadius, which scatters a lot
-    at fixed mass (a few galaxies come out tens of kpc). The bulge's size
-    follows the observed size-mass relation of Shen et al. (2003) and SAGE's
-    own radius only nudges it (to the 1/4 power, at most ~+-30%).
+    """Disk scale length and elliptical half-light radius, in kpc: SAGE26's
+    own.  DiskRadius is the disk's exponential scale length (Mo, Mao &
+    White 1998, from the halo's spin); BulgeRadius the bulge's 3D
+    half-mass radius, whose projected half-light radius is 0.752 times it
+    for a Hernquist profile.  Without them, the observed size-mass
+    relations of Shen et al. (2003), smaller in the past (van der Wel et
+    al. 2014: late types ~ (1+z)^-0.75, early types ~ (1+z)^-1.48).
     """
     m = max(g.stellar_mass, 1e7)
     if g.los and g.disk_radius_kpc > 0:
@@ -423,33 +428,51 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
         )
         note = f"size: SAGE26 Rd={g.disk_radius_kpc:.2f}, R50={r50:.2f} kpc"
         return float(g.disk_radius_kpc), float(r50), [note]
-    r50_late = 0.10 * m**0.14 * (1 + m / 3.98e10) ** 0.25
-    rd_rel = r50_late / 1.678
-    r50_early = 2.88e-6 * m**0.56
-    # Galaxies were smaller at fixed mass in the past (van der Wel et al.
-    # 2014): late types ~ (1+z)^-0.75, early types ~ (1+z)^-1.  A
-    # feedback-free starburst is more compact still.
     zf = 1.0 + max(g.redshift, 0.0)
-    rd_rel *= zf**-0.75 * (0.6 if g.ffb else 1.0)
-    r50_early *= zf**-1.0
-    mod_d = (
-        np.clip((g.disk_radius_kpc / rd_rel) ** 0.25, 0.75, 1.35)
-        if g.disk_radius_kpc > 0
-        else 1.0
-    )
-    mod_e = (
-        np.clip((g.bulge_radius_kpc / r50_early) ** 0.25, 0.75, 1.35)
-        if g.bulge_radius_kpc > 0
-        else 1.0
-    )
     if g.disk_radius_kpc > 0:
-        # The disc is drawn at the model's own radius.
-        rd_rel, mod_d = g.disk_radius_kpc, 1.0
-    notes = [
-        f"size: Rd={rd_rel * mod_d:.2f} kpc, R50(early)={r50_early * mod_e:.2f} kpc "
-        f"(Shen+03 x SAGE nudge {mod_d:.2f}/{mod_e:.2f})"
-    ]
-    return float(rd_rel * mod_d), float(r50_early * mod_e), notes
+        rd = g.disk_radius_kpc
+    else:
+        r50_late = 0.10 * m**0.14 * (1 + m / 3.98e10) ** 0.25
+        rd = r50_late / 1.678 * zf**-0.75 * (0.6 if g.ffb else 1.0)
+    if g.bulge_radius_kpc > 0:
+        r50e = HERNQUIST_RE / (1 + np.sqrt(2)) * g.bulge_radius_kpc
+    else:
+        r50e = 2.88e-6 * m**0.56 * zf**-1.48
+    notes = [f"size: Rd={rd:.2f} kpc, R50(early)={r50e:.2f} kpc"]
+    return float(rd), float(r50e), notes
+
+
+# Projected half-light radius of a Hernquist profile (Hernquist 1990), and
+# the 3D half-mass radius of a 3D exponential, in units of their scales.
+HERNQUIST_RE = 1.8153
+EXPONENTIAL_R3 = 2.674
+
+
+def _hernquist_light(s):
+    """Fraction of a Hernquist profile's light projected within s = R / a
+    (Hernquist 1990, eq. 37)."""
+    s = np.asarray(s, float)
+    if abs(s - 1.0) < 1e-6:
+        return 1.0 / 3.0
+    x = (
+        np.arccosh(1.0 / s) / np.sqrt(1.0 - s * s)
+        if s < 1
+        else np.arccos(1.0 / s) / np.sqrt(s * s - 1.0)
+    )
+    return float(s * s * (x - 1.0) / (1.0 - s * s))
+
+
+def two_hernquist_re(core_frac: float, a_core: float, a_env: float) -> float:
+    """Projected half-light radius of core + envelope Hernquist profiles
+    (an elliptical's body), in their own units."""
+    lo, hi = 1e-3, 100.0
+    for _ in range(60):
+        r = 0.5 * (lo + hi)
+        f = core_frac * _hernquist_light(r / a_core) + (
+            1 - core_frac
+        ) * _hernquist_light(r / a_env)
+        lo, hi = (r, hi) if f < 0.5 else (lo, r)
+    return 0.5 * (lo + hi)
 
 
 def _extras(
@@ -606,22 +629,11 @@ def _extras(
         out["l_icl"] = float(0.1 * main_light) if g.ics_share > 0 else 0.0
         out["icl_a"] = float(half / (1 + np.sqrt(2)) / unit_kpc)
     elif g.ics > 0:
-        # Diffuse emission only (the ICL's look is its display overlay and
-        # stripped stars); capped, as ICS can exceed M* many times and its
-        # glow would otherwise haze over the whole view.
-        # (log in ICS / M*, so richer clusters keep getting brighter
-        # rather than all hitting one cap)
+        # As bright as SAGE26's IntraClusterStars against the galaxy's own
+        # stars (both old: the same light per unit mass), spread over the
+        # halo, so its surface brightness stays low.
         ratio = g.ics / max(g.stellar_mass, 1.0)
-        out["l_icl"] = float(
-            0.12
-            * ICL_LOOK["env"]
-            * main_light
-            * (
-                np.clip(1 + 0.5 * np.log10(ratio / 3), 0.05, 1.3)
-                if ICL_LOOK["mass"] <= 0
-                else np.clip((ratio / 3) ** ICL_LOOK["mass"], 0.05, 6.0)
-            )
-        )
+        out["l_icl"] = float(ratio * main_light)
         out["icl_a"] = float(np.clip(0.12 * g.rvir_kpc, 20, 250) / unit_kpc)
         notes.append(
             f"ICS={g.ics:.2e} ({g.ics / g.stellar_mass:.2f} of M*) -> ICL envelope"
@@ -631,17 +643,23 @@ def _extras(
     # high z: 4 Gyr (major) and 2.5 Gyr (minor) at z = 0, / (1+z).
     zf = 1.0 + max(g.redshift, 0.0)
     t_maj, t_min = 4000 / zf, 2500 / zf
+    # A major merger throws out tidal tails (Toomre & Toomre 1972) for its
+    # first ~1.5 Gyr, then the remnant shows shells; a minor one leaves
+    # shells round a bulge-dominated host (Quinn 1984), a stream round a
+    # disk.
     if 0 <= g.t_major_myr < t_maj:
         f = float(1 - g.t_major_myr / t_maj)
-        out["shells" if rc_kw.get("kind") == "elliptical" else "tails"] = f
+        kind = "tails" if g.t_major_myr < 1500 / zf else "shells"
+        out[kind] = f
         notes.append(
-            f"major merger {g.t_major_myr / 1e3:.1f} Gyr ago -> "
-            f"{'shells' if rc_kw.get('kind') == 'elliptical' else 'tidal tails'} {f:.2f}"
+            f"major merger {g.t_major_myr / 1e3:.1f} Gyr ago -> {kind} {f:.2f}"
         )
     if 0 <= g.t_minor_myr < t_min:
-        out["stream"] = float(1 - g.t_minor_myr / t_min)
+        f = float(1 - g.t_minor_myr / t_min)
+        kind = "shells" if g.bt > 0.5 else "stream"
+        out[kind] = max(out.get(kind, 0.0), f)
         notes.append(
-            f"minor merger {g.t_minor_myr / 1e3:.1f} Gyr ago -> stellar stream"
+            f"minor merger {g.t_minor_myr / 1e3:.1f} Gyr ago -> {kind} {f:.2f}"
         )
 
     # Quasar-mode accretion this step: a bright, bluish point nucleus.
@@ -651,12 +669,17 @@ def _extras(
     if g.bulge_share >= 0:
         # Its share of the light, set once built; none if hidden.
         out["agn"] = 0.01 if g.agn_share > 0 else 0.0
-    elif g.qso_accretion >= 1e4:
-        out["agn"] = float(
-            0.05 * np.clip(g.qso_accretion / 1e6, 0.01, 1e3) ** 0.4
-        )
+    elif g.qso_accretion >= 1e4 and g.dt_myr > 0:
+        # Its mean accretion rate over the step, at a radiative efficiency
+        # of 0.1 (L = 0.1 Mdot c^2), a tenth of it in the optical (Elvis
+        # et al. 1994), against the host's light (M/L ~ 2).  The shader
+        # draws 9.6 x agn against the galaxy's main light.
+        mdot = g.qso_accretion / (g.dt_myr * 1e6)  # Msun/yr
+        l_opt = 0.1 * mdot * 5.66e46 / 10.0 / 3.828e33  # Lsun
+        ratio = l_opt / max(g.stellar_mass / 2.0, 1.0)
+        out["agn"] = float(np.clip(ratio * main_light / 9.6, 0.0, 20.0))
         notes.append(
-            f"quasar-mode accretion {g.qso_accretion:.2e} Msun -> AGN {out['agn']:.3f}"
+            f"quasar-mode accretion {mdot:.2e} Msun/yr -> AGN/host {ratio:.3f}"
         )
     return out
 
@@ -690,13 +713,19 @@ def recipe_from_sage(
         # Massive ellipticals are rounder, with a more extended envelope
         # (higher Sersic n, cD-like) and far richer globular systems.
         mfac = np.clip((lm - 10.0) / 2.0, 0.0, 1.0)
-        b = rng.uniform(0.68 + 0.2 * mfac, 0.9 + 0.08 * mfac)
-        c = b * rng.uniform(0.6 + 0.25 * mfac, 0.9)
-        # Rotation support (halo Vmax / dispersion): fast rotators are
-        # flatter, slow rotators rounder.
-        if g.vmax > 0 and g.vel_disp > 0:
-            c *= float(np.clip(1.25 - 0.18 * g.vmax / g.vel_disp, 0.7, 1.1))
-            c = min(c, b)
+        # Fast rotators (flattened, nearly oblate) below ~2e11 Msun, slow
+        # rotators (round, triaxial) above it (Emsellem et al. 2011;
+        # Cappellari 2016); a recent major merger makes a slow one likelier.
+        p_slow = 1.0 / (1.0 + (2e11 / max(g.stellar_mass, 1.0)) ** 2)
+        if 0 <= g.t_major_myr < 3000:
+            p_slow = min(1.0, p_slow + 0.2)
+        slow = rng.random() < p_slow
+        if slow:
+            b = rng.uniform(0.8, 0.95)
+            c = b * rng.uniform(0.75, 0.95)
+        else:
+            b = rng.uniform(0.9, 1.0)
+            c = rng.uniform(0.3, 0.5)
         if g.bulge_rotation > 0:
             # With annuli, the bulge's own rotation (j / r sigma, about 1 to
             # 15) in place of the halo's: slow rotators are rounder.
@@ -711,13 +740,17 @@ def recipe_from_sage(
         if g.tau_v_ism == 0:
             dust = 0.0  # its photometry's dust: none
         notes.append(
-            f"envelope a={env_a:.2f}, core {core_frac:.2f}, b/a={b:.2f}, {n_gc} globulars"
+            f"{'slow' if slow else 'fast'} rotator (p_slow {p_slow:.2f}): "
+            f"b/a={b:.2f}, c/a={c:.2f}; envelope a={env_a:.2f}, "
+            f"core {core_frac:.2f}, {n_gc} globulars"
         )
         if dust > 0:
             notes.append(
                 f"H2={g.h2_gas:.2e} -> nuclear dust lane strength {dust:.2f}"
             )
-        unit = float(r50e / 1.36)
+        # So the body's projected half-light radius is r50e (its core's
+        # Hernquist scale is 0.22, as gpu.py draws it).
+        unit = float(r50e / two_hernquist_re(core_frac, 0.22, env_a))
         ex = _extras(g, {"kind": "elliptical"}, 1.0, unit, notes, rng)
         return GalaxyRecipe(
             **ex,
@@ -746,14 +779,24 @@ def recipe_from_sage(
     # --- Disk ---------------------------------------------------------
     disk_mass = g.stellar_mass - g.bulge_mass
 
-    # Hubble sequence: bigger bulge -> tighter arms; more gas -> more arms
-    # and more flocculent structure.  Massive disks are grand-design.
-    pitch = float(np.clip(28.0 - 30.0 * bt + rng.normal(0, 2.5), 9.0, 30.0))
-    # Faster rotation (more shear) winds the arms tighter.
-    if g.vmax > 0:
-        pitch -= 6.0 * float(np.clip((g.vmax - 150.0) / 150.0, -1.0, 1.0))
-    ib_frac = g.instability_bulge_mass / max(g.stellar_mass, 1.0)
-    barred = ib_frac > 0.06
+    # Pitch angle from the black hole (Davis et al. 2017: log M_BH = 7.01 -
+    # 0.171 (|phi| - 15 deg), scatter ~3 deg); without one yet (SAGE26's
+    # black holes start at zero), tighter arms with a bigger bulge.
+    if g.bh_mass > 0:
+        pitch = 15.0 + (7.01 - np.log10(g.bh_mass)) / 0.171
+    else:
+        pitch = 28.0 - 30.0 * bt
+    pitch = float(np.clip(pitch + rng.normal(0, 3.0), 5.0, 40.0))
+    # Bars where the stellar disk is unstable to them (Efstathiou, Lake &
+    # Negroponte 1982: eps = Vmax / sqrt(G M_disk / Rd) < 1.1, from
+    # SAGE26's Vmax, disk stars and DiskRadius), stronger the further below.
+    # Gas-rich disks, with fewer stars for their size, are barred less
+    # often, as observed (Masters et al. 2012).
+    bar_strength = 0.0
+    if g.vmax > 0 and disk_mass > 0:
+        eps = g.vmax / np.sqrt(4.30091e-6 * disk_mass / max(rd, 0.1))
+        bar_strength = float(np.clip((1.1 - eps) / 0.4, 0.0, 1.0))
+    barred = bar_strength > 0.05
     # Arm class (`arm_class` forces one): grand design, multi-arm (or 2 arms branching into 4),
     # partial / not fully formed (lopsided, short arms) or flocculent.
     if barred:
@@ -801,39 +844,25 @@ def recipe_from_sage(
         "irregular": (0.8, 0.95),
     }[arm_class]
     flocc = lo + (hi - lo) * gasness
-    pitch = float(
-        np.clip(
-            pitch
-            + {
-                "grand": -3.0,
-                "multi": 0.0,
-                "partial": 3.0,
-                "flocculent": 6.0,
-                "clumpy": 8.0,
-                "irregular": 8.0,
-            }[arm_class],
-            9.0,
-            35.0,
-        )
-    )
     sharp = float(np.clip(5.0 * (1 - flocc) + 1.5, 1.5, 6.0))
-    # Low-mass disks are thicker; so are high-z (turbulent) disks and
-    # dispersion-supported ones (halo sigma / Vmax).
-    hz = float(np.clip(0.10 * 10 ** (-0.15 * (lm - 10.5)), 0.08, 0.2))
+    # Thickness (sech^2 z0, in Rd) from the disk's size, as observed edge-on
+    # (Bershady et al. 2010, from Kregel et al. 2002: log(hR/hz) =
+    # 0.367 log(hR/kpc) + 0.708, hz exponential = z0 / 2): smaller disks
+    # are relatively thicker.  High-z (turbulent) disks are thicker still.
+    hz = 2.0 / (5.11 * max(rd, 0.3) ** 0.367)
     hz *= 1.0 + 0.5 * min(max(g.redshift, 0.0), 3.0)
-    if g.vmax > 0 and g.vel_disp > 0:
-        # (steep: the population's sigma/Vmax spans only ~0.45-0.65)
-        hz *= float(np.clip(((g.vel_disp / g.vmax) / 0.55) ** 6, 0.6, 2.0))
-    hz = float(min(hz, 0.45))
+    hz = float(min(hz, 0.6))
     if g.disc_height_kpc > 0:
         hz = float(np.clip(g.disc_height_kpc / rd, 0.02, 0.6))
 
     # Bulges: the classical (merger-built) one round, at its own radius;
     # the pseudo-bulge (instability-built) compact and flattened at its own.
+    # SAGE26's BulgeMass and BulgeRadius (3D half-mass) are the whole bulge
+    # (MergerBulge + InstabilityBulge, mass-weighted radius); the two parts
+    # only say how much of it is classical (merger-built) and how much
+    # pseudo (instability-built).  Both are drawn at BulgeRadius.
     rb = g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 0.2 * rd
-    split = g.merger_bulge_radius_kpc > 0 or g.instability_bulge_radius_kpc > 0
-    if split and g.merger_bulge_radius_kpc > 0:
-        rb = g.merger_bulge_radius_kpc
+    split = g.merger_bulge_mass > 0 or g.instability_bulge_mass > 0
     bulge_a = float(np.clip(rb / rd / (1 + np.sqrt(2)), 0.03, 0.4))
     merger_share = g.merger_bulge_mass / max(g.bulge_mass, 1.0)
     bulge_q = float(0.85 if split else 0.5 + 0.4 * merger_share)
@@ -841,12 +870,9 @@ def recipe_from_sage(
         from visage.sed.mock_image import bulge_axis_ratio
 
         bulge_q = float(bulge_axis_ratio(g.galaxy_index))
-    rp = g.instability_bulge_radius_kpc
-    pseudo_a = float(
-        np.clip(
-            (rp if rp > 0 else 0.1 * rd) / rd / (1 + np.sqrt(2)), 0.02, 0.25
-        )
-    )
+    # (An exponential, Sersic n ~ 1, as pseudo-bulges are: Kormendy &
+    # Kennicutt 2004.)
+    pseudo_a = float(np.clip(rb / rd / EXPONENTIAL_R3, 0.02, 0.25))
 
     # Bar: at most ~8% of M* goes into the bar; the rest of the
     # instability-grown bulge is a compact, flattened pseudobulge.  This
@@ -856,15 +882,18 @@ def recipe_from_sage(
     l_bar = 0.0
     bar_mass = 0.0
     if barred:
-        bar_mass = min(g.instability_bulge_mass, 0.08 * g.stellar_mass)
+        # Up to ~8% of M* in the bar, taken from the instability bulge
+        # where it has one; the rest of that bulge is a pseudo-bulge.
+        bar_mass = bar_strength * 0.08 * g.stellar_mass
         bar_frac = bar_mass / max(g.stellar_mass, 1.0)
-        bar_len = BAR_LENGTH * float(np.clip(0.9 + 10.0 * bar_frac, 0.9, 1.8))
-        # Stronger bars are thinner.
-        bar_axis = BAR_AXIS * float(np.clip(0.36 - 1.5 * bar_frac, 0.22, 0.36))
+        # Half-length ~0.6 Rd in late types to ~1.4 Rd in early types
+        # (Erwin 2005), by B/T; stronger bars are thinner (b/a 0.5 to 0.2).
+        bar_len = float(0.6 + 0.8 * np.clip(bt / 0.3, 0.0, 1.0))
+        bar_axis = float(0.5 - 0.3 * bar_strength)
         l_bar = 1.8 * OLD_LIGHT * bar_mass / max(disk_mass, 1.0)
         notes.append(
-            f"instability bulge {ib_frac:.2f} of M* -> bar {bar_frac:.2f} of M*, "
-            f"half-length {bar_len:.1f} Rd; rest pseudobulge"
+            f"bar strength {bar_strength:.2f} (disk stability) -> bar "
+            f"{bar_frac:.2f} of M*, half-length {bar_len:.1f} Rd, b/a {bar_axis:.2f}"
         )
     pops = {"disk": population(g.sfh_disk), "bulge": population(g.sfh_bulge)}
     lm_d = pops["disk"][1] if pops["disk"] else 1.0
@@ -885,43 +914,47 @@ def recipe_from_sage(
 
     # Young light relative to the old disk scales with specific SFR.
     ssfr_disk = g.sfr_disk / max(disk_mass, 1.0)
-    l_young = float(np.clip(0.55 * (ssfr_disk / 1e-10) ** 0.7, 0.01, 1.5))
+    l_young = float(np.clip(0.55 * (ssfr_disk / 1e-10) ** 0.7, 0.0, 1.5))
     if g.ffb:
         l_young = min(1.5 * l_young + 0.2, 2.0)  # very blue
-    n_clusters = int(np.clip(6000 * max(g.sfr_disk, 1e-3) ** 0.5, 400, 20000))
+    # (No floors: with no star formation, a disk has none -- a lenticular.)
+    n_clusters = int(np.clip(6000 * max(g.sfr_disk, 0.0) ** 0.5, 0, 20000))
     # (Against a younger, brighter-per-mass disk the current young light
     # stands out less.)
     l_young /= lm_d
     # HII regions: number follows the molecular gas reservoir.
-    n_hii = int(np.clip(350 * (g.h2_gas / 1e9) ** 0.8, 10, 3000))
+    n_hii = int(np.clip(350 * (max(g.h2_gas, 0.0) / 1e9) ** 0.8, 0, 3000))
     notes.append(f"H2={g.h2_gas:.2e} -> {n_hii} HII complexes")
 
-    # Dust: H2 surface density x metallicity, face-on tau at ~Rd.
-    sigma_h2 = g.h2_gas / (2 * np.pi * (rd * 1e3) ** 2)  # Msun/pc^2
-    sigma_hi = g.h1_gas / (2 * np.pi * (rd * 2.2e3) ** 2 + 1)
-    zfac = np.clip(g.metallicity, 0.1, 3.0)
+    # Dust follows the hydrogen (SAGE26's H2gas and H1gas), at the Milky
+    # Way's dust per hydrogen, A_V / N_H = 5.3e-22 mag cm^2 (Bohlin et al.
+    # 1978): tau_V = 0.061 per Msun pc^-2, scaled by metallicity (SAGE26's
+    # Z / 0.02) and falling faster below a quarter solar (Remy-Ruyer et al.
+    # 2014).  tau0: the face-on optical depth at the centre of an
+    # exponential disk holding it all.
+    zfac = max(g.metallicity, 0.0)
+    dgr = zfac if zfac >= 0.26 else 0.26 * (zfac / 0.26) ** 3.1
+    gas_h = g.h2_gas + g.h1_gas
     tau0 = float(
-        np.clip(0.015 * (sigma_h2 + 0.4 * sigma_hi) * zfac, 0.05, 3.0)
+        np.clip(0.061 * dgr * gas_h / (2 * np.pi * (rd * 1e3) ** 2), 0, 5)
     )
     notes.append(
-        f"Sigma_H2~{sigma_h2:.1f} Msun pc^-2, Z~{zfac:.2f} Zsun -> tau0={tau0:.2f}"
+        f"H2+HI={gas_h:.2e} Msun, Z={zfac:.2f} Zsun -> tau0={tau0:.2f}"
     )
-    # Arm dust lanes from the same dust column, unclipped and on a log
-    # scale, so they keep varying where tau0 saturates.
-    column = 0.015 * (sigma_h2 + 0.4 * sigma_hi) * zfac
     dust_k = tuple(DUST_K)
     if np.isfinite(g.tau_v_ism) and g.tau_v_ism >= 0:
         # The photometry's own dust (lightcone): the same optical depth
         # in front of the stars, so HD dims and reddens the galaxy as its
         # magnitudes do, and with the same attenuation curve.
-        tau0 = column = float(g.tau_v_ism / SED_TAU_MEAN)
+        tau0 = float(g.tau_v_ism / SED_TAU_MEAN)
         dust_k = tuple(SED_DUST_K)
         notes.append(
             f"photometry: tau_V(ISM)={g.tau_v_ism:.2f} -> tau0={tau0:.2f}"
         )
-    lane = float(
-        np.clip(1.0 + 1.5 * np.log10(max(column, 1e-4) / 2.0), 0.15, 2.5)
-    )
+    # Thin dark lanes only in disks rotating faster than ~120 km/s
+    # (Dalcanton et al. 2004; SAGE26's Vmax for the rotation).
+    fast = float(np.clip((g.vmax - 100.0) / 40.0, 0.0, 1.0))
+    lane = float(np.clip(tau0 / 2.0, 0.0, 2.5)) * fast
     if g.tau_v_ism == 0:
         lane = 0.0  # its photometry's dust: none
     # Star-forming complexes: richer where star formation is denser
@@ -929,7 +962,8 @@ def recipe_from_sage(
     # mass: cold-gas fraction).
     sig_sfr = g.sfr_disk / (np.pi * max(rd, 0.3) ** 2)  # Msun/yr/kpc^2
     hii_group = int(
-        np.clip(8 + 10 * np.log10(max(sig_sfr, 1e-6) / 0.1), 2, 24)
+        # (8 at a typical disk's ~3e-3 Msun/yr/kpc^2: Kennicutt 1998.)
+        np.clip(8 + 10 * np.log10(max(sig_sfr, 1e-6) / 3e-3), 2, 24)
     )
     hii_spread = float(0.06 * np.clip(0.4 + 1.5 * gas_frac, 0.4, 1.8))
 
@@ -1037,12 +1071,8 @@ def recipe_from_sage(
         pseudo_a=pseudo_a,
         bar_axis=bar_axis,
         peanut=0.0,
-        # Pseudo-bulges are flatter in colder (rotation-dominated) disks.
-        pseudo_q=float(
-            np.clip(0.25 + 0.2 * (g.vel_disp / g.vmax), 0.25, 0.5)
-            if g.vmax > 0 and g.vel_disp > 0
-            else 0.35
-        ),
+        # Pseudo-bulges are disk-like: flattened (Kormendy & Kennicutt 2004).
+        pseudo_q=0.45,
         clumps=clumps,
         trunc_r=trunc_r,
         lopsided=lopsided,
@@ -1056,6 +1086,7 @@ def recipe_from_sage(
         l_nucleus=l_nuc,
         nucleus_sigma=nuc_sig,
         tau0=tau0,
+        h2_share=float(g.h2_gas / gas_h) if gas_h > 0 else 0.5,
         dust_k=dust_k,
         lane=lane,
         hii_group=hii_group,
@@ -1249,12 +1280,6 @@ def radial_scale(rc, which: int, r, base) -> np.ndarray | float:
     return want / np.maximum(base / np.mean(base[np.abs(r - 1) < 0.05]), 1e-6)
 
 
-# Bars' half-length relative to the recipe, and axis ratio relative to it:
-# longer and thinner reads as a strip of light across the disc.
-BAR_LENGTH = 0.75
-BAR_AXIS = 2.0
-
-
 def arm_reach(rc, r) -> np.ndarray | float:
     """How much of a spiral pattern a disc with annuli holds at radius r:
     all where Toomre Q <= 1, none where Q >= 2, as it's stable; 1 without Q."""
@@ -1428,7 +1453,11 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     if rc.clumps:
         h2 = h2 + 1.5 * giant * np.exp(-r / 3.0)
         laid_h2 = laid_h2 + 1.5 * giant * np.exp(-r / 3.0)
-    dust = (laid_h2 + 0.35 * laid_hi) * outer_cut * inner
+    # (Each phase's share of the dust by its mass.)
+    dust = (
+        rc.h2_share * laid_h2 / max(float(laid_h2.sum()), 1e-12)
+        + (1 - rc.h2_share) * laid_hi / max(float(laid_hi.sum()), 1e-12)
+    ) * (outer_cut * inner)
     # Normalise the total dust column to that of a smooth exponential disk
     # with face-on optical depth tau0 at its centre (2 pi tau0 Rd^2).  An
     # integral rather than a ring average, so a central hole (bar) doesn't
@@ -1554,7 +1583,7 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         # scatter members around each complex (clusters of clusters).
         # (A clumpy disk's clusters spread through the turbulent disk
         # between its giant clumps too, not only on them.)
-        n_cx = max(rc.n_clusters // 6, 10)
+        n_cx = max(rc.n_clusters // 6, 10) if rc.n_clusters > 0 else 0
         conc = CLUMPY["conc"] if rc.clumps else 1.3
         cx, cy = _sample_map(maps.young**conc, maps.half, n_cx, rng)
         k = rng.integers(2, 11, n_cx)
@@ -1566,7 +1595,7 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         m = len(px)
         lum = rng.pareto(1.3, m) + 1
         lum = np.minimum(lum, 25)
-        lum *= rc.l_young * 0.6 / lum.sum()
+        lum *= rc.l_young * 0.6 / max(lum.sum(), 1e-30)
         pz = rng.normal(0, 0.04, m)
         rgb = CLUSTER_RGB[None, :] * rng.uniform(0.85, 1.15, (m, 1))
         out.append(
@@ -1599,7 +1628,9 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         lum = rng.pareto(1.5, m) + 1
         lum = np.minimum(lum, 12)
         halo = float(HII_LOOK["halo"])
-        lum *= rc.l_young * HII_LOOK["gain"] * (1 - halo) / lum.sum()
+        lum *= (
+            rc.l_young * HII_LOOK["gain"] * (1 - halo) / max(lum.sum(), 1e-30)
+        )
         out.append(
             Points(
                 np.c_[hx, hy, rng.normal(0, 0.03, m)],
@@ -1651,14 +1682,16 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
                 )
             )
 
-        # Resolved old field stars: sparkle over the smooth disk light.
+        # Resolved old field stars: sparkle over the smooth disk light, as
+        # thick as it (sech^2, z0 = hz).
         fx, fy = _sample_map(maps.old, maps.half, rc.n_field, rng)
         m = rc.n_field
         lum = rng.exponential(1.0, m) ** 2
         lum *= 0.06 / lum.sum()
+        fz = rc.hz * np.arctanh(rng.uniform(-0.999, 0.999, m))
         out.append(
             Points(
-                np.c_[fx, fy, rng.normal(0, 0.15, m)],
+                np.c_[fx, fy, fz],
                 lum,
                 np.tile(old_rgb, (m, 1)) * rng.uniform(0.8, 1.2, (m, 1)),
                 np.full(m, 0.6),
@@ -2133,17 +2166,23 @@ def jelly_points(
 
 
 def strip_points(
-    rc: GalaxyRecipe, direction, strength: float, seed: int
+    rc: GalaxyRecipe, direction, strength: float, seed: int, toward=None
 ) -> Points:
     """Tidal stripping of a satellite deep in its host: leading and
     trailing streams of its stars along the orbit (`direction`, model
-    frame), the more of its subhalo it has lost the longer."""
+    frame), the more of its subhalo it has lost the longer.  The leading
+    stream curves toward the host (`toward`), the trailing one away.  Faint:
+    a few per cent of the galaxy's light, as observed streams are."""
     rng = np.random.default_rng(seed)
     u = np.asarray(direction, float)
     u = u / max(np.linalg.norm(u), 1e-9)
-    side = np.cross(u, [0.0, 0.0, 1.0])
-    if np.linalg.norm(side) < 1e-3:
-        side = np.cross(u, [1.0, 0.0, 0.0])
+    side = None
+    if toward is not None:
+        side = np.asarray(toward, float) - np.dot(toward, u) * u
+    if side is None or np.linalg.norm(side) < 1e-3:
+        side = np.cross(u, [0.0, 0.0, 1.0])
+        if np.linalg.norm(side) < 1e-3:
+            side = np.cross(u, [1.0, 0.0, 0.0])
     side /= np.linalg.norm(side)
     e = rc.extent
     n = int(6000 + 12000 * strength)
@@ -2152,10 +2191,10 @@ def strip_points(
     length = (2.0 + 4.0 * strength) * e
     r = 0.7 * e + t * length
     # Streams bend gently (the orbit curves).
-    pos = (sgn * r)[:, None] * u + (0.12 * r**2 / length)[:, None] * side
+    pos = (sgn * r)[:, None] * u + (sgn * 0.12 * r**2 / length)[:, None] * side
     pos += rng.normal(0, 1, (n, 3)) * (0.05 * e + 0.08 * e * t)[:, None]
     main_light = rc.l_disk + rc.l_bulge if rc.kind == "disk" else 1.0
-    lum = (1.2 - t) * 0.8 * strength * main_light
+    lum = (1.2 - t) * 0.05 * strength * main_light
     lum /= max(n, 1) * (1.2 - t).mean()
     rgb = np.tile(np.asarray(rc.old_rgb), (n, 1))
     return Points(pos, lum, rgb, np.full(n, 1.1), "strip")
@@ -2255,13 +2294,18 @@ def describe(g: SageGalaxy, rc: GalaxyRecipe | None = None) -> list[str]:
     if rc.kind == "elliptical":
         out.append("elliptical" + (", dust lane" if rc.dust_lane > 0 else ""))
     else:
-        arms = {
-            "grand": "grand-design arms",
-            "multi": "multi-arm spiral",
-            "partial": "partial arms",
-            "flocculent": "flocculent arms",
-            "clumpy": f"clumpy disk ({rc.clumps} clumps)",
-        }.get(rc.arm_class, rc.arm_class)
+        lenticular = rc.arm_old_amp < 0.05 and rc.l_young < 0.02
+        arms = (
+            "lenticular (S0)"
+            if lenticular
+            else {
+                "grand": "grand-design arms",
+                "multi": "multi-arm spiral",
+                "partial": "partial arms",
+                "flocculent": "flocculent arms",
+                "clumpy": f"clumpy disk ({rc.clumps} clumps)",
+            }.get(rc.arm_class, rc.arm_class)
+        )
         out.append(arms)
         if rc.bar_len > 0:
             out.append("bar")

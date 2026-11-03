@@ -124,19 +124,27 @@ HOT_TEMP = [
 ]
 
 
+def hot_luminosity(gal) -> float:
+    """log10 X-ray (bremsstrahlung) luminosity of the hot atmosphere, erg/s:
+    1.4e-27 T^0.5 n^2 V, with T = 35.9 Vvir^2 K and SAGE26's HotGas at its
+    mean density within Rvir."""
+    if gal.hot_gas <= 0 or gal.rvir_kpc <= 0:
+        return 0.0
+    v = 4.0 / 3.0 * np.pi * (gal.rvir_kpc * 3.086e21) ** 3  # cm^3
+    n = gal.hot_gas * 1.989e33 / (0.6 * 1.6726e-24) / v  # cm^-3
+    t = 35.9 * max(gal.vvir or gal.vmax, 1.0) ** 2
+    return float(np.log10(1.4e-27 * np.sqrt(t) * n * n * v))
+
+
 def hot_opacity(gal) -> float:
-    """Opacity of the hot atmosphere: rising with log HotGas, with the hot
-    gas's share of the halo's baryons, and with redshift (denser haloes),
+    """Opacity of the hot atmosphere, from its X-ray luminosity: 10^39
+    (faint galaxy haloes) to 10^44.5 erg/s (rich clusters), the ~4 dex
+    observed from galaxies to clusters (e.g. Anderson et al. 2015);
     capped so it never hides the galaxy."""
     if gal.hot_gas <= 0:
         return 0.0
-    f_m = np.clip((np.log10(gal.hot_gas) - 9.0) / 3.5, 0.0, 1.0)
-    frac = 1.0
-    if gal.mvir > 0:
-        frac = np.clip(gal.hot_gas / (0.17 * gal.mvir), 0.0, 1.0)
-    zb = min(1.0 + gal.redshift, 3.0) ** 0.5
-    op = (0.3 + 0.7 * f_m) * (0.55 + 0.45 * frac**0.5) * zb
-    return float(HOT_MAX_OPACITY * min(op, 1.3))
+    f = np.clip((hot_luminosity(gal) - 39.0) / 5.5, 0.0, 1.0)
+    return float(HOT_MAX_OPACITY * (0.15 + 0.85 * f))
 
 
 _STDS = {"fbm": 0.183221, "fbm2": 0.177726, "fbm6": 0.190337}
@@ -230,7 +238,7 @@ GLSL_IMPL = """
       float zc = fbm6(cpk / (0.08 * rvir) + vec3(51.0)) / uFbm6Std;
       if (zc > 0.0) zc = 1.2 * (1.0 - 2.0 / (exp(2.0 * zc / 1.2) + 1.0));
       float clump = exp(0.55 * zc);
-      float cgm = env * (0.12 + 0.8 * st + 0.35 * fil) * clump;
+      float cgm = env * (0.12 + 0.8 * uStreamFrac * st + 0.35 * fil) * clump;
       cgm *= exp(-pow(R / (0.95 * rvir), 8.0));
       gas += uStreamAmp * (cgm / uStreamNorm) * uCgmRGB;
     }
@@ -330,24 +338,25 @@ class GasSpec:
         conc = gal.concentration if gal.concentration > 0 else 8.0
         self.hot_core = float(np.clip(1.5 / conc, 0.08, 0.3))
 
+        # The CGM (SAGE26's CGMgas) glows smooth and filamentary; cold
+        # streams run through it only where SAGE26 has inflow (mdot_stream,
+        # Msun/yr: 1 to 1000; ~100 into 1e12 Msun haloes at z ~ 2.5, Dekel
+        # et al. 2009).
         self.stream_amp = 0.0
         if gal.cgm_gas > 0:
             self.stream_amp = 0.8 * float(
                 np.clip((np.log10(gal.cgm_gas) - 8.5) / 3.0, 0.05, 1.0)
             )
+        self.stream_frac = 0.0
         if gal.mdot_stream > 0 and (gal.cgm_gas > 0 or gal.hot_gas > 0):
-            self.stream_amp = max(
-                self.stream_amp,
-                0.8
-                * float(
-                    np.clip((np.log10(gal.mdot_stream) + 6.0) / 1.5, 0.3, 1.0)
-                ),
+            self.stream_frac = float(
+                np.clip(np.log10(gal.mdot_stream) / 3.0, 0.0, 1.0)
             )
+            self.stream_amp = max(self.stream_amp, 0.8 * self.stream_frac)
         # Cold streams are narrower and reach deeper at high z (Dekel &
         # Birnboim): thinner and brighter, and right in to the galaxy.
         z = max(gal.redshift, 0.0)
         self.stream_w = float(np.clip(1.0 / (1.0 + 0.35 * z), 0.5, 1.0))
-        self.stream_amp *= float(1.0 + 0.15 * min(z, 3.0))
         rng = np.random.default_rng(rc.seed + 7)
         self.t0 = (
             rng.uniform(0, 2 * np.pi)
@@ -355,17 +364,22 @@ class GasSpec:
             + rng.normal(0, 0.4, 3)
         )
 
-        self.jet = (
-            float(np.clip((gal.heating_log - 40.0) / 1.5, 0.15, 1.0))
-            if gal.heating_log > 40.0
-            else 0.0
-        )
-        # Bigger black holes drive brighter jets; jets reach about the
-        # radius the AGN heats (r_heat), in proportion to the halo.
-        if self.jet > 0 and gal.bh_mass > 0:
-            self.jet *= float(
-                np.clip(0.7 + 0.15 * (np.log10(gal.bh_mass) - 8.0), 0.5, 1.3)
-            )
+        # Radio jets: a black hole is radio-loud with the observed chance
+        # 0.01 (M_BH / 1e8)^1.6 (Best et al. 2005); the jet's power from
+        # SAGE26's radio-mode accretion rate (0.1 Mdot c^2, 10^42 to 10^46
+        # erg/s), faint without any this step.
+        self.jet = 0.0
+        if gal.bh_mass > 0:
+            p_loud = min(1.0, 0.01 * (gal.bh_mass / 1e8) ** 1.6)
+            if np.random.default_rng(rc.seed + 13).random() < p_loud:
+                self.jet = 0.15
+                dt = getattr(gal, "dt_myr", 0.0)
+                if gal.radio_accretion > 0 and dt > 0:
+                    mdot = gal.radio_accretion / (dt * 1e6)  # Msun/yr
+                    power = np.log10(0.1 * mdot * 5.66e46)  # erg/s
+                    self.jet = float(np.clip((power - 42.0) / 4.0, 0.15, 1.0))
+        # Jets reach about the radius the AGN heats (r_heat), in proportion
+        # to the halo.
         reach = max(gal.r_heat_kpc, 0.08 * self.rvir)
         self.jet_len = float(
             np.clip(0.6 * reach, 12.0, 150.0)
@@ -373,18 +387,19 @@ class GasSpec:
         )
         self.disk_r = rc.extent * rc.unit_kpc * 0.5
         self.wind = 0.0
-        if gal.outflow_rate > 0.05:
+        if gal.outflow_rate > 0:
+            # SAGE26's OutflowRate (Msun/yr, 1 to 1000), where star
+            # formation is concentrated enough to drive a wind out: SFR
+            # surface density above ~0.1 Msun/yr/kpc^2 (Heckman 2002), over
+            # the star-forming half-light radius (1.68 Rd).
             self.wind = float(
-                np.clip((np.log10(gal.outflow_rate) + 1.0) / 2.5, 0.1, 1.0)
+                np.clip(np.log10(gal.outflow_rate) / 3.0, 0.1, 1.0)
             )
-            # Winds need concentrated star formation: brighter with the
-            # SFR surface density (high-z disks are compact, so stronger).
-            rd = max(gal.disk_radius_kpc, 0.3)
-            sig = (gal.sfr_disk + gal.sfr_bulge) / (np.pi * rd**2)
+            re = 1.68 * max(gal.disk_radius_kpc, 0.3)
+            sig = (gal.sfr_disk + gal.sfr_bulge) / (np.pi * re**2)
             self.wind *= float(
-                np.clip(1.0 + 0.4 * np.log10(max(sig, 1e-6) / 0.1), 0.4, 1.5)
+                1.0 / (1.0 + np.exp(-np.log10(max(sig, 1e-9) / 0.1) / 0.15))
             )
-            self.wind = min(self.wind, 1.2)
         # Faster in deeper potentials (v ~ 2 Vmax), so further out.
         self.wind_len = (
             float(
@@ -540,7 +555,7 @@ class GasSpec:
         clump = np.exp(0.55 * zc)
         cgm = (
             env
-            * (0.12 + 0.8 * st + 0.35 * fil)
+            * (0.12 + 0.8 * self.stream_frac * st + 0.35 * fil)
             * clump
             * np.exp(-((R / (0.95 * rv)) ** 8))
         )
@@ -560,6 +575,7 @@ class GasSpec:
         f("uHotNormLin", float(self.norm_lin))
         f("uHotNormLog", float(self.norm_log))
         f("uStreamAmp", float(self.stream_amp))
+        f("uStreamFrac", float(self.stream_frac))
         f("uStreamNorm", float(self.stream_norm(1.05 * self.rvir)))
         u.SetUniform3f("uStreamT0", [float(v) for v in self.t0])
         f("uJetAmp", float(self.jet))

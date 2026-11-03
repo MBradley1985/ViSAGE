@@ -98,15 +98,29 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
         for kb in hd:
             if ka == kb:
                 continue
+            # (Physical kpc: positions are comoving.)
+            a_exp = 1.0 / (1.0 + max(entries[ka]["gal"].redshift, 0.0))
             sep_kpc = (
-                float(np.linalg.norm(pos[kb] - pos[ka])) * 1000.0 / hubble_h
+                float(np.linalg.norm(pos[kb] - pos[ka]))
+                * 1000.0
+                / hubble_h
+                * a_exp
             )
             ratio = entries[kb]["gal"].stellar_mass / max(ma, 1.0)
             if sep_kpc >= R_TIDAL or ratio < TIDAL_RATIO:
                 continue
+            # A fast fly-by raises little: pairs are those within ~300-500
+            # km/s of each other (Patton et al. 2013; Ellison et al. 2008).
+            dv = float(
+                np.linalg.norm(
+                    np.asarray(entries[kb]["gal"].vel, float)
+                    - np.asarray(entries[ka]["gal"].vel, float)
+                )
+            )
             strength = float(
                 np.clip((R_TIDAL - sep_kpc) / 70.0, 0.0, 1.0)
                 * np.clip(np.sqrt(ratio), 0.0, 1.0)
+                * np.clip((500.0 - dv) / 200.0, 0.0, 1.0)
             )
             if strength > 0.1:
                 add(ka, kb, strength)
@@ -169,17 +183,19 @@ def stripped_fraction(
     return float((1 + x) * np.exp(-x))
 
 
-# Tidal stripping of satellites, by "dm" (subhalo mass lost since
-# infall), "stars" (stellar mass lost) or "both" (the stronger).
-STRIP_MODE = "dm"
+# Tidal streams of a satellite: its stars are stripped only once ~90% of
+# its dark matter is gone (Penarrubia et al. 2008), so from SAGE26's Mvir /
+# infallMvir below STRIP_DM; SAGE26 itself never strips a satellite's stars
+# gradually, so the streams stay faint.
+STRIP_DM = 0.1
 
 # A member's glow is gone once its model is this many pixels across: at real
 # size most never reach more, and a bright glow would hide them.
 GLOW_UNTIL_PX = 2.0
 
-# How much of a shared exposure's dimming a member gets back: a group stays
-# in proportion, but a satellite beside a bright central keeps its detail.
-SATELLITE_LIFT = 0.4
+# How much of a shared exposure's dimming a member gets back (0: none, so
+# a group's members keep their true brightness against each other).
+SATELLITE_LIFT = 0.0
 
 # Cap on a jellyfish tail's exposure compensation.
 TAIL_GAIN_MAX = 10.0
@@ -234,7 +250,13 @@ def satellite_context(entries, hubble_h: float) -> dict:
         if not e.get("quality") or g.gtype == 0 or e.get("role") != "member":
             continue
         d = np.asarray(e["center"], float) - hpos
-        r_kpc = float(np.linalg.norm(d)) * 1000.0 / hubble_h
+        # (Physical kpc, as SAGE26's Rvir: positions are comoving.)
+        r_kpc = (
+            float(np.linalg.norm(d))
+            * 1000.0
+            / hubble_h
+            / (1.0 + max(g.redshift, 0.0))
+        )
         v = np.asarray(g.vel, float) - hvel
         speed = float(np.linalg.norm(v))
         if speed <= 0:
@@ -251,18 +273,13 @@ def satellite_context(entries, hubble_h: float) -> dict:
                 # The tail trails the motion.
                 st = (f - JELLY_STRIPPED) / (1 - JELLY_STRIPPED)
                 ctx["ram"] = (-vdir, st)
-        strip = 0.0
-        if STRIP_MODE in ("dm", "both") and g.infall_mvir > 0 and g.mvir > 0:
+        if g.infall_mvir > 0 and 0 < g.mvir < STRIP_DM * g.infall_mvir:
+            # Stronger the more is gone: full at 1% of it left.
             f_dm = g.mvir / g.infall_mvir
-            if f_dm < 0.35:
-                strip = float(np.clip((0.35 - f_dm) / 0.3, 0.2, 1.0))
-        if STRIP_MODE in ("stars", "both") and g.infall_stellar_mass > 0:
-            # Stars lost since infall: the clearest sign of tidal stripping.
-            lost = 1.0 - g.stellar_mass / g.infall_stellar_mass
-            if lost > 0.1:
-                strip = max(strip, float(np.clip(lost / 0.5, 0.2, 1.0)))
-        if strip > 0:
-            ctx["strip"] = (vdir, strip)
+            strip = float(np.clip(np.log10(STRIP_DM / f_dm), 0.1, 1.0))
+            # (Toward the host: the leading stream curves in, the trailing
+            # one out.)
+            ctx["strip"] = (vdir, strip, -d / max(np.linalg.norm(d), 1e-12))
         if ctx:
             out[k] = ctx
     return out

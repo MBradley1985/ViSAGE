@@ -464,6 +464,11 @@ float sech2(float z, float h) {
   float c = cosh(clamp(z / h, -30.0, 30.0));
   return 1.0 / (c * c) / (2.0 * h);
 }
+// A flattened 3D exponential (pseudo-bulges: Sersic n ~ 1), unit total.
+float expo3(vec3 p, float h, float q) {
+  float m = length(vec3(p.x, p.y, p.z / q));
+  return exp(-m / h) / (25.1327412 * h * h * h * q);
+}
 float hernq(vec3 p, float a, float q, vec3 ax) {
   float m = length(vec3(p.x / ax.x, p.y / ax.y, p.z / (ax.z * q)));
   m = max(m, 0.004);
@@ -620,7 +625,7 @@ _IMPL = """//VTK::Light::Impl
       if (inC) {
         float bul = uLBulge * hernq(p, uBulgeA, uBulgeQ, vec3(1.0)) * dt;
         // Pseudo-bulge: compact and flattened (instability-built).
-        if (uLPseudo > 0.0) bul += uLPseudo * hernq(p, uPseudoA, uPseudoQ, vec3(1.0)) * dt;
+        if (uLPseudo > 0.0) bul += uLPseudo * expo3(p, uPseudoA, uPseudoQ) * dt;
         if (uBarLen > 0.0) {
           float bx = uBarLen, by = uBarLen * uBarAxis;
           // An exponential ellipse: a boxier one reads as a lit rectangle.
@@ -723,7 +728,7 @@ _IMPL = """//VTK::Light::Impl
           float tauP = 0.0;
           if (uIsDisk > 0.5 && abs(A.x) < uMapHalf && abs(A.y) < uMapHalf) {
             float k0 = texture(mapTex, mapUV(A.xy, uMapHalf, uMapN)).b;
-            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.08);
+            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.01);
           }
           vec4 C = texelFetch(gColTex, ec, 0);
           vec3 L = C.rgb * exp(-tauP * uDustK);
