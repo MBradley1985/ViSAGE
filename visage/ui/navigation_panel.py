@@ -1372,40 +1372,64 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # lightcone|filters|target|group|coords|box  ("lightcone" only offered in
     # Lightcone Mode; default to it there so export works out of the box).
     state.export_scope = "lightcone" if scene.is_lightcone else "filters"
-    state.export_scope_items = (
-        [{"title": "Whole Lightcone", "value": "lightcone"}]
-        if scene.is_lightcone
-        else []
-    ) + [
-        {"title": "Current Filters", "value": "filters"},
-        {"title": "Selected Galaxy", "value": "target"},
-        {"title": "Group Members", "value": "group"},
-        {"title": "Active region", "value": "region"},
+    state.export_scope_items = [
+        {
+            "title": "Whole lightcone" if scene.is_lightcone else "Whole box",
+            "value": "lightcone" if scene.is_lightcone else "box",
+        },
+        {"title": "Current filters", "value": "filters"},
+        {"title": "Selected galaxy", "value": "target"},
+        {"title": "Its group", "value": "group"},
+        {"title": "Region", "value": "region"},
     ]
+    state.export_shape = "sphere"  # the region's shape (Regions tab values)
+    state.export_snaps = "current"  # current | range
+    state.export_snap_lo = 0
+    state.export_snap_hi = 0
+    state.export_count = ""
     state.export_format = "csv"  # csv|hdf5|fits|txt
     state.export_filename = ""  # optional custom stem
     state.export_status = ""  # last result path or error
     state.export_busy = False
 
-    def _resolve_export_indices(scope: str) -> tuple:  # noqa: F821
-        """Return (gal_indices_into_snapshot, scope_bounds_dict)."""
+    def _resolve_export_indices(scope: str, snap=None) -> tuple:  # noqa: F821
+        """Return (gal_indices_into_snapshot, scope_bounds_dict) at `snap`
+        (default: the current one; the selected galaxy is followed there by
+        its GalaxyIndex)."""
         import numpy as np
 
-        _, galaxies = scene.active_model.loader.get(scene.current_snap)
+        here = scene.current_snap
+        snap = here if snap is None else int(snap)
+        _, galaxies = scene.active_model.loader.get(snap)
         if galaxies.count == 0:
             raise ValueError("No galaxies loaded.")
 
         if scope in ("target", "group") and state.nav_gal_idx is None:
             raise ValueError("Select a galaxy first (double-click it).")
+        if scope in ("target", "group") and snap != here:
+            gid = ctrl.sel_galaxy() if hasattr(ctrl, "sel_galaxy") else None
+            gid = ctrl.sel_followed(gid, snap) if gid is not None else None
+            hit = (
+                np.flatnonzero(galaxies.galaxy_id == gid)
+                if gid is not None
+                else []
+            )
+            if not len(hit):
+                return np.zeros(0, np.int64), {"note": "not in this snapshot"}
+            sel_row = int(hit[0])
+        else:
+            sel_row = (
+                int(state.nav_gal_idx) if state.nav_gal_idx is not None else -1
+            )
 
-        if scope == "lightcone":
+        if scope in ("lightcone", "box"):
             return (
                 np.arange(galaxies.count, dtype=np.int64),
                 {"lightcone": "all galaxies in the cone"},
             )
 
         if scope == "target":
-            idx = int(state.nav_gal_idx)
+            idx = sel_row
             if idx < 0 or idx >= galaxies.count:
                 raise ValueError(f"Target index {idx} out of range.")
             pos = galaxies.positions[idx]
@@ -1426,7 +1450,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
         if scope == "group":
             from visage.utils.group_info import member_indices
 
-            idx = int(state.nav_gal_idx)
+            idx = sel_row
             members = member_indices(galaxies, idx)
             if len(members) == 0:
                 raise ValueError("No group members found for target galaxy.")
@@ -1447,10 +1471,22 @@ def build_navigation_panel(server, scene: Scene) -> None:
             return members.astype(np.int64), bounds
 
         if scope == "region":
-            return ctrl.region_rows()
+            region = ctrl.region_of(str(state.export_shape))
+            if region is None:
+                raise ValueError("Fill in the region on the Regions tab.")
+            pos = galaxies.positions + scene.active_model.offset
+            found = np.flatnonzero(scene.region_mask(region, galaxies, pos))
+            return found.astype(np.int64), {
+                f"region_{k}": str(v) for k, v in region.items()
+            }
 
-        # default: "filters" — use the active filter mask on the galaxy layer
-        fmask = scene.galaxy_layer._filter_mask
+        # default: "filters" — the Filters tab's settings
+        if snap == here:
+            fmask = scene.galaxy_layer._filter_mask
+        else:
+            fmask = galaxy_mask(
+                galaxies, scene.active_model.fields_available, state
+            )
         if fmask is None:
             gal_indices = np.arange(galaxies.count, dtype=np.int64)
         else:
@@ -1460,7 +1496,56 @@ def build_navigation_panel(server, scene: Scene) -> None:
         bounds = {"filter_description": "Active galaxy filter tab settings"}
         return gal_indices, bounds
 
+    def _export_snaps() -> list:
+        if scene.is_lightcone or str(state.export_snaps) != "range":
+            return [scene.current_snap]
+        lo, hi = sorted((int(state.export_snap_lo), int(state.export_snap_hi)))
+        n = scene._snap_table.count
+        return list(range(max(lo, 0), min(hi, n - 1) + 1))
+
+    @state.change(
+        "export_scope",
+        "export_shape",
+        "export_snaps",
+        "export_snap_lo",
+        "export_snap_hi",
+        "export_dialog_show",
+        "nav_gal_idx",
+    )
+    def _export_count(**_):
+        if not state.export_dialog_show:
+            return
+        snaps = _export_snaps()
+        try:
+            n = len(_resolve_export_indices(str(state.export_scope))[0])
+        except Exception as exc:
+            state.export_count = str(exc)
+            return
+        word = "galaxy" if n == 1 else "galaxies"
+        state.export_count = (
+            f"{n:,} {word}"
+            if len(snaps) == 1
+            else f"{n:,} {word} here · {len(snaps)} snapshots "
+            f"({snaps[0]}-{snaps[-1]}), one file each"
+        )
+
+    @state.change("export_dialog_show")
+    def _export_open(export_dialog_show=False, **_):
+        if export_dialog_show and not scene.is_lightcone:
+            if not state.export_snap_hi:
+                state.export_snap_lo = state.export_snap_hi = (
+                    scene.current_snap
+                )
+            state.export_z = [
+                {
+                    "title": f"{s} · z = {scene._snap_table.snap_to_z(s):.2f}",
+                    "value": s,
+                }
+                for s in range(scene._snap_table.count)
+            ]
+
     _SCOPE_LABELS = {
+        "box": "Whole box",
         "lightcone": "Whole Lightcone",
         "filters": "Current Filters",
         "target": "Selected Galaxy",
@@ -1470,7 +1555,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
     @ctrl.set("do_export")
     async def on_do_export():
-        import asyncio, pathlib, datetime
+        import asyncio, datetime, functools, pathlib
 
         scope = str(state.export_scope)
         fmt = str(state.export_format)
@@ -1480,13 +1565,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.flush()
 
         try:
-            gal_indices, scope_bounds = _resolve_export_indices(scope)
-            _, galaxies = scene.active_model.loader.get(scene.current_snap)
-            sage_idx = galaxies.sage_indices[gal_indices]
-
+            snaps = _export_snaps()
             cfg = scene.primary.cfg
             snap_tbl = scene.primary.snap_table
-            snap_num = scene.current_snap
             # A lightcone is a flat file (no Snap_N group); read its top-level
             # columns — which also include the synthetic-photometry mags —
             # straight from the cone source file rather than a SAGE snapshot.
@@ -1495,45 +1576,68 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 hdf5_path = getattr(scene.active_model, "path", cfg.hdf5_path)
             else:
                 hdf5_path = cfg.hdf5_path
-            snap_lbl = (
-                str(state.snap_label)
-                if hasattr(state, "snap_label")
-                else f"snap{snap_num}"
-            )
-
             out_dir = pathlib.Path.cwd() / "sage_outputs" / "catalogues"
             if not stem:
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 stem = f"catalogue_{scope}_{ts}"
+            if len(snaps) > 1:
+                out_dir = out_dir / stem
             exts = {
                 "csv": ".csv",
                 "hdf5": ".h5",
                 "fits": ".fits",
                 "txt": ".txt",
             }
-            out_path = out_dir / f"{stem}{exts.get(fmt, '.csv')}"
-
             from visage.utils.catalogue import write_catalogue
 
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: write_catalogue(
-                    hdf5_path=hdf5_path,
-                    snap_num=snap_num,
-                    snap_label=snap_lbl,
-                    sage_indices=sage_idx,
-                    out_path=out_path,
-                    fmt=fmt,
-                    hubble_h=cfg.hubble_h,
-                    scope_label=_SCOPE_LABELS.get(scope, scope),
-                    scope_bounds=scope_bounds,
-                    cfg=cfg,
-                    snap_table=snap_tbl,
-                    flat=is_lc,
-                ),
+            total, files, last = 0, 0, None
+            for k, snap_num in enumerate(snaps):
+                if len(snaps) > 1:
+                    state.export_status = f"Exporting snapshot {snap_num} ({k + 1}/{len(snaps)})…"
+                    state.flush()
+                gal_indices, scope_bounds = _resolve_export_indices(
+                    scope, snap_num
+                )
+                if not len(gal_indices):
+                    continue
+                _, galaxies = scene.active_model.loader.get(snap_num)
+                sage_idx = galaxies.sage_indices[gal_indices]
+                snap_lbl = (
+                    snap_tbl.label(snap_num)
+                    if not is_lc
+                    else str(getattr(state, "snap_label", ""))
+                )
+                name = (
+                    stem if len(snaps) == 1 else f"{stem}_snap{snap_num:03d}"
+                )
+                out_path = out_dir / f"{name}{exts.get(fmt, '.csv')}"
+                last = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    functools.partial(
+                        write_catalogue,
+                        hdf5_path=hdf5_path,
+                        snap_num=snap_num,
+                        snap_label=snap_lbl,
+                        sage_indices=sage_idx,
+                        out_path=out_path,
+                        fmt=fmt,
+                        hubble_h=cfg.hubble_h,
+                        scope_label=_SCOPE_LABELS.get(scope, scope),
+                        scope_bounds=scope_bounds,
+                        cfg=cfg,
+                        snap_table=snap_tbl,
+                        flat=is_lc,
+                    ),
+                )
+                total += len(sage_idx)
+                files += 1
+            if not files:
+                raise ValueError("No galaxies to export.")
+            state.export_status = (
+                f"✓ {total:,} galaxies → {last}"
+                if files == 1
+                else f"✓ {total:,} galaxies in {files} files → {out_dir}"
             )
-            n = len(sage_idx)
-            state.export_status = f"✓ {n:,} galaxies → {result}"
         except Exception as exc:
             state.export_status = f"Error: {exc}"
 

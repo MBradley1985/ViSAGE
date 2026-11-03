@@ -43,8 +43,8 @@ from visage.hd.model import (
 # (q) and the diffuse light's white level against the base exposure
 # (white), so faint light -- satellites beside a bright central, merger
 # debris, streams, intracluster light -- shows at its true brightness
-# ("Deep B"; was q 40, white 1).
-DEEP = dict(q=400.0, white=0.25)
+# (chosen from options on a cluster: "Light"; was q 40, white 1).
+DEEP = dict(q=100.0, white=0.7)
 
 
 def float_texture(
@@ -617,7 +617,7 @@ _IMPL = """//VTK::Light::Impl
         vec3 m = textureLod(mapTex, mapUV(pm, uMapHalf, uMapN), lodM).rgb;
         // Inside-out growth: older (redder) inside, younger outside.
         vec3 oldC = mix(uOldRGB, uOldOutRGB, smoothstep(0.0, uGradR, length(pm)));
-        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
+        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, uHzYoung, dt) * uYoungRGB;
         kap = m.b * pint(z0, z1, 0.045, dt);
         {
           // Splatted stars: those the current level(s) don't draw exactly.
@@ -1114,6 +1114,12 @@ class GPUGalaxy:
         f("uMapN", float(map_n))
         f("uPtsN", float(npts))
         f("uHz", float(rc.hz))
+        # (Young stars: a thin layer in a spiral, the whole thick disc of a
+        # dwarf irregular.)
+        f(
+            "uHzYoung",
+            float(0.8 * rc.hz if rc.arm_class == "irregular" else 0.06),
+        )
         f("uBulgeA", float(rc.bulge_a))
         f("uBulgeQ", float(rc.bulge_q))
         f("uLBulge", float(rc.l_bulge if disk else 0.0))

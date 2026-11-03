@@ -121,9 +121,12 @@ SFH_LM = np.array([(t / 10.0) ** -0.8 for t in SFH_AGES])
 # Switch for comparisons (False: colours from metallicity alone, as
 # without an SFH).
 USE_SFH = True
-# Dwarf irregulars: gas-rich disks below max_lm are drawn without spiral
-# arms, with a few soft star-forming clumps and an m=1 lopsided disk.
-DWARF = dict(on=False, max_lm=9.3, lopsided=0.4, clumps=3)
+# Dwarf irregulars: gas-rich disks below max_lm (the LMC's mass, the
+# Magellanic irregulars' upper end) are drawn without spiral arms, with a
+# few large star-forming complexes (more the more star formation: Hunter &
+# Elmegreen 2004), a lopsided (m = 1) disk (Zaritsky et al. 2013) and a
+# thick one (intrinsic b/a ~ 0.3-0.4: Roychowdhury et al. 2013).
+DWARF = dict(max_lm=9.5, lopsided=(0.3, 0.8), clumps=(3, 8), hz=0.5)
 # ICL streams: "threshold" (any ICS torn from satellites in place above
 # ~10^10.5 Msun) or "share" (scaled by the in-place share of all the ICS,
 # accreted ICS making a smoother envelope).
@@ -837,7 +840,7 @@ def recipe_from_sage(
     )
     if g.ffb or rng.random() < p_clumpy:
         drawn = "clumpy"
-    if DWARF["on"] and lm < DWARF["max_lm"] and gas_frac > 0.15:
+    if lm < DWARF["max_lm"] and gas_frac > 0.15:
         drawn = "irregular"
     arm_class = arm_class or drawn
     # Gas richness places the flocculence within the class's range.
@@ -1041,9 +1044,13 @@ def recipe_from_sage(
         n_clusters = max(int(n_clusters * CLUMPY["clusters"]), 50)
     lopsided = lop_phase = 0.0
     if arm_class == "irregular":
-        clumps = int(DWARF["clumps"])
-        lopsided = float(DWARF["lopsided"])
+        lo, hi = DWARF["clumps"]
+        clumps = int(
+            np.clip(lo + (hi - lo) * np.log10(1 + 10 * g.sfr_disk), lo, hi)
+        )
+        lopsided = float(rng.uniform(*DWARF["lopsided"]))
         lop_phase = float(rng.uniform(0, 2 * np.pi))
+        hz = max(hz, DWARF["hz"])
         notes.append(
             f"dwarf irregular: {clumps} clumps, lopsided {lopsided:.2f}"
         )
@@ -1101,7 +1108,11 @@ def recipe_from_sage(
         lop_phase=lop_phase,
         hole=float(max(bar_len * 0.9, 2.5 * bulge_a, 0.25)),
         hi_scale=hi_scale,
-        arm_old_amp=float(0.45 * min(1.0, gas_frac / 0.08)),
+        arm_old_amp=(
+            0.0
+            if arm_class in ("clumpy", "irregular")
+            else float(0.45 * min(1.0, gas_frac / 0.08))
+        ),
         l_disk=OLD_LIGHT,
         l_bulge=float(l_bulge),
         l_young=l_young,
@@ -1260,6 +1271,8 @@ def arm_layout(cls: str, extent: float, r_base: float, rng):
 def _arm_field(rc, r, th, lnr0, tanp, wobble, shift, sharp):
     """Soft union of the recipe's individual arms (each a log spiral lobe
     tapered between its start and end radius), peak 1."""
+    if rc.arm_class in ("clumpy", "irregular"):
+        return np.zeros_like(r)  # (no spiral arms at all)
     amps = rc.arm_amp or (1.0,) * rc.n_arms
     r0s = rc.arm_r0 or (0.0,) * len(amps)
     r1s = rc.arm_r1 or (1e9,) * len(amps)
@@ -1348,6 +1361,9 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     wobble = spiral_noise(3.5, 1.0, 1)  # large-scale arm irregularity
     fil = spiral_noise(2.2, 0.25, 2)  # fine filaments along arms
     clumps = gaussian_field((n, n), 2.6, rng)  # isotropic patchiness
+    if rc.arm_class in ("clumpy", "irregular"):
+        # No spiral to follow: star formation in isotropic patches.
+        fil = clumps / max(float(clumps.std()), 1e-9)
 
     # Spiral pattern.  The arm starts at the bar ends (or near the centre).
     r0 = max(rc.bar_len, 0.3)
@@ -1622,7 +1638,9 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         lum = rng.pareto(1.3, m) + 1
         lum = np.minimum(lum, 25)
         lum *= rc.l_young * 0.6 / max(lum.sum(), 1e-30)
-        pz = rng.normal(0, 0.04, m)
+        # (A dwarf irregular's young stars fill its thick disc.)
+        thick = 0.4 * rc.hz if rc.arm_class == "irregular" else 0.04
+        pz = rng.normal(0, thick, m)
         rgb = CLUSTER_RGB[None, :] * rng.uniform(0.85, 1.15, (m, 1))
         out.append(
             Points(
@@ -1659,7 +1677,7 @@ def build_points(rc: GalaxyRecipe, maps: PlaneMaps | None) -> list[Points]:
         )
         out.append(
             Points(
-                np.c_[hx, hy, rng.normal(0, 0.03, m)],
+                np.c_[hx, hy, rng.normal(0, 0.75 * thick, m)],
                 lum,
                 np.repeat(crgb, k, axis=0),
                 HII_LOOK["size"] * rng.uniform(1.0, 2.0, m),
