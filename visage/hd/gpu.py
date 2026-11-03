@@ -637,7 +637,10 @@ _IMPL = """//VTK::Light::Impl
         if (uBarLen > 0.0) {
           float bx = uBarLen, by = uBarLen * uBarAxis;
           // An exponential ellipse: a boxier one reads as a lit rectangle.
-          float bar = exp(-1.6 * sqrt(pow(p.x / bx, 2.0) + pow(p.y / by, 2.0)));
+          // It ends at its length (fading out by 1.25 of it, inside the core
+          // it is drawn in), so no edge shows however deep the exposure.
+          float mb = sqrt(pow(p.x / bx, 2.0) + pow(p.y / by, 2.0));
+          float bar = exp(-1.6 * mb) * (1.0 - smoothstep(0.8, 1.25, mb));
           // A buckled bar is thickest half way out: boxy / peanut-shaped
           // seen edge-on.
           float hb = 0.12;

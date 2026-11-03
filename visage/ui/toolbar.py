@@ -1271,46 +1271,12 @@ def build_toolbar(server, scene: Scene) -> None:
         html.B("{{ snap_info_z }}")
         html.Span("{{ snap_info_rest }}", classes="sage-snap-rest")
 
-    # Speed: a preset, or typed in
-    v3.VCombobox(
-        v_model=("play_speed",),
-        items=("speed_items",),
-        item_title="title",
-        item_value="value",
-        return_object=False,
-        density="compact",
-        rounded="pill",
-        classes="sage-bar-select",
-        hide_details=True,
-        variant="outlined",
-        style="max-width:104px;",
-    )
-
-    # Rotation: a preset, or typed in (deg/s, negative anticlockwise) —
-    # disabled in multi-box mode (shared camera)
-    v3.VCombobox(
-        v_model=("rotate_mode",),
-        items=("rotate_items",),
-        item_title="title",
-        item_value="value",
-        return_object=False,
-        density="compact",
-        rounded="pill",
-        classes="sage-bar-select",
-        hide_details=True,
-        prefix="Rotate",
-        variant="outlined",
-        style="max-width:150px;",
-        disabled=("box_strip_items && box_strip_items.length > 1",),
-        title="Rotation disabled in multi-box mode",
-    )
-
     # The view: HD, Reset.
     v3.VBtn(
         "HD",
         variant=("hd_active ? 'flat' : 'outlined'",),
         density="compact",
-        click=ctrl.toggle_hd,
+        click=ctrl.toggle_hd_gas,
         color=("hd_active ? 'cyan' : 'white'",),
         loading=("hd_building",),
         disabled=(
@@ -1324,17 +1290,6 @@ def build_toolbar(server, scene: Scene) -> None:
             "from its SAGE properties' : hd_unavailable",
         ),
         id="btn-hd-galaxy",
-    )
-    # HD's halo gas, as the card's Gas button.
-    v3.VBtn(
-        "Gas",
-        variant=("hd_gas ? 'flat' : 'outlined'",),
-        density="compact",
-        color=("hd_gas ? '#a3e635' : 'white'",),
-        click="hd_gas = !hd_gas",
-        disabled=("!hd_available",),
-        classes=("hd_gas ? 'sage-bar-btn sage-gas-on' : 'sage-bar-btn'",),
-        title="HD halo gas: CGM, hot gas, winds and jets",
     )
     v3.VBtn(
         "Reset",

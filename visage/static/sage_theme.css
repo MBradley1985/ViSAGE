@@ -1166,36 +1166,6 @@ body,
     font-weight: 600;
 }
 
-/* Toolbar speed / rotate dropdowns: pills the height of HD, Gas, Reset. */
-.sage-bar-select .v-field {
-    border-radius: 999px !important;
-    --v-input-control-height: 24px;
-}
-.sage-bar-select .v-field__input {
-    min-height: 24px !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-    font-size: 13px;
-}
-.sage-bar-select .v-field-label {
-    font-size: 11px;
-}
-.sage-bar-select .v-input__control,
-.sage-bar-select .v-field {
-    height: 24px;
-}
-.sage-bar-select .v-field__outline__start {
-    border-radius: 999px 0 0 999px !important;
-    min-width: 14px;
-}
-.sage-bar-select .v-field__outline__end {
-    border-radius: 0 999px 999px 0 !important;
-}
-/* (Their label stays inline, as on the dropdowns, while typing.) */
-.sage-bar-select .v-field-label--floating {
-    display: none !important;
-}
-
 /* Toolbar: playback buttons as one pill (P1). */
 .sage-pill-group {
     border-radius: 999px !important;
@@ -1242,9 +1212,17 @@ body,
     font-size: 11px;
     color: #94a3b8;
 }
-.sage-bar-select .v-text-field__prefix {
-    font-size: 11px;
-    color: #94a3b8;
-    padding-top: 0 !important;
-    align-self: center;
+
+/* A combobox in the panel (Record's Speed / Rotate): its typed value as a
+   select's chosen value, white and right-aligned. */
+.sage-panel .v-combobox input {
+    color: #fff !important;
+    font-size: 13px !important;
+    text-align: right;
+}
+
+/* Filters: section headings keep their height when the Find list is long. */
+.sage-panel .v-label,
+.sage-panel .v-divider {
+    flex-shrink: 0;
 }

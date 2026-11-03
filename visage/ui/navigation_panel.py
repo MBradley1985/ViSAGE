@@ -4407,6 +4407,16 @@ def build_navigation_panel(server, scene: Scene) -> None:
         except RuntimeError:
             return None
 
+    @ctrl.set("toggle_hd_gas")
+    def on_toggle_hd_gas():
+        """The toolbar's HD: HD with its halo gas, together (the card keeps
+        HD and Gas apart)."""
+        if bool(state.hd_building):
+            return
+        on = not bool(state.hd_active)
+        state.hd_gas = on
+        on_toggle_hd()
+
     @ctrl.set("toggle_hd")
     def on_toggle_hd():
         """Isolate the selected galaxy and replace its dot with the HD model.
@@ -6542,12 +6552,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
             ):
                 _FSEC_HALO = (
                     "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                    "color:#c084fc;padding:2px 0 2px;display:block;"
+                    "flex-shrink:0;color:#c084fc;padding:2px 0 2px;display:block;"
                     "text-align:center;"
                 )
                 _FSEC_GAL = (
                     "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                    "color:#FFD700;padding:2px 0 2px;display:block;"
+                    "flex-shrink:0;color:#FFD700;padding:2px 0 2px;display:block;"
                     "text-align:center;"
                 )
                 _FLBL = (
@@ -7439,7 +7449,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     style="font-size:0.72rem;color:#9ca3af;padding:6px 2px;",
                 )
                 with html.Div(
-                    style="padding-top:4px;max-height:220px;overflow-y:auto;"
+                    style="padding-top:4px;max-height:140px;overflow-y:auto;"
                 ):
                     with html.Div(
                         v_for="r in find_results",
@@ -7569,6 +7579,39 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         density="compact",
                         menu_props=("{contentClass: 'sage-menu'}",),
                     )
+                    # Playback speed and rotation: a preset, or typed in
+                    # (rotation in deg/s, negative anticlockwise).
+                    for model, items, label, extra in (
+                        ("play_speed", "speed_items", "Speed", {}),
+                        (
+                            "rotate_mode",
+                            "rotate_items",
+                            "Rotate",
+                            dict(
+                                disabled=(
+                                    "box_strip_items && box_strip_items.length > 1",
+                                ),
+                                title="Rotation disabled in multi-box mode",
+                            ),
+                        ),
+                    ):
+                        v3.VCombobox(
+                            v_model=(model,),
+                            items=(items,),
+                            item_title="title",
+                            item_value="value",
+                            return_object=False,
+                            label=label,
+                            # (A select's look: the panel styles v-select.)
+                            classes="v-select sage-right sage-sel-cyan",
+                            menu_icon="mdi-chevron-down",
+                            hide_details=True,
+                            variant="outlined",
+                            color="cyan",
+                            density="compact",
+                            menu_props=("{contentClass: 'sage-menu'}",),
+                            **extra,
+                        )
 
                     html.Div("Output format", classes="sage-file-head")
                     with html.Div(classes="sage-formats"):
