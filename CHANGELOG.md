@@ -8,18 +8,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.20.0] — 2026-11-04
+
 ### Added
 
+- Export card: export the box, the filtered galaxies, the selected galaxy, its group or the active region, for one snapshot or a range, with a live count of what will be written.
+- Dwarf irregulars (HD): galaxies below 10^9.5 Msun are lopsided and clumpy with no spiral arms (Hunter & Elmegreen 2004; Zaritsky et al. 2013; Roychowdhury et al. 2013).
+- Record tab: playback Speed and camera Rotate, from presets or typed in (0.01× to 100×; any rate in °/s, negative or "ccw" for anticlockwise).
+- HD reads DarkSAGE's rotation curves (disc rotation and shear, pitch from Seigar et al. 2006) and DustySAGE's dust (galaxy and halo dust, Draine 2011).
 - Halo card: a History section with when the halo formed (half its mass), how much it has grown since z = 1 and 2, and its last major merger, from the merger trees.
 - Halo card: the group's dynamical mass from its members' line-of-sight velocities (Munari et al. 2013), against the true Mvir.
 
 ### Changed
 
+- HD uses SAGE26's own disk and bulge radii (DiskRadius, BulgeRadius) for sizes, as the run outputs them.
+- HD bars from the disk's stability (Efstathiou, Lake & Negroponte 1982), lengths from Erwin 2005, fewer in gas-rich disks (Masters et al. 2012).
+- HD arm pitch from black-hole mass (Davis et al. 2017); disk thickness from Bershady et al. 2010; fast and slow rotators from Emsellem et al. 2011 and Cappellari 2016.
+- HD dust from HI + H2 and metallicity (Bohlin et al. 1978; Rémy-Ruyer et al. 2014), with edge-on lanes only above ~120 km/s (Dalcanton et al. 2004); stars behind dust are dimmed.
+- HD AGN from quasar-mode accretion over the snapshot step (Elvis et al. 1994); radio jets from radio-mode accretion; hot haloes from X-ray luminosity (Anderson et al. 2015); cold streams from SAGE26's stream inflow (Dekel et al. 2009); winds above the Heckman 2002 threshold.
+- HD merger features from the time since the last major and minor merger: tails then shells (Toomre & Toomre 1972; Quinn 1984); stripped satellites leave curved, clumpy streams (Peñarrubia et al. 2008; Küpper et al. 2012).
+- HD tidal partners use physical distances and weaken with relative speed (Patton et al. 2013; Ellison et al. 2008).
+- HD exposure is lighter, so faint outskirts, tails and streams show.
+- Top bar: one playback pill, round step buttons, and a snapshot pill with z, snapshot, scale factor and the Universe's age. Its HD turns on HD with the halo gas; the card's HD and Gas stay separate. Its Gas, speed and rotate controls moved off it.
+- Halo and galaxy filters now filter each other.
+- Find's pairs and groups select the halo and its group, and HD builds every member.
+- Plots with a colorbar keep their axes and labels in the frame.
 - Jellyfish tails (HD) look like real ones: faint blue and magenta threads of young stars, some curling, wrapped in CGM-like gas, with long thin blue plumes twisting and fading out.
 - Jellyfish tails (HD) where ram pressure strips a disk galaxy on its first infall: a disk, fell in under 1 Gyr ago, more than a quarter of its gas stripped (Gunn & Gott 1972). 15% of satellites in hot haloes on SAGE26, and no ellipticals.
 
 ### Fixed
 
+- Turning HD off goes back to Isolate if Isolate was on before.
+- Bars fade softly instead of ending in a hard band.
+- Panel dropdown labels no longer clip; the Filters headings and Find list fit their panel.
+- Find no longer warns on runs with broken gas annuli.
 - ViSAGE always stops when told to (Ctrl+C, SIGTERM), even with an HD build still finishing.
 - The card and Isolate follow a galaxy through a merger, on to the galaxy it merged into.
 - The card keeps Galaxy or Halo + group when its galaxy isn't in a snapshot, so Isolate's group keeps its rings.

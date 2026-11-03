@@ -2,7 +2,7 @@
 
 HD replaces the selected galaxy's splat with a detailed 3D model built from its SAGE properties, ray-marched on the GPU every frame. In the selection card's **Galaxy** context HD draws just that galaxy; in **Halo + group** context it draws its whole pair, group or cluster. Nothing else is drawn: no other galaxies or background.
 
-Select a galaxy (double-click it), then press **HD**. The button sits next to Isolate (🔍) at the top of the right panel, and also on the selection card. Press **HD** again, or **Esc**, to go back to the normal view, framed as **Go** frames it.
+Select a galaxy (double-click it), then press **HD**. The top bar's **HD** turns on HD with its halo gas; the selection card has **HD** and **Gas** as separate buttons. Press **HD** again, or **Esc**, to go back: to Isolate if you were in Isolate, otherwise to the normal view, framed as **Go** frames it.
 
 ## What is drawn
 
@@ -10,15 +10,18 @@ Each galaxy's model follows from its own catalogue row:
 
 | Component | From |
 |---|---|
-| Disk or elliptical, size and brightness | Stellar mass, bulge-to-total ratio, disk and bulge radii |
-| Spiral arms (several arm classes), bars, peanut bulges | Disk mass, instability bulge, Vmax |
+| Disk or elliptical, size and brightness | Stellar mass, bulge-to-total ratio, SAGE26's own disk and bulge radii |
+| Spiral arms (several arm classes, dwarf irregulars, lenticulars) and pitch | Disk mass, gas fraction, star formation, black-hole mass |
+| Bars | Disk stability (Vmax against the disk's stars and radius) and B/T |
+| Fast and slow rotators | Stellar mass and recent major mergers |
 | Classical and pseudo-bulges | Merger vs. instability bulge masses |
 | Young star clusters and HII regions | Disk SFR, cold and H₂ gas, gas metallicity |
-| Dust | Cold-gas metals, seen edge-on as lanes |
-| Shells, tails and streams | Merger history (merger bulge, mergeType) |
+| Dust | HI + H₂ and metallicity; lanes in disks rotating faster than ~120 km/s |
+| Shells, tails and streams | Time since the last major and minor merger |
+| Tidal streams of stripped satellites | Subhalo mass lost since infall |
 | Intracluster light | ICS mass |
-| AGN nucleus | Black hole mass and radio heating |
-| Disk thickness and clumpiness | Velocity dispersion over rotation, redshift, FFB regime |
+| AGN nucleus | Quasar-mode accretion rate |
+| Disk thickness and clumpiness | Disk size, redshift, gas fraction, FFB regime |
 
 Sizes shrink with redshift as in the size–mass relation, and disks at high redshift are thicker and clumpier.
 

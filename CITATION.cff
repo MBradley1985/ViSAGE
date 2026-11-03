@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use ViSAGE in published work, please cite it as below."
 type: software
 title: "ViSAGE: Interactive 3D Visualization for SAGE Galaxy Formation Outputs"
-version: 0.1.0
-date-released: "2026-06-14"
+version: 2.20.0
+date-released: "2026-11-04"
 url: "https://github.com/MBradley1985/ViSAGE"
 repository-code: "https://github.com/MBradley1985/ViSAGE"
 license: MIT
