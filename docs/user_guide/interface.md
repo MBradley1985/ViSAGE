@@ -24,13 +24,13 @@ ViSAGE's browser UI has three main regions and a number of overlays that appear 
 | Control | Action |
 |---|---|
 | ViSAGE / Launch | Open the menu: Launch Mode tools, switch primary model, toggle overlay models |
-| Reverse | Play backwards in time |
-| Play / Pause / Stop | Snapshot transport. Stop returns to z = 0 |
-| Loop | Continue playback past the endpoints |
-| Snapshot slider | Jump directly to any snapshot |
-| Snapshot chip | `Snap N  \|  z = X.XX  \|  a = X.XXXX` |
-| Speed selector | 0.1× / 0.25× / 0.5× / 0.75× / 1× / 2× / 5× |
-| Rotate selector | Off / CW / CCW × 15 / 30 / 60 ° s⁻¹ — continuous camera orbit |
+| Reverse · Play · Pause · Stop · Loop | Snapshot playback (one pill). Reverse plays backwards in time, Stop returns to z = 0, Loop continues past the endpoints |
+| ‹ Snapshot slider › | Step one snapshot, or jump to any |
+| Snapshot | The redshift, then snapshot number, scale factor and the Universe's age (the run's own cosmology) |
+| HD | HD of the selected galaxy, with its halo gas (the card's HD and Gas buttons work separately) |
+| Reset | Reset the view |
+
+Playback speed and camera rotation are in the **Record** tab.
 
 ## Right tabs panel
 
@@ -41,7 +41,7 @@ Eight tabs in two rows of four:
 | Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter |
 | Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime); **Find** presets |
 | Regions     | Spheres, boxes and slices, with live counts and saved regions |
-| Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence) |
+| Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence); playback speed and camera rotation |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |
 | Library     | Browse screenshots and movies; double-click a row to open as a floating card over the viewport |
 | Plotting    | SAGE26's diagnostic plots, with observations, for the whole catalogue or any selection (see [Plotting](plotting.md)) |

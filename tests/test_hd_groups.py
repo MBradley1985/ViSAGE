@@ -113,3 +113,58 @@ def test_galaxies_are_named_by_their_galaxy_index():
     g.galaxy_id = np.zeros(6, np.int64)
     assert galaxy_label(g, 2) == "row 2"
     assert row_for_galaxy_index(g, 3) == 3
+
+
+def test_a_groups_mass_from_its_velocities():
+    from visage.utils.group_info import gapper, group_summary, sigma_mass
+
+    rng = np.random.default_rng(0)
+    assert abs(gapper(rng.normal(0, 500, 4000)) - 500) < 20
+    # Munari et al. (2013): 1177 km/s is a 1e15 Msun halo at h(z) = 1.
+    assert abs(sigma_mass(1177.0, 1.0, 0.0, 0.3) / 1e15 - 1) < 1e-6
+    assert sigma_mass(600.0, 0.7, 1.0, 0.3) < sigma_mass(600.0, 0.7, 0.0, 0.3)
+    g = _snap()
+    assert "Dynamical mass (σ)" not in dict(
+        group_summary(g, np.arange(6), 0.7)
+    )
+    g.extra["Velz"] = g.extra["Velx"]  # seen moving along the line of sight
+    rows = dict(group_summary(g, np.arange(6), 0.7))
+    assert rows["Dynamical mass (σ)"].endswith("× Mvir")
+
+
+def test_jellyfish_are_disks_stripped_on_first_infall():
+    from visage.hd.group import satellite_context, stripped_fraction
+
+    host = _disk(stellar_mass=3e11, hot_gas=5e13, rvir_kpc=1500.0)
+    sat = _disk(
+        galaxy_index=7, gtype=1, t_since_infall_gyr=0.5, vel=(1500.0, 0, 0)
+    )
+    # Fast through the core strips more than slow in the outskirts.
+    assert stripped_fraction(sat, host, 200.0, 1500.0) > 0.25
+    assert stripped_fraction(sat, host, 1400.0, 200.0) < 0.25
+
+    def ctx(g):
+        entries = [
+            {"gal": host, "center": (0.0, 0.0, 0.0), "quality": "full"},
+            {
+                "gal": g,
+                "center": (0.15, 0.0, 0.0),
+                "quality": "full",
+                "role": "member",
+            },
+        ]
+        return satellite_context(entries, 0.73).get(1, {})
+
+    assert "ram" in ctx(sat)
+    old = _disk(
+        galaxy_index=8, gtype=1, t_since_infall_gyr=4.0, vel=(1500.0, 0, 0)
+    )
+    assert "ram" not in ctx(old)  # long since stripped
+    ell = _disk(
+        galaxy_index=9,
+        gtype=1,
+        t_since_infall_gyr=0.5,
+        vel=(1500.0, 0, 0),
+        bulge_mass=4.5e10,
+    )
+    assert "ram" not in ctx(ell)  # an elliptical

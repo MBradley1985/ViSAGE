@@ -193,6 +193,9 @@ class Plot:
                 ax.set_ylim(*ylim)
             style.legends(ax, model_loc, obs_loc)
         if self.mappable is not None:
+            # (The stylesheet's tight layout would lay the axes back over
+            # the colour bar; constrained layout keeps it its own room.)
+            self.fig.set_layout_engine("constrained")
             bar = self.fig.colorbar(self.mappable, ax=list(axes), pad=0.02)
             name = COLOUR_LABELS.get(o.colour_by, o.colour_by)
             bar.set_label(

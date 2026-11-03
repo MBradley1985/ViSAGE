@@ -29,6 +29,7 @@ from visage.hd.model import (
     OLD_LIGHT,
     SageGalaxy,
     display_sizes,
+    is_elliptical,
 )
 
 # Light scale for a shared exposure.
@@ -97,15 +98,29 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
         for kb in hd:
             if ka == kb:
                 continue
+            # (Physical kpc: positions are comoving.)
+            a_exp = 1.0 / (1.0 + max(entries[ka]["gal"].redshift, 0.0))
             sep_kpc = (
-                float(np.linalg.norm(pos[kb] - pos[ka])) * 1000.0 / hubble_h
+                float(np.linalg.norm(pos[kb] - pos[ka]))
+                * 1000.0
+                / hubble_h
+                * a_exp
             )
             ratio = entries[kb]["gal"].stellar_mass / max(ma, 1.0)
             if sep_kpc >= R_TIDAL or ratio < TIDAL_RATIO:
                 continue
+            # A fast fly-by raises little: pairs are those within ~300-500
+            # km/s of each other (Patton et al. 2013; Ellison et al. 2008).
+            dv = float(
+                np.linalg.norm(
+                    np.asarray(entries[kb]["gal"].vel, float)
+                    - np.asarray(entries[ka]["gal"].vel, float)
+                )
+            )
             strength = float(
                 np.clip((R_TIDAL - sep_kpc) / 70.0, 0.0, 1.0)
                 * np.clip(np.sqrt(ratio), 0.0, 1.0)
+                * np.clip((500.0 - dv) / 200.0, 0.0, 1.0)
             )
             if strength > 0.1:
                 add(ka, kb, strength)
@@ -131,43 +146,56 @@ def tidal_partners(entries, hubble_h: float, max_partners: int = 2):
     }
 
 
-# Ram pressure: log10(rho_ICM v^2 / (Sigma_* Sigma_gas)) in the units of
-# `ram_pressure`, mapped to a 0-1 tail strength.  Set so a few per cent of
-# satellites in hot haloes have a tail, as observed jellyfish are a few
-# per cent of cluster galaxies (e.g. Poggianti et al. 2016, AJ 151, 78):
-# on Millennium SAGE26 at z = 0, 7% any tail, 2% a strong one (>0.5),
-# 0.7% a full one (was -7.8: 54%, 28%, 11%).
-RAM_LO = -5.5
-RAM_SPAN = 2.0
+# Jellyfish: ram-pressure stripping (Gunn & Gott 1972) of a disk galaxy on
+# its first infall, as observed jellyfish are (Poggianti et al. 2016,
+# AJ 151, 78; Jaffe et al. 2018, MNRAS 476, 4753): a tail when more than
+# JELLY_STRIPPED of its cold gas is being stripped and it fell in less
+# than JELLY_INFALL_GYR ago.  On Millennium SAGE26 at z = 0, 15% of
+# satellites in hot haloes.
+JELLY_STRIPPED = 0.25
+JELLY_INFALL_GYR = 1.0
+ICM_CORE = 0.1  # the hot gas's core radius, in Rvir
+G_KPC = 4.30091e-6  # kpc (km/s)^2 / Msun
 
 
-def ram_pressure(
+def stripped_fraction(
     sat: SageGalaxy, host: SageGalaxy, r_kpc: float, v_kms: float
 ) -> float:
-    """Ram pressure on a satellite's gas against what holds it, as a
-    0-1 tail strength: the host's hot gas (an isothermal core profile)
-    times the speed squared, over the disk's star x gas surface density."""
+    """The fraction of a satellite's cold gas ram pressure strips (Gunn &
+    Gott 1972): the host's hot gas, a cored isothermal sphere (Cavaliere &
+    Fusco-Femiano 1976) holding HotGas within Rvir, pushes at speed^2
+    against 2 pi G Sigma_* Sigma_gas of exponential star and gas disks of
+    scale DiskRadius.  Gas goes beyond r_s, where they balance: (1 + x)
+    e^-x of it, x = r_s / Rd."""
     if host.hot_gas <= 0 or sat.cold_gas <= 0 or v_kms <= 0:
         return 0.0
-    rc = 0.1 * max(host.rvir_kpc, 20.0)
-    rho = host.hot_gas / rc**3 / (1 + (r_kpc / rc) ** 2)
-    rd, _, _ = display_sizes(sat)
-    restore = sat.stellar_mass * sat.cold_gas / max(rd, 0.1) ** 4
-    lam = np.log10(rho * v_kms**2 / max(restore, 1e-30))
-    return float(np.clip((lam - RAM_LO) / RAM_SPAN, 0.0, 1.0))
+    rv = max(host.rvir_kpc, 20.0)
+    rc = ICM_CORE * rv
+    rho = host.hot_gas / (4 * np.pi * rc**2 * (rv - rc * np.arctan(rv / rc)))
+    rho /= 1 + (r_kpc / rc) ** 2
+    rd = max(sat.disk_radius_kpc, 0.1)
+    area = 2 * np.pi * rd**2
+    stars = max(sat.stellar_mass - sat.bulge_mass, 0.0)
+    hold = 2 * np.pi * G_KPC * (stars / area) * (sat.cold_gas / area)
+    if hold <= 0:
+        return 1.0
+    x = max(0.5 * np.log(hold / (rho * v_kms**2)), 0.0)
+    return float((1 + x) * np.exp(-x))
 
 
-# Tidal stripping of satellites, by "dm" (subhalo mass lost since
-# infall), "stars" (stellar mass lost) or "both" (the stronger).
-STRIP_MODE = "dm"
+# Tidal streams of a satellite: its stars are stripped only once ~90% of
+# its dark matter is gone (Penarrubia et al. 2008), so from SAGE26's Mvir /
+# infallMvir below STRIP_DM; SAGE26 itself never strips a satellite's stars
+# gradually, so the streams stay faint.
+STRIP_DM = 0.1
 
 # A member's glow is gone once its model is this many pixels across: at real
 # size most never reach more, and a bright glow would hide them.
 GLOW_UNTIL_PX = 2.0
 
-# How much of a shared exposure's dimming a member gets back: a group stays
-# in proportion, but a satellite beside a bright central keeps its detail.
-SATELLITE_LIFT = 0.4
+# How much of a shared exposure's dimming a member gets back (0: none, so
+# a group's members keep their true brightness against each other).
+SATELLITE_LIFT = 0.0
 
 # Cap on a jellyfish tail's exposure compensation.
 TAIL_GAIN_MAX = 10.0
@@ -222,29 +250,36 @@ def satellite_context(entries, hubble_h: float) -> dict:
         if not e.get("quality") or g.gtype == 0 or e.get("role") != "member":
             continue
         d = np.asarray(e["center"], float) - hpos
-        r_kpc = float(np.linalg.norm(d)) * 1000.0 / hubble_h
+        # (Physical kpc, as SAGE26's Rvir: positions are comoving.)
+        r_kpc = (
+            float(np.linalg.norm(d))
+            * 1000.0
+            / hubble_h
+            / (1.0 + max(g.redshift, 0.0))
+        )
         v = np.asarray(g.vel, float) - hvel
         speed = float(np.linalg.norm(v))
         if speed <= 0:
             continue
         vdir = v / speed
         ctx = {}
-        if hg.regime == 1:
-            st = ram_pressure(g, hg, r_kpc, speed)
-            if st > 0.05:
-                ctx["ram"] = (-vdir, st)  # the tail trails the motion
-        strip = 0.0
-        if STRIP_MODE in ("dm", "both") and g.infall_mvir > 0 and g.mvir > 0:
+        if (
+            hg.regime == 1
+            and not is_elliptical(g)
+            and 0 <= g.t_since_infall_gyr < JELLY_INFALL_GYR
+        ):
+            f = stripped_fraction(g, hg, r_kpc, speed)
+            if f > JELLY_STRIPPED:
+                # The tail trails the motion.
+                st = (f - JELLY_STRIPPED) / (1 - JELLY_STRIPPED)
+                ctx["ram"] = (-vdir, st)
+        if g.infall_mvir > 0 and 0 < g.mvir < STRIP_DM * g.infall_mvir:
+            # Stronger the more is gone: full at 1% of it left.
             f_dm = g.mvir / g.infall_mvir
-            if f_dm < 0.35:
-                strip = float(np.clip((0.35 - f_dm) / 0.3, 0.2, 1.0))
-        if STRIP_MODE in ("stars", "both") and g.infall_stellar_mass > 0:
-            # Stars lost since infall: the clearest sign of tidal stripping.
-            lost = 1.0 - g.stellar_mass / g.infall_stellar_mass
-            if lost > 0.1:
-                strip = max(strip, float(np.clip(lost / 0.5, 0.2, 1.0)))
-        if strip > 0:
-            ctx["strip"] = (vdir, strip)
+            strip = float(np.clip(np.log10(STRIP_DM / f_dm), 0.1, 1.0))
+            # (Toward the host: the leading stream curves in, the trailing
+            # one out.)
+            ctx["strip"] = (vdir, strip, -d / max(np.linalg.norm(d), 1e-12))
         if ctx:
             out[k] = ctx
     return out
@@ -255,8 +290,11 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
     photometry on a lightcone, its stellar mass otherwise."""
     if gal.lum_v > 0:
         return float(gal.lum_v**LUM_POWER)
+    # Old stars (a bulge, an elliptical) give OLD_LIGHT of a disk's light
+    # per unit mass, the same for every kind.
     if kind == "disk":
-        ref = max(gal.stellar_mass - gal.bulge_mass, 1.0)
+        disk = max(gal.stellar_mass - gal.bulge_mass, 0.0)
+        ref = max(disk + OLD_LIGHT * gal.bulge_mass, 1.0)
     else:
         ref = max(gal.stellar_mass * OLD_LIGHT, 1.0)
     return float((ref / M_REF) ** LUM_POWER)

@@ -48,6 +48,12 @@ def hernquist(x, y, z, a, q=1.0, axes=(1.0, 1.0, 1.0)):
     return a / (2 * np.pi * bx * by * bz * q) / (m * (m + a) ** 3)
 
 
+def expo3(x, y, z, h, q=1.0):
+    """Unit-mass flattened 3D exponential (a pseudo-bulge, Sersic n ~ 1)."""
+    m = np.sqrt(x**2 + y**2 + (z / q) ** 2)
+    return np.exp(-m / h) / (8 * np.pi * h**3 * q)
+
+
 @dataclass
 class Layers:
     """Separately accumulated light (linear RGB) for diagnostics."""
@@ -193,7 +199,7 @@ def render(
                     xg, yg, zg, rc.bulge_a, rc.bulge_q
                 )
                 if rc.l_pseudo > 0:
-                    e_bul = e_bul + rc.l_pseudo * hernquist(
+                    e_bul = e_bul + rc.l_pseudo * expo3(
                         xg, yg, zg, rc.pseudo_a, rc.pseudo_q
                     )
                 if bar_ax > 0:

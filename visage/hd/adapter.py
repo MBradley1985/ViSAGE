@@ -177,6 +177,19 @@ def cosmic_time_gyr(a: float, hubble_h: float, omega_m: float) -> float:
     )
 
 
+def _since_myr(snap, name: str, i: int, hubble_h, z, omega_m) -> float:
+    """Myr since the event SAGE26 times in `name`, or -1 if none.  SAGE26
+    writes the event's lookback time from z = 0, in Myr/h, so the time
+    since it is that less the lookback time to the galaxy's own epoch."""
+    t = _extra(snap, name, i, -1.0)
+    if t <= 0:
+        return -1.0
+    now = cosmic_time_gyr(1.0, hubble_h, omega_m) - cosmic_time_gyr(
+        1.0 / (1.0 + z), hubble_h, omega_m
+    )
+    return max(t / hubble_h - 1e3 * now, 0.0)
+
+
 def sage_galaxy_from_snapshot(
     snap,
     i: int,
@@ -195,7 +208,7 @@ def sage_galaxy_from_snapshot(
     mass = 1e10 / hubble_h
     # The snapshot's redshift, and (satellites) the time since infall: SAGE
     # writes TimeOfInfall as the snapshot it became a satellite.
-    z, t_inf = 0.0, -1.0
+    z, t_inf, dt = 0.0, -1.0, 0.0
     if snap_table is not None:
         # (A lightcone's galaxies are each from their own snapshot.)
         sn = (
@@ -205,6 +218,16 @@ def sage_galaxy_from_snapshot(
         )
         if 0 <= sn < snap_table.count:
             z = float(snap_table.snap_to_z(sn))
+            if sn > 0:
+                # The step from the previous snapshot (SAGE26's dT).
+                dt = 1e3 * (
+                    cosmic_time_gyr(
+                        snap_table.snap_to_a(sn), hubble_h, omega_m
+                    )
+                    - cosmic_time_gyr(
+                        snap_table.snap_to_a(sn - 1), hubble_h, omega_m
+                    )
+                )
             s_in = int(_field(snap, "time_of_infall", i))
             if 0 < s_in <= sn and int(_field(snap, "gal_type", i)) > 0:
                 t_inf = cosmic_time_gyr(
@@ -218,7 +241,7 @@ def sage_galaxy_from_snapshot(
     sfh = _sfh_bins(snap, i, snap_table, hubble_h, omega_m)
     if sfh is not None:
         sfh = _bulge_history(sfh, _field(snap, "bulge_mass", i) / mass)
-    radial, height = _radial(snap, i, hubble_h, z)
+    radial, height, vrot, shear = _radial(snap, i, hubble_h, z)
     rotation = _bulge_rotation(snap, i, hubble_h)
     return SageGalaxy(
         galaxy_index=int(_field(snap, "galaxy_id", i, i)),
@@ -245,9 +268,15 @@ def sage_galaxy_from_snapshot(
         cgm_gas=_field(snap, "cgm_gas", i),
         rvir_kpc=_field(snap, "rvir", i) * kpc,
         metals_stellar_mass=_field(snap, "metals_stellar_mass", i),
-        t_major_myr=_extra(snap, "TimeOfLastMajorMerger", i, -1.0),
-        t_minor_myr=_extra(snap, "TimeOfLastMinorMerger", i, -1.0),
+        t_major_myr=_since_myr(
+            snap, "TimeOfLastMajorMerger", i, hubble_h, z, omega_m
+        ),
+        t_minor_myr=_since_myr(
+            snap, "TimeOfLastMinorMerger", i, hubble_h, z, omega_m
+        ),
         qso_accretion=_extra(snap, "QuasarModeBHaccretionMass", i) * mass,
+        dt_myr=dt,
+        radio_accretion=_extra(snap, "RadioModeBHaccretionMass", i) * mass,
         ics=_field(snap, "ics_mass", i),
         outflow_rate=_field(snap, "outflow_rate", i),
         mass_loading=_field(snap, "mass_loading", i, 1.5),
@@ -260,6 +289,7 @@ def sage_galaxy_from_snapshot(
         ffb=int(_field(snap, "ffb_regime", i)),
         vel=tuple(_extra(snap, f"Vel{c}", i) for c in "xyz"),
         vmax=_field(snap, "vmax", i),
+        vvir=_extra(snap, "Vvir", i),
         vel_disp=_extra(snap, "VelDisp", i),
         mvir=_field(snap, "mvir", i) * mass,
         infall_mvir=_extra(snap, "infallMvir", i) * mass,
@@ -284,6 +314,11 @@ def sage_galaxy_from_snapshot(
         mdot_cool=_extra(snap, "mdot_cool", i),
         web=web_neighbours(snap, i),
         tau_v_ism=_sed_tau(snap, i, hubble_h),
+        cold_dust=_extra(snap, "ColdDust", i) * mass,
+        hot_dust=_extra(snap, "HotDust", i) * mass,
+        cgm_dust=_extra(snap, "CGMDust", i) * mass,
+        disc_vrot=vrot,
+        disc_shear=shear,
         sed_ratio=_sed_ratio(snap, i),
         los=_los(snap, i),
         **_sed_parts(snap, i),
@@ -387,8 +422,10 @@ def toomre_q(prof: dict, redshift: float) -> np.ndarray:
     & Wiegert 2011), with kappa from the rotation curve and the gas at
     11 + 11.3 z km/s."""
     r = prof["r"][0]
-    v = 0.5 * (prof["vcirc"][0][1:] + prof["vcirc"][0][:-1])
     rr = np.maximum(r, 1e-4)
+    if len(rr) < 2 or np.any(np.diff(rr) <= 0):
+        return np.zeros(0)  # (annuli without a disc: no Q)
+    v = 0.5 * (prof["vcirc"][0][1:] + prof["vcirc"][0][:-1])
     slope = np.gradient(np.log(np.maximum(v, 1.0)), np.log(rr))
     kappa = np.sqrt(np.maximum(2 * (v / rr) ** 2 * (1 + slope), 1e-6))
     sig = np.maximum(prof["sigma"][0], 1.0)
@@ -418,7 +455,7 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
     path = getattr(snap, "source_path", "")
     extra = getattr(snap, "extra", None) or {}
     if not path or "StellarDiscScaleRadius" not in extra:
-        return (), 0.0
+        return (), 0.0, 0.0, 0.0
     from visage.io.family_binary import radial_profiles
 
     row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
@@ -430,7 +467,18 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
     rows = [p[k][0] for k in ("r", "stars", "hi", "h2", "sfr")]
     rows[0] = rows[0] * stretch
     rows.append(p["dust"][0] if "dust" in p else ())
-    height = 0.0
+    height = vrot = shear = 0.0
+    if "vcirc" in p and len(p.get("edges", [()])[0]) > 2:
+        # The disc's rotation at 2.2 scale lengths (its peak for an
+        # exponential disc), and the shear there, 1 - dlnV/dlnR.
+        e, vc = np.asarray(p["edges"][0], float), np.asarray(p["vcirc"][0])
+        ok = (e > 0) & (vc > 0) & (vc < 1000)
+        r22 = 2.2 * scale * 1e3 / hubble_h
+        if ok.sum() > 3 and e[ok].min() < r22 < e[ok].max():
+            lr, lv = np.log(e[ok]), np.log(vc[ok])
+            vrot = float(np.exp(np.interp(np.log(r22), lr, lv)))
+            slope = np.interp(np.log(r22), lr, np.gradient(lv, lr))
+            shear = float(np.clip(1.0 - slope, 0.0, 2.0))
     if "vcirc" in p and "sigma" in p:
         rows.append(toomre_q(p, redshift))
         half = _extra(snap, "StellarDiscHalfMassRadius", i) * 1e3 / hubble_h
@@ -438,7 +486,7 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
             height = disc_height_kpc(p, half) * stretch
     else:
         rows.append(())
-    return tuple(tuple(float(v) for v in x) for x in rows), height
+    return tuple(tuple(float(v) for v in x) for x in rows), height, vrot, shear
 
 
 def _bulge_rotation(snap, i: int, hubble_h: float) -> float:
@@ -468,7 +516,9 @@ def _sed_tau(snap, i: int, hubble_h: float) -> float:
     photometry's own (Charlot & Fall), else -1 (HD's own estimate: no
     photometry, one screen for every galaxy, or photometry made without
     dust)."""
-    if "ColdDust" in (getattr(snap, "extra", None) or {}):
+    on_cone = getattr(snap, "snap_nums", None) is not None
+    if on_cone and "ColdDust" in (getattr(snap, "extra", None) or {}):
+        # (In a box, HD draws DustySAGE's dust from its mass, ColdDust.)
         return _dusty_tau(snap, i, hubble_h)
     how = snap.sed_dust()[0] if hasattr(snap, "sed_dust") else None
     if how == "charlot_fall":

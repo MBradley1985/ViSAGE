@@ -39,6 +39,14 @@ from visage.hd.model import (
 # ----------------------------------------------------------------------
 
 
+# The exposure, as deep imaging stretches it: the asinh tone map's softening
+# (q) and the diffuse light's white level against the base exposure
+# (white), so faint light -- satellites beside a bright central, merger
+# debris, streams, intracluster light -- shows at its true brightness
+# (chosen from options on a cluster: "Light"; was q 40, white 1).
+DEEP = dict(q=100.0, white=0.7)
+
+
 def float_texture(
     rgb: np.ndarray, interpolate: bool = True, mipmap: bool = False
 ):
@@ -464,6 +472,11 @@ float sech2(float z, float h) {
   float c = cosh(clamp(z / h, -30.0, 30.0));
   return 1.0 / (c * c) / (2.0 * h);
 }
+// A flattened 3D exponential (pseudo-bulges: Sersic n ~ 1), unit total.
+float expo3(vec3 p, float h, float q) {
+  float m = length(vec3(p.x, p.y, p.z / q));
+  return exp(-m / h) / (25.1327412 * h * h * h * q);
+}
 float hernq(vec3 p, float a, float q, vec3 ax) {
   float m = length(vec3(p.x / ax.x, p.y / ax.y, p.z / (ax.z * q)));
   m = max(m, 0.004);
@@ -604,7 +617,7 @@ _IMPL = """//VTK::Light::Impl
         vec3 m = textureLod(mapTex, mapUV(pm, uMapHalf, uMapN), lodM).rgb;
         // Inside-out growth: older (redder) inside, younger outside.
         vec3 oldC = mix(uOldRGB, uOldOutRGB, smoothstep(0.0, uGradR, length(pm)));
-        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, 0.06, dt) * uYoungRGB;
+        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, uHzYoung, dt) * uYoungRGB;
         kap = m.b * pint(z0, z1, 0.045, dt);
         {
           // Splatted stars: those the current level(s) don't draw exactly.
@@ -620,11 +633,14 @@ _IMPL = """//VTK::Light::Impl
       if (inC) {
         float bul = uLBulge * hernq(p, uBulgeA, uBulgeQ, vec3(1.0)) * dt;
         // Pseudo-bulge: compact and flattened (instability-built).
-        if (uLPseudo > 0.0) bul += uLPseudo * hernq(p, uPseudoA, uPseudoQ, vec3(1.0)) * dt;
+        if (uLPseudo > 0.0) bul += uLPseudo * expo3(p, uPseudoA, uPseudoQ) * dt;
         if (uBarLen > 0.0) {
           float bx = uBarLen, by = uBarLen * uBarAxis;
           // An exponential ellipse: a boxier one reads as a lit rectangle.
-          float bar = exp(-1.6 * sqrt(pow(p.x / bx, 2.0) + pow(p.y / by, 2.0)));
+          // It ends at its length (fading out by 1.25 of it, inside the core
+          // it is drawn in), so no edge shows however deep the exposure.
+          float mb = sqrt(pow(p.x / bx, 2.0) + pow(p.y / by, 2.0));
+          float bar = exp(-1.6 * mb) * (1.0 - smoothstep(0.8, 1.25, mb));
           // A buckled bar is thickest half way out: boxy / peanut-shaped
           // seen edge-on.
           float hb = 0.12;
@@ -644,7 +660,10 @@ _IMPL = """//VTK::Light::Impl
             * pint(y0, y0 + dt * rd.y, 0.02, dt);
       }
     }
-    if (inI) e += uLIcl * hernq(p, uIclA, 0.85, vec3(1.0)) * (uOldRGB * 0.9 + 0.08) * dt;
+    // (Faded to nothing at its sphere's edge, so no rim shows.)
+    if (inI) e += uLIcl * hernq(p, uIclA, 0.85, vec3(1.0))
+                  * pow(max(1.0 - dot(p, p) / (uIclR * uIclR), 0.0), 2.0)
+                  * (uOldRGB * 0.9 + 0.08) * dt;
     if (inA) {
       // 3D emissivity volume stored as a 2D atlas of z slices (inlined:
       // samplers are declared after the PositionVC::Dec block).
@@ -723,7 +742,7 @@ _IMPL = """//VTK::Light::Impl
           float tauP = 0.0;
           if (uIsDisk > 0.5 && abs(A.x) < uMapHalf && abs(A.y) < uMapHalf) {
             float k0 = texture(mapTex, mapUV(A.xy, uMapHalf, uMapN)).b;
-            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.08);
+            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.01);
           }
           vec4 C = texelFetch(gColTex, ec, 0);
           vec3 L = C.rgb * exp(-tauP * uDustK);
@@ -1098,6 +1117,12 @@ class GPUGalaxy:
         f("uMapN", float(map_n))
         f("uPtsN", float(npts))
         f("uHz", float(rc.hz))
+        # (Young stars: a thin layer in a spiral, the whole thick disc of a
+        # dwarf irregular.)
+        f(
+            "uHzYoung",
+            float(0.8 * rc.hz if rc.arm_class == "irregular" else 0.06),
+        )
         f("uBulgeA", float(rc.bulge_a))
         f("uBulgeQ", float(rc.bulge_q))
         f("uLBulge", float(rc.l_bulge if disk else 0.0))
@@ -1159,10 +1184,10 @@ class GPUGalaxy:
         )
         u.SetUniform3f("uDustK", [float(v) for v in rc.dust_k])
         u.SetUniform3f("uColGain", [float(v) for v in rc.col_gain])
-        f("uWhite", float(white))
+        f("uWhite", float(white) * DEEP["white"])
         f("uWhite0", float(white))
         f("uPtsGain", 1.0)  # star sources on (component views switch it)
-        f("uQ", 40.0)
+        f("uQ", DEEP["q"])
         f("uSat", 1.05)
         f("uLNuc", float(rc.l_nucleus))
         f("uNucSig", float(rc.nucleus_sigma))
@@ -1290,7 +1315,7 @@ class GPUGalaxy:
     def set_white(self, white: float) -> None:
         """Tone-map white level (see `layer.Exposure`)."""
         if self._uni is not None:
-            self._uni.SetUniformf("uWhite", float(white))
+            self._uni.SetUniformf("uWhite", float(white) * DEEP["white"])
 
     def set_camera(
         self, cam_model: np.ndarray, pix_ang: float | None = None

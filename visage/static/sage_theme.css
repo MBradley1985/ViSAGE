@@ -296,7 +296,7 @@ body,
 
 /* Checkboxes: switches, label left and switch right. */
 .v-checkbox {
-    --v-input-control-height: 28px;
+    --v-input-control-height: 24px;
     min-height: 28px;
 }
 
@@ -819,6 +819,25 @@ body,
     padding-inline-end: 2px !important;
 }
 
+/* A labelled dropdown keeps clear of its label; a value too long to fit
+   ends in an ellipsis rather than running under it. */
+.sage-panel .v-select .v-field:has(.v-field-label) .v-field__input {
+    /* (--sage-label-w: the label's own width, set by visage.js) */
+    padding-inline-start: var(--sage-label-w, 78px) !important;
+    min-width: 0;
+}
+
+.sage-panel .v-select .v-select__selection {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.sage-panel .v-select .v-select__selection-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .sage-panel .v-select__selection-text,
 .sage-panel .v-select__selection-text * {
     color: #fff !important;
@@ -1137,4 +1156,73 @@ body,
     flex: none;
     width: 156px;
     height: 104px;
+}
+
+/* Choice pills (the export card): outlined, the chosen one filled cyan. */
+.v-chip.sage-pill-on {
+    background: #22d3ee !important;
+    color: #0b1220 !important;
+    border-color: #22d3ee !important;
+    font-weight: 600;
+}
+
+/* Toolbar: playback buttons as one pill (P1). */
+.sage-pill-group {
+    border-radius: 999px !important;
+    overflow: hidden;
+}
+
+/* Snapshot step buttons: cyan chevrons in round buttons (S1). */
+.sage-snap-step {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: none;
+    color: #22d3ee;
+    font-size: 20px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: none;
+}
+.sage-snap-step:hover {
+    border-color: #22d3ee;
+}
+.sage-snap-step:active {
+    background: rgba(34, 211, 238, 0.18);
+}
+
+/* Snapshot information: pill outline, white redshift (I2). */
+.sage-snap-pill {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    padding: 3px 12px;
+    margin-right: 8px;
+    color: #fff;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.sage-snap-rest {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* A combobox in the panel (Record's Speed / Rotate): its typed value as a
+   select's chosen value, white and right-aligned. */
+.sage-panel .v-combobox input {
+    color: #fff !important;
+    font-size: 13px !important;
+    text-align: right;
+}
+
+/* Filters: section headings keep their height when the Find list is long. */
+.sage-panel .v-label,
+.sage-panel .v-divider {
+    flex-shrink: 0;
 }

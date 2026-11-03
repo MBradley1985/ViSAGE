@@ -1337,120 +1337,148 @@ def create_app(
             ]
             with v3.VDialog(
                 v_model=("export_dialog_show",),
-                max_width=500,
+                max_width=380,
                 persistent=False,
             ):
+                pill = dict(size="small", variant="outlined", rounded="pill")
+
+                def pills(model, items, cls=""):
+                    with v3.VChipGroup(
+                        v_model=(model,),
+                        mandatory=True,
+                        selected_class="sage-pill-on",
+                        column=True,
+                        classes=cls,
+                    ):
+                        for title, value in items:
+                            v3.VChip(title, value=value, filter=False, **pill)
+
                 with v3.VCard(
-                    style="background:transparent !important;border:1px solid #06b6d4;color:#e2e8f0;",
-                    color="transparent",
-                    elevation=0,
-                    rounded=False,
+                    classes="sage-popout", elevation=0, style="color:#e2e8f0;"
                 ):
                     with html.Div(
-                        style=(
-                            "display:flex;align-items:center;gap:8px;"
-                            "padding:14px 16px 10px;"
-                            "border-bottom:1px solid #374151;"
-                        ),
+                        classes="sage-popout-handle",
+                        style="display:flex;align-items:flex-start;padding:16px 12px 4px 18px;",
                     ):
-                        v3.VIcon(
-                            "mdi-database-export-outline",
-                            color="cyan",
-                            size="small",
-                        )
-                        html.Span(
-                            "Export Galaxy Catalogue",
-                            style=(
-                                "color:#06b6d4;font-weight:700;"
-                                "letter-spacing:0.06em;font-size:0.95rem;"
-                            ),
-                        )
-                        v3.VSpacer()
+                        with html.Div(style="flex:1;"):
+                            html.Div(
+                                "Export galaxies",
+                                style="font-size:1.15rem;font-weight:700;color:#fff;",
+                            )
+                            html.Div(
+                                "{{ snap_label }}",
+                                style="font-size:0.78rem;color:#9ca3af;margin-top:2px;",
+                            )
                         v3.VBtn(
                             icon="mdi-close",
                             size="x-small",
                             variant="text",
-                            color="#9ca3af",
                             click="export_dialog_show = false",
                         )
-                    with v3.VCardText(
-                        style="padding:16px;display:flex;flex-direction:column;gap:14px;"
-                    ):
-                        # Scope
-                        v3.VSelect(
-                            v_model=("export_scope",),
-                            items=("export_scope_items",),
-                            label="Selection scope",
-                            variant="outlined",
-                            density="compact",
-                            color="cyan",
-                            bg_color="#0d0d1a",
-                            hide_details=True,
+                    with html.Div(style="padding:4px 18px 16px;"):
+                        sec = (
+                            "font-size:0.7rem;letter-spacing:0.08em;color:#22d3ee;"
+                            "font-weight:700;margin:12px 0 4px;"
                         )
-                        # Format toggle
-                        with html.Div(
-                            style="display:flex;flex-direction:column;gap:4px;"
+                        html.Div("WHICH GALAXIES", style=sec)
+                        with v3.VChipGroup(
+                            v_model=("export_scope",),
+                            mandatory=True,
+                            selected_class="sage-pill-on",
+                            column=True,
                         ):
-                            html.Span(
-                                "Format",
-                                style="font-size:0.75rem;color:#9ca3af;",
+                            v3.VChip(
+                                "{{ s.title }}",
+                                v_for="s in export_scope_items",
+                                key="s.value",
+                                value=("s.value",),
+                                **pill,
                             )
-                            with v3.VBtnToggle(
-                                v_model=("export_format",),
-                                mandatory=True,
-                                variant="outlined",
-                                density="compact",
-                                color="cyan",
-                                style="width:100%;",
+                        with html.Div(v_show=("export_scope === 'region'",)):
+                            pills(
+                                "export_shape",
+                                (
+                                    ("Sphere", "sphere"),
+                                    ("Box", "box"),
+                                    ("Slice", "slice"),
+                                ),
+                            )
+                            html.Div(
+                                "As set on the Regions tab.",
+                                style="font-size:0.72rem;color:#9ca3af;",
+                            )
+                        with html.Div(v_show=("!is_lightcone",)):
+                            html.Div("SNAPSHOTS", style=sec)
+                            pills(
+                                "export_snaps",
+                                (
+                                    ("This snapshot", "current"),
+                                    ("A range", "range"),
+                                ),
+                            )
+                            with html.Div(
+                                v_show=("export_snaps === 'range'",),
+                                style="display:flex;gap:8px;margin-top:6px;",
                             ):
-                                for _fi in _FMT_ITEMS:
-                                    v3.VBtn(
-                                        _fi["title"],
-                                        value=_fi["value"],
-                                        style="flex:1;font-family:monospace;background:#000000;",
+                                for key, lab in (
+                                    ("export_snap_lo", "From"),
+                                    ("export_snap_hi", "To"),
+                                ):
+                                    v3.VSelect(
+                                        v_model=(key,),
+                                        items=("export_z",),
+                                        label=lab,
+                                        density="compact",
+                                        variant="outlined",
+                                        hide_details=True,
+                                        menu_props=(
+                                            "{contentClass: 'sage-menu'}",
+                                        ),
+                                        style="flex:1;min-width:0;",
                                     )
-                        # Optional filename
+                        html.Div(
+                            "{{ export_count }}",
+                            style="font-size:0.78rem;color:#86efac;margin-top:8px;",
+                        )
+                        html.Div("FORMAT", style=sec)
+                        pills(
+                            "export_format",
+                            [(f["title"], f["value"]) for f in _FMT_ITEMS],
+                        )
+                        html.Div("FILE NAME", style=sec)
                         v3.VTextField(
                             v_model=("export_filename",),
-                            label="Filename (optional, no extension)",
+                            placeholder="optional",
                             variant="outlined",
                             density="compact",
-                            color="cyan",
-                            bg_color="#0d0d1a",
                             hide_details=True,
-                            placeholder="auto-generated if blank",
-                            style="font-family:monospace;",
                         )
-                        # Status
                         with html.Div(
                             v_show=("export_status",),
                             style=(
-                                "font-size:0.72rem;font-family:monospace;"
-                                "background:#0d0d1a;padding:8px 10px;"
-                                "border:1px solid #374151;word-break:break-all;"
-                                "color:#9ca3af;"
+                                "font-size:0.72rem;font-family:monospace;color:#9ca3af;"
+                                "margin-top:10px;word-break:break-all;"
                             ),
                         ):
                             html.Span("{{ export_status }}")
-                    with v3.VCardActions(
-                        style="padding:8px 16px 14px;gap:8px;justify-content:flex-end;"
-                    ):
-                        v3.VBtn(
-                            "Close",
-                            variant="text",
-                            color="#9ca3af",
-                            click="export_dialog_show = false",
-                        )
-                        v3.VBtn(
-                            "Export",
-                            variant="outlined",
-                            color="cyan",
-                            prepend_icon="mdi-export",
-                            loading=("export_busy",),
-                            disabled=("export_busy",),
-                            click=server.controller.do_export,
-                            style="font-family:monospace;",
-                        )
+                        with html.Div(
+                            style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;"
+                        ):
+                            v3.VBtn(
+                                "Close",
+                                variant="outlined",
+                                size="small",
+                                click="export_dialog_show = false",
+                            )
+                            v3.VBtn(
+                                "Export",
+                                variant="flat",
+                                size="small",
+                                color="cyan",
+                                loading=("export_busy",),
+                                disabled=("export_busy",),
+                                click=server.controller.do_export,
+                            )
 
             with v3.VSheet(
                 classes="sage-content",

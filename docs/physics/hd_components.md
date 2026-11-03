@@ -12,68 +12,68 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 | Component | SAGE26 fields | How |
 |---|---|---|
 | Disk or elliptical | `BulgeMass` / `StellarMass` (B/T), `ColdGas`, `Regime` | Elliptical if B/T > 0.75, or if B/T > 0.5 in a hot-regime halo with a cold-gas fraction under 2%. Otherwise a disk. |
-| Size | `StellarMass`, `DiskRadius`, `BulgeRadius`, snapshot redshift, `FFBRegime` | The Shen et al. (2003) size–mass relations set the size. SAGE's own radius nudges it as (R_SAGE / R_relation)^¼, by at most ±30%. Sizes shrink with redshift, as (1+z)^−0.75 for disks and (1+z)^−1 for ellipticals (van der Wel et al. 2014). An FFB galaxy is 0.6× more compact. |
-| Disk thickness | `StellarMass`, `VelDisp`, `Vmax`, redshift | Low-mass disks are thicker, by M*^−0.15. Thickness grows by (1 + 0.5z) and with (σ/Vmax)⁶. |
-| Elliptical shape | `StellarMass`, `Vmax`, `VelDisp` | More massive ellipticals are rounder and have more extended (cD-like) envelopes. Fast rotators (high Vmax/σ) are flatter. |
-| Classical bulge | `MergerBulgeMass`, `MergerBulgeRadius` | Round, at the merger bulge's radius. Its light scales with the merger-bulge mass relative to the disk. |
-| Pseudo-bulge | `InstabilityBulgeMass`, `InstabilityBulgeRadius`, `VelDisp`, `Vmax` | Compact, at the instability bulge's radius, flatter in rotation-dominated (low σ/Vmax) disks. It holds whatever instability mass doesn't go into the bar. |
-| Bar and peanut | `InstabilityBulgeMass`, `ColdGas` | Barred if the instability bulge is more than 6% of M\*. At most 8% of M\* goes into the bar, whose half-length grows with that fraction (0.9–1.8 disk scale lengths) and which is thinner the stronger it is. Gas-poor disks buckle it into a stronger boxy/peanut bulge. |
+| Size | `DiskRadius`, `BulgeRadius`, `StellarMass`, snapshot redshift, `FFBRegime` | SAGE26's own sizes: the disk is an exponential of scale length `DiskRadius` (Mo, Mao & White 1998), so its half-light radius is 1.68 × `DiskRadius`, as observers measure; bulges and ellipticals are drawn at `BulgeRadius` (a 3D half-mass radius; projected Re = 0.752 of it for a Hernquist profile), the elliptical's two-component profile scaled so its projected half-light radius matches. Without them, the Shen et al. (2003) size–mass relations, smaller in the past (van der Wel et al. 2014: late types (1+z)^−0.75, early types (1+z)^−1.48). |
+| Disk thickness | `DiskRadius`, redshift | From the disk's size, as measured edge-on (Bershady et al. 2010, from Kregel et al. 2002: log(hR/hz) = 0.367 log(hR/kpc) + 0.708): smaller disks are relatively thicker. High-z (turbulent) disks are thicker still, by (1 + 0.5z) to z = 3. Dwarf irregulars are thick (intrinsic b/a ~ 0.3–0.4: Roychowdhury et al. 2013). With DarkSAGE, the stellar dispersion sets it (below). |
+| Elliptical shape | `StellarMass`, `TimeOfLastMajorMerger` | Fast rotators (flattened, c/a 0.3–0.5) below ~2×10¹¹ M☉, slow rotators (round, triaxial) above it (Emsellem et al. 2011; Cappellari 2016); a recent major merger makes a slow rotator likelier. More massive ellipticals have more extended (cD-like) envelopes. |
+| Classical bulge | `BulgeMass`, `BulgeRadius`, `MergerBulgeMass` | `BulgeMass` and `BulgeRadius` are the whole bulge (merger + instability parts, mass-weighted radius); the merger part's share is the classical bulge, a round Hernquist profile at `BulgeRadius`. |
+| Pseudo-bulge | `BulgeMass`, `BulgeRadius`, `InstabilityBulgeMass` | The instability part's share of the bulge: a flattened exponential (Sérsic n ~ 1, q = 0.45), as pseudo-bulges are (Kormendy & Kennicutt 2004), at `BulgeRadius`. |
+| Bar | `Vmax` (or DarkSAGE's disk rotation), disk stars (`StellarMass` − `BulgeMass`), `DiskRadius`, B/T | Barred where the stellar disk is unstable to a bar: ε = Vmax / √(G M_disk / Rd) < 1.1 (Efstathiou, Lake & Negroponte 1982), stronger the further below. Up to 8% of M\* in the bar; half-length 0.6–1.4 Rd from late to early types (Erwin 2005), thinner the stronger (b/a 0.5–0.2). The bar's light fades out by 1.25 bar lengths. Gas-rich disks, with fewer stars for their size, are barred less often, as observed (Masters et al. 2012). |
 | Old stellar colour | `MetalsStellarMass`, `MetalsBulgeMass` | The disk and bulge are each tinted by their own stars' metallicity: metal-rich is redder. |
 | Stellar populations by age | `SFHMassDisk`, `SFHMassBulge` (with SAGE's `SaveFullSFH 1`) | The disk's and the bulge's histories are summed as populations of known age: each population's colour and light per unit mass follow its age (younger: bluer, brighter), with metallicity still tinting them. A recently quenched (post-starburst) galaxy turns white-blue with no HII regions, a rejuvenated bulge turns blue, and 0.1–1 Gyr-old star clusters spread through the disk. Without a saved history, colours come from metallicity alone. |
-| Brightness | `StellarMass`, `BulgeMass` | Brightness ∝ M\*^0.35, using disk mass for disks. Every member of a group shares one exposure, so relative brightness follows mass. |
+| Brightness | `StellarMass`, `BulgeMass` | Brightness ∝ M\*^0.35, the disk's stars plus its bulge at old-star light per unit mass (as an elliptical's). Every member of a group shares one exposure, at its true brightness against the others. HD's exposure lifts faint light (merger debris, streams, intracluster light) a little, as moderately deep imaging does. |
 
 ## Spiral structure
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Arm class: grand-design, multi-arm, partial or flocculent | `InstabilityBulgeMass`, `StellarMass`, `ColdGas` | Drawn from probabilities set by the galaxy. Barred and massive disks are mostly grand-design or multi-arm. Gas-rich or low-mass disks lean flocculent. |
-| Pitch angle | B/T, `Vmax` | Bigger bulges and faster rotation (more shear) wind the arms tighter. |
+| Arm class: grand-design, multi-arm, partial, flocculent or irregular | `StellarMass`, `ColdGas`, bar | Drawn from probabilities set by mass, gas fraction and whether the disk is barred. Gas-rich dwarfs (below 10^9.5 M☉, gas fraction > 0.15) are irregulars: no spiral arms, patchy star formation with 3–8 large complexes (more with more star formation: Hunter & Elmegreen 2004), lopsided (Zaritsky et al. 2013) and thick. Disks with no star formation are lenticulars (S0): smooth, no arms. |
+| Pitch angle | `BlackHoleMass` (or DarkSAGE's rotation curve) | From the black hole: log M_BH = 7.01 − 0.171 (\|φ\| − 15°) (Davis et al. 2017), with ~3° scatter, 5–40°. With DarkSAGE, from the disk's shear (Seigar et al. 2006). Without a black hole yet, tighter with a bigger bulge. |
 | Flocculence | `ColdGas` / (`ColdGas` + `StellarMass`), `StellarMass` | Gas-rich, low-mass disks are patchier within their arm class. |
-| Clumpy disk | redshift, `ColdGas`, `VelDisp`, `Vmax`, `FFBRegime` | Gas-rich, turbulent disks at z ≳ 1 are clumpy instead of spiral: a Toomre-like score from redshift, gas fraction and σ/Vmax decides it, not chance. FFB galaxies always are. Clumps (4–12) are drawn diffuse and blend into the disk. |
+| Clumpy disk | redshift, `ColdGas`, `StellarMass`, `FFBRegime` | Clumpy star-forming disks in ~60% of gas-rich galaxies at z ~ 2, fewer at higher mass and few below z ~ 0.5 (Guo et al. 2015); a feedback-free starburst always is. No spiral arms. |
 
 ## Star formation
 
 | Component | SAGE26 fields | How |
 |---|---|---|
 | Young (blue) light | `SfrDisk`, disk mass | Scales with the disk's specific SFR as (sSFR / 10⁻¹⁰)^0.7. FFB galaxies are bluer still. |
-| Young star clusters | `SfrDisk` | Their number scales as SFR^0.5 (400–20,000). They follow the young-light map. |
+| Young star clusters | `SfrDisk` | Their number scales as SFR^0.5 (none without star formation). They follow the young-light map. |
 | HII regions | `H2gas`, `SfrDisk`, `DiskRadius`, `ColdGas`, `SfrDiskZ` | Star-forming complexes along the arms, in number following the H₂ reservoir: small crisp knots in a faint nebula. Each complex is richer the denser the star formation (SFR surface density) and bigger the more gas-rich the disk. Each complex's colour runs from pink (metal-poor gas) to orange (metal-rich): the galaxy's star-forming gas metallicity sets which dominates (dwarfs pinker, massive disks oranger), an abundance gradient makes the inner disk oranger and the outer disk pinker (about −0.1 dex per effective radius; Sánchez et al. 2014), and each region scatters about that. |
-| Nuclear ring | `SfrBulge`, `SfrDisk` | A faint, diffuse ring of clusters and dust appears when the bulge forms more than 8% of all stars (with SfrBulge > 0.05 M☉/yr). It sits just inside the bar ends. |
+| Nuclear ring | bar strength, `H2gas`, `SfrBulge`, `SfrDisk` | A star-forming ring at the bar's inner Lindblad resonance, in strongly barred disks with molecular gas (~20% of disks: Comerón et al. 2010), brighter with the bulge's share of the star formation. |
 | Gas-disk truncation (satellites) | `Type`, `TimeOfInfall`, `Mvir`, `infallMvir` | Satellites lose their outer gas disk the longer since infall and the more of their subhalo they have lost. Star formation stops beyond the cut. |
 
 ## Dust
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Disk dust | `H2gas`, `H1gas`, `MetalsColdGas`, `ColdGas` | Face-on optical depth ∝ (Σ_H₂ + 0.4 Σ_HI) × gas metallicity. It follows the arms and the H₂, and reddens what it dims. Thin, streaky dark lanes run along the arms' inner edges, darker the larger that dust column (on a log scale), so gas-poor disks have almost none. |
-| Elliptical dust lane | `H2gas` | A nuclear lane in ellipticals that hold molecular gas. |
+| Disk dust | `H2gas`, `H1gas`, `MetalsColdGas`, `ColdGas`, `DiskRadius`, `Vmax` | Dust follows the hydrogen at the Milky Way's dust per hydrogen, A_V/N_H = 5.3×10⁻²² mag cm² (Bohlin et al. 1978: τ_V = 0.061 per M☉ pc⁻²), times the gas metallicity (SAGE26's Z / 0.02), falling faster below a quarter solar (Rémy-Ruyer et al. 2014). Each gas phase carries its share. Thin dark lanes only in disks rotating faster than ~120 km/s (Dalcanton et al. 2004). Stars inside the disk are dimmed by the dust in front of them, so edge-on disks show their midplane lane. |
+| Elliptical dust lane | `H2gas` (or DustySAGE's `ColdDust`) | A nuclear lane in ellipticals that hold molecular gas or dust. |
 
 ## Nucleus
 
 | Component | SAGE26 fields | How |
 |---|---|---|
 | Nucleus | `BlackHoleMass`, `BulgeMass` | Brightness and compactness grow with black-hole mass (relative to the bulge, for ellipticals). |
-| AGN point source | `QuasarModeBHaccretionMass` | Quasar-mode accretion this snapshot adds a bright, bluish point. |
+| AGN point source | `QuasarModeBHaccretionMass`, the snapshot's time step | The mean quasar-mode accretion rate over the step at a radiative efficiency of 0.1 (L = 0.1 Ṁc²), a tenth in the optical (Elvis et al. 1994), against the host's light (M/L ~ 2). |
 
 ## Merger debris and the intracluster light
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| Shells (ellipticals) or tidal tails (disks) | `TimeOfLastMajorMerger`, redshift | A major merger leaves debris that fades over 4 Gyr at z = 0, and faster at high z (4 Gyr / (1+z), as dynamical times shorten). |
-| Stellar stream | `TimeOfLastMinorMerger`, redshift | A minor merger leaves a stream, fading over 2.5 Gyr / (1+z). |
-| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint envelope and glow reaching into the halo (scale 0.12 Rvir), with scattered stripped stars. Its brightness follows the ICS mass, so ICL-rich clusters and groups show it and others barely do. Its colour follows the ICS metallicity. |
+| Tidal tails, then shells | `TimeOfLastMajorMerger`, redshift | SAGE26 writes it as the merger's lookback time from z = 0 (in Myr/h); HD takes the time since the merger at the galaxy's own epoch. A major merger throws out tidal tails (Toomre & Toomre 1972) for its first ~1.5 Gyr, then the remnant shows shells; the debris fades over 4 Gyr / (1+z). |
+| Shells or a stream (minor merger) | `TimeOfLastMinorMerger`, B/T, redshift | A minor merger leaves shells round a bulge-dominated host (Quinn 1984), a stream round a disk, fading over 2.5 Gyr / (1+z). |
+| Intracluster light (ICL) | `IntraClusterStars`, `MetalsIntraClusterStars`, `Rvir` | A faint envelope as bright as SAGE26's ICS against the galaxy's own stars (both old), spread over the halo; it fades out smoothly at its edge. |
 
 ## Halo gas (the Gas button)
 
 | Component | SAGE26 fields | How |
 |---|---|---|
-| CGM and cold streams | `CGMgas`, `MetalsCGMgas`, `mdot_stream`, redshift, neighbouring haloes | Cold-regime haloes. Three curling streams plus filaments out to Rvir, brighter with log CGMgas (or the stream rate), tinted by metallicity. The streams follow the cosmic web: two come in from opposite sides along the direction of the biggest halo within 4 h⁻¹ Mpc (the filament the galaxy sits in), the third from the next biggest, each brighter the bigger its halo. At high z they are narrower, brighter and reach in to the galaxy (×(1 + 0.15z), width / (1 + 0.35z)). |
+| CGM and cold streams | `CGMgas`, `MetalsCGMgas`, `mdot_stream`, redshift, neighbouring haloes | The CGM glows smooth and filamentary from `CGMgas`; cold streams run through it only where SAGE26 has inflow (`mdot_stream`, in M☉/yr: 1 to 1000; ~100 into 10¹² M☉ haloes at z ~ 2.5, Dekel et al. 2009), as SAGE26 itself has inflow only at high z and below the shock mass (Dekel & Birnboim 2006). |
 | Cold streams into a hot halo | `mdot_stream`, `HotGas` | Hot haloes still fed by cold streams draw them by mdot_stream, aimed and scaled with redshift as above. |
-| Hot halo / intracluster medium | `HotGas`, `Mvir`, `Concentration`, `MetalsHotGas`, `Rvir`, redshift | A textured atmosphere to Rvir. Its opacity rises with log HotGas, with the hot gas's share of the halo's baryons, and with redshift (denser haloes). Its core is 1.5 Rvir / c, so concentrated haloes are peakier. Its colour follows the virial temperature (Mvir, hotter at high z): magenta in small haloes, violet in groups, ice-blue in rich clusters, tinted by metallicity. |
+| Hot halo / intracluster medium | `HotGas`, `Vvir`, `Rvir`, `Mvir`, `Concentration`, `MetalsHotGas` | A textured atmosphere to Rvir, its brightness from its bremsstrahlung X-ray luminosity (1.4×10⁻²⁷ T^0.5 n² V, T = 35.9 Vvir² K, `HotGas` at its mean density within Rvir): 10³⁹ to 10^44.5 erg/s, the ~4 dex observed from galaxies to clusters (e.g. Anderson et al. 2015). |
 | X-ray cavities | `Heating`, `r_heat`, `Regime`, `HotGas` | Bubbles at the radio-heating radius r_heat, along the jet axis, in hot haloes with radio heating. |
-| Radio jets | `Heating`, `BlackHoleMass`, `r_heat`, `Rvir` | Jets and lobes along the spin axis, brighter with radio-mode heating and black-hole mass, reaching about the radius the AGN heats (r_heat, or 8% of Rvir). |
-| Galactic winds | `OutflowRate`, `SfrDisk`, `SfrBulge`, `DiskRadius`, `MassLoading`, `Vmax`, `EjectedMass` | A hollow bipolar cone along the spin axis, in Hα red (as M82's wind), with a few thin streamers running outward through it. It is brighter with the outflow rate and with the SFR surface density (so compact high-z disks drive stronger winds). It reaches further in deeper potentials (Vmax) and the more of the halo gas has been ejected, and fades out by three times that reach. MassLoading opens it wider (20–60°, on a log scale). It is drawn in 3D, so it looks right from any angle. |
-| Extended HI disk | `H1gas`, `H2gas`, `Type`, `TimeOfInfall` | A faint, clumpy, pale-blue gas disk well past the stars, sized by the HI size–mass relation (Wang et al. 2016). It is clumpier where more of the cold gas is molecular, and warped in satellites, more so the longer since infall. |
+| Radio jets | `RadioModeBHaccretionMass`, the snapshot's time step, `r_heat`, `Rvir` | Jets where SAGE26 has radio-mode accretion this step, their power from its rate (0.1 Ṁc², 10⁴⁰ to 10⁴⁶ erg/s), reaching about the radius the AGN heats. |
+| Galactic winds | `OutflowRate`, `SfrDisk`, `SfrBulge`, `DiskRadius`, `MassLoading`, `Vmax`, `EjectedMass` | A bipolar cone from SAGE26's `OutflowRate` (1 to 1000 M☉/yr), only where star formation is concentrated enough to drive it: SFR surface density above ~0.1 M☉/yr/kpc² within the star-forming half-light radius (Heckman 2002). |
+| Extended HI disk | `H1gas`, `H2gas`, `Type`, `TimeOfInfall` | A faint, clumpy, pale-blue gas disk well past the stars, sized by the HI size–mass relation (Wang et al. 2016), brighter with `H1gas` from 10⁷ M☉. |
 
 ## Environment (groups, pairs, satellites)
 
@@ -81,10 +81,10 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 |---|---|---|
 | Group members | `CentralGalaxyIndex`, `Type`, `Pos*` | Every member of the FOF group is drawn at its own position and real size. |
 | Spin and orientation | `Spinx`, `Spiny`, `Spinz` | Each disk's plane is set by its spin vector. |
-| Tidal bridges and tails | `Pos*`, `StellarMass`, `Vel*`, `Spin*` | Group members within 100 kpc of each other with mass ratio above 1:10 raise tidal features. These are stronger the closer and more massive the companion, and weaker (×0.6) for retrograde encounters. |
+| Tidal bridges and tails | `Pos*`, `StellarMass`, `Vel*`, `Spin*`, redshift | Group members within 100 physical kpc of each other (positions are comoving) with mass ratio above 1:10 raise tidal features, weaker for fast fly-bys above ~300–500 km/s (Patton et al. 2013; Ellison et al. 2008). |
 | Merger about to happen | `mergeType` | A galaxy SAGE merges before the next snapshot interacts with the nearest more massive galaxy, at a strength set by the merger type. |
-| Jellyfish (ram-pressure) tail | `Vel*`, `Pos*`, `HotGas` (host), `Rvir` (host), `StellarMass`, `ColdGas`, `DiskRadius` | The strength is ρ_ICM v² against the disk's restoring force (Σ\* Σ_gas). It is set so a few per cent of satellites in hot haloes have a tail, as observed jellyfish are a few per cent of cluster galaxies (e.g. Poggianti et al. 2016): on SAGE26 at z = 0, 7% any tail, 2% a strong one. The tail is faint gas in the galaxy's own HII colour with blue star-forming knots, trailing the motion. It is brightened to undo the group's shared exposure, and ram pressure also strips up to half the satellite's CGM. |
-| Tidal stripping (satellites) | `Mvir`, `infallMvir` | A satellite that has lost more than 65% of its infall subhalo mass sheds stars into tidal streams. |
+| Jellyfish (ram-pressure) tail | `Vel*`, `Pos*`, `HotGas`, `Rvir` and `Regime` (host), `StellarMass`, `BulgeMass`, `ColdGas`, `DiskRadius`, `TimeOfInfall` | Ram-pressure stripping (Gunn & Gott 1972): the host's hot gas, a cored isothermal sphere (Cavaliere & Fusco-Femiano 1976), pushes at ρ v² against 2πG Σ\* Σ_gas of the disk, and the gas beyond where they balance is stripped. A satellite has a tail when it is drawn as a disk, fell in less than 1 Gyr ago, and more than 25% of its cold gas is being stripped, as observed jellyfish are disks on their first infall (Poggianti et al. 2016; Jaffé et al. 2018): on SAGE26 at z = 0, 15% of satellites in hot haloes. The tail trails the motion: faint threads of young stars off the disc, blue and H-alpha magenta, a few long blue ones curling (JW100, JO206: Poggianti et al. 2017, 2019); the stripped gas round them, drawn as HD draws the CGM; and eight long thin plumes in a range of blues, twisting and fading out at their ends (ESO 137-001: Sun et al. 2006, 2010). How many threads follows the cold gas, how long the ram pressure and time since infall, the gas its gas fraction. It is brightened to undo the group's shared exposure, and ram pressure also strips up to half the satellite's CGM. |
+| Tidal streams (stripped satellites) | `Mvir`, `infallMvir` | A satellite's stars are stripped only once ~90% of its dark matter is gone (Peñarrubia et al. 2008), so streams appear below 10% of its infall subhalo mass left. They curve along an arc of the orbit round the host, clumped along it (Küpper et al. 2012), and are faint: a few per cent of the galaxy's light. |
 
 ## DarkSAGE and DustySAGE
 
@@ -94,7 +94,10 @@ On these models' runs, HD replaces two of the estimates above with what the mode
 |---|---|---|
 | Disc size (DarkSAGE) | `StellarDiscScaleRadius` | Replaces `DiskRadius`. |
 | Disc profiles (DarkSAGE) | The radial stars, HI, H₂ and star-formation arrays | Older stars, HI, H₂ and young stars each follow their own surface-density profile in place of an exponential, falling away beyond the last annulus that has any. |
-| Dust (DustySAGE) | `ColdDust`, `DiskRadius` | The face-on optical depth comes from its dust mass, by the same recipe as the [photometry](photometry.md). |
+| Disc rotation and shear (DarkSAGE) | `DiscVcirc` | The disk's own rotation at 2.2 Rd replaces the halo's Vmax for dust lanes and the bar's stability test, and its shear sets the pitch angle (Seigar et al. 2006). |
+| Disc thickness (DarkSAGE) | the stellar dispersion, `StellarDiscHalfMassRadius` | σ² / (π G Σ) at the half-mass radius, a self-gravitating isothermal sheet (Spitzer 1942). |
+| Dust (DustySAGE) | `ColdDust`, `DiskRadius` | The same Milky Way opacity as without it, per unit of DustySAGE's own dust mass (dust / H = 0.010: Draine 2011) instead of from metallicity: the same picture where the dust follows the metals, different where DustySAGE says so. On a lightcone, by the same recipe as the [photometry](photometry.md). |
+| Halo dust (DustySAGE) | `HotDust`, `CGMDust`, `Rvir` | Reddens the hot gas and CGM by their mean dust column over the halo. |
 
 ## Fields not used for visuals
 

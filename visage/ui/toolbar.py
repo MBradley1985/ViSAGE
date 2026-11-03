@@ -18,17 +18,6 @@ from visage.scene.camera_motion import (
 from visage.parallel.loader import background_needed
 from visage.scene.scene import Scene
 
-# Frames per second for each speed multiplier
-_FPS: dict[float, float] = {
-    0.1: 0.3,
-    0.25: 0.75,
-    0.5: 1.5,
-    0.75: 2.25,
-    1: 3,
-    2: 6,
-    5: 15,
-}
-
 _SPEED_ITEMS = [
     {"title": "0.1×", "value": 0.1},
     {"title": "0.25×", "value": 0.25},
@@ -133,6 +122,35 @@ def build_toolbar(server, scene: Scene) -> None:
 
     state.snap_num = scene.current_snap
     state.snap_label = scene.snap_label
+    state.snap_info_z = ""
+    state.snap_info_rest = ""
+
+    @state.change("snap_label")
+    def on_snap_label(snap_label="", **_):
+        """The snapshot pill: its redshift, then snapshot, scale factor and
+        the Universe's age at it (the run's own cosmology)."""
+        import re
+
+        m = re.search(
+            r"Snap\s*(\d+).*z\s*=\s*([-\d.]+).*a\s*=\s*([\d.]+)",
+            str(snap_label),
+        )
+        if not m:
+            state.snap_info_z, state.snap_info_rest = str(snap_label), ""
+            return
+        from visage.hd.adapter import cosmic_time_gyr
+
+        cfg = scene._cfg
+        a = float(m.group(3))
+        age = cosmic_time_gyr(
+            a, float(cfg.hubble_h), float(getattr(cfg, "omega", 0.25))
+        )
+        state.snap_info_z = f"z = {float(m.group(2)):.2f}"
+        state.snap_info_rest = (
+            f"snap {int(m.group(1))} · a {a:.3f} · {age:.1f} Gyr"
+        )
+
+    on_snap_label(state.snap_label)
     state.snap_min = snap_lo
     state.snap_max = snap_hi
     state.play_speed = 1
@@ -145,6 +163,28 @@ def build_toolbar(server, scene: Scene) -> None:
     state.is_reverse = False
     state.is_repeat = False
     state.rotate_mode = "off"
+    state.speed_items = list(_SPEED_ITEMS)
+    state.rotate_items = list(_ROTATE_ITEMS)
+
+    @state.change("play_speed")
+    def on_speed_typed(play_speed, **_):
+        """A typed speed: a number (0.01-100), added to the list."""
+        if isinstance(play_speed, (int, float)):
+            return
+        try:
+            v = float(
+                str(play_speed).replace("×", "").replace("x", "").strip()
+            )
+        except ValueError:
+            state.play_speed = 1
+            return
+        v = float(np.clip(v, 0.01, 100.0))
+        v = int(v) if v == int(v) else round(v, 3)
+        if all(i["value"] != v for i in state.speed_items):
+            items = state.speed_items + [{"title": f"{v:g}×", "value": v}]
+            state.speed_items = sorted(items, key=lambda i: i["value"])
+        state.play_speed = v
+
     state.flythrough_active = False
     # The loading card: snapshots loading into memory, or playback frames
     # being prepared, with a progress bar.
@@ -538,7 +578,7 @@ def build_toolbar(server, scene: Scene) -> None:
         idx = 0
         try:
             while not stop_evt.is_set():
-                interval = 1.0 / _FPS.get(float(state.play_speed), 3)
+                interval = 1.0 / max(3.0 * float(state.play_speed), 0.03)
                 s = order[idx]
                 frame = _frames["data"].get(s)
                 if frame is not None:
@@ -799,6 +839,42 @@ def build_toolbar(server, scene: Scene) -> None:
                 cam.up = (0.0, 1.0, 0.0)
             _push()
             await pacer.wait()
+
+    def _typed_rotation(text) -> str | None:
+        """'45', '-45', 'cw 45', 'ccw 45°/s' -> 'cw_45' / 'ccw_45'."""
+        s = str(text).lower().replace("°/s", "").replace("deg", "").strip()
+        if s in ("", "off", "0", "stop"):
+            return "off"
+        sign = -1.0 if s.startswith("ccw") or s.startswith("-") else 1.0
+        s = (
+            s.replace("ccw", "")
+            .replace("cw", "")
+            .replace("-", "")
+            .replace("_", "")
+            .strip()
+        )
+        try:
+            v = float(np.clip(float(s), 0.1, 720.0))
+        except ValueError:
+            return None
+        return f"{'cw' if sign > 0 else 'ccw'}_{v:g}"
+
+    @state.change("rotate_mode")
+    def on_rotate_typed(rotate_mode, **_):
+        values = [i["value"] for i in state.rotate_items]
+        if rotate_mode in values:
+            return
+        mode = _typed_rotation(rotate_mode)
+        if mode is None:
+            state.rotate_mode = "off"
+            return
+        if mode not in values:
+            sign, dps = _parse_rotate(mode)
+            title = f"{'CW ' if sign > 0 else 'CCW'} {dps:g}°/s"
+            state.rotate_items = state.rotate_items + [
+                {"title": title, "value": mode}
+            ]
+        state.rotate_mode = mode
 
     @state.change("rotate_mode")
     def on_rotate_mode(rotate_mode, **_):
@@ -1135,7 +1211,12 @@ def build_toolbar(server, scene: Scene) -> None:
     )
 
     # Transport controls — leftmost of the right-hand cluster.
-    with v3.VBtnGroup(variant="outlined", density="compact"):
+    with v3.VBtnGroup(
+        variant="outlined",
+        density="compact",
+        rounded="pill",
+        classes="sage-pill-group",
+    ):
         v3.VBtn(
             icon="mdi-swap-horizontal",
             click=ctrl.toggle_reverse,
@@ -1157,27 +1238,15 @@ def build_toolbar(server, scene: Scene) -> None:
             title="Loop",
         )
 
-    _FLASH_JS = (
-        "var b=this,i=b.querySelector('i');"
-        "b.style.color='cyan';"
-        "if(i)i.style.color='cyan';"
-        "clearTimeout(b._ft);"
-        "b._ft=setTimeout(function(){b.style.color='white';if(i)i.style.color='';},300);"
-    )
-
-    # Snapshot step-back button + slider + step-forward button
+    # Snapshot step-back button + slider + step-forward button: cyan
+    # chevrons in round buttons.
     with html.Button(
         click=ctrl.snap_prev,
         title="Previous snapshot",
-        classes="sage-step-btn",
-        raw_attrs=[f'onmousedown="{_FLASH_JS}"'],
-        style=(
-            "background:none;border:none;outline:none;box-shadow:none;"
-            "cursor:pointer;padding:2px;margin-left:10px;"
-            "color:white;font-size:20px;line-height:1;display:flex;align-items:center;"
-        ),
+        classes="sage-snap-step",
+        style="margin-left:10px;",
     ):
-        html.I(classes="mdi mdi-skip-previous")
+        html.I(classes="mdi mdi-chevron-left")
     with v3.VCol(style="max-width:240px;padding:0 4px;"):
         v3.VSlider(
             v_model=("snap_num",),
@@ -1192,53 +1261,22 @@ def build_toolbar(server, scene: Scene) -> None:
     with html.Button(
         click=ctrl.snap_next,
         title="Next snapshot",
-        classes="sage-step-btn",
-        raw_attrs=[f'onmousedown="{_FLASH_JS}"'],
-        style=(
-            "background:none;border:none;outline:none;box-shadow:none;"
-            "cursor:pointer;padding:2px;margin-left:6px;margin-right:10px;"
-            "color:white;font-size:20px;line-height:1;display:flex;align-items:center;"
-        ),
+        classes="sage-snap-step",
+        style="margin-right:10px;",
     ):
-        html.I(classes="mdi mdi-skip-next")
+        html.I(classes="mdi mdi-chevron-right")
 
     # Snapshot label chip — Mustache interpolation for reactive content
-    v3.VChip(
-        "{{ snap_label }}",
-        size="small",
-        color="cyan",
-        style="font-family:monospace;min-width:220px;margin-right:8px;",
-    )
-
-    # Speed selector
-    v3.VSelect(
-        v_model=("play_speed",),
-        items=(_SPEED_ITEMS,),
-        density="compact",
-        hide_details=True,
-        variant="outlined",
-        style="max-width:90px;",
-    )
-
-    # Rotation selector — disabled in multi-box mode (shared camera)
-    v3.VSelect(
-        v_model=("rotate_mode",),
-        items=(_ROTATE_ITEMS,),
-        density="compact",
-        hide_details=True,
-        label="Rotate",
-        variant="outlined",
-        style="max-width:150px;",
-        disabled=("box_strip_items && box_strip_items.length > 1",),
-        title="Rotation disabled in multi-box mode",
-    )
+    with html.Div(classes="sage-snap-pill"):
+        html.B("{{ snap_info_z }}")
+        html.Span("{{ snap_info_rest }}", classes="sage-snap-rest")
 
     # The view: HD, Reset.
     v3.VBtn(
         "HD",
         variant=("hd_active ? 'flat' : 'outlined'",),
         density="compact",
-        click=ctrl.toggle_hd,
+        click=ctrl.toggle_hd_gas,
         color=("hd_active ? 'cyan' : 'white'",),
         loading=("hd_building",),
         disabled=(

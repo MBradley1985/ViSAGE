@@ -298,3 +298,23 @@ def galaxy_mask(galaxies, fields: dict, state) -> np.ndarray:
             cat_mask |= log_cm >= 14.0
         g_mask &= cat_mask
     return g_mask
+
+
+def host_halo_rows(halos, galaxies) -> np.ndarray:
+    """Each galaxy's host halo: the halo row its group's central sits on
+    (exact in SAGE), or -1 (the halo is below the halo mass cut)."""
+    from scipy.spatial import cKDTree
+
+    out = np.full(galaxies.count, -1, dtype=np.int64)
+    if halos.count == 0 or galaxies.count == 0:
+        return out
+    ids = np.asarray(galaxies.galaxy_id)
+    order = np.argsort(ids)
+    k = np.searchsorted(ids[order], galaxies.central_id)
+    k = np.clip(k, 0, len(ids) - 1)
+    cen = order[k]
+    found = ids[cen] == galaxies.central_id
+    d, h = cKDTree(halos.positions).query(galaxies.positions[cen[found]])
+    rows = np.where(d < 2e-3, h, -1)
+    out[np.flatnonzero(found)] = rows
+    return out

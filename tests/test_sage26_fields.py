@@ -42,7 +42,7 @@ def test_a_newborn_black_hole_draws_no_quasar():
     from visage.hd.model import recipe_from_sage
     import dataclasses
 
-    g = _disk()
+    g = dataclasses.replace(_disk(), dt_myr=263.0)  # (a snapshot's step)
     assert (
         recipe_from_sage(dataclasses.replace(g, qso_accretion=50.0)).agn == 0
     )

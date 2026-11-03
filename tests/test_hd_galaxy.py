@@ -64,8 +64,16 @@ def test_disk_recipe_has_every_starlight_component():
     names = {p.name for p in build_points(rc, maps)}
     assert rc.kind == "disk"
     assert {"clusters", "hii", "field"} <= names
-    assert rc.bar_len > 0  # instability bulge of 12% of M* makes a bar
     assert maps.dust.max() > 0
+
+
+def test_bars_where_the_stellar_disk_is_unstable():
+    """Efstathiou, Lake & Negroponte (1982): bar-unstable when Vmax /
+    sqrt(G M_disk / Rd) < 1.1."""
+    star_heavy = recipe_from_sage(_disk(vmax=150.0))  # eps ~ 0.7
+    halo_held = recipe_from_sage(_disk(vmax=300.0))  # eps ~ 1.4
+    assert star_heavy.bar_len > 0
+    assert halo_held.bar_len == 0
 
 
 def test_a_shared_exposure_gives_a_satellite_back_part_of_its_dimming():
@@ -205,7 +213,8 @@ def test_adapter_converts_snapshot_units():
     assert gal.stellar_mass == pytest.approx(5e10)
     assert gal.disk_radius_kpc == pytest.approx(4.0, rel=1e-3)
     assert gal.rvir_kpc == pytest.approx(200.0, rel=1e-3)
-    assert gal.t_major_myr == pytest.approx(1500.0)
+    # (SAGE26 writes it in Myr/h, counted back from z = 0.)
+    assert gal.t_major_myr == pytest.approx(1500.0 / 0.73)
     assert gal.qso_accretion == pytest.approx(1e6 / 0.73, rel=1e-3)
     np.testing.assert_allclose(spin_vector(snap, 1), [0.0, 0.6, 0.8])
     assert spin_vector(snap, 0) is None
@@ -773,3 +782,33 @@ def test_bar_light_is_an_ellipse_of_unit_flux():
     x, y = np.meshgrid(g, g)
     light = np.exp(-1.6 * np.hypot(x / a, y / (b))) / (2.4544 * a * b)
     assert float(light.sum() * d) == pytest.approx(1.0, rel=0.01)
+
+
+def test_merger_times_are_read_as_sage26_writes_them():
+    """SAGE26 writes TimeOfLast*Merger as lookback time from z = 0 in
+    Myr/h; HD wants the time since the merger at the galaxy's epoch."""
+    from types import SimpleNamespace as NS
+
+    from visage.hd.adapter import _since_myr, cosmic_time_gyr
+
+    h, om = 0.73, 0.25
+    back = 1e3 * (cosmic_time_gyr(1.0, h, om) - cosmic_time_gyr(0.5, h, om))
+    snap = NS(extra={"T": np.array([1000.0 * h, (back + 300.0) * h, -1.0])})
+    assert _since_myr(snap, "T", 0, h, 0.0, om) == pytest.approx(1000.0)
+    # At z = 1 the same field counts back from z = 0, not from z = 1.
+    assert _since_myr(snap, "T", 1, h, 1.0, om) == pytest.approx(300.0)
+    assert _since_myr(snap, "T", 2, h, 1.0, om) == -1.0  # never merged
+
+
+def test_hd_off_goes_back_to_isolate_if_it_was_on(hd_panel):
+    server, scene = hd_panel
+    state, ctrl = server.state, server.controller
+    state.nav_gal_idx = 0
+    ctrl.toggle_isolate()
+    assert state.isolate_active
+    ctrl.toggle_hd()
+    assert state.hd_active
+    ctrl.toggle_hd()
+    state.flush()
+    assert not state.hd_active
+    assert state.isolate_active  # still isolated, as before HD

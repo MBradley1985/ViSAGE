@@ -38,6 +38,7 @@ def _init_state(state) -> None:
         "sel_props": [],
         "sel_members": [],
         "sel_group_props": [],
+        "sel_history": [],  # the halo's past (Halo only)
         # HD's drawing of each member, by row: "HD" / "glow" / "extra".
         "hd_member_tags": {},
         "sel_note": "",
@@ -391,6 +392,29 @@ def selection_card(server) -> None:
                     "{{ p.value }}",
                     style="font-family:monospace;text-align:right;",
                 )
+            # The halo's past.
+            html.Div(
+                "HISTORY",
+                v_show=("sel_kind === 'halo' && sel_history.length",),
+                style=(
+                    "font-size:0.7rem;letter-spacing:0.08em;color:#c084fc;"
+                    "margin:10px 0 4px;font-weight:700;"
+                ),
+            )
+            with html.Div(
+                v_for="(p, i) in sel_history",
+                key="i",
+                v_show=("sel_kind === 'halo'",),
+                style=(
+                    "display:flex;justify-content:space-between;gap:8px;"
+                    "font-size:0.74rem;padding:1px 0;"
+                ),
+            ):
+                html.Span("{{ p.label }}", style="color:#c4b5fd;")
+                html.Span(
+                    "{{ p.value }}",
+                    style="font-family:monospace;text-align:right;",
+                )
             # Every member (the card scrolls).
             with html.Div(
                 v_show=("sel_members.length > 1",),
@@ -431,6 +455,47 @@ def build_selection(server, scene) -> None:
     def _snap(snap=None):
         model = scene.active_model
         return model.loader.get(model.current_snap if snap is None else snap)
+
+    # {GalaxyIndex: {snapshot: what it is there}}: itself, the galaxy it
+    # merged into, or None (not formed yet, or lost).
+    chains: dict = {}
+
+    @ctrl.set("sel_followed")
+    def _followed(gid, snap: int):
+        """The GalaxyIndex `gid` goes by at `snap`: its own while it lasts,
+        then the galaxy it merged into.  None before it formed, or when
+        the trail is lost."""
+        if gid is None:
+            return None
+        snap = int(snap)
+        chain = chains.setdefault(int(gid), {})
+        if snap in chain:
+            return chain[snap]
+        _, galaxies = _snap(snap)
+        if np.any(galaxies.galaxy_id == gid):
+            chain[snap] = int(gid)
+            return chain[snap]
+        # Gone: carry on from the last snapshot it was seen in.
+        seen = [s for s, g in chain.items() if g is not None and s < snap]
+        chain[snap] = None
+        if not seen or scene.is_lightcone:
+            return None
+        start = max(seen)
+        from visage.utils.track import follow
+
+        try:
+            trail = follow(
+                scene.active_model.cfg.hdf5_path,
+                chain[start],
+                start,
+                list(range(start, snap + 1)),
+            )
+        except Exception:
+            return None
+        for s, g in zip(trail.snaps, trail.galaxy_id, strict=True):
+            if s > start:
+                chain[s] = int(g)
+        return chain[snap]
 
     def _members(galaxies, i: int) -> np.ndarray:
         from visage.utils.group_info import member_indices
@@ -498,6 +563,78 @@ def build_selection(server, scene) -> None:
         # (Where it is first, its look and dust after the basics.)
         return head[:2] + props + head[2:]
 
+    def _redshift(galaxies, i: int, snap: int) -> float:
+        zs = getattr(galaxies, "redshifts", None)
+        if zs is not None and i < len(zs):
+            return float(zs[i])  # its own on a lightcone
+        return float(scene.active_model.snap_table.snap_to_z(int(snap)))
+
+    histories: dict = {}
+
+    def _fill_history(galaxies, lead: int, snap: int, show: bool) -> None:
+        """The halo's past on the card: how it grew, when it formed and
+        its last major merger, from the merger trees."""
+        state.sel_history = []
+        gid = int(galaxies.galaxy_id[lead]) if show else 0
+        if not gid:
+            return
+        key = (scene.active_model.name, gid, int(snap))
+        if key not in histories:
+            from visage.utils.track import halo_history
+
+            try:
+                histories[key] = halo_history(
+                    scene.active_model.cfg.hdf5_path, gid, int(snap)
+                )
+            except Exception:
+                histories[key] = None
+        past = histories[key]
+        if past is None or len(past.snaps) < 2:
+            return
+        table = scene.active_model.snap_table
+        h = float(scene._cfg.hubble_h)
+
+        om = float(getattr(scene._cfg, "omega", 0.25))
+        from visage.hd.adapter import cosmic_time_gyr
+
+        def when(s: int) -> str:
+            ago = cosmic_time_gyr(
+                table.snap_to_a(snap), h, om
+            ) - cosmic_time_gyr(table.snap_to_a(s), h, om)
+            return f"z = {table.snap_to_z(s):.2f} (−{ago:.1f} Gyr)"
+
+        rows = [("Formed (½ mass)", when(past.formed()))]
+        z_now = table.snap_to_z(snap)
+        grown = []
+        for z_then in (1, 2):
+            then = [
+                m
+                for s, m in zip(past.snaps, past.mvir, strict=True)
+                if table.snap_to_z(s) >= z_then
+            ]
+            if z_now < z_then and then and then[-1] > 0:
+                grown.append((z_then, past.mvir[-1] / then[-1]))
+        if grown:
+            rows.append(
+                (
+                    "Grown since z = " + " / ".join(str(z) for z, _ in grown),
+                    " / ".join(f"×{g:.1f}" for _, g in grown),
+                )
+            )
+        # (Major: at least 1:3.)
+        major = past.last_major()
+        rows.append(
+            (
+                "Last major merger",
+                (
+                    f"{when(major[0])} · 1:{1 / major[1]:.1f}"
+                    if major
+                    else "none"
+                ),
+            )
+        )
+        state.sel_history = [{"label": a, "value": b} for a, b in rows]
+
     def _select(i: int, note: str = "", snap=None) -> None:
         snap = scene.active_model.current_snap if snap is None else snap
         halos, galaxies = _snap(snap)
@@ -523,6 +660,8 @@ def build_selection(server, scene) -> None:
             pos=pos,
             mem=mem,
         )
+        if sel["gid"] is not None:
+            chains.setdefault(sel["gid"], {})[int(snap)] = sel["gid"]
         _remember(sel["gid"], i)
         if host is not None and host != _int(state.nav_halo_idx):
             sel["halo_echo"] = host
@@ -572,6 +711,7 @@ def build_selection(server, scene) -> None:
             if host is not None
             else "Host halo below the halo mass cut"
         )
+        om = float(getattr(scene._cfg, "omega", 0.25))
         total = float(galaxies.stellar_mass[mem].sum())
         state.sel_group = (
             f"{kind}, {len(mem)} members · ΣM* {_fmt(total, ' M☉')}"
@@ -585,10 +725,15 @@ def build_selection(server, scene) -> None:
         state.sel_group_props = [
             {"label": a, "value": b}
             for a, b in (
-                group_summary(galaxies, mem, h) if len(mem) > 1 else []
+                group_summary(
+                    galaxies, mem, h, _redshift(galaxies, lead, snap), om
+                )
+                if len(mem) > 1
+                else []
             )
         ]
         listed = mem
+        _fill_history(galaxies, lead, snap, halo_ctx and not cone)
         state.sel_members = [
             {
                 "idx": int(k),
@@ -821,8 +966,13 @@ def build_selection(server, scene) -> None:
 
     @ctrl.set("find_select")
     def _find_select(idx):
-        """A Find result clicked: select it and fly there."""
-        _go_row(int(idx))
+        """A Find result clicked: select it and fly there -- a group or a
+        pair as its halo with every member (so HD builds them all)."""
+        if state.find_preset in ("richest", "pairs"):
+            state.sel_kind = "halo"
+            _go_row(int(idx), keep_kind=True)
+        else:
+            _go_row(int(idx))
         if hasattr(ctrl, "sel_go"):
             ctrl.sel_go()
 
@@ -901,8 +1051,14 @@ def build_selection(server, scene) -> None:
         # galaxy it merged into.
         path = sel.get("track") or {}
         gid = sel["gid"] = path.get(int(snap_num), gid)
+        # Past a merger, the galaxy it merged into.
+        here = _followed(gid, int(snap_num))
         _, galaxies = _snap(int(snap_num))
-        hit = np.flatnonzero(galaxies.galaxy_id == gid)
+        hit = (
+            np.flatnonzero(galaxies.galaxy_id == here)
+            if here is not None
+            else np.zeros(0, int)
+        )
         if len(hit) == 0:
             # Kept (by GalaxyIndex) for a snapshot it is in, but nothing
             # here acts on a row that is now another galaxy.
@@ -913,6 +1069,7 @@ def build_selection(server, scene) -> None:
             sel.update(idx=None, mem=None)
             if state.nav_gal_idx is not None:
                 sel["echo"] = None
+                sel["kind_next"] = state.sel_kind  # (Galaxy / Halo stays)
                 state.nav_gal_idx = None
             state.sel_note = (
                 "Not in this snapshot (not formed yet, or merged into "
@@ -922,6 +1079,12 @@ def build_selection(server, scene) -> None:
             return
         i = int(hit[0])
         _select(i, snap=int(snap_num))
+        # Still the galaxy picked: stepping back finds it again.
+        sel["gid"] = gid
+        if here != gid:
+            state.sel_note = (
+                f"Galaxy {gid} merged into galaxy {here}: following it."
+            )
         # (Its row number may differ in this snapshot; the galaxy / halo
         # context carries over.)
         if _int(state.nav_gal_idx) != i:

@@ -19,6 +19,8 @@ Click **Take Screenshot** (or press Enter in the label field) to save. All files
 | Format | GIF · MOV (H.264, requires `ffmpeg`) · PNG sequence |
 | FPS | 1 – 60 |
 | Resolution | Native · 2× · 4× supersampled |
+| Speed | Playback speed: a preset (0.1× to 5×) or any value typed in, 0.01× to 100× |
+| Rotate | Camera orbit: a preset (clockwise or anticlockwise, 15 / 30 / 60 ° s⁻¹) or any rate typed in, 0.1 to 720 ° s⁻¹ (negative or "ccw" for anticlockwise, "off" to stop) |
 | Label | Optional user-typed string |
 
 Click **Record** to start capturing frames, then **Stop** when done. The movie is assembled and saved to the session folder.

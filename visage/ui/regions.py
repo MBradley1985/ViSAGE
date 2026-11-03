@@ -387,6 +387,12 @@ def setup(server, scene, push) -> None:
     def region_now() -> dict | None:
         return current()
 
+    @ctrl.set("region_of")
+    def region_of(shape: str):
+        """The region of shape `shape` as the Regions tab has it (None
+        while a field is empty)."""
+        return current(shape)
+
     @ctrl.set("region_rows")
     def region_rows() -> tuple:
         """Rows of the active region, and what it is, for an export."""

@@ -332,3 +332,93 @@ def contributors(
             if reaches(int(g), targets, links)
         ]
     return out
+
+
+# A halo merger is major when the smaller halo had at least a third of the
+# larger's mass just before it fell in (e.g. Fakhouri, Ma & Boylan-Kolchin
+# 2010, MNRAS 406, 2267).
+MAJOR_RATIO = 1.0 / 3.0
+
+
+@dataclass
+class HaloHistory:
+    """The host halo of one galaxy, oldest snapshot first: its mass
+    (``mvir``, 1e10 Msun/h, as SAGE writes it) at each of ``snaps``, and
+    the haloes that fell into it as (snapshot, mass ratio, smaller over
+    larger) in ``mergers``."""
+
+    snaps: list[int] = field(default_factory=list)
+    mvir: list[float] = field(default_factory=list)
+    mergers: list[tuple[int, float]] = field(default_factory=list)
+
+    def formed(self) -> int | None:
+        """The first snapshot its halo had half its last mass."""
+        if not self.mvir:
+            return None
+        half = 0.5 * self.mvir[-1]
+        return next(
+            s for s, m in zip(self.snaps, self.mvir, strict=True) if m >= half
+        )
+
+    def last_major(self) -> tuple[int, float] | None:
+        major = [m for m in self.mergers if m[1] >= MAJOR_RATIO]
+        return major[-1] if major else None
+
+
+def halo_history(first: str | Path, galaxy_id: int, snap: int) -> HaloHistory:
+    """The history of the halo ``galaxy_id`` lives in, up to ``snap``.
+
+    A halo is its group, and its mass its central's Mvir.  Going back a
+    snapshot, its progenitors are the groups its members were in then:
+    the most massive carries the history on (its main branch), and the
+    others are haloes that fell in.  Haloes only merge inside a forest,
+    so only the forest's rows are read."""
+    mulfac = forest_mulfac(first)
+    forest = galaxy_id // mulfac
+    rows = {}  # snapshot: (GalaxyIndex, its central, Mvir) of the forest
+    for s in range(int(snap) + 1):
+        with open_snapshot(first, s) as group:
+            if group is None or "CentralGalaxyIndex" not in group:
+                continue
+            ids = np.asarray(group["GalaxyIndex"]).astype(np.int64)
+            here = np.flatnonzero(ids // mulfac == forest)
+            rows[s] = (
+                ids[here],
+                np.asarray(group["CentralGalaxyIndex"])[here].astype(np.int64),
+                np.asarray(group["Mvir"])[here].astype(float),
+            )
+
+    def mass(s: int, central: int) -> float:
+        ids, _, mvir = rows[s]
+        at = np.flatnonzero(ids == central)
+        return float(mvir[at[0]]) if len(at) else 0.0
+
+    out = HaloHistory()
+    if snap not in rows:
+        return out
+    ids, cen, _ = rows[snap]
+    at = np.flatnonzero(ids == galaxy_id)
+    if not len(at):
+        return out
+    host = int(cen[at[0]])
+    back = [(int(snap), mass(snap, host))]
+    for s in sorted((k for k in rows if k < snap), reverse=True):
+        later = back[-1][0]
+        ids, cen, _ = rows[later]
+        members = ids[cen == host]
+        p_ids, p_cen, _ = rows[s]
+        hosts = np.unique(p_cen[np.isin(p_ids, members)])
+        if not len(hosts):
+            break  # it formed after this
+        m = np.array([mass(s, int(c)) for c in hosts])
+        main = int(np.argmax(m))
+        for k in np.flatnonzero(np.arange(len(hosts)) != main):
+            if m[main] > 0:
+                out.mergers.append((later, float(m[k] / m[main])))
+        host = int(hosts[main])
+        back.append((s, float(m[main])))
+    for s, m in reversed(back):
+        out.snaps.append(s)
+        out.mvir.append(m)
+    out.mergers.sort()
+    return out

@@ -356,9 +356,15 @@ class HDGalaxyLayer:
                     gain=ctx.get("tail_gain", 1.0),
                 )
             if ctx.get("strip"):
-                d, st = ctx["strip"]
+                d, st, host_dir = ctx["strip"]
                 pts.append(
-                    strip_points(rc, R.T @ np.asarray(d), st, rc.seed + 223)
+                    strip_points(
+                        rc,
+                        R.T @ np.asarray(d),
+                        st,
+                        rc.seed + 223,
+                        R.T @ np.asarray(host_dir),
+                    )
                 )
         if ctx.get("partners"):
             h = ctx["hubble_h"]
