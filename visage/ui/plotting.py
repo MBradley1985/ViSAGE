@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import json
 import math
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -219,10 +220,16 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
         if state.plot_busy or not state.plot_selected:
             return
         work = Path(tempfile.mkdtemp(prefix="visage_plots_"))
+
+        def remove_work():
+            shutil.rmtree(work, ignore_errors=True)
+
+        procs.add_cleanup(remove_work)
         try:
             req = request(work / "req.npz")
         except ValueError as exc:
             state.plot_status = str(exc)
+            remove_work()
             return
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         (work / "req.json").write_text(json.dumps(req))
@@ -258,6 +265,7 @@ def setup(server, scene, region_indices, open_image, refresh, out_dir) -> None:
             state.flush()
         procs.untrack(proc)
         lines = log.read_text().splitlines()
+        remove_work()
         made = [ln[5:] for ln in lines if ln.startswith("made ")]
         bad = [ln for ln in lines if ln.startswith(("failed ", "skipped "))]
         for path in made[-6:]:

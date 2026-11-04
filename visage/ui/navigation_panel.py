@@ -1772,6 +1772,12 @@ def build_navigation_panel(server, scene: Scene) -> None:
             sess = _make_outdir("sage_outputs") / f"session_{ts}"
             sess.mkdir(parents=True, exist_ok=True)
             _session_state["dir"] = sess
+            from visage import procs
+
+            # Frames of a recording still going when ViSAGE quits.
+            procs.add_cleanup(
+                lambda: [_remove_dir(d) for d in sess.glob("_*_frames")]
+            )
         return _session_state["dir"]
 
     def _safe_label(label: str) -> str:

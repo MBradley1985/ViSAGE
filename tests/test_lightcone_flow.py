@@ -252,6 +252,9 @@ def test_lc_config_migrates_old_format_script(tmp_path, monkeypatch):
     # Old hardcoded OUTDIR default upgraded to the new convention.
     assert 'OUTDIR="./lightcone_output"' not in text
     assert "sage_outputs/lightcone" in text.replace("\\", "/")
+    # The KD-tree goes beside the lightcone, not into ~/.visage.
+    assert "KDTREE_OUT" not in text
+    assert 'kdtree_out="$OUTDIR/' in text
     # LIGHTCONE_DIR also resynced (migration regenerates from the seed
     # template, which already fills the verified checkout).
     assert f'LIGHTCONE_DIR="{lc}"' in text

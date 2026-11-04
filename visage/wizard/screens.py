@@ -166,7 +166,6 @@ _LC_SECTIONS = [
             "SAGE_OUTPUT_DIR",
             "PARAM_FILE",
             "ALIST_FILE",
-            "KDTREE_OUT",
         ),
     ),
     ("Sky & depth", lambda k: k.startswith(("RA", "DEC", "Z"))),
@@ -916,7 +915,7 @@ class SetupRunMixin:
 
     def _lc_model_paths(self, m: dict) -> dict:
         """run_lightcone.sh paths for a SAGE26 model: its output folder,
-        .par, a_list (from the .par) and a KD-tree named after it."""
+        .par and a_list (from the .par)."""
         from visage.wizard.controller import _parse_params
 
         out = Path(m["hdf5"]).parent
@@ -937,7 +936,6 @@ class SetupRunMixin:
                 vals["ALIST_FILE"] = self._tc_path(alist)
         except OSError:
             pass
-        vals["KDTREE_OUT"] = f"./{m['name']}-kdtree.h5"
         return vals
 
     async def _show_all_settings(self, section: str | None = None) -> None:

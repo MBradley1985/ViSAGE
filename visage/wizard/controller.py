@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from visage import system
+from visage import procs, system
 from visage.utils import terminal
 from visage.wizard import toolchain as _toolchain
 from visage.wizard.family import FAMILY, FamilyMixin
@@ -446,7 +446,6 @@ LIGHTCONE_DIR="{lightcone_dir}"
 SAGE_OUTPUT_DIR="{sage_output_dir}"   # directory holding model_N.hdf5 files
 PARAM_FILE="{param_file}"             # SAGE .par file (cosmology/sim settings)
 ALIST_FILE="{alist_file}"             # expansion-factor (a_list) file
-KDTREE_OUT="./millennium-kdtree.h5"   # KD-tree output file
 
 # -- Stage 2: cli_lightcone -- KD-tree HDF5 -> flat lightcone HDF5 -----------
 RAMIN=0                    # right ascension min (degrees)
@@ -491,17 +490,23 @@ SED_NOISE_ENABLED=1
 {survey_flags}
 "{python_exe}" -W ignore -m visage.io.sage_files "$SAGE_OUTPUT_DIR"
 
+# The KD-tree is a full re-indexed copy of the SAGE output, needed only
+# while the cone is cut: it sits beside the lightcone and is deleted when
+# this script ends, however it ends.
+mkdir -p "$OUTDIR"
+kdtree_out="$OUTDIR/${{OUTFILE%.h5}}-kdtree.h5"
+trap 'rm -f "$kdtree_out"' EXIT
+
 echo "==> Stage 1/2: sage2kdtree"
 "$LIGHTCONE_DIR/scripts/sage2kdtree.sh" \\
   -s "$SAGE_OUTPUT_DIR" \\
   -p "$PARAM_FILE" \\
   -a "$ALIST_FILE" \\
-  -o "$KDTREE_OUT"
+  -o "$kdtree_out"
 
 echo "==> Stage 2/2: cli_lightcone"
-mkdir -p "$OUTDIR"
 "$LIGHTCONE_DIR/scripts/lightcone.sh" \\
-  -d "$KDTREE_OUT" \\
+  -d "$kdtree_out" \\
   --ramin "$RAMIN"   --ramax "$RAMAX" \\
   --decmin "$DECMIN" --decmax "$DECMAX" \\
   --zmin "$ZMIN"     --zmax "$ZMAX" \\
@@ -3304,7 +3309,9 @@ class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
         structural feature of the current template. Each canary marks a
         feature added over time: BAND_*_ENABLED (per-band checkboxes) and
         ``--alist`` (explicit scale-factor list passed to the SED stage, so
-        relative header paths like microUchuu's still resolve). A script
+        relative header paths like microUchuu's still resolve), and
+        ``kdtree_out`` (the KD-tree beside the lightcone, deleted when the run
+        ends, in place of the old KDTREE_OUT left in ~/.visage). A script
         missing any of them is regenerated, carrying the user's values over.
         """
         if (
@@ -3312,6 +3319,7 @@ class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
             and "--alist" in text
             and "SED_DUST_MODEL" in text
             and "visage.io.sage_files" in text
+            and "kdtree_out=" in text
         ):
             return text
 
@@ -3324,7 +3332,6 @@ class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
                 "SAGE_OUTPUT_DIR",
                 "PARAM_FILE",
                 "ALIST_FILE",
-                "KDTREE_OUT",
                 "RAMIN",
                 "RAMAX",
                 "DECMIN",
@@ -3648,9 +3655,17 @@ class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
                 self._lc_dir / "scripts" / "lightcone.sh",
             ]
         )
-        # Run from the script's own dir (~/.visage) so its relative outputs
-        # (KDTREE_OUT, OUTDIR) land there, not inside the LightSAGE repo.
+        # The script deletes its KD-tree when it ends; this catches one left
+        # by a run killed outright, now and when ViSAGE quits.
+        out = self._lc_output_file()
+        kdtree = None
+        if out is not None:
+            stem = out.name[:-3] if out.name.endswith(".h5") else out.name
+            kdtree = out.with_name(f"{stem}-kdtree.h5")
+            procs.add_cleanup(lambda: kdtree.unlink(missing_ok=True))
         rc = await self._run_cmd(["bash", script], cwd=script.parent)
+        if kdtree is not None:
+            kdtree.unlink(missing_ok=True)
         if rc != 0:
             self._emit(f"Lightcone pipeline exited with code {rc}.", "err")
             self._set_choices(
@@ -3669,14 +3684,8 @@ class WizardController(InstallMixin, SetupRunMixin, FamilyMixin):
         self._st.wiz_step = 5
         self._emit("", "info")
         self._emit("Lightcone pipeline complete!", "ok")
-        out = self._lc_output_file()
         if out is not None and out.is_file():
             self._emit(f"Lightcone written: {out}", "ok")
-        self._emit(
-            f"Outputs are under {script.parent} "
-            "(see KDTREE_OUT / OUTDIR in the script).",
-            "info",
-        )
         self._set_choices(
             [
                 {
