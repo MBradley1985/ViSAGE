@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.20.1] — 2026-11-04
+
+### Fixed
+
+- Lightcone runs no longer leave their KD-tree (a full copy of the model) in ~/.visage: it is built beside the lightcone in the output folder and deleted when the run ends, fails or is cancelled, and when ViSAGE quits.
+- The Plots tab's temporary files are deleted after each run and when ViSAGE quits.
+- A recording still going when ViSAGE quits no longer leaves its frames behind.
+
+---
+
 ## [2.20.0] — 2026-11-04
 
 ### Added
