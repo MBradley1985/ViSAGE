@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.20.2] — 2026-11-05
+
+### Changed
+
+- Galaxies in the main view glow less: glow strength 1.4 (was 1.7).
+- A galaxy whose own layers (gas, and the bulge and disc in Focus) add up past full brightness is dimmed to fit, so cluster centrals no longer burn out to white.
+- Focus's bulge and disc layers are drawn at the same weight as the gas layers.
+
+---
+
 ## [2.20.1] — 2026-11-04
 
 ### Fixed

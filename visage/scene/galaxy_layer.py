@@ -22,7 +22,7 @@ from visage.utils.sizing import galaxy_world_radii_rvir, glow_crowding
 _GLOW_KNEE = 2.0
 
 # Default glow level, in the units of the Structure panel's slider.
-_DEFAULT_GLOW_STRENGTH = 1.7
+_DEFAULT_GLOW_STRENGTH = 1.4
 
 # Splat profile for emissive galaxies: a flat-topped disc with a soft edge
 # (about 0.7 of the splat radius across), on a faint glow of the full
@@ -566,7 +566,7 @@ class GalaxyLayer:
             if rgb is not None:
                 self._render_sed_stack(eff_pos, rgb, radii)
             return
-        self._dim = self._crowd_dimming(snap, radii)
+        self._dim = self._stack_dimming(snap, self._crowd_dimming(snap, radii))
         if self._outside is not None:
             shown = self._combined_mask()
             kept = self._outside if shown is None else self._outside[shown]
@@ -807,6 +807,48 @@ class GalaxyLayer:
         self._dim_snap, self._dim_key = full, key
         return self._dim_cached
 
+    def _stack_dimming(
+        self, snap: GalaxySnapshot, dim: np.ndarray | None
+    ) -> np.ndarray | None:
+        """`dim`, lowered where a galaxy's own layers add up past full
+        brightness at its centre.
+
+        Crowding counts the neighbours' glows, not a galaxy's own: a
+        cluster central tops the hot gas, cold gas and bulge ranges at
+        once, and those layers summed clip to white.  Each galaxy is
+        scaled so its brightest channel, summed over the layers drawn,
+        stays at full.
+        """
+        if dim is None:
+            return None
+
+        # The same scalars and asinh shaping as `_hue_rgba` and `_rgba`.
+        def _shaped(x, vmin, vmax):
+            log = np.log10(np.maximum(x, 1.0))
+            v = np.clip((log - vmin) / (vmax - vmin + 1e-10), 0.0, 1.0)
+            return np.arcsinh(_GLOW_KNEE * v) / np.arcsinh(_GLOW_KNEE)
+
+        def _hue(v, rgb):
+            return np.outer(0.3 + 0.7 * v, rgb)
+
+        total = _hue(_shaped(snap.cold_gas, *_COLD_RANGE), _COLD_RGB)
+        for mass, rgb, rng in (
+            (snap.cgm_gas, _CGM_RGB, _CGM_RANGE),
+            (snap.hot_gas, _HOT_RGB, _HOT_RANGE),
+        ):
+            if mass.size == snap.count:
+                total += _hue(_shaped(mass, *rng), rgb) * (mass > 0)[:, None]
+        if self._focus_mask is not None or self._show_inner_layers:
+            disk = np.maximum(snap.stellar_mass - snap.bulge_mass, 0.0)
+            total += scalars_to_rgba(_shaped(disk, 7.0, 12.0), "Blues_r")[
+                :, :3
+            ]
+            total += _hue(_shaped(snap.bulge_mass, 6.0, 12.0), _BULGE_RGB)
+        # Every layer is drawn at the same weight (`_layer_weight(0.2, 0.5)`).
+        total *= self._layer_weight(0.2, 0.5)
+        peak = np.maximum(total.max(axis=1) / 255.0, 1.0)
+        return np.minimum(dim, 1.0 / peak).astype(np.float32)
+
     def _shape_splat(self, mapper) -> None:
         """Give an emissive layer's splats the core-and-glow profile."""
         if self._emissive:
@@ -994,7 +1036,7 @@ class GalaxyLayer:
                 np.float32
             )
 
-            weight = self._layer_weight(0.5, 0.75) * dim
+            weight = self._layer_weight(0.2, 0.5) * dim
             for rgba, radii_arr in [
                 (self._rgba(disk_scalar, "Blues_r", weight), r_disk),
                 (self._hue_rgba(bulge_scalar, _BULGE_RGB, weight), r_bulge),
@@ -1008,7 +1050,7 @@ class GalaxyLayer:
                     rgb=True,
                     style="points_gaussian",
                     emissive=self._emissive,
-                    opacity=self._layer_alpha(0.5, 0.75),
+                    opacity=self._layer_alpha(0.2, 0.5),
                     show_scalar_bar=False,
                     render=False,
                     reset_camera=False,
@@ -1019,7 +1061,7 @@ class GalaxyLayer:
                 self._shape_splat(mp)
                 if not self._visible:
                     actor.SetVisibility(False)
-                self._track_opacity(actor, 0.5, 0.75)
+                self._track_opacity(actor, 0.2, 0.5)
                 self._actors.append(actor)
 
     def _render_outer_property(
