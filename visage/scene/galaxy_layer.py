@@ -50,6 +50,24 @@ GREYED = 0.22  # brightness of galaxies outside a greyed region
 _CROWD_FREE = 1.5
 _CROWD_POWER = 0.7
 
+# Gas shares.  Each gas layer's brightness comes from its own mass range,
+# so a trace component (a cluster central's CGM, a few 1e-5 of its hot
+# gas) would glow as brightly as the main one, and red, green and blue
+# together read as white.  Each gas layer is also scaled by its mass over
+# the galaxy's largest gas component, to `_SHARE_POWER`, never below
+# `_SHARE_FLOOR`: the main component keeps its brightness.
+_SHARE_POWER = 0.15
+_SHARE_FLOOR = 0.65
+
+
+def _gas_share(snap: GalaxySnapshot, mass: np.ndarray) -> np.ndarray:
+    """Brightness factor of a gas layer of `mass`, per galaxy."""
+    top = np.maximum(snap.cold_gas, snap.hot_gas)
+    if snap.cgm_gas.size == snap.count:
+        top = np.maximum(top, snap.cgm_gas)
+    share = np.clip(np.maximum(mass, 1.0) / np.maximum(top, 1.0), 0.0, 1.0)
+    return np.maximum(share**_SHARE_POWER, _SHARE_FLOOR)
+
 
 ColorMode = Literal[
     "stellar_mass",
@@ -830,13 +848,19 @@ class GalaxyLayer:
         def _hue(v, rgb):
             return np.outer(0.3 + 0.7 * v, rgb)
 
-        total = _hue(_shaped(snap.cold_gas, *_COLD_RANGE), _COLD_RGB)
+        total = (
+            _hue(_shaped(snap.cold_gas, *_COLD_RANGE), _COLD_RGB)
+            * _gas_share(snap, snap.cold_gas)[:, None]
+        )
         for mass, rgb, rng in (
             (snap.cgm_gas, _CGM_RGB, _CGM_RANGE),
             (snap.hot_gas, _HOT_RGB, _HOT_RANGE),
         ):
             if mass.size == snap.count:
-                total += _hue(_shaped(mass, *rng), rgb) * (mass > 0)[:, None]
+                total += (
+                    _hue(_shaped(mass, *rng), rgb)
+                    * ((mass > 0) * _gas_share(snap, mass))[:, None]
+                )
         # Focus's disc and bulge are left out, so the gas looks the same
         # with Focus on or off.
         # Every layer is drawn at the same weight (`_layer_weight(0.2, 0.5)`).
@@ -958,7 +982,11 @@ class GalaxyLayer:
             scalar = _logn(mass[mask], lo, hi)
             cloud = pv.PolyData(pos[mask])
             cloud["rgba"] = self._hue_rgba(
-                scalar, rgb, self._layer_weight(0.2, 0.5) * self._dim_of(mask)
+                scalar,
+                rgb,
+                self._layer_weight(0.2, 0.5)
+                * self._dim_of(mask)
+                * _gas_share(snap, mass)[mask],
             )
             cloud["radius"] = (
                 r_outer[mask] * r_scale * (0.5 + 0.5 * scalar)
@@ -986,7 +1014,11 @@ class GalaxyLayer:
         # ---- (2) Cold-gas blue envelope -------------------------------
         cloud = pv.PolyData(pos)
         cloud["rgba"] = self._hue_rgba(
-            cold_scalar, _COLD_RGB, self._layer_weight(0.2, 0.5) * dim
+            cold_scalar,
+            _COLD_RGB,
+            self._layer_weight(0.2, 0.5)
+            * dim
+            * _gas_share(snap, snap.cold_gas),
         )
         cloud["radius"] = (r_cold * (0.5 + 0.5 * cold_scalar)).astype(
             np.float32

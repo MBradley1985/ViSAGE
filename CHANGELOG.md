@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.20.4] — 2026-11-05
+
+### Fixed
+
+- Galaxies whose gas is almost all one kind no longer show as a white ball: each gas layer's glow is also weighted by its share of the galaxy's gas (to the power 0.15, never below 0.65), so a trace of CGM or cold gas in a cluster central no longer adds up with its hot gas to white.
+
+---
+
 ## [2.20.3] — 2026-11-05
 
 ### Fixed
