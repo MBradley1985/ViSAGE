@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.20.3] — 2026-11-05
+
+### Fixed
+
+- Focus no longer washes out the galaxies' glow: the dimming added in 2.20.2 counts only the gas layers, so the gas looks the same with Focus on or off, with Focus's disc and bulge on top.
+
+---
+
 ## [2.20.2] — 2026-11-05
 
 ### Changed

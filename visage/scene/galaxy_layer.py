@@ -810,14 +810,13 @@ class GalaxyLayer:
     def _stack_dimming(
         self, snap: GalaxySnapshot, dim: np.ndarray | None
     ) -> np.ndarray | None:
-        """`dim`, lowered where a galaxy's own layers add up past full
+        """`dim`, lowered where a galaxy's own gas layers add up past full
         brightness at its centre.
 
         Crowding counts the neighbours' glows, not a galaxy's own: a
-        cluster central tops the hot gas, cold gas and bulge ranges at
-        once, and those layers summed clip to white.  Each galaxy is
-        scaled so its brightest channel, summed over the layers drawn,
-        stays at full.
+        cluster central tops the hot and cold gas ranges at once, and
+        those layers summed clip to white.  Each galaxy is scaled so its
+        brightest channel, summed over its gas layers, stays at full.
         """
         if dim is None:
             return None
@@ -838,12 +837,8 @@ class GalaxyLayer:
         ):
             if mass.size == snap.count:
                 total += _hue(_shaped(mass, *rng), rgb) * (mass > 0)[:, None]
-        if self._focus_mask is not None or self._show_inner_layers:
-            disk = np.maximum(snap.stellar_mass - snap.bulge_mass, 0.0)
-            total += scalars_to_rgba(_shaped(disk, 7.0, 12.0), "Blues_r")[
-                :, :3
-            ]
-            total += _hue(_shaped(snap.bulge_mass, 6.0, 12.0), _BULGE_RGB)
+        # Focus's disc and bulge are left out, so the gas looks the same
+        # with Focus on or off.
         # Every layer is drawn at the same weight (`_layer_weight(0.2, 0.5)`).
         total *= self._layer_weight(0.2, 0.5)
         peak = np.maximum(total.max(axis=1) / 255.0, 1.0)
