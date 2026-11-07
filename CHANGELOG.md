@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.21.1] — 2026-11-07
+
 ### Added
 
 - HD: radio jets take their power from SAGE26's new `RadioModeBHaccretionMassUncapped` (the radio-mode accretion before it is capped at the cooling rate), where a run has it; older runs keep the capped accretion. Lightcones now carry both, so HD can draw jets there too.
