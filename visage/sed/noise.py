@@ -28,7 +28,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from visage.sed.mock_image import SURVEYS, _ab_from_mjy
+from visage.sed.mock_image import BULGE_RE, SURVEYS, _ab_from_mjy
 from visage.system import native_path
 
 CALIBRATION_FLOOR = 0.01
@@ -89,9 +89,9 @@ def add_noise(path: str | Path, seed: int = 0) -> list[str]:
         ]
         mass = f["StellarMass"][:].astype(np.float64)
         bt = np.clip(f["BulgeMass"][:] / np.maximum(mass, 1e-30), 0, 1)
-        re_mpc = (1 - bt) * DISK_RE * f["DiskRadius"][:] / hub + bt * f[
-            "BulgeRadius"
-        ][:] / hub
+        re_mpc = (1 - bt) * DISK_RE * f["DiskRadius"][:] / hub + bt * (
+            BULGE_RE * f["BulgeRadius"][:] / hub
+        )
         z = f["redshift_cosmological"][:]
         d_a = f["distance"][:] / hub / (1 + z)
         size = re_mpc / np.maximum(d_a, 1e-6) * 206265.0

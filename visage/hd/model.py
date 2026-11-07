@@ -533,7 +533,9 @@ def display_sizes(g: SageGalaxy) -> tuple[float, float, list]:
     if g.los and g.disk_radius_kpc > 0:
         # On a lightcone: SAGE26's own radii, as its images and photometry.
         r50 = (
-            g.bulge_radius_kpc if g.bulge_radius_kpc > 0 else 2.88e-6 * m**0.56
+            HERNQUIST_RE / (1 + np.sqrt(2)) * g.bulge_radius_kpc
+            if g.bulge_radius_kpc > 0
+            else 2.88e-6 * m**0.56
         )
         note = f"size: SAGE26 Rd={g.disk_radius_kpc:.2f}, R50={r50:.2f} kpc"
         return float(g.disk_radius_kpc), float(r50), [note]

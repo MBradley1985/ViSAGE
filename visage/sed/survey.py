@@ -33,7 +33,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from visage.sed.mock_image import Q0, nmgy
+from visage.sed.mock_image import BULGE_RE, Q0, nmgy
 from visage.sed.noise import flux_error
 from visage.system import native_path
 
@@ -177,7 +177,7 @@ def catalogue(path: str | Path, key: str, seed: int = 0) -> dict:
         cosi = f["CosInclination"][:]
         q = np.sqrt(cosi**2 + Q0**2 * (1 - cosi**2))
         re_d = 1.678 * f["DiskRadius"][:] * scale * np.sqrt(q)
-        re_b = f["BulgeRadius"][:] * scale
+        re_b = BULGE_RE * f["BulgeRadius"][:] * scale
         bands = sorted(
             k[len("disk_mag_obs_") :]
             for k in f

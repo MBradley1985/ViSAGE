@@ -89,8 +89,9 @@ Apertures are set in the detection band and used in every band. Selections add t
 
 Lightcone Mode's **Create mock image** (`visage/sed/mock_image.py`) draws the
 sky around a galaxy as a survey would record it. Each galaxy is an exponential
-disk (`DiskRadius` as its scale length) plus a de Vaucouleurs bulge
-(`BulgeRadius` as its half-light radius), at its angular size (radius over the
+disk (`DiskRadius` as its scale length) plus a de Vaucouleurs bulge (its
+projected half-light radius 0.752 × `BulgeRadius`, SAGE26's 3D half-mass
+radius, as for a Hernquist profile: Hernquist 1990), at its angular size (radius over the
 angular-diameter distance). The disk is flattened by its inclination, with
 axis ratio *q* = (cos² *i* + *q*₀² sin² *i*)<sup>½</sup>, *q*₀ = 0.2 (Hubble
 1926; Holmberg 1958), and turned to the position angle of its spin on the sky.

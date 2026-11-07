@@ -15,6 +15,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Labels follow SAGE26's corrected units: Cooling and Heating in log10 erg/s, `mdot_cool` and `mdot_stream` in Msun/yr, `g_max` an acceleration per snapshot, `dT` in h^-1 Myr.
+- `BulgeRadius` is SAGE26's 3D half-mass radius: mock images, photometric noise sizes, the size survey and HD on a lightcone now draw a bulge's projected half-light radius as 0.752 of it (they used it as the half-light radius, a third too big).
 - HD: DarkSAGE's disc rotation is read at 2.2 `DiskRadius`, the disc's physical size (the annuli's own scale radius is much smaller), so massive discs no longer rotate at up to ~480 km/s.
 
 ### Fixed
