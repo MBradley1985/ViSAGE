@@ -11,17 +11,18 @@ Each galaxy's model follows from its own catalogue row:
 | Component | From |
 |---|---|
 | Disk or elliptical, size and brightness | Stellar mass, bulge-to-total ratio, SAGE26's own disk and bulge radii |
-| Spiral arms (several arm classes, dwarf irregulars, lenticulars) and pitch | Disk mass, gas fraction, star formation, black-hole mass |
+| Spiral arms (several arm classes) and pitch | Disk mass, gas fraction, star formation, black-hole mass |
+| Types of irregular (patchy clouds, fading, starburst, disturbed, Magellanic barred), lenticular (smooth, barred with a lens and rings, dust ring, dust lane, disturbed dust) and flocculent spiral (star-forming, massive, fading) | Star formation rate, mass, bar, recent mergers and infall, dust and molecular gas, the gas disc's tilt against the stars (DarkSAGE) |
 | Bars | Disk stability (Vmax against the disk's stars and radius) and B/T |
 | Fast and slow rotators | Stellar mass and recent major mergers |
 | Classical and pseudo-bulges | Merger vs. instability bulge masses |
 | Young star clusters and HII regions | Disk SFR, cold and H₂ gas, gas metallicity |
-| Dust | HI + H₂ and metallicity; lanes in disks rotating faster than ~120 km/s |
+| Dust | HI + H₂ and metallicity; lanes in disks rotating faster than ~120 km/s; filaments through the core of ellipticals with molecular gas or dust |
 | Shells, tails and streams | Time since the last major and minor merger |
 | Tidal streams of stripped satellites | Subhalo mass lost since infall |
 | Intracluster light | ICS mass |
 | AGN nucleus | Quasar-mode accretion rate |
-| Disk thickness and clumpiness | Disk size, redshift, gas fraction, FFB regime |
+| Disk thickness (a thin and a thick disc) and clumpiness | Disk size, rotation speed, redshift, gas fraction, FFB regime |
 
 Sizes shrink with redshift as in the size–mass relation, and disks at high redshift are thicker and clumpier.
 
@@ -87,19 +88,22 @@ Press **?** again to hide them. (It isn't offered in **Halo + group** context.)
 
 ## Gas
 
-The card's **Gas** button adds the halo gas: every member of the group gets its own, out to its own Rvir. It is off by default; with it off, nothing but the galaxies (and their starlight) is drawn.
+The card's **Gas** button switches between the galaxy as an optical image shows it and the galaxy with its gas: with Gas off you see the stars, the star clusters and HII regions, and the dust; with Gas on, the gas in the disc and the gas in the halo are added. Every member of the group gets its own, out to its own Rvir. It is off by default.
 
 | Gas | From |
 |---|---|
+| Ionised gas: glowing H-alpha clouds and filaments round the star formation | Disk SFR, H₂ |
+| Molecular clouds, seen by their dust as dark filaments across the disc | H₂, the disc's dust |
+| Extended HI disk, past the stars | H1gas |
+| A jellyfish's stripped gas, its tail's soft plumes included | The ram pressure on a satellite |
 | CGM with cold streams along the cosmic web | CGMgas (cold regime), mdot_stream |
 | Hot halo / intracluster medium, coloured by temperature, with X-ray cavities | HotGas, Mvir, concentration, metals, radio heating radius |
 | Galactic winds | OutflowRate, ejected gas |
-| Extended HI disk | H1gas |
-| Radio jets | Heating |
+| Radio jets, in radio-loud AGN (from 10⁴² erg/s) | Radio-mode accretion |
 
-Gas is a shader switch: turning it on or off doesn't rebuild anything.
+The disc's gas is drawn inside the disc with its stars and dust, so it is lit, dimmed and reddened with them; the halo's lies over the whole view, thinned over the galaxy so it doesn't hide it. Gas is a shader switch: turning it on or off doesn't rebuild anything.
 
-With annuli, Gas also shows the HI as a faint blue glow, reaching well past the stars. It's smooth because annuli have no structure round the disc. The card's **Rotation** button opens maps of the stars and gas as line-of-sight velocities. Counter-rotating gas is what the model predicts, and can only be seen there.
+The card's **Rotation** button opens maps of the stars and gas as line-of-sight velocities. Counter-rotating gas is what the model predicts, and can only be seen there.
 
 ## Building
 

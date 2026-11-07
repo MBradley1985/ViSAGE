@@ -5538,6 +5538,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 "display:flex;flex-direction:column;"
             ),
         ):
+            # A grip to move the panel (visage.js); double-click puts it
+            # back by the rail.
+            html.Div(
+                html.Span(classes="mdi mdi-drag-horizontal"),
+                classes="sage-panel-grip",
+                title="Drag to move the panel (double-click: back by the rail)",
+            )
             # Layers
             with v3.VSheet(
                 color="transparent",

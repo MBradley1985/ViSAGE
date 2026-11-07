@@ -197,7 +197,7 @@ def selection_card(server) -> None:
                 color=("hd_gas ? '#a3e635' : '#cbd5e1'",),
                 classes=("hd_gas ? 'sage-gas-on' : ''",),
                 click="hd_gas = !hd_gas",
-                title="HD halo gas: CGM, hot gas, winds and jets",
+                title="HD gas: the disc's (ionised gas, molecular clouds' dust, HI) and the halo's (CGM, hot gas, winds, jets, stripped tails)",
             )
 
         # Moving on: history, the group's members, its central, the nearest

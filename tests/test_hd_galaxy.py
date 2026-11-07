@@ -812,3 +812,25 @@ def test_hd_off_goes_back_to_isolate_if_it_was_on(hd_panel):
     state.flush()
     assert not state.hd_active
     assert state.isolate_active  # still isolated, as before HD
+
+
+def test_jets_only_for_radio_loud_agn():
+    """A jet from 10^42 erg/s of radio-mode power (0.1 Mdot c^2), none below."""
+    from visage.hd.gpu_gas import GasSpec
+
+    def jet(mdot):  # Msun/yr over a 100 Myr step
+        g = _disk(radio_accretion=mdot * 1e8, dt_myr=100.0)
+        return GasSpec(g, recipe_from_sage(g)).jet
+
+    assert jet(1e-4) == 0.0  # 10^41.8 erg/s
+    assert jet(1e-2) > 0.0  # 10^43.8 erg/s
+
+
+def test_thick_disc_share_follows_rotation():
+    """Slow rotators have more of their old disc thick (Comeron et al. 2011)."""
+    from visage.hd.model import THICK, thick_share
+
+    fast = thick_share(_disk(vmax=250.0))
+    slow = thick_share(_disk(vmax=70.0))
+    assert fast == THICK["share"][1] and slow == THICK["share"][0]
+    assert thick_share(_disk(vmax=0.0)) == 0.0

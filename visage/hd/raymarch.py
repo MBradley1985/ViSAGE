@@ -18,7 +18,10 @@ from visage.hd.model import (
     BULGE_RGB,
     OLD_RGB,
     YOUNG_RGB,
+    THICK,
+    YOUNG_SMOOTH,
     GalaxyRecipe,
+    dust_height,
     PlaneMaps,
     Points,
 )
@@ -186,11 +189,14 @@ def render(
                     rc.l_disk
                     * n_old
                     * maps.sample("old", xg, yg)
-                    * sech2(zg, rc.hz)
+                    * (
+                        (1 - rc.thick_frac) * sech2(zg, rc.hz)
+                        + rc.thick_frac * sech2(zg, THICK["height"] * rc.hz)
+                    )
                 )
                 e_young = (
                     rc.l_young
-                    * 1.2
+                    * YOUNG_SMOOTH
                     * n_young
                     * maps.sample("young", xg, yg)
                     * sech2(zg, 0.06)
@@ -204,11 +210,14 @@ def render(
                     )
                 if bar_ax > 0:
                     ax_, ay_ = bar_ax, bar_ax * rc.bar_axis
-                    bar = np.exp(-1.6 * np.hypot(xg / ax_, yg / ay_))
+                    bx_, by_ = rc.bar_off
+                    bar = np.exp(
+                        -1.6 * np.hypot((xg - bx_) / ax_, (yg - by_) / ay_)
+                    )
                     bar *= sech2(zg, 0.12) / (2.4544 * ax_ * ay_)
                     e_bul = e_bul + rc.l_bar * bar
                 kappa = (
-                    maps.sample("dust", xg, yg) * sech2(zg, 0.045)
+                    maps.sample("dust", xg, yg) * sech2(zg, dust_height(rc))
                     if dust_on
                     else None
                 )

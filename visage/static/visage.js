@@ -96,9 +96,51 @@
     function up() {
       document.removeEventListener('mousemove', mv);
       document.removeEventListener('mouseup',   up);
+      if (window.drawHdLabels) window.drawHdLabels();  // the key's free space moved
     }
     document.addEventListener('mousemove', mv);
     document.addEventListener('mouseup',   up);
+  });
+
+  // ─── The rail's panel: dragged by its grip ─────────────────────────
+  // The panel is placed by the theme (right of the view, by the rail) with
+  // !important rules, so a move sets its own left/top the same way.
+  // Double-click on the grip puts it back.
+  document.addEventListener('mousedown', function (e) {
+    var grip = e.target.closest && e.target.closest('.sage-panel-grip');
+    if (!grip) return;
+    var panel = grip.closest('.sage-panel');
+    if (!panel) return;
+    e.preventDefault();
+    var host = panel.offsetParent || document.body;
+    var hr = host.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+    var startX = e.clientX, startY = e.clientY;
+    // (Where it goes in the window, kept wholly in view so its grip can't
+    // be lost off screen, then set against its container, which is
+    // zero-width at the view's right edge.)
+    function place(x, y) {
+      x = Math.min(Math.max(x, 0), Math.max(window.innerWidth - pr.width, 0));
+      y = Math.min(Math.max(y, 0), Math.max(window.innerHeight - pr.height, 0));
+      panel.style.setProperty('left', (x - hr.left) + 'px', 'important');
+      panel.style.setProperty('top', (y - hr.top) + 'px', 'important');
+      panel.style.setProperty('right', 'auto', 'important');
+    }
+    place(pr.left, pr.top);
+    function mv(ev) { place(pr.left + ev.clientX - startX, pr.top + ev.clientY - startY); }
+    function up() {
+      document.removeEventListener('mousemove', mv);
+      document.removeEventListener('mouseup', up);
+      if (window.drawHdLabels) window.drawHdLabels();  // the key's free space moved
+    }
+    document.addEventListener('mousemove', mv);
+    document.addEventListener('mouseup', up);
+  });
+  document.addEventListener('dblclick', function (e) {
+    var grip = e.target.closest && e.target.closest('.sage-panel-grip');
+    if (!grip) return;
+    var panel = grip.closest('.sage-panel');
+    ['left', 'top', 'right'].forEach(function (k) { panel.style.removeProperty(k); });
+    if (window.drawHdLabels) window.drawHdLabels();
   });
 
   // ─── Pop-out maximise / restore ───────────────────────────────────

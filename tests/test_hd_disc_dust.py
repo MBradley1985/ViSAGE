@@ -109,13 +109,19 @@ def _map_screen(rc, maps):
 
 
 def test_hd_dust_map_is_scaled_to_the_annuli_screen():
-    from visage.hd.model import build_disk_maps, recipe_from_sage
+    from visage.hd.model import TAU_MAX, build_disk_maps, recipe_from_sage
 
-    for target in (0.05, 0.4, 1.5):
+    for target in (0.05, 0.4):
         rc = recipe_from_sage(_disc_galaxy(target))
         assert rc.tau_star == target
         maps = build_disk_maps(rc, n=256)
         assert np.isclose(_map_screen(rc, maps), target, rtol=1e-3)
+    # Deeper than the map can hold under TAU_MAX: short of it, not piled up.
+    rc = recipe_from_sage(_disc_galaxy(1.5))
+    maps = build_disk_maps(rc, n=256)
+    d = maps.dust[maps.dust > 0]
+    assert np.percentile(d, 99) <= TAU_MAX * 1.001
+    assert 1.0 < _map_screen(rc, maps) <= 1.5
 
 
 def test_no_dust_draws_none_and_no_annuli_falls_back():

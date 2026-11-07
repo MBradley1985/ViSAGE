@@ -315,6 +315,7 @@ def sage_galaxy_from_snapshot(
         web=web_neighbours(snap, i),
         tau_v_ism=_sed_tau(snap, i, hubble_h),
         tau_disc=_disc_screen(snap, i, hubble_h),
+        gas_tilt_deg=_gas_tilt(snap, i),
         cold_dust=_extra(snap, "ColdDust", i) * mass,
         hot_dust=_extra(snap, "HotDust", i) * mass,
         cgm_dust=_extra(snap, "CGMDust", i) * mass,
@@ -562,6 +563,24 @@ def _disc_screen(snap, i: int, hubble_h: float) -> float:
         _field(snap, "bulge_radius", i) * 1e3 / hubble_h,
         gal,
     )
+
+
+def _gas_tilt(snap, i: int) -> float:
+    """Angle (deg) between a disc's gas and stars' spins, from its annuli
+    (SpinGas, SpinStars); -1 for a run without them."""
+    extra = getattr(snap, "extra", None) or {}
+    if (
+        not getattr(snap, "source_path", "")
+        or "StellarDiscScaleRadius" not in extra
+    ):
+        return -1.0
+    from visage.io.family_binary import radial_profiles
+
+    row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+    p = radial_profiles(snap.source_path, int(snap.snap_num), row, 1.0)
+    if "spin_dot" not in p:
+        return -1.0
+    return float(np.degrees(np.arccos(np.clip(p["spin_dot"][0], -1.0, 1.0))))
 
 
 def _bulge_rotation(snap, i: int, hubble_h: float) -> float:
