@@ -197,6 +197,24 @@ body,
     box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6) !important;
 }
 
+/* The panel's grip: drag to move it, double-click to put it back. */
+.sage-panel-grip {
+    position: sticky;
+    top: -12px;
+    margin: -12px -14px 6px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    color: rgba(226, 232, 240, 0.45);
+    z-index: 2;
+    flex: none;
+}
+.sage-panel-grip:hover { color: #67e8f9; }
+.sage-panel-grip:active { cursor: grabbing; }
+.sage-panel-grip .mdi { font-size: 18px; line-height: 1; }
+
 .sage-pill {
     padding: 2px 10px;
     border: 1px solid rgba(255, 255, 255, 0.2);

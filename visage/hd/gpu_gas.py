@@ -102,7 +102,7 @@ COOL_CORE = 0.0
 HI = dict(
     on=True,
     rgb=(0.70, 0.85, 1.00),
-    gain=0.35,
+    gain=0.6,
     size=1.0,
     h=0.06,
     warp=0.15,
@@ -240,6 +240,8 @@ GLSL_IMPL = """
       float clump = exp(0.55 * zc);
       float cgm = env * (0.12 + 0.8 * uStreamFrac * st + 0.35 * fil) * clump;
       cgm *= exp(-pow(R / (0.95 * rvir), 8.0));
+      // Thinned over the galaxy, as the hot halo is, so it doesn't hide it.
+      cgm *= 1.0 - 0.85 * exp(-pow(R / (1.6 * uRinKpc), 2.0));
       gas += uStreamAmp * (cgm / uStreamNorm) * uCgmRGB;
     }
 
@@ -247,6 +249,9 @@ GLSL_IMPL = """
       float pj = max(proj, 0.25);
       float len = uJetLen * pj;
       float jet = exp(-pow(perp / (0.4 + 0.04 * abs(along)), 2.0)) * exp(-pow(along / len, 6.0));
+      // Brightest near the core and knotty (as M87's), fading outward.
+      float knots = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(2.4 * abs(along) / sqrt(len)), 3.0);
+      jet *= knots * exp(-abs(along) / (0.35 * len));
       float lobes = exp(-(pow(along - len, 2.0) + perp * perp) / pow(0.25 * len, 2.0))
                   + exp(-(pow(along + len, 2.0) + perp * perp) / pow(0.25 * len, 2.0));
       gas += 0.4 * uJetAmp * (0.6 * jet + 0.5 * lobes) * uJetRGB;
@@ -365,13 +370,16 @@ class GasSpec:
         )
 
         # Radio jets where SAGE26 has radio-mode accretion this step, their
-        # power from its rate (0.1 Mdot c^2, 10^40 to 10^46 erg/s).
+        # power from its rate (0.1 Mdot c^2): from 10^42 erg/s, radio-loud
+        # AGN (Best & Heckman 2012, MNRAS 421, 1569; Cavagnolo et al. 2010,
+        # ApJ 720, 1066), full at 10^46.
         self.jet = 0.0
         dt = getattr(gal, "dt_myr", 0.0)
         if gal.radio_accretion > 0 and dt > 0:
             mdot = gal.radio_accretion / (dt * 1e6)  # Msun/yr
             power = np.log10(0.1 * mdot * 5.66e46)  # erg/s
-            self.jet = float(np.clip((power - 40.0) / 6.0, 0.05, 1.0))
+            if power >= 42.0:
+                self.jet = float(np.clip((power - 42.0) / 4.0, 0.1, 1.0))
         # Jets reach about the radius the AGN heats (r_heat), in proportion
         # to the halo.
         reach = max(gal.r_heat_kpc, 0.08 * self.rvir)
@@ -513,7 +521,7 @@ class GasSpec:
         self.web_w = np.ones(3)
 
         self.norm_lin, self.norm_log = self._hot_norms()
-        self._stream_norms: dict = {}
+        self._stream_norm_v = None
 
     def _hot_norms(self):
         """Peak of the (cavity-thinned) hot profile, linear and log-stretched,
@@ -527,18 +535,15 @@ class GasSpec:
         lg = np.log1p(sb / 0.02) / np.log1p(1 / 0.02)
         return max(lin, 1e-9), max(float((lg * cav).max()), 1e-9)
 
-    def stream_norm(self, half_kpc: float) -> float:
-        """Normalisation of the stream image for a view `half_kpc` wide.
-
-        The 2D overlay normalises the streams to the 99.9th percentile of
-        the frame being drawn, so it depends on how much of the halo is in
-        view; cached in log-spaced bins of the frame size."""
+    def stream_norm(self) -> float:
+        """Normalisation of the stream image: its 99.9th percentile over the
+        whole halo, so zooming in doesn't stretch the CGM over the galaxy to
+        full brightness (the 2D overlay normalises to the frame drawn)."""
         if self.stream_amp <= 0:
             return 1.0
-        key = int(np.round(8 * np.log10(max(half_kpc, 1.0))))
-        if key not in self._stream_norms:
-            self._stream_norms[key] = self._stream_norm(10 ** (key / 8))
-        return self._stream_norms[key]
+        if self._stream_norm_v is None:
+            self._stream_norm_v = self._stream_norm(1.05 * self.rvir)
+        return self._stream_norm_v
 
     def _stream_norm(self, half_kpc, n=160):
         """99.9th percentile of the stream image (as `cold_streams`), from
@@ -569,6 +574,7 @@ class GasSpec:
             * (0.12 + 0.8 * self.stream_frac * st + 0.35 * fil)
             * clump
             * np.exp(-((R / (0.95 * rv)) ** 8))
+            * (1 - 0.85 * np.exp(-((R / (1.6 * self.r_in)) ** 2)))
         )
         return max(float(np.percentile(cgm, 99.9)), 1e-9)
 
@@ -587,7 +593,7 @@ class GasSpec:
         f("uHotNormLog", float(self.norm_log))
         f("uStreamAmp", float(self.stream_amp))
         f("uStreamFrac", float(self.stream_frac))
-        f("uStreamNorm", float(self.stream_norm(1.05 * self.rvir)))
+        f("uStreamNorm", float(self.stream_norm()))
         u.SetUniform3f("uStreamT0", [float(v) for v in self.t0])
         f("uJetAmp", float(self.jet))
         f("uJetLen", float(self.jet_len))

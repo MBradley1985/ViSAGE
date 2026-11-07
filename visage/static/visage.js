@@ -96,9 +96,51 @@
     function up() {
       document.removeEventListener('mousemove', mv);
       document.removeEventListener('mouseup',   up);
+      if (window.drawHdLabels) window.drawHdLabels();  // the key's free space moved
     }
     document.addEventListener('mousemove', mv);
     document.addEventListener('mouseup',   up);
+  });
+
+  // ─── The rail's panel: dragged by its grip ─────────────────────────
+  // The panel is placed by the theme (right of the view, by the rail) with
+  // !important rules, so a move sets its own left/top the same way.
+  // Double-click on the grip puts it back.
+  document.addEventListener('mousedown', function (e) {
+    var grip = e.target.closest && e.target.closest('.sage-panel-grip');
+    if (!grip) return;
+    var panel = grip.closest('.sage-panel');
+    if (!panel) return;
+    e.preventDefault();
+    var host = panel.offsetParent || document.body;
+    var hr = host.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+    var startX = e.clientX, startY = e.clientY;
+    // (Where it goes in the window, kept wholly in view so its grip can't
+    // be lost off screen, then set against its container, which is
+    // zero-width at the view's right edge.)
+    function place(x, y) {
+      x = Math.min(Math.max(x, 0), Math.max(window.innerWidth - pr.width, 0));
+      y = Math.min(Math.max(y, 0), Math.max(window.innerHeight - pr.height, 0));
+      panel.style.setProperty('left', (x - hr.left) + 'px', 'important');
+      panel.style.setProperty('top', (y - hr.top) + 'px', 'important');
+      panel.style.setProperty('right', 'auto', 'important');
+    }
+    place(pr.left, pr.top);
+    function mv(ev) { place(pr.left + ev.clientX - startX, pr.top + ev.clientY - startY); }
+    function up() {
+      document.removeEventListener('mousemove', mv);
+      document.removeEventListener('mouseup', up);
+      if (window.drawHdLabels) window.drawHdLabels();  // the key's free space moved
+    }
+    document.addEventListener('mousemove', mv);
+    document.addEventListener('mouseup', up);
+  });
+  document.addEventListener('dblclick', function (e) {
+    var grip = e.target.closest && e.target.closest('.sage-panel-grip');
+    if (!grip) return;
+    var panel = grip.closest('.sage-panel');
+    ['left', 'top', 'right'].forEach(function (k) { panel.style.removeProperty(k); });
+    if (window.drawHdLabels) window.drawHdLabels();
   });
 
   // ─── Pop-out maximise / restore ───────────────────────────────────
@@ -274,104 +316,167 @@
     });
   })();
 
-  // ─── HD Components: labels and leader lines over the view ─────────
-  // hd_labels (from the server): [{t, x, y, lx, ly, side}], positions as
-  // fractions of the view, y down.  Drawn as an SVG in #hd-labels.
-  var hdLabels = [];
+  // ─── HD Components: numbered markers on the parts and a still key ───
+  // hd_labels (from the server): {cats: [[name, colour]], items: [{t, cat,
+  // text, vis}] in key order, marks: [{x, y, n}]} with x, y fractions of
+  // the view (y down) and n the key numbers a marker carries.  Each part's
+  // point is fixed in the model, so markers move with it; the key doesn't.
+  var hdLabels = null;
+  var HD_FADE = 0.65;  // share of its arc each colour holds before fading
+  function hdEsc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function hdRich(s) {
+    // "2.1 × 10^7 M☉" -> raised exponent; τ_V, L_X -> subscripts.
+    return hdEsc(s)
+      .replace(/10\^(-?[\d.]+)/g, '10<sup>$1</sup>')
+      .replace(/τ_V/g, 'τ<sub>V</sub>')
+      .replace(/L_X/g, 'L<sub>X</sub>');
+  }
+  function hdRim(colours) {
+    // One colour: solid.  Several: each holds, then fades into the next.
+    if (colours.length === 1) return colours[0];
+    var n = colours.length, share = 360 / n, stops = [];
+    colours.forEach(function (c, i) {
+      stops.push(c + ' ' + (i * share).toFixed(1) + 'deg ' +
+                 (i * share + HD_FADE * share).toFixed(1) + 'deg');
+    });
+    stops.push(colours[0] + ' 360deg');
+    return 'conic-gradient(from -90deg, ' + stops.join(', ') + ')';
+  }
+  function hdBubble(nums, colours, rimColours, size) {
+    // The card's glass, a rim in the categories' colours, each number in
+    // its own.  (The rim is a ring cut from a gradient by a mask.)
+    var txt = nums.map(function (k, i) {
+      return '<span style="color:' + colours[i] + '">' + k + '</span>';
+    }).join('<span style="color:#c8cdd4">·</span>');
+    var rim = hdRim(rimColours);
+    return '<span class="hd-bubble" style="height:' + size + 'px;min-width:' +
+      size + 'px;font-size:' + Math.round(size * 0.6) + 'px">' +
+      '<span class="hd-rim" style="background:' + rim + '"></span>' + txt + '</span>';
+  }
+  function hdObstacles(host) {
+    // The card, the icon rail and an open panel, in the host's pixels.
+    var hr = host.getBoundingClientRect(), out = [];
+    var els = [document.getElementById('sel-card'), document.querySelector('.sage-rail')]
+      .concat(Array.prototype.slice.call(document.querySelectorAll('.sage-panel')));
+    els.forEach(function (el) {
+      if (!el || !el.offsetParent) return;
+      var r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return;
+      out.push({ l: r.left - hr.left, r: r.right - hr.left, t: r.top - hr.top, b: r.bottom - hr.top });
+    });
+    return out;
+  }
   function drawHdLabels() {
     var host = document.getElementById('hd-labels');
     if (!host) return;
-    // The leader lines live in a sibling layer blended by "difference":
-    // white over the dark sky, black over the bright galaxy.  (A blend
-    // only reaches the view behind from its own top-level layer.)
-    var lines = document.getElementById('hd-label-lines');
-    if (!lines) {
-      lines = document.createElement('div');
-      lines.id = 'hd-label-lines';
-      lines.style.cssText = 'position:absolute;inset:0;z-index:5;' +
-        'pointer-events:none;mix-blend-mode:difference;';
-      host.parentNode.insertBefore(lines, host);
-    }
     var W = host.clientWidth, H = host.clientHeight;
-    if (!hdLabels.length || !W || !H) {
-      host.innerHTML = ''; lines.innerHTML = ''; return;
-    }
-    var esc = function (s) {
-      return String(s).replace(/[&<>"]/g, function (c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
-      });
-    };
-    // Keep labels off the selection card: those that would sit on it
-    // move below it (left edge) or past it (top edge).
-    var labels = hdLabels.map(function (l) { return Object.assign({}, l); });
-    var card = document.getElementById('sel-card');
-    if (card && card.offsetParent) {
-      var hr = host.getBoundingClientRect(), cr = card.getBoundingClientRect();
-      var cR = cr.right - hr.left + 12, cB = cr.bottom - hr.top + 14;
-      var below = cB + 10;
-      labels.filter(function (l) { return l.side === 'left'; })
-        .sort(function (a, b) { return a.ly - b.ly; })
-        .forEach(function (l) {
-          if (l.ly * H < cB && l.lx * W < cR) {
-            l.ly = below / H; below += 0.06 * H;
-          } else if (l.ly * H < below) {
-            l.ly = below / H; below += 0.06 * H;
-          }
-        });
-      labels.filter(function (l) { return l.side === 'top'; })
-        .forEach(function (l) {
-          var half = 4.3 * l.t.length;
-          if (l.lx * W - half < cR) l.lx = (cR + half + 8) / W;
-        });
-    }
-    var color = window.visageLabelColor || '#FFD700';
-    var head = '<svg width="' + W + '" height="' + H +
-      '" style="position:absolute;left:0;top:0;overflow:visible">';
-    var svg = head, lsvg = head;
-    labels.forEach(function (l) {
-      var ax = l.x * W, ay = l.y * H, lx = l.lx * W, ly = l.ly * H;
-      var tw = 8.6 * l.t.length;  // label width, approx. (bold caps 15px)
-      var pts, tx, ty, anchor;
-      if (l.side === 'left' || l.side === 'right') {
-        var left = l.side === 'left';
-        var ex = left ? lx + tw + 8 : lx - tw - 8;  // where the line starts
-        var kx = left ? Math.max(ex + 14, Math.min(ax - 20, ex + 60))
-                      : Math.min(ex - 14, Math.max(ax + 20, ex - 60));
-        pts = ex + ',' + ly + ' ' + kx + ',' + ly + ' ' + ax + ',' + ay;
-        tx = lx; ty = ly + 5; anchor = left ? 'start' : 'end';
-      } else {
-        // Top / bottom: the label centred, the line dropping (rising) to
-        // an elbow, then to the part.
-        var top = l.side === 'top';
-        var ey = top ? ly + 8 : ly - 18;
-        var ky = top ? Math.max(ey + 12, Math.min(ay - 20, ey + 50))
-                     : Math.min(ey - 12, Math.max(ay + 20, ey - 50));
-        pts = lx + ',' + ey + ' ' + lx + ',' + ky + ' ' + ax + ',' + ay;
-        tx = lx; ty = ly + 5; anchor = 'middle';
-      }
-      lsvg += '<polyline points="' + pts + '" fill="none" ' +
-        'stroke="#fff" stroke-width="1.3"/>';
-      lsvg += '<circle cx="' + ax + '" cy="' + ay + '" r="3" fill="none" ' +
-        'stroke="#fff" stroke-width="1.5"/>';
-      svg += '<text x="' + tx + '" y="' + ty + '" text-anchor="' + anchor +
-        '" fill="' + color + '" font-size="15" font-weight="700" ' +
-        'letter-spacing="0.6" ' +
-        'font-family="Oswald, \'Arial Narrow\', Arial, sans-serif" ' +
-        'style="paint-order:stroke;stroke:rgba(0,0,0,0.7);stroke-width:3px">' +
-        esc(l.t) + '</text>';
+    var d = hdLabels;
+    if (!d || !d.items || !d.items.length || !W || !H) { host.innerHTML = ''; return; }
+    var col = function (k) { return d.cats[d.items[k - 1].cat][1]; };
+    var html = '';
+    // Markers: a bubble up and right of its point, a tick down to it.
+    d.marks.forEach(function (m) {
+      var nums = m.n, colours = nums.map(col), seen = {}, rimC = [];
+      colours.forEach(function (c) { if (!seen[c]) { seen[c] = 1; rimC.push(c); } });
+      var x = m.x * W, y = m.y * H;
+      html += '<div class="hd-mark" data-n="' + nums.join(',') + '" style="left:' + x + 'px;top:' + y + 'px">' +
+        '<svg width="16" height="16" style="position:absolute;left:0;top:-16px;overflow:visible">' +
+        '<line x1="0" y1="16" x2="9" y2="7" stroke="' + colours[0] + '" stroke-width="2" ' +
+        'stroke-linecap="round"/></svg>' +
+        '<div style="position:absolute;left:7px;bottom:7px">' + hdBubble(nums, colours, rimC, 22) + '</div></div>';
     });
-    host.innerHTML = svg + '</svg>';
-    lines.innerHTML = lsvg + '</svg>';
+    // The key: one centred block per category, in the free space between
+    // the card, the rail and any open panel.
+    var blocks = [];
+    d.items.forEach(function (it, i) {
+      var b = blocks.length && blocks[blocks.length - 1].cat === it.cat ? blocks[blocks.length - 1] : null;
+      if (!b) { b = { cat: it.cat, items: [] }; blocks.push(b); }
+      b.items.push({ k: i + 1, it: it });
+    });
+    var key = '<div id="hd-key" class="hd-key">';
+    blocks.forEach(function (b) {
+      var c = d.cats[b.cat][1];
+      key += '<div class="hd-key-block"><div class="hd-key-cat" style="color:' + c + '">' +
+        hdEsc(d.cats[b.cat][0]) + '</div>';
+      b.items.forEach(function (e) {
+        key += '<div class="hd-key-item' + (e.it.vis ? '' : ' hd-off') + '" data-k="' + e.k + '">' +
+          '<div class="hd-key-name">' + hdBubble([e.k], [c], [c], 20) + '<span>' + hdEsc(e.it.t) + '</span></div>' +
+          '<div class="hd-key-text">' + hdRich(e.it.text) + '</div></div>';
+      });
+      key += '</div>';
+    });
+    key += '</div>';
+    host.innerHTML = html + key;
+    // Fit the key between the obstacles in its band at the bottom.
+    var el = document.getElementById('hd-key');
+    var place = function () {
+      var h = el.offsetHeight, top = H - 20 - h, left = 24, right = W - 24;
+      hdObstacles(host).forEach(function (o) {
+        if (o.b < top || o.t > H - 20) return;  // not in the key's band
+        if ((o.l + o.r) / 2 < W / 2) left = Math.max(left, o.r + 24);
+        else right = Math.min(right, o.l - 24);
+      });
+      el.style.left = left + 'px';
+      el.style.width = Math.max(right - left, 200) + 'px';
+      el.style.setProperty('--hd-block-w', Math.max(
+        Math.min(250, Math.floor((right - left) / Math.max(blocks.length, 1))), 170) + 'px');
+      return h;
+    };
+    var h0 = place();
+    if (el.offsetHeight !== h0) place();  // its width changed its height
+    // A marker under the key would sit on its text: hide it, and grey its
+    // entries as for a part out of view.
+    var kr = el.getBoundingClientRect();
+    Array.prototype.forEach.call(host.querySelectorAll('.hd-mark'), function (m) {
+      var r = m.getBoundingClientRect();
+      if (r.left > kr.left - 6 && r.left < kr.right + 6 && r.top > kr.top - 6 && r.top < kr.bottom + 6) {
+        m.style.display = 'none';
+        m.getAttribute('data-n').split(',').forEach(function (k) {
+          var it = host.querySelector('.hd-key-item[data-k="' + k + '"]');
+          if (it) it.classList.add('hd-off');
+        });
+      }
+    });
   }
+  (function hdLabelStyles() {
+    var css = document.createElement('style');
+    css.textContent =
+      '#hd-labels{font-family:Roboto,sans-serif}' +
+      '.hd-mark{position:absolute;width:0;height:0}' +
+      '.hd-bubble{position:relative;display:inline-flex;align-items:center;justify-content:center;' +
+        'box-sizing:border-box;padding:0 6px;border-radius:999px;font-weight:500;line-height:1;' +
+        'background:rgba(8,10,16,0.72);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);' +
+        'white-space:nowrap}' +
+      '.hd-rim{position:absolute;inset:0;border-radius:999px;padding:2px;pointer-events:none;' +
+        '-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);' +
+        '-webkit-mask-composite:xor;mask-composite:exclude}' +
+      '.hd-key{position:absolute;bottom:20px;display:flex;flex-wrap:wrap;justify-content:center;' +
+        'align-items:flex-start;gap:10px 0;text-align:center;' +
+        'text-shadow:0 0 6px rgba(0,0,0,0.95),0 0 2px rgba(0,0,0,0.9)}' +
+      '.hd-key-block{width:var(--hd-block-w,250px);padding:0 6px;box-sizing:border-box}' +
+      '.hd-key-cat{font-size:11px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px}' +
+      '.hd-key-item{margin-bottom:8px}' +
+      '.hd-key-item.hd-off{opacity:0.38}' +
+      '.hd-key-name{display:flex;align-items:center;justify-content:center;gap:8px;' +
+        'font-size:17px;font-weight:500;color:#f1f5f9}' +
+      '.hd-key-text{font-size:13px;font-weight:400;color:#b0bac6;margin-top:3px;line-height:1.3;' +
+        'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
+      '.hd-key-text sup,.hd-key-text sub{font-size:0.75em;line-height:0}';
+    document.head.appendChild(css);
+  })();
   (function watchHdLabels() {
     var t = window.trame;
     if (!t || !t.state || !t.state.watch) { setTimeout(watchHdLabels, 300); return; }
     t.state.watch(['hd_labels'], function (labels) {
-      hdLabels = labels || [];
+      hdLabels = labels && labels.items ? labels : null;
       drawHdLabels();
     });
-    // The card opening or closing moves labels on or off it.
-    t.state.watch(['sel_show'], function () { setTimeout(drawHdLabels, 80); });
+    // The card, a panel opening or closing: the key's free space changes.
+    t.state.watch(['sel_show', 'panel_open'], function () { setTimeout(drawHdLabels, 120); });
   })();
   window.addEventListener('resize', drawHdLabels);
   window.drawHdLabels = drawHdLabels;

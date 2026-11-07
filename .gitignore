@@ -63,6 +63,8 @@ sage_library/
 *.tif
 *.tiff
 *.json
+*.webp
+*.avif
 .claude/settings.local.json
 
 # Allow documentation images and static assets
@@ -70,6 +72,7 @@ sage_library/
 !docs/images/*.jpg
 !docs/images/*.jpeg
 !docs/images/*.gif
+!docs/images/hd_components/*.jpg
 !visage/static/*.jpg
 !visage/static/*.jpeg
 !visage/static/*.png
@@ -86,3 +89,6 @@ sage_library/
 # Developer scripts (HD prototype, figure sheets, catalogue helper):
 # local only, not part of ViSAGE.
 scripts/
+
+# The HD components table as one PDF (local; the docs page shows the same table)
+docs/HD_components_table.pdf

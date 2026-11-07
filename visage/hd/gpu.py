@@ -30,6 +30,7 @@ from visage.hd.model import (
     BULGE_RGB,
     HII_LOOK,
     YOUNG_RGB,
+    YOUNG_SMOOTH,
     GalaxyRecipe,
     PlaneMaps,
 )
@@ -165,8 +166,10 @@ _POINT_SIZE = {
     "ring_hii": 0.35,
 }
 # Beyond this pixel footprint (model units) the stars are sub-pixel and the
-# splatted textures take over.
-FP_MAX = 0.02
+# splatted textures take over (0.005, chosen from options 2026-11-07: whole
+# galaxies smooth rather than glittery, stars sharp once zoomed in; was
+# 0.02).
+FP_MAX = 0.005
 GRID_CELL = 0.1
 PER_CELL = 8
 Z_EXACT = 0.25
@@ -182,9 +185,13 @@ VOLUME_POPS = (
     "tidal",
     "iclstream",
     "halpha",
-    "jelly",
     "strip",
 )
+# Brightness of an elliptical's field stars and globulars, drawn as points
+# over its light: they are not dimmed by its dust.
+SPRINKLE = 0.2
+# Diffuse 3D gas, drawn only with Gas: a jellyfish's stripped gas.
+GAS_POPS = ("jelly",)
 
 
 def _rows(a: np.ndarray, width: int) -> np.ndarray:
@@ -561,6 +568,29 @@ _IMPL = """//VTK::Light::Impl
   float dtIcl = max((rI.y - rI.x) / 40.0, 1e-3);
   float tEnd = max(max(rS.y, rC.y), max(rA.y, rI.y));
 
+  // Dark arm lanes: a thin screen in the disk plane, dimming and
+  // reddening what lies behind it (stars included), from where the ray
+  // crosses it (tpL) on.
+  // (A disturbed lenticular's sheet is tilted: uLaneN is its normal, uLaneE1
+  // and uLaneE2 the axes it is mapped on; the disc plane for any other.)
+  vec3 scrL = vec3(1.0);
+  float tpL = 1e30;
+  float rn = abs(dot(rd, uLaneN));
+  if (uIsDisk > 0.5 && rn > 1e-4) {
+    float tp = -dot(ro, uLaneN) / dot(rd, uLaneN);
+    if (tp > 0.0) {
+      vec3 q = ro + tp * rd;
+      vec2 pp = vec2(dot(q, uLaneE1), dot(q, uLaneE2));
+      if (abs(pp.x) < uMapHalf && abs(pp.y) < uMapHalf) {
+        float lt = texture(mapTex, mapUV(pp, uMapHalf, uMapN)).a;
+        if (lt > 0.0) {
+          scrL = exp(-lt * min(1.0 / rn, 4.0) * uDustK);
+          tpL = tp;
+        }
+      }
+    }
+  }
+
   vec3 col = vec3(0.0);
   vec3 tau = vec3(0.0);
   float tauC = 0.0;
@@ -617,8 +647,17 @@ _IMPL = """//VTK::Light::Impl
         vec3 m = textureLod(mapTex, mapUV(pm, uMapHalf, uMapN), lodM).rgb;
         // Inside-out growth: older (redder) inside, younger outside.
         vec3 oldC = mix(uOldRGB, uOldOutRGB, smoothstep(0.0, uGradR, length(pm)));
-        e += m.r * pint(z0, z1, uHz, dt) * oldC + m.g * pint(z0, z1, uHzYoung, dt) * uYoungRGB;
-        kap = m.b * pint(z0, z1, 0.045, dt);
+        // (The old disc: thin, and a thick disc's share uThick.)
+        float pOld = mix(pint(z0, z1, uHz, dt), pint(z0, z1, uHzThick, dt), uThick);
+        e += m.r * pOld * oldC + m.g * pint(z0, z1, uHzYoung, dt) * uYoungRGB;
+        kap = m.b * pint(z0, z1, uDustH, dt);
+        // The disc's gas (Gas on): ionised gas glowing round the star
+        // formation, and the molecular clouds' dust, darker.
+        if (uDiscGas > 0.5) {
+          vec4 gsx = textureLod(gasTex, mapUV(pm, uMapHalf, uMapN), lodM);
+          e += gsx.r * pint(z0, z1, uIonH, dt) * uIonRGB;
+          kap += gsx.g * pint(z0, z1, uDustH, dt);
+        }
         {
           // Splatted stars: those the current level(s) don't draw exactly.
           vec2 uA = mapUV(pm, uMapHalf, uPtsN);
@@ -639,7 +678,7 @@ _IMPL = """//VTK::Light::Impl
           // An exponential ellipse: a boxier one reads as a lit rectangle.
           // It ends at its length (fading out by 1.25 of it, inside the core
           // it is drawn in), so no edge shows however deep the exposure.
-          float mb = sqrt(pow(p.x / bx, 2.0) + pow(p.y / by, 2.0));
+          float mb = sqrt(pow((p.x - uBarOff.x) / bx, 2.0) + pow((p.y - uBarOff.y) / by, 2.0));
           float bar = exp(-1.6 * mb) * (1.0 - smoothstep(0.8, 1.25, mb));
           // A buckled bar is thickest half way out: boxy / peanut-shaped
           // seen edge-on.
@@ -656,8 +695,13 @@ _IMPL = """//VTK::Light::Impl
       if (uDustLane > 0.0) {
         float rr = length(p.xz);
         float y0 = ro.y + t * rd.y;
-        kap = uDustLane * 2.5 * exp(-rr / 0.25) * (1.0 - exp(-pow(rr / 0.05, 2.0)))
-            * pint(y0, y0 + dt * rd.y, 0.02, dt);
+        kap = uDustLane * 2.5 * exp(-rr / uLaneR) * (1.0 - exp(-pow(rr / (0.2 * uLaneR), 2.0)))
+            * pint(y0, y0 + dt * rd.y, uLaneH, dt);
+        // Irregular filaments through the core: the ridges of a noise.
+        if (uDustFil > 0.0) {
+          float fz = fbm2(p / uFilSize + vec3(17.0)) / uEllFbmStd;
+          kap += uDustLane * uDustFil * exp(-pow(fz / 0.3, 2.0)) * exp(-length(p) / uFilR) * dt;
+        }
       }
     }
     // (Faded to nothing at its sphere's edge, so no rim shows.)
@@ -683,12 +727,15 @@ _IMPL = """//VTK::Light::Impl
           vec2 a1 = vec2(mod(zb, uAtlasNx), floor(zb / uAtlasNx)) * uAtlasN + inT;
           acc += mix(texture(atlasTex, a0 / uAtlasSize).rgb,
                      texture(atlasTex, a1 / uAtlasSize).rgb, fz);
+          if (uDiscGas > 0.5)
+            acc += mix(texture(gasAtlasTex, a0 / uAtlasSize).rgb,
+                       texture(gasAtlasTex, a1 / uAtlasSize).rgb, fz);
         }
       }
       e += acc * dt / float(ns);
     }
     vec3 att = exp(-(tau + 0.5 * kap * uDustK));
-    col += e * att;
+    col += e * att * (t + 0.5 * dt > tpL ? scrL : vec3(1.0));
     tau += kap * uDustK;
     if (!passedC && t + dt >= tc) { tauC = tau.g; passedC = true; }
     t += dt;
@@ -742,10 +789,13 @@ _IMPL = """//VTK::Light::Impl
           float tauP = 0.0;
           if (uIsDisk > 0.5 && abs(A.x) < uMapHalf && abs(A.y) < uMapHalf) {
             float k0 = texture(mapTex, mapUV(A.xy, uMapHalf, uMapN)).b;
-            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / 0.045)) / max(rz, 0.01);
+            // (With Gas, the molecular clouds' dust too.)
+            if (uDiscGas > 0.5)
+              k0 += texture(gasTex, mapUV(A.xy, uMapHalf, uMapN)).g;
+            tauP = k0 * 0.5 * (1.0 + sign(rd.z) * tanh(A.z / uDustH)) / max(rz, 0.01);
           }
           vec4 C = texelFetch(gColTex, ec, 0);
-          vec3 L = C.rgb * exp(-tauP * uDustK);
+          vec3 L = C.rgb * exp(-tauP * uDustK) * (ts > tpL ? scrL : vec3(1.0));
           float Lm = max((L.r + L.g + L.b) / 3.0, 1e-30);
           // Peak at the offline PSF width (a little sharper), against the
           // galaxy's base exposure: the same brightness at any zoom.
@@ -760,23 +810,6 @@ _IMPL = """//VTK::Light::Impl
         else { c.z += st.z; tMx.z += tDel.z; }
         if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, N))) break;
         tIn = tOut;
-      }
-    }
-  }
-
-  // Dark arm lanes: a thin screen in the disk plane, dimming and
-  // reddening what lies behind it (stars included).
-  if (uIsDisk > 0.5 && rz > 1e-4) {
-    float tp = -ro.z / rd.z;
-    if (tp > 0.0) {
-      vec2 pp = (ro + tp * rd).xy;
-      if (abs(pp.x) < uMapHalf && abs(pp.y) < uMapHalf) {
-        float lt = texture(mapTex, mapUV(pp, uMapHalf, uMapN)).a;
-        if (lt > 0.0) {
-          vec3 scr = exp(-lt * min(1.0 / rz, 4.0) * uDustK);
-          col *= scr;
-          starD *= scr;
-        }
       }
     }
   }
@@ -892,6 +925,7 @@ def prepare(
     # Diffuse 3D light: merger debris, tidal features, ICL streams, cooling
     # filaments, ram-pressure tails.
     vol = [p for p in pts if p.name in VOLUME_POPS]
+    gvol = [p for p in pts if p.name in GAS_POPS]
 
     tex = {}
     dummy3 = np.zeros((2, 2, 3), np.float32)
@@ -903,12 +937,32 @@ def prepare(
         m = np.dstack(
             [
                 rc.l_disk * n_old * maps.old,
-                rc.l_young * 1.2 * n_young * maps.young,
+                rc.l_young * YOUNG_SMOOTH * n_young * maps.young,
                 maps.dust,
                 lanes,
             ]
         ).astype(np.float32)
         tex["mapTex"] = (m, "mip")
+        # The disc's gas (Gas on): ionised gas (its light), and the
+        # molecular clouds' dust (optical depth), fading to nothing before
+        # the map's edge.
+        from visage.hd.model import cloud_dust
+
+        ion = maps.ion if maps.ion is not None else 0 * maps.dust
+        n_ion = 1.0 / max(float(ion.sum()) * dA, 1e-30)
+        ax = np.linspace(-1, 1, maps.old.shape[0])
+        edge = np.clip((1 - np.hypot(*np.meshgrid(ax, ax))) / 0.2, 0, 1)
+        tex["gasTex"] = (
+            np.dstack(
+                [
+                    rc.l_ion * n_ion * ion * edge,
+                    cloud_dust(rc, maps) * edge,
+                    0 * ion,
+                    0 * ion,
+                ]
+            ).astype(np.float32),
+            "mip",
+        )
         from concurrent.futures import ThreadPoolExecutor
 
         # Splats of what each level leaves out (the finest two at full
@@ -926,17 +980,24 @@ def prepare(
         map_info = (maps.half, maps.old.shape[0], npts)
     else:
         tex["mapTex"] = (dummy3, "mip")
+        tex["gasTex"] = (np.zeros((2, 2, 4), np.float32), "mip")
         for L in range(N_LEVELS + 1):
             tex[f"rest{L}Tex"] = (dummy3, "mip")
         map_info = (1.0, 2, 2)
 
+    # (The gas's volume has the same layout: one lookup serves both.)
     atlas_info = None
     tex["atlasTex"] = (dummy3, "linear")
-    if vol:
-        allpos = np.vstack([p.pos for p in vol])
+    tex["gasAtlasTex"] = (dummy3, "linear")
+    if vol or gvol:
+        allpos = np.vstack([p.pos for p in vol + gvol])
         atlas_half = float(max(np.percentile(np.abs(allpos), 99.5), E))
-        atlas, nx, ny = _splat_volume(vol, atlas_half, atlas_n, px_proto)
-        tex["atlasTex"] = (atlas, "linear")
+        for name, ps in (("atlasTex", vol), ("gasAtlasTex", gvol)):
+            if ps:
+                atlas, nx, ny = _splat_volume(
+                    ps, atlas_half, atlas_n, px_proto
+                )
+                tex[name] = (atlas, "linear")
         atlas_info = (atlas_half, atlas_n, nx, (nx * atlas_n, ny * atlas_n))
 
     # One grid per level, packed into one set of textures.
@@ -1113,10 +1174,25 @@ class GPUGalaxy:
         u = sp.GetFragmentCustomUniforms()
         f = u.SetUniformf
         f("uIsDisk", 1.0 if disk else 0.0)
+        from visage.hd.model import GAS, YOUNG_RGB as _YRGB
+
+        ion_rgb = (1 - GAS["ion_blue"]) * np.asarray(rc.hii_rgb) + GAS[
+            "ion_blue"
+        ] * _YRGB
+        u.SetUniform3f("uIonRGB", [float(v) for v in ion_rgb])
+        f("uIonH", float(GAS["ion_h"]))
+        f("uDiscGas", 0.0)
         f("uMapHalf", float(map_half))
         f("uMapN", float(map_n))
         f("uPtsN", float(npts))
         f("uHz", float(rc.hz))
+        from visage.hd.model import THICK
+
+        f("uThick", float(rc.thick_frac))
+        f("uHzThick", float(THICK["height"] * rc.hz))
+        from visage.hd.model import dust_height
+
+        f("uDustH", dust_height(rc))
         # (Young stars: a thin layer in a spiral, the whole thick disc of a
         # dwarf irregular.)
         f(
@@ -1128,6 +1204,17 @@ class GPUGalaxy:
         f("uLBulge", float(rc.l_bulge if disk else 0.0))
         f("uBarLen", float(rc.bar_len if disk else 0.0))
         f("uBarAxis", float(rc.bar_axis))
+        u.SetUniform2f("uBarOff", [float(v) for v in rc.bar_off])
+        # The dust lanes' sheet: the disc plane, tilted by lane_tilt about
+        # an in-plane axis at lane_pa (a disturbed lenticular).
+        t, a = np.deg2rad(rc.lane_tilt), np.deg2rad(rc.lane_pa)
+        e1 = np.array([np.cos(a), np.sin(a), 0.0])
+        nrm = np.array(
+            [np.sin(a) * np.sin(t), -np.cos(a) * np.sin(t), np.cos(t)]
+        )
+        u.SetUniform3f("uLaneN", [float(v) for v in nrm])
+        u.SetUniform3f("uLaneE1", [float(v) for v in e1])
+        u.SetUniform3f("uLaneE2", [float(v) for v in np.cross(nrm, e1)])
         f("uLBar", float(rc.l_bar))
         f("uLPseudo", float(rc.l_pseudo if disk else 0.0))
         f("uPseudoA", float(rc.pseudo_a))
@@ -1147,6 +1234,15 @@ class GPUGalaxy:
         f("uEnvA", float(rc.env_a))
         f("uCoreFrac", float(rc.core_frac))
         f("uDustLane", float(0.0 if disk else rc.dust_lane))
+        from visage.hd.gpu_gas import _std
+        from visage.hd.model import ELL_DUST
+
+        f("uLaneR", float(ELL_DUST["lane_r"]))
+        f("uLaneH", float(ELL_DUST["lane_h"]))
+        f("uDustFil", float(ELL_DUST["fil"]))
+        f("uFilR", float(ELL_DUST["fil_r"]))
+        f("uFilSize", float(ELL_DUST["fil_size"]))
+        f("uEllFbmStd", float(_std("fbm2")))
         f("uLIcl", float(rc.l_icl))
         f("uIclA", float(rc.icl_a))
         f("uZCut", float(7 * max(rc.hz, 0.06)))
@@ -1217,7 +1313,13 @@ class GPUGalaxy:
                 np.concatenate([np.maximum(p.sigma, 0.6) for p in sprinkle])
                 * px_proto
             )
-            lum = np.concatenate([p.lum for p in sprinkle])
+            lum = np.concatenate(
+                [
+                    p.lum
+                    * (SPRINKLE if p.name in ("field", "globulars") else 1)
+                    for p in sprinkle
+                ]
+            )
             rgb = np.vstack([p.rgb for p in sprinkle])
             # Each is a pixel-sized dot in the offline renders: give it the
             # tone-mapped brightness of its own peak.
@@ -1287,20 +1389,20 @@ class GPUGalaxy:
         u.SetUniformf("uIclAng", float(rng.uniform(0, np.pi)))
 
     def set_gas(self, on: bool) -> None:
+        if self._uni is not None:
+            # (The disc's own HI and H2 for any galaxy; the halo gas only
+            # for one that draws it.)
+            self._uni.SetUniformf("uDiscGas", 1.0 if on else 0.0)
         if self._uni is not None and self.gas is not None:
             self._uni.SetUniformf("uGasOn", 1.0 if on else 0.0)
 
     def set_view_half(self, half_kpc: float) -> None:
         """How much of the halo is in view (kpc half-width): the hot gas
-        switches to its log stretch on halo-wide views and the streams are
-        normalised to the visible frame, as in the 2D overlay."""
+        switches to its log stretch on halo-wide views."""
         if self._uni is None or self.gas is None:
             return
         self._uni.SetUniformf(
             "uHotLog", 1.0 if half_kpc > 0.5 * self.gas.rvir else 0.0
-        )
-        self._uni.SetUniformf(
-            "uStreamNorm", float(self.gas.stream_norm(half_kpc))
         )
 
     def set_pixel(self, fp_model: float) -> None:

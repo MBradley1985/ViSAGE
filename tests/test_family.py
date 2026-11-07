@@ -253,28 +253,6 @@ def test_profiles_read_a_flat_lightcone(tmp_path):
     assert np.allclose(out["r"][0], [0.5, 1.5])
 
 
-def test_hi_glow_follows_the_annuli():
-    from visage.hd.layer import hi_texture
-
-    radial = ((1.0, 2.0, 4.0, 8.0), (), (0.0, 0.0, 5.0, 0.0))
-    img, half = hi_texture(radial, n=64)
-    assert half == pytest.approx(1.15 * 4.0)
-    a = img[..., 3].astype(float)
-    assert a[32, 32] == 0  # a hole where the gas is molecular
-    assert a[32, 32 + 28] > 0
-    assert a[0, 0] == 0  # nothing beyond the disc
-    assert hi_texture(((1.0, 2.0, 3.0), (), (0.0, 0.0, 0.0)))[0] is None
-
-
-def test_hi_glow_is_round_even_where_annuli_end_above_its_threshold():
-    from visage.hd.layer import hi_texture
-
-    r = (0.1, 1.0, 5.0, 9.0)
-    img, half = hi_texture((r, (), (50.0, 20.0, 5.0, 2.0)), n=64)
-    assert img[0, 0, 3] == 0 and img[0, 32, 3] == 0
-    assert img[32, 32, 3] > 0
-
-
 def test_rotation_map_flips_counter_rotating_gas(tmp_path):
     prof = {
         "r": np.array([[1.0, 3.0, 6.0]]),

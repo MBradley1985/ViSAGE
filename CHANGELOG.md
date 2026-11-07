@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.21.0] — 2026-11-07
+
+### Added
+
+- HD: the card's Components (?) button marks each part of the galaxy with a numbered marker fixed on that part, and lists them in a key along the bottom of the view, in six colour-coded categories (colour-blind safe), avoiding the card, the rail and any open panel.
+- HD: on runs with annuli, the disc's dust is the photometry's star-weighted optical depth, annulus by annulus, for box and lightcone alike, with fallbacks for runs without DarkSAGEMode or DustySAGEMode.
+- Docs: HD Components, Illustrated: every part of an HD galaxy rendered on real SAGE26 galaxies beside how it is built.
+- HD: types of irregular (patchy clouds, fading, starburst, disturbed, Magellanic barred), lenticular (smooth, barred with a lens and rings, nuclear dust ring, dust lane, disturbed dust) and flocculent spiral (star-forming, massive, fading), each from the galaxy's SAGE26 properties.
+- HD: a thick disc, its share of the old disc from the galaxy's rotation speed.
+- HD: dust in ellipticals as dark filaments through the core, from their molecular gas or dust.
+- HD, with Gas: the disc's ionised gas (glowing clouds and filaments round the star formation) and its molecular clouds, seen by their dust.
+- The rail's panels can be dragged by the grip along their top; double-click the grip to put a panel back.
+
+### Changed
+
+- HD: the Gas button now switches between the optical galaxy and the galaxy with its gas. The HII regions' surrounding nebula, a jellyfish's stripped gas and its plumes are drawn with Gas only.
+- HD: one HI disc on every run (the flat HI glow on runs with annuli is gone).
+- HD: a jellyfish's tail has compact star-forming knots strung along its threads; its plumes are soft gas.
+- HD: radio jets only in radio-loud AGN (from 10^42 erg/s), brightest and knotty near the core.
+- HD: merger shells and tidal tails carry twice the light (tails ~10% of the galaxy's just after a merger).
+- HD: whole galaxies are drawn smooth rather than glittery: stars are drawn one by one only once you zoom in, and an elliptical's field stars and globulars, which no dust dims, at a fifth of their brightness.
+
+### Fixed
+
+- HD: the CGM no longer covers a zoomed-in galaxy as a flat blue screen (it was normalised to the frame drawn).
+- HD: discs whose stars are thinner than their dust no longer render almost black, and no disc's dust runs away to an extreme depth when matching its photometry over a big bulge.
+- HD: an arm's dust lane dims only what lies behind it, not the near half of the disc.
+
+---
+
 ## [2.20.4] — 2026-11-05
 
 ### Fixed

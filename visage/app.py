@@ -1543,12 +1543,14 @@ def create_app(
                     # The selection card (selected galaxy, group, actions).
                     selection_card(server)
 
-                    # Components: labels on the HD galaxy's parts, drawn by
-                    # visage.js from hd_labels (an SVG over the view).
+                    # Components: numbered markers on the HD galaxy's parts
+                    # and their key, drawn by visage.js from hd_labels.
+                    # Below the card, rail and panels (z 5-6), so a marker
+                    # behind them is hidden by them.
                     html.Div(
                         id="hd-labels",
                         style=(
-                            "position:absolute;inset:0;z-index:5;"
+                            "position:absolute;inset:0;z-index:4;"
                             "pointer-events:none;"
                         ),
                     )

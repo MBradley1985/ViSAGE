@@ -1,0 +1,99 @@
+/* HD Components, Illustrated: the HD_components_table figure as a page.
+   Its own dark look in either site theme; full width; rows stack when narrow. */
+
+.md-main:has(.hdc) .md-grid { max-width: 100%; }
+.md-main:has(.hdc) .md-content__inner { margin: 0 1.2rem; }
+
+.hdc {
+  --hdc-bg: #0c0d10;
+  --hdc-alt: #13151a;
+  --hdc-ink: #ecebe6;
+  --hdc-muted: #a09f96;
+  --hdc-rule: #34373e;
+  --hdc-gold: #e2a458;
+  --hdc-blue: #78aaeb;
+  --hdc-serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+  --hdc-cond: "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
+  background: var(--hdc-bg);
+  color: var(--hdc-ink);
+  padding: 1.2rem 1.4rem 2rem;
+  border-radius: 6px;
+  font-family: var(--hdc-serif);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.md-typeset h1 { font-family: var(--hdc-cond, inherit); }
+.hdc a { color: var(--hdc-blue); }
+.hdc code { background: none; color: var(--hdc-blue); padding: 0; }
+
+.hdc-intro { color: var(--hdc-muted); max-width: 90ch; font-size: 0.8rem; }
+
+.hdc-pipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.5rem; margin: 1rem 0 0.4rem; }
+.hdc-pipe div {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.5rem 0.65rem; background: var(--hdc-alt);
+  border: 1px solid var(--hdc-rule); border-radius: 8px; position: relative;
+}
+.hdc-pipe div.hdc-key { border-color: var(--hdc-gold); }
+.hdc-pipe b { font-family: var(--hdc-cond); font-weight: 600; font-size: 0.8rem; }
+.hdc-pipe span { font-family: var(--md-code-font-family, monospace); font-size: 0.62rem; color: var(--hdc-muted); }
+.hdc-note { color: var(--hdc-muted); display: flex; gap: 0.5rem; align-items: center; }
+.hdc-swatch { width: 1.1rem; height: 0.8rem; border: 2px solid var(--hdc-gold); border-radius: 4px; flex: none; }
+
+.md-typeset .hdc h2.hdc-sec {
+  font-family: var(--hdc-cond); font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.02em; color: var(--hdc-ink); margin: 2rem 0 0.3rem;
+  padding-top: 0.6rem; border-top: 2px solid var(--hdc-gold); font-size: 1.15rem;
+}
+.md-typeset .hdc h2.hdc-big {
+  font-family: var(--hdc-cond); font-weight: 700; text-transform: uppercase;
+  color: var(--hdc-gold); font-size: 1.6rem; margin: 3rem 0 0;
+}
+
+.hdc-row {
+  display: grid;
+  grid-template-columns: 10.5fr 29fr 12.5fr 28fr 11.5fr 8.5fr;
+  gap: 1rem;
+  padding: 0.9rem 0.6rem;
+  border-top: 1px solid var(--hdc-rule);
+}
+.hdc-row:nth-of-type(even) { background: var(--hdc-alt); }
+.hdc-row > div { min-width: 0; }
+.hdc-row.hdc-cont { border-top: none; padding-top: 0; }
+.hdc-head {
+  font-family: var(--hdc-cond); font-weight: 600; text-transform: uppercase;
+  color: var(--hdc-gold); font-size: 0.66rem; letter-spacing: 0.04em;
+  background: var(--hdc-alt); border-top: none;
+}
+.hdc-name { font-family: var(--hdc-cond); font-weight: 600; font-size: 0.95rem; line-height: 1.2; }
+.hdc-name span {
+  display: block; margin-top: 0.35rem; font-family: var(--md-code-font-family, monospace);
+  font-weight: 400; font-size: 0.62rem; color: var(--hdc-gold);
+}
+.hdc-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; align-content: start; }
+.hdc-tiles.hdc-wide { grid-template-columns: 1fr; }
+.md-typeset .hdc figure { margin: 0; max-width: 100%; }
+.hdc figure img { display: block; width: 100%; border: 1px solid var(--hdc-rule); }
+.md-typeset .hdc figcaption {
+  font-family: var(--hdc-cond); font-size: 0.66rem; color: var(--hdc-muted);
+  text-align: left; margin: 0.3rem 0 0; max-width: none;
+}
+.hdc-fields { font-family: var(--md-code-font-family, monospace); font-size: 0.64rem; color: var(--hdc-blue); overflow-wrap: anywhere; }
+.hdc-refs { font-style: italic; color: var(--hdc-muted); font-size: 0.68rem; }
+.hdc-code { font-family: var(--md-code-font-family, monospace); font-size: 0.6rem; color: var(--hdc-muted); overflow-wrap: anywhere; }
+.hdc sup { font-size: 0.7em; }
+
+.md-typeset .hdc figure.hdc-plate { margin: 1rem 0 0 0; padding-left: 10%; }
+.hdc-plate img { max-width: 1400px; }
+
+@media (max-width: 1100px) {
+  .hdc-row { grid-template-columns: 1fr; gap: 0.5rem; }
+  .hdc-head { display: none; }
+  .hdc-fields::before { content: "SAGE26 fields: "; color: var(--hdc-gold); font-family: var(--hdc-cond); }
+  .hdc-refs:not(:empty)::before { content: "Literature: "; color: var(--hdc-gold); font-style: normal; font-family: var(--hdc-cond); }
+  .hdc-code:not(:empty)::before { content: "Code: "; color: var(--hdc-gold); font-family: var(--hdc-cond); }
+  .md-typeset .hdc figure.hdc-plate { padding-left: 0; }
+}
+@media (max-width: 560px) {
+  .hdc-tiles { grid-template-columns: 1fr 1fr; }
+}

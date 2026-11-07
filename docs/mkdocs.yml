@@ -44,6 +44,7 @@ theme:
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/hd_components.css
 
 plugins:
   - search
@@ -98,6 +99,7 @@ nav:
       - Dark Matter Haloes: physics/haloes.md
       - Galaxies: physics/galaxies.md
       - HD Galaxy Components: physics/hd_components.md
+      - HD Components, Illustrated: physics/hd_components_illustrated.md
       - Lightcone Photometry: physics/photometry.md
   - API Reference: api/index.md
   - Project:
