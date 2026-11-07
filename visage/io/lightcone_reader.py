@@ -126,6 +126,8 @@ EXTRA_FIELDS = (
     "TimeOfLastMajorMerger",
     "TimeOfLastMinorMerger",
     "QuasarModeBHaccretionMass",
+    "RadioModeBHaccretionMass",
+    "RadioModeBHaccretionMassUncapped",
     "mdot_stream",
     "RcoolToRvir",
     "infallMvir",

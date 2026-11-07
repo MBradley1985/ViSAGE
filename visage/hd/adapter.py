@@ -14,6 +14,13 @@ def _extra(snap, name, i, default=0.0):
     return float(arr[i])
 
 
+def _uncapped(snap, i, mass):
+    """Radio-mode accretion (Msun) before SAGE26's cap of heating at
+    cooling (runs from 2026-11-07 on), or -1 without the field."""
+    v = _extra(snap, "RadioModeBHaccretionMassUncapped", i, -1.0)
+    return v * mass if v >= 0 else -1.0
+
+
 # SFH bins read on demand, kept per (file, snapshot) for the session's
 # recent snapshots: {(path, snap): {raw row: bins}}.
 # Centrals of the recent snapshots, for finding a galaxy's neighbours:
@@ -277,6 +284,7 @@ def sage_galaxy_from_snapshot(
         qso_accretion=_extra(snap, "QuasarModeBHaccretionMass", i) * mass,
         dt_myr=dt,
         radio_accretion=_extra(snap, "RadioModeBHaccretionMass", i) * mass,
+        radio_accretion_uncapped=_uncapped(snap, i, mass),
         ics=_field(snap, "ics_mass", i),
         outflow_rate=_field(snap, "outflow_rate", i),
         mass_loading=_field(snap, "mass_loading", i, 1.5),
@@ -472,10 +480,13 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
     height = vrot = shear = 0.0
     if "vcirc" in p and len(p.get("edges", [()])[0]) > 2:
         # The disc's rotation at 2.2 scale lengths (its peak for an
-        # exponential disc), and the shear there, 1 - dlnV/dlnR.
+        # exponential disc), and the shear there, 1 - dlnV/dlnR: at
+        # SAGE26's DiskRadius, the disc's physical size (the annuli's own
+        # scale radius is far smaller, and its rotation is the compact
+        # annulus disc's).
         e, vc = np.asarray(p["edges"][0], float), np.asarray(p["vcirc"][0])
         ok = (e > 0) & (vc > 0) & (vc < 1000)
-        r22 = 2.2 * scale * 1e3 / hubble_h
+        r22 = 2.2 * radius * 1e3 / hubble_h
         if ok.sum() > 3 and e[ok].min() < r22 < e[ok].max():
             lr, lv = np.log(e[ok]), np.log(vc[ok])
             vrot = float(np.exp(np.interp(np.log(r22), lr, lv)))

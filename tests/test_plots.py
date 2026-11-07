@@ -130,6 +130,22 @@ def test_only_clusters_when_only_clusters_are_ticked():
     assert mask.tolist() == [False, False, False, True]
 
 
+def test_cooling_and_heating_filter_as_log_erg_per_s():
+    """SAGE26's Cooling and Heating are log10 erg/s (0: none)."""
+    gal = SimpleNamespace(
+        count=4,
+        stellar_mass=np.full(4, 1e10),
+        cooling=np.array([0.0, 36.0, 39.0, 42.0]),
+        heating=np.zeros(4),
+    )
+    state = _Open(filter_gal_cooling=[38.0, 46.0])
+    mask = galaxy_mask(gal, {"cooling": True}, state)
+    assert mask.tolist() == [True, False, True, True]
+    # An old saved range (log10 "SAGE units", -7 to 7) filters nothing.
+    state = _Open(filter_gal_cooling=[-7.0, 7.0])
+    assert galaxy_mask(gal, {"cooling": True}, state).all()
+
+
 class _Open(SimpleNamespace):
     """Filter settings left at their full range."""
 

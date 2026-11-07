@@ -16,6 +16,8 @@ MPC_H = ("h^-1 Mpc", r"$h^{-1}\,{\rm Mpc}$")
 GYR = ("Gyr", "Gyr")
 KPC = ("kpc", "kpc")
 RATE = ("SAGE units", "SAGE units")
+LOG_ERG_S = ("log10 erg s^-1", r"$\log_{10}\,{\rm erg\,s}^{-1}$")
+ACCEL = ("km^2 s^-2 h Mpc^-1", r"${\rm km^2\,s^{-2}}\,h\,{\rm Mpc}^{-1}$")
 # As the file holds them: discovered properties are not converted.
 RAW_MASS = ("10^10 Msun h^-1", r"$10^{10}\,M_\odot\,h^{-1}$")
 MSUN_GYR = ("Msun Gyr^-1", r"$M_\odot\,{\rm Gyr}^{-1}$")
@@ -40,12 +42,12 @@ PROPERTIES = {
     "bulge_radius": ("Bulge radius", "R_bulge", r"R_{\rm bulge}", MPC_H),
     "cgm_gas": ("CGM gas", "M_CGM", r"M_{\rm CGM}", MSUN),
     "cold_gas": ("Cold gas", "M_cold", r"M_{\rm cold}", MSUN),
-    "cooling": ("Cooling rate", "", "", RATE),
+    "cooling": ("Cooling luminosity", "", "", LOG_ERG_S),
     "disk_radius": ("Disk radius", "R_disk", r"R_{\rm disk}", MPC_H),
     "ejected_mass": ("Ejected gas", "M_ej", r"M_{\rm ej}", MSUN),
     "h1_gas": ("Atomic hydrogen", "H1", r"{\rm H}_1", MSUN),
     "h2_gas": ("Molecular hydrogen", "H2", r"{\rm H}_2", MSUN),
-    "heating": ("Heating rate", "", "", RATE),
+    "heating": ("Radio-mode heating", "", "", LOG_ERG_S),
     "hot_gas": ("Hot gas", "M_hot", r"M_{\rm hot}", MSUN),
     "ics_mass": ("Intracluster stars", "M_ICS", r"M_{\rm ICS}", MSUN),
     "instability_bulge_mass": (
@@ -114,6 +116,11 @@ DISCOVERED = {
         "",
         RAW_MASS,
     ),
+    "RadioModeBHaccretionMassUncapped": (
+        "Radio-mode black hole accretion, before the heating cap",
+        "",
+        RAW_MASS,
+    ),
     "RcoolToRvir": ("R_cool-to-Rvir", "", None),
     "Spinx": ("Halo spin, x", "", SPIN),
     "Spiny": ("Halo spin, y", "", SPIN),
@@ -130,13 +137,14 @@ DISCOVERED = {
     "Vely": ("Galaxy velocity, y", "", KM_S),
     "Velz": ("Galaxy velocity, z", "", KM_S),
     "Vvir": ("Virial velocity", "Vvir", KM_S),
-    "g_max": ("Peak gravitational acceleration", "g_max", RATE),
+    "g_max": ("Gravitational acceleration", "g_max", ACCEL),
     "infallMvir": ("Infall halo mass", "Mvir", RAW_MASS),
+    "dT": ("Snapshot time step", "", MYR_H),
     "infallStellarMass": ("Infall stellar mass", "M*", RAW_MASS),
     "infallVmax": ("Infall maximum circular velocity", "Vmax", KM_S),
     "infallVvir": ("Infall virial velocity", "Vvir", KM_S),
-    "mdot_cool": ("Cooling rate onto the disk", "", RATE),
-    "mdot_stream": ("Cold stream inflow rate", "", RATE),
+    "mdot_cool": ("Cooling rate onto the disk", "", MSUN_YR),
+    "mdot_stream": ("Cold stream inflow rate", "", MSUN_YR),
     "mergeType": ("Merger type", "", None),
     "r_heat": ("AGN heating radius", "R_heat", MPC_H),
     "tcool": ("Cooling time", "t_cool", GYR),

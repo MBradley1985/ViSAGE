@@ -507,8 +507,8 @@ def load_galaxy_snapshot(
     spin = spin_raw.astype(np.float32)  # dimensionless
     outflow_rate = outflow_raw.astype(np.float32)  # Msun/yr
     mass_loading = massload_raw.astype(np.float32)  # dimensionless
-    cooling = cooling_raw.astype(np.float32)  # SAGE units
-    heating = heating_raw.astype(np.float32)  # SAGE units
+    cooling = cooling_raw.astype(np.float32)  # log10 erg/s (0: none)
+    heating = heating_raw.astype(np.float32)  # log10 erg/s (0: none)
     sfr_bulge_z = sfr_bulge_z_raw.astype(np.float32)  # dimensionless
     sfr_disk_z = sfr_disk_z_raw.astype(np.float32)  # dimensionless
 

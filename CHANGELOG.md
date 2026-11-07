@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.21.1] — 2026-11-07
+
+### Added
+
+- HD: radio jets take their power from SAGE26's new `RadioModeBHaccretionMassUncapped` (the radio-mode accretion before it is capped at the cooling rate), where a run has it; older runs keep the capped accretion. Lightcones now carry both, so HD can draw jets there too.
+
+### Changed
+
+- Labels follow SAGE26's corrected units: Cooling and Heating in log10 erg/s, `mdot_cool` and `mdot_stream` in Msun/yr, `g_max` an acceleration per snapshot, `dT` in h^-1 Myr.
+- `BulgeRadius` is SAGE26's 3D half-mass radius: mock images, photometric noise sizes, the size survey and HD on a lightcone now draw a bulge's projected half-light radius as 0.752 of it (they used it as the half-light radius, a third too big).
+- HD: DarkSAGE's disc rotation is read at 2.2 `DiskRadius`, the disc's physical size (the annuli's own scale radius is much smaller), so massive discs no longer rotate at up to ~480 km/s.
+
+### Fixed
+
+- Colouring and filtering by Cooling or Heating: the values are already log10 erg/s and were logged again, so every galaxy had the same colour and the filter kept everything. The sliders now run from 10^34 to 10^46 erg/s.
+
+---
+
 ## [2.21.0] — 2026-11-07
 
 ### Added

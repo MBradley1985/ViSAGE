@@ -134,8 +134,8 @@ _RANGES = {
     "ejected_mass": (7.0, 12.0),  # log10(Msun)
     "outflow_rate": (-6.0, 3.0),  # log10(Msun/yr)
     "mass_loading": (-2.0, 3.0),  # log10(dimensionless)
-    "cooling": (-5.0, 5.0),  # log10(SAGE units)
-    "heating": (-5.0, 5.0),  # log10(SAGE units)
+    "cooling": (34.0, 44.0),  # log10 erg/s (stored as such)
+    "heating": (34.0, 44.0),  # log10 erg/s (stored as such)
     # Structural
     "disk_radius": (-4.0, 0.0),  # log10(Mpc/h)
     "bulge_radius": (-4.0, 0.0),  # log10(Mpc/h)
@@ -176,8 +176,6 @@ _LOG_FIELDS: dict[str, tuple[str, float]] = {
     "metals_ics": ("metals_ics", 1.0),
     "outflow_rate": ("outflow_rate", 1e-6),
     "mass_loading": ("mass_loading", 1e-6),
-    "cooling": ("cooling", 1e-6),
-    "heating": ("heating", 1e-6),
     "sfr_bulge": ("sfr_bulge", 1e-6),
     "sfr_disk": ("sfr_disk", 1e-6),
     "sfr_bulge_z": ("sfr_bulge_z", 1e-6),
@@ -1204,6 +1202,13 @@ class GalaxyLayer:
             return np.clip((ages - vmin) / (vmax - vmin + 1e-10), 0.0, 1.0)
         if m.startswith("extra:"):
             return self._extra_colors(snap, m[len("extra:") :])
+        if m in ("cooling", "heating"):
+            # Already log10 erg/s (0: none, drawn at the bottom).
+            v = getattr(snap, m).astype(np.float32)
+            lo, hi = _RANGES[m]
+            return np.where(
+                v > 0, np.clip((v - lo) / (hi - lo), 0.0, 1.0), 0.0
+            )
         if m in _LOG_FIELDS:
             attr, floor = _LOG_FIELDS[m]
             return normalize_log(

@@ -3,7 +3,7 @@ telescope would see.
 
 Each galaxy is an exponential disk (DiskRadius as its scale length), or
 with annuli the light of each annulus in each band (AnnulusLight_*), stretched
-to DiskRadius, plus a de Vaucouleurs bulge (BulgeRadius as its half-light radius) at its angular
+to DiskRadius, plus a de Vaucouleurs bulge (half-light radius BULGE_RE x BulgeRadius, a 3D half-mass radius) at its angular
 size (radius over the angular-diameter distance), with the disk flattened
 by its inclination, axis ratio q = sqrt(cos^2 i + q0^2 sin^2 i), q0 = 0.2
 (Hubble 1926; Holmberg 1958), and turned to the position angle of its
@@ -84,6 +84,10 @@ from scipy.signal import fftconvolve
 from visage.sed.filters import EFFECTIVE_WAVELENGTH_A
 
 Q0 = 0.2  # intrinsic disk thickness (Hubble 1926; Holmberg 1958)
+# A bulge's projected half-light radius against SAGE26's BulgeRadius, its 3D
+# half-mass radius: 0.752 for a Hernquist profile (Hernquist 1990), as for a
+# de Vaucouleurs one.
+BULGE_RE = 0.752
 MAX_PIXELS = 2400  # longest side of an image
 STAR_FILE = Path(__file__).parent / "data" / "sdss_stars.npz"
 REFERENCE_FILE = Path(__file__).parent / "data" / "reference_population.npz"
@@ -808,7 +812,9 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
         hub = _read_hubble_h(f)
         d_a_all = np.maximum(f["distance"][:] / hub / (1 + z_all), 1e-6)
         rd_all = f["DiskRadius"][:] / hub / d_a_all * 206265 / s.pixel
-        rb_all = f["BulgeRadius"][:] / hub / d_a_all * 206265 / s.pixel
+        rb_all = (
+            BULGE_RE * f["BulgeRadius"][:] / hub / d_a_all * 206265 / s.pixel
+        )
     cosd = np.cos(np.deg2rad(dec0))
     dx_all = -(ra_all - ra0) * cosd * 3600 / s.pixel + npx / 2
     dy_all = (dec_all - dec0) * 3600 / s.pixel + npx / 2
@@ -826,7 +832,14 @@ def _draw_galaxies(images, path, s, npx, ra0, dec0, noisy, zmin=-1.0) -> int:
     # Angular sizes: comoving distance -> angular-diameter distance.
     d_a = d["distance"] / hub / (1 + d["redshift_cosmological"])
     rd_pix = d["DiskRadius"] / hub / np.maximum(d_a, 1e-6) * 206265 / s.pixel
-    rb_pix = d["BulgeRadius"] / hub / np.maximum(d_a, 1e-6) * 206265 / s.pixel
+    rb_pix = (
+        BULGE_RE
+        * d["BulgeRadius"]
+        / hub
+        / np.maximum(d_a, 1e-6)
+        * 206265
+        / s.pixel
+    )
     # Orientation on the sky: the projected spin is the disk's minor axis.
     pos = np.c_[d["Posx"], d["Posy"], d["Posz"]]
     los = pos / np.maximum(np.linalg.norm(pos, axis=1, keepdims=True), 1e-12)
