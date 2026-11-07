@@ -216,6 +216,28 @@ def thick_share(g) -> float:
 ELL_DUST = dict(lane_r=0.25, lane_h=0.02, fil=12.0, fil_r=0.45, fil_size=0.35)
 
 
+# Radio-loud AGN, which drive visible jets: from this jet power (log10
+# erg/s; Best & Heckman 2012, MNRAS 421, 1569; Cavagnolo et al. 2010, ApJ
+# 720, 1066).
+RADIO_LOUD = 42.0
+
+
+def jet_power_log(g) -> float:
+    """log10 of the radio-mode jet power, 0.1 Mdot c^2 (erg/s) over the
+    step; 0 with none.  From the accretion before SAGE26's cap of heating
+    at cooling where the run has it (that cap leaves most massive centrals'
+    capped accretion at zero), else the capped accretion."""
+    acc = (
+        g.radio_accretion_uncapped
+        if g.radio_accretion_uncapped >= 0
+        else g.radio_accretion
+    )
+    if acc <= 0 or g.dt_myr <= 0:
+        return 0.0
+    mdot = acc / (g.dt_myr * 1e6)  # Msun/yr
+    return float(np.log10(0.1 * mdot * 5.66e46))
+
+
 def dust_height(rc) -> float:
     """The dust layer's sech^2 scale height (Rd): about half the stars'
     (Xilouris et al. 1999, A&A 344, 868), and no more than 0.045, so a thin
@@ -264,6 +286,9 @@ class SageGalaxy:
     qso_accretion: float = 0.0  # Msun accreted in quasar mode this step
     dt_myr: float = 0.0  # Myr the step took (SAGE26's dT)
     radio_accretion: float = 0.0  # Msun accreted in radio mode this step
+    # Its accretion before SAGE26 caps heating at cooling (newer SAGE26's
+    # RadioModeBHaccretionMassUncapped; -1 without): the jet's power.
+    radio_accretion_uncapped: float = -1.0
     ics: float = 0.0  # IntraClusterStars, Msun
     outflow_rate: float = 0.0  # Msun/yr
     mdot_stream: float = 0.0  # cold-stream accretion through a hot halo
@@ -2893,7 +2918,7 @@ def describe(g: SageGalaxy, rc: GalaxyRecipe | None = None) -> list[str]:
         gas.append("CGM streams")
     if g.hot_gas > 0:
         gas.append("hot halo")
-    if g.heating_log > 40.0:
+    if jet_power_log(g) >= RADIO_LOUD:
         gas.append("radio jets")
     if g.outflow_rate > 0.05:
         gas.append("winds")

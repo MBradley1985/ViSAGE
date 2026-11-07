@@ -834,3 +834,14 @@ def test_thick_disc_share_follows_rotation():
     slow = thick_share(_disk(vmax=70.0))
     assert fast == THICK["share"][1] and slow == THICK["share"][0]
     assert thick_share(_disk(vmax=0.0)) == 0.0
+
+
+def test_jet_power_prefers_the_uncapped_accretion():
+    """SAGE26 caps radio-mode accretion so heating never exceeds cooling;
+    the jet's power is the accretion before that cap where the run has it."""
+    from visage.hd.model import jet_power_log
+
+    capped = _disk(radio_accretion=0.0, dt_myr=100.0)
+    assert jet_power_log(capped) == 0.0  # old runs: the capped field alone
+    g = _disk(radio_accretion=0.0, radio_accretion_uncapped=1e6, dt_myr=100.0)
+    assert jet_power_log(g) == pytest.approx(np.log10(0.1 * 1e-2 * 5.66e46))

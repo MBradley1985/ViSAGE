@@ -275,8 +275,8 @@ _GAL_CB = {
     "ejected_mass": ("Meject", "10^7", "10^12 Msun"),
     "outflow_rate": ("OutflowRate", "10^-6", "10^3 Msun yr^-1"),
     "mass_loading": ("Eta", "10^-2", "10^3"),
-    "cooling": ("Cooling", "10^-5", "10^5"),
-    "heating": ("Heating", "10^-5", "10^5"),
+    "cooling": ("Cooling", "10^34", "10^44 erg s^-1"),
+    "heating": ("Heating", "10^34", "10^44 erg s^-1"),
     # Structural
     "disk_radius": ("Rdisk", "10^-4", "1 h^-1 Mpc"),
     "bulge_radius": ("Rbulge", "10^-4", "1 h^-1 Mpc"),
@@ -480,8 +480,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.filter_gal_ejected = [0.0, 14.0]  # log10 Msun
     state.filter_gal_outflow = [-6.0, 5.0]  # log10 Msun/yr
     state.filter_gal_massload = [-3.0, 5.0]  # log10 dimensionless
-    state.filter_gal_cooling = [-7.0, 7.0]  # log10 SAGE units
-    state.filter_gal_heating = [-7.0, 7.0]  # log10 SAGE units
+    state.filter_gal_cooling = [34.0, 46.0]  # log10 erg/s
+    state.filter_gal_heating = [34.0, 46.0]  # log10 erg/s
     # Galaxy structural
     state.filter_gal_diskrad = [-4.0, 1.0]  # log10 Mpc/h
     state.filter_gal_bulgerad = [-4.0, 1.0]  # log10 Mpc/h
@@ -984,8 +984,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
         state.filter_gal_ejected = [0.0, 14.0]
         state.filter_gal_outflow = [-6.0, 5.0]
         state.filter_gal_massload = [-3.0, 5.0]
-        state.filter_gal_cooling = [-7.0, 7.0]
-        state.filter_gal_heating = [-7.0, 7.0]
+        state.filter_gal_cooling = [34.0, 46.0]
+        state.filter_gal_heating = [34.0, 46.0]
         state.filter_gal_diskrad = [-4.0, 1.0]
         state.filter_gal_bulgerad = [-4.0, 1.0]
         state.filter_gal_mb_mass = [0.0, 14.0]
@@ -6852,8 +6852,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     html.Div(labels.slider("cooling"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_cooling",),
-                        min=-7.0,
-                        max=7.0,
+                        min=34.0,
+                        max=46.0,
                         step=0.1,
                         thumb_label=True,
                         color="#FFD700",
@@ -6980,8 +6980,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     html.Div(labels.slider("heating"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_gal_heating",),
-                        min=-7.0,
-                        max=7.0,
+                        min=34.0,
+                        max=46.0,
                         step=0.1,
                         thumb_label=True,
                         color="#FFD700",

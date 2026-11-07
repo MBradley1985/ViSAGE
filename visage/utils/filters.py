@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
+# Cooling and Heating sliders (log10 erg/s).
+LOG_ERG_RANGE = (34.0, 46.0)
+
 
 def galaxy_mask(galaxies, fields: dict, state) -> np.ndarray:
     """Boolean mask over `galaxies` for the filter settings in `state`
@@ -168,13 +171,16 @@ def galaxy_mask(galaxies, fields: dict, state) -> np.ndarray:
         lo, hi = state.filter_gal_massload
         _apply_nz(lo, hi, galaxies.mass_loading, -3.0, 5.0)
 
-    if fields.get("cooling", False):
-        lo, hi = state.filter_gal_cooling
-        _apply_nz(lo, hi, galaxies.cooling, -7.0, 7.0)
-
-    if fields.get("heating", False):
-        lo, hi = state.filter_gal_heating
-        _apply_nz(lo, hi, galaxies.heating, -7.0, 7.0)
+    # Cooling and Heating are log10 erg/s already (0: none, always passes).
+    # (A range from before, -7 to 7 as log10 "SAGE units", means no filter.)
+    for key in ("cooling", "heating"):
+        if fields.get(key, False):
+            lo, hi = getattr(state, f"filter_gal_{key}")
+            if float(hi) > 10.0 and _active(lo, hi, *LOG_ERG_RANGE):
+                raw = getattr(galaxies, key)
+                g_mask &= (raw <= 0) | (
+                    (raw >= float(lo)) & (raw <= float(hi))
+                )
 
     if fields.get("disk_radius", False):
         lo, hi = state.filter_gal_diskrad

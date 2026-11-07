@@ -84,7 +84,7 @@ Both are drawn inside the disk with its stars and dust. With Gas off, HD draws t
 | Cold streams into a hot halo | `mdot_stream`, `HotGas` | Hot haloes still fed by cold streams draw them by mdot_stream, aimed and scaled with redshift as above. |
 | Hot halo / intracluster medium | `HotGas`, `Vvir`, `Rvir`, `Mvir`, `Concentration`, `MetalsHotGas` | A textured atmosphere to Rvir, its brightness from its bremsstrahlung X-ray luminosity (1.4×10⁻²⁷ T^0.5 n² V, T = 35.9 Vvir² K, `HotGas` at its mean density within Rvir): 10³⁹ to 10^44.5 erg/s, the ~4 dex observed from galaxies to clusters (e.g. Anderson et al. 2015). |
 | X-ray cavities | `Heating`, `r_heat`, `Regime`, `HotGas` | Bubbles at the radio-heating radius r_heat, along the jet axis, in hot haloes with radio heating. |
-| Radio jets | `RadioModeBHaccretionMass`, the snapshot's time step, `r_heat`, `Rvir` | Jets in radio-loud AGN, from 10⁴² erg/s of radio-mode power (0.1 Ṁc² this step; Best & Heckman 2012; Cavagnolo et al. 2010), full at 10⁴⁶, reaching about the radius the AGN heats: brightest and knotty near the core, as M87's, fading outward. |
+| Radio jets | `RadioModeBHaccretionMassUncapped` (else `RadioModeBHaccretionMass`), the snapshot's time step, `r_heat`, `Rvir` | Jets in radio-loud AGN, from 10⁴² erg/s of jet power (0.1 Ṁc² this step; from the radio-mode accretion before SAGE26 caps its heating at the cooling rate, which leaves most massive centrals' capped accretion at zero; runs without that field use the capped one; Best & Heckman 2012; Cavagnolo et al. 2010), full at 10⁴⁶, reaching about the radius the AGN heats: brightest and knotty near the core, as M87's, fading outward. |
 | Galactic winds | `OutflowRate`, `SfrDisk`, `SfrBulge`, `DiskRadius`, `MassLoading`, `Vmax`, `EjectedMass` | A bipolar cone from SAGE26's `OutflowRate` (1 to 1000 M☉/yr), only where star formation is concentrated enough to drive it: SFR surface density above ~0.1 M☉/yr/kpc² within the star-forming half-light radius (Heckman 2002). |
 | Extended HI disk | `H1gas`, `H2gas`, `Type`, `TimeOfInfall` | A faint, clumpy, pale-blue gas disk well past the stars, sized by the HI size–mass relation (Wang et al. 2016), brighter with `H1gas` from 10⁷ M☉. |
 
@@ -105,9 +105,9 @@ On these models' runs, HD replaces several of the estimates above with what the 
 
 | Component | Fields | How |
 |---|---|---|
-| Disc size (DarkSAGE) | `StellarDiscScaleRadius` | Replaces `DiskRadius`. |
+| Disc size (DarkSAGE) | `DiskRadius`, `StellarDiscScaleRadius` | The disc is drawn at `DiskRadius`, its physical size; the annuli, whose own scale radius is much smaller (the annulus discs are compact), are stretched to it and give only its shape. |
 | Disc profiles (DarkSAGE) | The radial stars, HI, H₂ and star-formation arrays | Older stars, HI, H₂ and young stars each follow their own surface-density profile in place of an exponential, falling away beyond the last annulus that has any. |
-| Disc rotation and shear (DarkSAGE) | `DiscVcirc` | The disk's own rotation at 2.2 Rd replaces the halo's Vmax for dust lanes and the bar's stability test, and its shear sets the pitch angle (Seigar et al. 2006). |
+| Disc rotation and shear (DarkSAGE) | `DiscVcirc`, `DiskRadius` | The disk's own rotation at 2.2 `DiskRadius` (the disc's physical size; the annuli's own scale radius is much smaller) replaces the halo's Vmax for dust lanes and the bar's stability test, and its shear sets the pitch angle (Seigar et al. 2006). |
 | Disc thickness (DarkSAGE) | the stellar dispersion, `StellarDiscHalfMassRadius` | σ² / (π G Σ) at the half-mass radius, a self-gravitating isothermal sheet (Spitzer 1942). |
 | Gas disc tilt (DarkSAGE) | `SpinGas`, `SpinStars` | The angle between the gas and stellar discs: a lenticular's dust tilted more than 30° is drawn as a disturbed, tilted sheet. |
 | Dust (DustySAGE, without annuli) | `ColdDust`, `DiskRadius` | The same Milky Way opacity as without it, per unit of DustySAGE's own dust mass (dust / H = 0.010: Draine 2011) instead of from metallicity: the same picture where the dust follows the metals, different where DustySAGE says so. |

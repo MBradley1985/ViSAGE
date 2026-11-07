@@ -16,10 +16,12 @@ import numpy as np
 
 from visage.hd.model import (
     CGM_RGB,
+    RADIO_LOUD,
     HOT_GAS_RGB,
     JET_RGB,
     WIND_RGB,
     GalaxyRecipe,
+    jet_power_log,
 )
 from visage.hd.raymarch import HOT_MAX_OPACITY
 
@@ -369,17 +371,12 @@ class GasSpec:
             + rng.normal(0, 0.4, 3)
         )
 
-        # Radio jets where SAGE26 has radio-mode accretion this step, their
-        # power from its rate (0.1 Mdot c^2): from 10^42 erg/s, radio-loud
-        # AGN (Best & Heckman 2012, MNRAS 421, 1569; Cavagnolo et al. 2010,
-        # ApJ 720, 1066), full at 10^46.
+        # Radio jets in radio-loud AGN (model.jet_power_log, from
+        # RADIO_LOUD), full at 10^46 erg/s.
         self.jet = 0.0
-        dt = getattr(gal, "dt_myr", 0.0)
-        if gal.radio_accretion > 0 and dt > 0:
-            mdot = gal.radio_accretion / (dt * 1e6)  # Msun/yr
-            power = np.log10(0.1 * mdot * 5.66e46)  # erg/s
-            if power >= 42.0:
-                self.jet = float(np.clip((power - 42.0) / 4.0, 0.1, 1.0))
+        power = jet_power_log(gal)
+        if power >= RADIO_LOUD:
+            self.jet = float(np.clip((power - RADIO_LOUD) / 4.0, 0.1, 1.0))
         # Jets reach about the radius the AGN heats (r_heat), in proportion
         # to the halo.
         reach = max(gal.r_heat_kpc, 0.08 * self.rvir)
