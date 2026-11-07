@@ -314,6 +314,7 @@ def sage_galaxy_from_snapshot(
         mdot_cool=_extra(snap, "mdot_cool", i),
         web=web_neighbours(snap, i),
         tau_v_ism=_sed_tau(snap, i, hubble_h),
+        tau_disc=_disc_screen(snap, i, hubble_h),
         cold_dust=_extra(snap, "ColdDust", i) * mass,
         hot_dust=_extra(snap, "HotDust", i) * mass,
         cgm_dust=_extra(snap, "CGMDust", i) * mass,
@@ -489,6 +490,80 @@ def _radial(snap, i: int, hubble_h: float, redshift: float) -> tuple:
     return tuple(tuple(float(v) for v in x) for x in rows), height, vrot, shear
 
 
+def disc_screen(
+    prof: dict, bulge_mass: float, bulge_r_kpc: float, gal
+) -> float:
+    """Face-on V-band optical depth of a disc in annuli, as the photometry
+    finds it (visage.sed.photometry): each annulus a screen of its own dust
+    (DustySAGE's DiscDust, or else the galaxy's dust-to-gas ratio by the
+    photometry's recipe times the annulus's gas), weighted by its share of
+    the old stars, bulge included: -ln sum(share e^-tau).  -1 if the disc
+    has no gas or stars to weigh."""
+    from visage.sed import dust as dm
+
+    edges = np.asarray(prof["edges"][0], float)
+    area = np.pi * np.diff(edges**2) * 1e6  # pc^2
+    stars = np.asarray(prof["stars"][0], float) * area
+    if "dust" in prof:
+        dust = np.asarray(prof["dust"][0], float) * area
+    else:
+        delta = float(
+            dm.cold_dust_ratio(
+                np.array([gal.cold_gas]),
+                np.array([gal.metals_cold_gas]),
+                np.array([gal.h2_gas]),
+                np.array([gal.sfr_disk + gal.sfr_bulge]),
+            )[0]
+        )
+        dust = delta * np.asarray(prof["gas"][0], float) * area
+    if stars.sum() + bulge_mass <= 0 or dust.sum() <= 0:
+        return -1.0
+    share = dm.annulus_shares(
+        stars[None],
+        np.array([bulge_mass]),
+        np.array([bulge_r_kpc]),
+        edges[None],
+    )[0]
+    tau = dm.annulus_tau(dust[None], edges[None], np.ones(1))[0][0]
+    return float(-np.log(np.sum(share * np.exp(-tau))))
+
+
+def _disc_screen(snap, i: int, hubble_h: float) -> float:
+    """disc_screen for galaxy row `i` of a run with annuli; -1 otherwise.
+    On a lightcone whose photometry has Charlot & Fall dust it is the
+    photometry's own TauV_ISM (the same quantity, when its run had dust by
+    annulus)."""
+    extra = getattr(snap, "extra", None) or {}
+    path = getattr(snap, "source_path", "")
+    if not path or "StellarDiscScaleRadius" not in extra:
+        return -1.0
+    on_cone = getattr(snap, "snap_nums", None) is not None
+    how = snap.sed_dust()[0] if hasattr(snap, "sed_dust") else None
+    if on_cone and how == "charlot_fall":
+        # The photometry used annuli only with DustySAGE's dust.
+        if "ColdDust" not in extra:
+            return -1.0
+        tau = _extra(snap, "TauV_ISM", i, -1.0)
+        return float(tau) if np.isfinite(tau) and tau >= 0 else -1.0
+    from visage.io.family_binary import radial_profiles
+
+    row = int(snap.sage_indices[i] if snap.sage_indices is not None else i)
+    p = radial_profiles(path, int(snap.snap_num), row, hubble_h)
+    gal = type("G", (), {})()
+    mass = 1.0
+    gal.cold_gas = _field(snap, "cold_gas", i) * mass
+    gal.metals_cold_gas = _field(snap, "metals_cold_gas", i) * mass
+    gal.h2_gas = _field(snap, "h2_mass", i) * mass
+    gal.sfr_disk = _field(snap, "sfr_disk", i)
+    gal.sfr_bulge = _field(snap, "sfr_bulge", i)
+    return disc_screen(
+        p,
+        _field(snap, "bulge_mass", i),
+        _field(snap, "bulge_radius", i) * 1e3 / hubble_h,
+        gal,
+    )
+
+
 def _bulge_rotation(snap, i: int, hubble_h: float) -> float:
     """The merger bulge's j / (r sigma), 0 for a run without it."""
     from visage.scene.disc_sprites import rotation
@@ -517,13 +592,17 @@ def _sed_tau(snap, i: int, hubble_h: float) -> float:
     photometry, one screen for every galaxy, or photometry made without
     dust)."""
     on_cone = getattr(snap, "snap_nums", None) is not None
-    if on_cone and "ColdDust" in (getattr(snap, "extra", None) or {}):
-        # (In a box, HD draws DustySAGE's dust from its mass, ColdDust.)
-        return _dusty_tau(snap, i, hubble_h)
     how = snap.sed_dust()[0] if hasattr(snap, "sed_dust") else None
     if how == "charlot_fall":
+        # The photometry's own (with DustySAGE's dust in it, by annulus,
+        # where the run has them).
         tau = _extra(snap, "TauV_ISM", i, -1.0)
-        return tau if np.isfinite(tau) else -1.0
+        if np.isfinite(tau) and tau >= 0:
+            return tau
+    if on_cone and "ColdDust" in (getattr(snap, "extra", None) or {}):
+        # No photometry dust column: DustySAGE's dust, by the photometry's
+        # recipe.  (In a box, HD draws it from its mass, ColdDust.)
+        return _dusty_tau(snap, i, hubble_h)
     return -1.0
 
 

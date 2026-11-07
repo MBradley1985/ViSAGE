@@ -88,7 +88,7 @@ Every part of an [HD Mode](../user_guide/hd_mode.md) galaxy is built from the ga
 
 ## DarkSAGE and DustySAGE
 
-On these models' runs, HD replaces two of the estimates above with what the model itself computed. On any other model nothing changes.
+On these models' runs, HD replaces several of the estimates above with what the model itself computed. On any other model nothing changes.
 
 | Component | Fields | How |
 |---|---|---|
@@ -96,7 +96,8 @@ On these models' runs, HD replaces two of the estimates above with what the mode
 | Disc profiles (DarkSAGE) | The radial stars, HI, H₂ and star-formation arrays | Older stars, HI, H₂ and young stars each follow their own surface-density profile in place of an exponential, falling away beyond the last annulus that has any. |
 | Disc rotation and shear (DarkSAGE) | `DiscVcirc` | The disk's own rotation at 2.2 Rd replaces the halo's Vmax for dust lanes and the bar's stability test, and its shear sets the pitch angle (Seigar et al. 2006). |
 | Disc thickness (DarkSAGE) | the stellar dispersion, `StellarDiscHalfMassRadius` | σ² / (π G Σ) at the half-mass radius, a self-gravitating isothermal sheet (Spitzer 1942). |
-| Dust (DustySAGE) | `ColdDust`, `DiskRadius` | The same Milky Way opacity as without it, per unit of DustySAGE's own dust mass (dust / H = 0.010: Draine 2011) instead of from metallicity: the same picture where the dust follows the metals, different where DustySAGE says so. On a lightcone, by the same recipe as the [photometry](photometry.md). |
+| Dust (DustySAGE, without annuli) | `ColdDust`, `DiskRadius` | The same Milky Way opacity as without it, per unit of DustySAGE's own dust mass (dust / H = 0.010: Draine 2011) instead of from metallicity: the same picture where the dust follows the metals, different where DustySAGE says so. |
+| Disc dust (DarkSAGE, with or without DustySAGE) | `DiscDust`, or `DiscGas` with the galaxy's dust-to-gas ratio; `DiscStars`, `BulgeMass`, `BulgeRadius` | As the [photometry](photometry.md) finds it: each annulus a screen of its own dust (DustySAGE's `DiscDust`, else the photometry's dust-to-gas ratio for the galaxy times the annulus's gas), weighted by its share of the old stars, bulge included: τ = −ln Σ share e^−τ. HD's dust map keeps its shape from the annuli and is scaled so that its own star-weighted face-on screen is this τ, in a box as on a lightcone. |
 | Halo dust (DustySAGE) | `HotDust`, `CGMDust`, `Rvir` | Reddens the hot gas and CGM by their mean dust column over the halo. |
 
 ## Fields not used for visuals

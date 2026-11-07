@@ -4338,7 +4338,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # ------------------------------------------------------------------
     state.hd_labels_on = False
     state.hd_labels = []
-    _lab = {"t": 0.0, "last": None}
+    # The parts of the galaxy labelled now, chosen once per HD build and Gas
+    # setting ("key"); the last thing sent.
+    _lab = {"t": 0.0, "last": None, "key": None, "parts": []}
 
     def _hd_focus_layer():
         grp = _hd["group"]
@@ -4351,7 +4353,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
         return grp.members[0] if grp.members else None
 
     def _hd_labels_update(force: bool = False) -> None:
-        """Project the focus galaxy's labelled parts to the screen."""
+        """Project the focus galaxy's labelled parts to the screen: each
+        part's point is fixed (labels.parts, chosen once), so only where
+        the markers fall changes as the view moves; the key stays."""
         import time
 
         from visage.hd import labels
@@ -4366,30 +4370,45 @@ def build_navigation_panel(server, scene: Scene) -> None:
             if state.hd_labels:
                 state.hd_labels = []
                 state.flush()
-            _lab["last"] = None
+            _lab.update(last=None, key=None, parts=[])
             return
         now = time.monotonic()
-        if not force and now - _lab["t"] < 0.08:
+        if not force and now - _lab["t"] < 0.03:
             return
         _lab["t"] = now
+        key = (id(lay), id(lay.recipe), bool(state.hd_gas))
+        if key != _lab["key"]:
+            _lab["key"] = key
+            _lab["parts"] = labels.parts(lay, bool(state.hd_gas))
         ren = scene.plotter.renderer
         w, h = scene.plotter.ren_win.GetSize()
-        parts = []
-        for text, cands in labels.anchors(lay, bool(state.hd_gas)):
-            vis = []
-            for p in cands:
-                wp = labels.to_world(lay, p)
-                ren.SetWorldPoint(*wp, 1.0)
-                ren.WorldToDisplay()
-                x, y, z = ren.GetDisplayPoint()
-                if (
+        screen = []
+        for part in _lab["parts"]:
+            ren.SetWorldPoint(*labels.to_world(lay, part["point"]), 1.0)
+            ren.WorldToDisplay()
+            x, y, z = ren.GetDisplayPoint()
+            screen.append(
+                (
+                    x,
+                    h - y,
                     0.0 <= z <= 1.0
-                    and 0.02 * w < x < 0.98 * w
-                    and 0.04 * h < y < 0.96 * h
-                ):
-                    vis.append((x / w, 1.0 - y / h))
-            parts.append((text, vis))
-        out = labels.layout(labels.choose(parts), w, h)
+                    and 0.01 * w < x < 0.99 * w
+                    and 0.01 * h < y < 0.99 * h,
+                )
+            )
+        out = {
+            "cats": [list(c) for c in labels.CATEGORIES],
+            "items": [
+                {
+                    "t": p["name"],
+                    "cat": p["cat"],
+                    "text": p["text"],
+                    "vis": bool(v),
+                }
+                for p, (_, _, v) in zip(_lab["parts"], screen, strict=True)
+            ],
+            "marks": labels.markers(screen, w, h),
+        }
         if out != _lab["last"]:
             _lab["last"] = out
             state.hd_labels = out

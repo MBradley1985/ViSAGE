@@ -285,6 +285,10 @@ class SageGalaxy:
     # Face-on V-band optical depth of its diffuse ISM from the lightcone's
     # synthetic photometry (TauV_ISM); <0: none, HD estimates its own.
     tau_v_ism: float = -1.0
+    # A disc in annuli: its face-on optical depth as the photometry finds
+    # it, each annulus a screen of its own dust weighted by its share of the
+    # old stars (adapter.disc_screen); <0: no annuli.
+    tau_disc: float = -1.0
     # DustySAGEMode: dust masses (Msun); DarkSAGEMode: the disc's rotation
     # (km/s) and shear (1 - dlnV/dlnR) at 2.2 Rd.  0: not in the run.
     cold_dust: float = 0.0
@@ -353,6 +357,13 @@ class GalaxyRecipe:
     l_nucleus: float = 0.0
     nucleus_sigma: float = 0.02
     tau0: float = 1.0  # face-on V-band optical depth scale of the dust
+    # (Annuli) The star-weighted face-on optical depth the dust map is
+    # scaled to, -ln sum(w e^-tau) with w the old stars' (disc and bulge)
+    # share of each place; <0: none (tau0 sets the map).  The bulge's share
+    # of the old stars and its radius (model units), for w.
+    tau_star: float = -1.0
+    dust_wb: float = 0.0
+    dust_rb: float = 0.2
     dust_k: tuple = tuple(DUST_K)  # extinction per channel, relative to V
     # Per-channel gain on the galaxy's light (I, V, B channels) matching
     # its integrated colour to its synthetic photometry (lightcone); 1 =
@@ -971,6 +982,14 @@ def recipe_from_sage(
         notes.append(
             f"photometry: tau_V(ISM)={g.tau_v_ism:.2f} -> tau0={tau0:.2f}"
         )
+    tau_star = -1.0
+    if g.tau_disc >= 0 and g.radial:
+        # A disc in annuli, box or lightcone: its dust is the annuli's, as
+        # the photometry has it (by annulus, star-weighted); the map keeps
+        # its shape and is scaled to it (build_disk_maps).
+        tau_star = float(g.tau_disc)
+        tau0 = float(g.tau_disc / SED_TAU_MEAN)
+        notes.append(f"annuli: star-weighted face-on tau_V={g.tau_disc:.2f}")
     # Thin dark lanes only in disks rotating faster than ~120 km/s
     # (Dalcanton et al. 2004; SAGE26's Vmax for the rotation).
     # (The disc's own rotation where DarkSAGE has it, else the halo's Vmax.)
@@ -1119,6 +1138,9 @@ def recipe_from_sage(
         l_nucleus=l_nuc,
         nucleus_sigma=nuc_sig,
         tau0=tau0,
+        tau_star=tau_star,
+        dust_wb=float(np.clip(g.bt, 0.0, 1.0)),
+        dust_rb=float(max(g.bulge_radius_kpc, 0.05) / rd),
         h2_share=float(g.h2_gas / gas_h) if gas_h > 0 else 0.5,
         dust_k=dust_k,
         lane=lane,
@@ -1326,6 +1348,44 @@ def arm_reach(rc, r) -> np.ndarray | float:
     return np.clip(np.log(2.0 / np.exp(here)) / np.log(2.0), 0.0, 1.0)
 
 
+def _star_weighted_scale(rc, dust, old, r, dl, lanes, outer_cut, inner):
+    """Factor on the dust map making its star-weighted face-on optical depth
+    -ln sum(w e^-tau) equal rc.tau_star: w the old stars' share of each
+    place (the disc's map and, for the bulge's share of the old stars, an
+    exponential of its radius, as the photometry weighs its annuli), tau the
+    map plus the arm lanes' screen in front of it (not scaled)."""
+    w = (1.0 - rc.dust_wb) * old / max(float(old.sum()), 1e-30)
+    if rc.dust_wb > 0:
+        b = np.exp(-r / max(rc.dust_rb, 1e-3))
+        w = w + rc.dust_wb * b / max(float(b.sum()), 1e-30)
+    lane = 0.0
+    if dl["boost"] > 0:
+        lane = (
+            dl["boost"]
+            * rc.lane
+            * lanes
+            / max(float(lanes.max()), 1e-9)
+            * np.exp(-r / dl["reach"])
+            * outer_cut
+            * inner
+        )
+
+    def screen(s):
+        return -np.log(
+            max(float(np.sum(w * np.exp(-(s * dust + lane)))), 1e-300)
+        )
+
+    if rc.tau_star <= 0 or screen(0.0) >= rc.tau_star:
+        return 0.0
+    lo, hi = 0.0, 1.0
+    while screen(hi) < rc.tau_star and hi < 1e6:
+        hi *= 2.0
+    for _ in range(50):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if screen(mid) < rc.tau_star else (lo, mid)
+    return 0.5 * (lo + hi)
+
+
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     rng = np.random.default_rng(rc.seed)
     half = rc.extent * 1.6
@@ -1507,6 +1567,10 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     dA = (ax[1] - ax[0]) ** 2
     dust *= 2 * np.pi * rc.tau0 / max(dust.sum() * dA, 1e-9)
     lane_screen = None
+    if rc.tau_star >= 0:
+        dust = dust * _star_weighted_scale(
+            rc, dust, old, r, dl, lanes, outer_cut, inner
+        )
     if dl["boost"] > 0:
         # Dark lanes on the arms' inner edges: a thin screen in front of the
         # disk's light (mixed in with the stars, as the dust above is, they
