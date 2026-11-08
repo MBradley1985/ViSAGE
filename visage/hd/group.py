@@ -305,9 +305,11 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
 
 
 # Every model in a view is built at one quality, so neighbours are drawn
-# alike: the best whose textures for all of them fit the budget (MB).
+# alike: the best whose memory for all of them fits the budget (MB).  Per
+# model as measured in a running process (2026-11-09: textures, plus ~30 MB
+# for each model's actor and shader whatever its quality).
 TEXTURE_BUDGET = 3000
-TEXTURE_MB = {"full": 110, "group": 37, "lite": 15}
+TEXTURE_MB = {"full": 230, "group": 50, "lite": 45}
 
 
 def plan(gals: list[SageGalaxy]) -> list[str | None]:

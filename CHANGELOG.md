@@ -17,7 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - Filters tab: the slider sections take the room until Find lists galaxies, then shrink to give it to the results.
 - The opening screen's trees have branches that wander between their knots like real limbs, with clusters of leaves at the tips and along the outer twigs.
-- HD groups build every galaxy in a view at one quality, so neighbours are drawn alike. It is the best quality whose textures fit a 3 GB budget: full for up to 27 galaxies, medium for up to 81, and light beyond that.
+- HD groups build every galaxy in a view at one quality, so neighbours are drawn alike. It is the best quality whose memory, as measured in a running viewer, fits a 3 GB budget: full for up to 13 galaxies, medium for up to 60, and light beyond that.
 - Sharper HD discs: the disc maps cover 1.3 disc extents instead of 1.6, so disc light, dust and gas are about 1.2× sharper. The full-quality debris volume is 160³ (was 112³).
 - The old disc's smooth light follows the spiral arms, rather than lying over them as an even haze. Lenticulars and irregulars are unchanged.
 - The HD Components (?) markers sit on the part itself, not just beside a thin arm.

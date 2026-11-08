@@ -438,8 +438,10 @@ def test_group_plan_draws_every_model_alike():
     q = plan(gals)
     assert set(q[:N_HD]) == {"lite"} and q[N_HD:] == [None] * 50
     assert plan(gals[:1]) == ["full"]
-    assert set(plan(gals[:25])) == {"full"}
+    assert set(plan(gals[:13])) == {"full"}
+    assert set(plan(gals[:14])) == {"group"}
     assert set(plan(gals[:60])) == {"group"}
+    assert set(plan(gals[:61])) == {"lite"}
 
 
 def test_group_members_build_in_the_process_pool():
