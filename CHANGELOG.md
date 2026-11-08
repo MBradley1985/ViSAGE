@@ -8,6 +8,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- HD radio jets take their power from the capped radio-mode accretion. The uncapped field is now only a fallback, used where a snapshot has no radio-loud galaxy of its own.
+- HD radio jets, redrawn from the literature:
+  - Shape follows jet power: FR I plumes below about 10⁴⁴ erg/s, FR II lobes with hotspots above it.
+  - Jets are one-sided from relativistic beaming, and the approaching lobe looks longer.
+  - A satellite's jets bend back along its motion through its host's hot gas.
+  - Colour runs from blue to fiery with jet power, and each galaxy's plumes have their own outline.
+  - With Gas off, only the inner optical jet shows.
+
 ---
 
 ## [2.21.1] — 2026-11-07

@@ -392,6 +392,8 @@ class HDGalaxyLayer:
             ),
             # Ram-pressure strength (0 if none): it strips the CGM too.
             "ram": float(ctx["ram"][1]) if ctx.get("ram") else 0.0,
+            # (World direction, rho v^2) bending a satellite's radio jets.
+            "wind": ctx.get("wind"),
         }
 
     def show(
@@ -455,6 +457,10 @@ class HDGalaxyLayer:
             # gas: a jellyfish keeps little of it, so its tail isn't lost
             # in its own CGM streams.
             gs.stream_amp *= max(0.0, 1.0 - CGM_STRIP * prep["ram"])
+            gs.set_uniforms(self._gpu._uni, on=bool(gas))
+        if gs is not None and prep.get("wind") and gs.jet > 0:
+            d, ram = prep["wind"]
+            gs.set_jet_wind(self._R.T @ np.asarray(d), ram)
             gs.set_uniforms(self._gpu._uni, on=bool(gas))
         if gs is not None:
             gs.set_web(self._R, self._gpu._uni)

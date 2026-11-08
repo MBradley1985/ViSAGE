@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 
-from visage.hd.model import SageGalaxy
+from visage.hd.model import RADIO_LOUD, SageGalaxy, jet_power_log
 
 
 def _extra(snap, name, i, default=0.0):
@@ -14,11 +16,37 @@ def _extra(snap, name, i, default=0.0):
     return float(arr[i])
 
 
-def _uncapped(snap, i, mass):
+def _uncapped(snap, i, mass, dt_myr):
     """Radio-mode accretion (Msun) before SAGE26's cap of heating at
-    cooling (runs from 2026-11-07 on), or -1 without the field."""
+    cooling (runs from 2026-11-07 on), or -1 without the field.  Only a
+    fallback: -1 too when the capped accretion already makes a radio-loud
+    galaxy somewhere in the snapshot, so jets come from it alone."""
     v = _extra(snap, "RadioModeBHaccretionMassUncapped", i, -1.0)
-    return v * mass if v >= 0 else -1.0
+    if v < 0 or _natural_radio_loud(snap, mass, dt_myr):
+        return -1.0
+    return v * mass
+
+
+def _natural_radio_loud(snap, mass, dt_myr) -> bool:
+    """Whether any galaxy's capped radio-mode accretion reaches RADIO_LOUD
+    over a step of dt_myr (the most a snapshot's capped field holds, kept
+    on it)."""
+    peak = getattr(snap, "_radio_peak", None)
+    if peak is None:
+        arr = (getattr(snap, "extra", None) or {}).get(
+            "RadioModeBHaccretionMass"
+        )
+        peak = (
+            float(np.max(arr)) * mass if arr is not None and len(arr) else 0.0
+        )
+        try:
+            snap._radio_peak = peak
+        except AttributeError:
+            pass
+    top = SimpleNamespace(
+        radio_accretion=peak, radio_accretion_uncapped=-1.0, dt_myr=dt_myr
+    )
+    return jet_power_log(top) >= RADIO_LOUD
 
 
 # SFH bins read on demand, kept per (file, snapshot) for the session's
@@ -284,7 +312,7 @@ def sage_galaxy_from_snapshot(
         qso_accretion=_extra(snap, "QuasarModeBHaccretionMass", i) * mass,
         dt_myr=dt,
         radio_accretion=_extra(snap, "RadioModeBHaccretionMass", i) * mass,
-        radio_accretion_uncapped=_uncapped(snap, i, mass),
+        radio_accretion_uncapped=_uncapped(snap, i, mass, dt),
         ics=_field(snap, "ics_mass", i),
         outflow_rate=_field(snap, "outflow_rate", i),
         mass_loading=_field(snap, "mass_loading", i, 1.5),

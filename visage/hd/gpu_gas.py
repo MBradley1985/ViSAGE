@@ -18,7 +18,6 @@ from visage.hd.model import (
     CGM_RGB,
     RADIO_LOUD,
     HOT_GAS_RGB,
-    JET_RGB,
     WIND_RGB,
     GalaxyRecipe,
     jet_power_log,
@@ -97,6 +96,36 @@ def noise_std(kind="fbm"):
 
 # Cool-core brightening of the hot atmosphere from SAGE's Cooling (0: off).
 COOL_CORE = 0.0
+
+# Radio jets: their strength just above RADIO_LOUD (floor), full at
+# `full` (log10 erg/s), brightness (gain), and colours: patches running
+# blue (cool), purple (mid), red and fiery (hot), the hot share growing
+# with jet power across `fire`.  Their shape runs from FR I plumes to FR II lobes
+# with hotspots across the FR break, near 10^44 erg/s of jet power
+# (Fanaroff & Riley 1974, MNRAS 167, 31P; Rawlings & Saunders 1991,
+# Nature 349, 138).
+JET = dict(
+    floor=0.3,
+    full=44.5,
+    gain=4.0,
+    cool=(0.40, 0.62, 1.00),
+    mid=(0.58, 0.42, 1.00),
+    red=(1.00, 0.30, 0.20),
+    hot=(1.00, 0.62, 0.18),
+    fire=(42.0, 44.3),
+    fr=(43.5, 44.5),
+    # Jet speeds (v/c) for the beaming that makes jets one-sided: FR I
+    # jets decelerate from ~0.8 to ~0.2 within a few kpc (Laing & Bridle
+    # 2002, MNRAS 336, 328), FR II jets stay at ~0.6 (Wardle & Aaron 1997,
+    # MNRAS 286, 425); radio spectral index alpha.
+    beta_fr1=(0.8, 0.2),
+    beta_fr2=0.6,
+    alpha=0.6,
+    # Hotspots advance at ~0.1 c, so the approaching lobe looks longer
+    # (Longair & Riley 1979, MNRAS 188, 625; Arshakian & Longair 2000,
+    # MNRAS 311, 846).
+    beta_head=0.1,
+)
 
 # Extended HI disk (Gas on), from H1gas: its colour, brightness, size
 # (times the HI size-mass relation), thickness (fraction of its scale
@@ -249,14 +278,64 @@ GLSL_IMPL = """
 
     if (uJetAmp > 0.0) {
       float pj = max(proj, 0.25);
-      float len = uJetLen * pj;
-      float jet = exp(-pow(perp / (0.4 + 0.04 * abs(along)), 2.0)) * exp(-pow(along / len, 6.0));
-      // Brightest near the core and knotty (as M87's), fading outward.
-      float knots = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(2.4 * abs(along) / sqrt(len)), 3.0);
-      jet *= knots * exp(-abs(along) / (0.35 * len));
-      float lobes = exp(-(pow(along - len, 2.0) + perp * perp) / pow(0.25 * len, 2.0))
-                  + exp(-(pow(along + len, 2.0) + perp * perp) / pow(0.25 * len, 2.0));
-      gas += 0.4 * uJetAmp * (0.6 * jet + 0.5 * lobes) * uJetRGB;
+      float sgn = along >= 0.0 ? 1.0 : -1.0;
+      // This side's jet against the line of sight (cos), toward us > 0.
+      float cs = -sgn * rd.z;
+      // The approaching lobe looks longer: its hotspot is seen later in
+      // its advance (light-travel time).
+      float len = uJetLen * pj * sqrt((1.0 + uJetBetaHead * cs) / (1.0 - uJetBetaHead * cs));
+      float a = abs(along);
+      float t = a / len;
+      // Swept back along the satellite's tail (its part across the jet,
+      // in the image plane), both sides the same way.
+      vec3 pd = normalize(cross(rd, axd));
+      vec3 tl = uJetTail - dot(uJetTail, rd) * rd;
+      float q = abs(dot(cpk, pd) - uJetBend * dot(tl, pd) * len * t * t);
+      // The jet: thin and knotty, brightest near the core in FR I,
+      // carrying its light to the end in FR II; Doppler boosted toward us
+      // and dimmed away (ratio ((1 + b cos) / (1 - b cos))^(2 + alpha)),
+      // the total kept.
+      float w = 0.5 + 0.04 * a;
+      float knots = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(2.4 * a / sqrt(len)), 3.0);
+      float fade = mix(exp(-t / 0.35), exp(-t / 1.2), uJetFR);
+      float beta = mix(mix(uJetBeta1, uJetBeta1Out, smoothstep(0.0, 0.3, t)), uJetBeta2, uJetFR);
+      float dn = pow(1.0 - beta * cs, -(2.0 + uJetAlpha));
+      float dc = pow(1.0 + beta * cs, -(2.0 + uJetAlpha));
+      float beam = 2.0 * dn / (dn + dc);
+      float jet = exp(-pow(q / w, 2.0)) * knots * fade * beam * exp(-pow(t / 0.95, 8.0));
+      // The lobe, not beamed: a soft plume in FR I; in FR II a cocoon
+      // flowing back from the hotspot at its tip (Scheuer 1974, MNRAS 166,
+      // 513), brighter at its edge and ending there.  Off the core: the
+      // jet comes first.
+      float lc = mix(0.68, 0.7, uJetFR);
+      float la = mix(0.42, 0.3, uJetFR) * len * uJetShape.y;
+      float lp = mix(0.33, 0.16, uJetFR) * len * uJetShape.x;
+      // Each plume's outline its own: warped by slow noise.
+      float warp = uJetShape.z * (1.0 - 0.6 * uJetFR);
+      vec3 wp = cpk / (0.5 * len) + uJetSeed;
+      float aw = a + warp * la * fbm(wp) / uFbmStd;
+      float qw = q + warp * lp * fbm(wp + vec3(17.0)) / uFbmStd;
+      float e = pow((aw - lc * len) / la, 2.0) + pow(qw / lp, 2.0);
+      float tex = exp(0.35 * fbm(cpk / (0.25 * len) + uJetSeed + vec3(71.0)) / uFbmStd);
+      float rid = pow(clamp(1.0 - 0.5 * abs(fbm(cpk / (0.1 * len) + uJetSeed + vec3(13.0)) / uFbmStd), 0.0, 1.0), 6.0);
+      float lobe = exp(-e) * tex * (0.75 + 0.6 * rid) * (1.0 + 0.5 * uJetFR * e * exp(1.0 - e));
+      lobe *= smoothstep(0.15, 0.35, t) * exp(-pow(max(t - 1.0, 0.0) / mix(0.15, 0.05, uJetFR), 2.0));
+      // FR II: brightest toward the hotspots, fading back to the core
+      // (edge-brightened, Fanaroff & Riley 1974).
+      lobe *= mix(1.0, 0.25 + 0.75 * smoothstep(0.35, 0.95, t), uJetFR);
+      float hs = uJetFR * exp(-(pow(a - 0.97 * len, 2.0) + q * q) / pow(0.035 * len, 2.0));
+      // Blue, purple, red and fiery patches, more of them fiery the
+      // stronger the jet.
+      float m = clamp(uJetFire + 0.5 * fbm(cpk / (0.2 * len) + uJetSeed + vec3(29.0)) / uFbmStd, 0.0, 1.0);
+      vec3 col = mix(uJetCool, uJetMid, smoothstep(0.0, 0.33, m));
+      col = mix(col, uJetRed, smoothstep(0.33, 0.67, m));
+      col = mix(col, uJetHot, smoothstep(0.67, 1.0, m));
+      vec3 white = vec3(0.92, 0.95, 1.0);
+      // (Compressed, so the brightest jets don't burn out to flat colour.)
+      vec3 jl = 0.4 * uJetAmp * (1.0 * jet * mix(white, col, 0.5)
+                                 + 0.5 * lobe * col
+                                 + 0.8 * hs * mix(white, col, 0.4));
+      gas += vec3(1.0) - exp(-jl);
     }
 
     if (uWindAmp > 0.0) {
@@ -325,6 +404,30 @@ GLSL_IMPL = """
       }
     }
     outc = screenB(outc, clamp(gas, 0.0, 1.0));
+  } else if (uJetAmp > 0.0) {
+    // Gas off: only what shows optically, the inner jet's blue-white
+    // synchrotron light (as M87's and 3C 273's); no radio lobes.
+    vec3 cpk = cp * uUnitKpc;
+    vec3 ax = vec3(0.0, 0.0, 1.0) - rd.z * rd;
+    float proj = length(ax);
+    if (proj > 1e-3) {
+      vec3 axd = ax / proj;
+      float along = dot(cpk, axd);
+      float sgn = along >= 0.0 ? 1.0 : -1.0;
+      float cs = -sgn * rd.z;
+      float a = abs(along);
+      float len = uJetLen * max(proj, 0.25) * sqrt((1.0 + uJetBetaHead * cs) / (1.0 - uJetBetaHead * cs));
+      float t = a / len;
+      vec3 pd = normalize(cross(rd, axd));
+      vec3 tl = uJetTail - dot(uJetTail, rd) * rd;
+      float q = abs(dot(cpk, pd) - uJetBend * dot(tl, pd) * len * t * t);
+      float beta = mix(mix(uJetBeta1, uJetBeta1Out, smoothstep(0.0, 0.3, t)), uJetBeta2, uJetFR);
+      float dn = pow(1.0 - beta * cs, -(2.0 + uJetAlpha));
+      float dc = pow(1.0 + beta * cs, -(2.0 + uJetAlpha));
+      float knots = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(2.4 * a / sqrt(len)), 3.0);
+      float jet = exp(-pow(q / (0.25 + 0.02 * a), 2.0)) * knots * exp(-t / 0.2) * 2.0 * dn / (dn + dc);
+      outc = screenB(outc, clamp(0.25 * uJetAmp * jet * vec3(0.75, 0.85, 1.0), 0.0, 1.0));
+    }
   }
 """
 
@@ -372,11 +475,34 @@ class GasSpec:
         )
 
         # Radio jets in radio-loud AGN (model.jet_power_log, from
-        # RADIO_LOUD), full at 10^46 erg/s.
+        # RADIO_LOUD), full at JET["full"].
         self.jet = 0.0
         power = jet_power_log(gal)
         if power >= RADIO_LOUD:
-            self.jet = float(np.clip((power - RADIO_LOUD) / 4.0, 0.1, 1.0))
+            self.jet = float(
+                np.clip(
+                    (power - RADIO_LOUD) / (JET["full"] - RADIO_LOUD),
+                    JET["floor"],
+                    1.0,
+                )
+            )
+        lo, hi = JET["fire"]
+        self.jet_fire = float(np.clip((power - lo) / (hi - lo), 0.0, 1.0))
+        # FR I (0) to FR II (1), and each galaxy's own plume shape
+        # (width, length, how irregular).  Straight until set_jet_wind
+        # bends them.
+        self.jet_power = power
+        lo, hi = JET["fr"]
+        self.jet_fr = float(np.clip((power - lo) / (hi - lo), 0.0, 1.0))
+        jr = np.random.default_rng(rc.seed + 11)
+        self.jet_shape = (
+            float(jr.uniform(0.75, 1.35)),
+            float(jr.uniform(0.8, 1.25)),
+            float(jr.uniform(0.15, 0.45)),
+        )
+        self.jet_seed = [float(v) for v in jr.uniform(0.0, 100.0, 3)]
+        self.jet_tail = (0.0, 0.0, 0.0)
+        self.jet_bend = 0.0
         # Jets reach about the radius the AGN heats (r_heat), in proportion
         # to the halo.
         reach = max(gal.r_heat_kpc, 0.08 * self.rvir)
@@ -592,7 +718,7 @@ class GasSpec:
         f("uStreamFrac", float(self.stream_frac))
         f("uStreamNorm", float(self.stream_norm()))
         u.SetUniform3f("uStreamT0", [float(v) for v in self.t0])
-        f("uJetAmp", float(self.jet))
+        f("uJetAmp", float(JET["gain"] * self.jet))
         f("uJetLen", float(self.jet_len))
         f("uHotCore", float(self.hot_core))
         f("uStreamW", float(self.stream_w))
@@ -605,7 +731,21 @@ class GasSpec:
         f("uCavR", float(self.cav_r))
         f("uCoolCore", float(self.cool_core))
         f("uCavAmp", float(self.cav))
-        u.SetUniform3f("uJetRGB", [float(v) for v in JET_RGB])
+        u.SetUniform3f("uJetCool", [float(v) for v in JET["cool"]])
+        u.SetUniform3f("uJetMid", [float(v) for v in JET["mid"]])
+        u.SetUniform3f("uJetRed", [float(v) for v in JET["red"]])
+        u.SetUniform3f("uJetHot", [float(v) for v in JET["hot"]])
+        u.SetUniform3f("uJetShape", list(self.jet_shape))
+        u.SetUniform3f("uJetSeed", self.jet_seed)
+        f("uJetFire", float(self.jet_fire))
+        f("uJetFR", float(self.jet_fr))
+        f("uJetBend", float(self.jet_bend))
+        u.SetUniform3f("uJetTail", [float(v) for v in self.jet_tail])
+        f("uJetBeta1", float(JET["beta_fr1"][0]))
+        f("uJetBeta1Out", float(JET["beta_fr1"][1]))
+        f("uJetBeta2", float(JET["beta_fr2"]))
+        f("uJetAlpha", float(JET["alpha"]))
+        f("uJetBetaHead", float(JET["beta_head"]))
         u.SetUniform3f("uWindRGB", [float(v) for v in WIND_RGB])
         f("uHiAmp", float(self.hi_amp))
         f("uHiRs", float(self.hi_rs))
@@ -614,6 +754,25 @@ class GasSpec:
         f("uHiClump", float(self.hi_clump))
         u.SetUniform3f("uHiRGB", [float(v) for v in HI["rgb"]])
         self._web_uniforms(u)
+
+    def set_jet_wind(self, tail, ram: float) -> None:
+        """Bend a satellite's jets back along `tail` (galaxy frame), by the
+        ram pressure `ram` (rho v^2, Msun/kpc^3 (km/s)^2) of its host's hot
+        gas: they curve with radius R = Pi / (rho v^2 2 r_j) for momentum
+        flux Pi = P_jet / c and jet radius r_j (Begelman, Rees & Blandford
+        1979, Nature 279, 770; Jones & Owen 1979, ApJ 234, 818), so the
+        tail stands L / 2R aside at length L, into the narrow-angle tails
+        of cluster satellites (Owen & Rudnick 1976, ApJ 205, L1)."""
+        kpc, c = 3.086e21, 2.998e10
+        p_cgs = 6.77e-22 * ram  # dyn/cm^2
+        momentum = 10.0**self.jet_power / c
+        r_j = 0.5 * kpc
+        radius = momentum / max(p_cgs * 2.0 * r_j, 1e-300)
+        self.jet_bend = float(
+            np.clip(self.jet_len * kpc / (2.0 * radius), 0.0, 1.0)
+        )
+        t = np.asarray(tail, float)
+        self.jet_tail = tuple(t / max(np.linalg.norm(t), 1e-12))
 
     def set_web(self, basis, u) -> None:
         """Aim the cold streams at the haloes around the galaxy (its
