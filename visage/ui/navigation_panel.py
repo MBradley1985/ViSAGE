@@ -5882,8 +5882,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         v3.VSelect(
                             v_model=("sed_galaxy_bands",),
                             items=("sed_color_modes",),
-                            label="Bands (tick to combine)",
-                            classes="sage-top-label",
+                            label="Bands",
+                            classes="sage-right",
                             multiple=True,
                             chips=True,
                             closable_chips=True,
@@ -6580,8 +6580,38 @@ def build_navigation_panel(server, scene: Scene) -> None:
             with v3.VSheet(
                 color="transparent",
                 v_show=("nav_active_tab === 'filters'",),
-                style="display:flex;flex-direction:column;height:100%;min-height:0;",
+                style=(
+                    "display:flex;flex-direction:column;height:100%;min-height:0;"
+                    "position:relative;"
+                ),
             ):
+                # Reset, in the panel's top-right corner, sized as the
+                # toolbar's close button (over the panel: nothing moves).
+                with html.Div(
+                    style=(
+                        "position:absolute;top:0;right:0;z-index:2;"
+                        "display:flex;flex-direction:column;align-items:center;"
+                    ),
+                ):
+                    with v3.VBtn(
+                        variant="text",
+                        color="#ef4444",
+                        density="compact",
+                        title="Reset filters",
+                        click=ctrl.reset_filters,
+                        classes="sage-close",
+                        style=(
+                            "margin:0;min-width:0;width:28px;height:28px;"
+                            "padding:0;border:1px solid rgba(239,68,68,0.6) "
+                            "!important;border-radius:9px;color:#ef4444;"
+                        ),
+                    ):
+                        v3.VIcon("mdi-restore", size=16, color="#ef4444")
+                    html.Div(
+                        "Reset",
+                        style="font-size:0.6rem;line-height:1;color:#ef4444;"
+                        "margin-top:2px;",
+                    )
                 _FSEC_HALO = (
                     "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
                     "flex-shrink:0;color:#c084fc;padding:2px 0 2px;display:block;"
@@ -6605,7 +6635,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _FSEL = (
                     "--v-input-control-height:30px;"
                     "--v-field-font-size:0.8rem;"
-                    "margin-top:6px;"
+                    "margin-top:-6px;"
                 )
                 # Explicit heights so each section scrolls independently
                 # while the panel itself never needs an outer scrollbar.
@@ -6706,7 +6736,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # ── Galaxy section ────────────────────────────
                 html.Div("GALAXIES", style=_FSEC_GAL)
-                with html.Div(style=_SH + "height:235px;"):
+                with html.Div(style=_SH + "height:140px;"):
                     # Alphabetical, like the Colour-by lists.
                     html.Div(labels.slider("h1_gas"), style=_FLBL)
                     v3.VRangeSlider(
@@ -7405,42 +7435,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
                         menu_props=("{contentClass: 'sage-menu'}",),
                     )
 
-                v3.VDivider(style="margin:6px 0 4px;")
-
-                v3.VBtn(
-                    "Reset Filters",
-                    block=True,
-                    variant="outlined",
-                    color="red",
-                    density="compact",
-                    size="small",
-                    prepend_icon="mdi-restore",
-                    click=ctrl.reset_filters,
-                    classes="sage-danger",
-                )
-
                 # Find: galaxies worth a look, by preset; a click selects.
-                v3.VDivider(style="margin:10px 0 4px;")
-                v3.VLabel(
-                    "FIND",
-                    style=(
-                        "font-size:0.85rem;font-weight:700;letter-spacing:0.06em;"
-                        "color:#06b6d4;display:block;padding:4px 0 6px;"
-                    ),
-                )
-                from visage.utils.find import PRESETS
-
+                v3.VDivider(style="margin:8px 0 10px;")
                 v3.VSelect(
                     v_model=("find_preset",),
-                    items=(
-                        [
-                            {"title": "Galaxy ID", "value": "id"},
-                            *(
-                                {"title": t, "value": k}
-                                for k, t in PRESETS.items()
-                            ),
-                        ],
-                    ),
+                    # (Only the presets this model can answer.)
+                    items=("find_items",),
+                    # (Its own height: Vuetify's inputs grow to fill a
+                    # column, which took the results' room.)
+                    style="flex:0 0 auto;",
                     label="Find…",
                     clearable=True,
                     hide_details=True,
@@ -7480,15 +7483,20 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     v_show=("find_note",),
                     style="font-size:0.72rem;color:#9ca3af;padding:6px 2px;",
                 )
+                # (The rest of the panel's height, for as many as fit.)
                 with html.Div(
-                    style="padding-top:4px;max-height:140px;overflow-y:auto;"
+                    style="padding-top:4px;flex:1 1 0;min-height:60px;"
+                    "overflow-y:auto;"
                 ):
                     with html.Div(
                         v_for="r in find_results",
                         key="r.idx",
                         click=(ctrl.find_select, "[r.idx]"),
+                        title=("r.text",),
                         style=(
                             "'font-size:0.74rem;padding:3px 6px;"
+                            "white-space:nowrap;overflow:hidden;"
+                            "text-overflow:ellipsis;"
                             "cursor:pointer;border-radius:4px;' + "
                             "(r.idx === nav_gal_idx ? "
                             "'background:rgba(34,211,238,0.18);"

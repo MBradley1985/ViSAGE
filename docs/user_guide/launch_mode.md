@@ -196,5 +196,6 @@ A third patch rotates `SpinGas` and `SpinStars` with the box tiling too.
 ## Closing
 
 The **×** at the top right closes Launch Mode and returns to the model you
-had open. **Rescan** looks for the tools again (after installing one outside
-ViSAGE, say).
+had open. Clicking the first step, **Scan Environment**, looks for the tools
+again (after installing one outside ViSAGE, say). The **update** button
+beside the logo checks PyPI for a newer ViSAGE and installs it.

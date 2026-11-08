@@ -75,7 +75,7 @@ In **Galaxy** context, the card's **?** (Components) button, next to the nearest
 | Stars and structure | bulge or pseudo-bulge, bar, spiral or flocculent arms, the elliptical body |
 | Star formation | star-forming regions, nuclear ring, giant clumps |
 | Dust | arm dust lanes, an elliptical's dust lane |
-| Black hole and AGN | central black hole, quasar nucleus, radio jet (with **Gas**) |
+| Black hole and AGN | central black hole, quasar nucleus, radio jet (its inner optical jet without **Gas**; jets and lobes with it) |
 | Mergers and environment | merger shells, tidal tails and streams, tidal debris, stripped stars, ram-pressure tail, intracluster light |
 | Halo gas (with **Gas**) | galactic wind, HI disc, cold stream, hot halo |
 
@@ -99,7 +99,9 @@ The card's **Gas** button switches between the galaxy as an optical image shows 
 | CGM with cold streams along the cosmic web | CGMgas (cold regime), mdot_stream |
 | Hot halo / intracluster medium, coloured by temperature, with X-ray cavities | HotGas, Mvir, concentration, metals, radio heating radius |
 | Galactic winds | OutflowRate, ejected gas |
-| Radio jets, in radio-loud AGN (from 10⁴² erg/s) | Radio-mode accretion |
+| Radio jets and lobes, in radio-loud AGN (from 10⁴² erg/s): blue plumes for weak jets, fiery lobes with hotspots for the strongest; brighter on the side coming toward you; a satellite's swept back by its host's hot gas | Radio-mode accretion; for satellites, the host's HotGas and their motion |
+
+With Gas off, a radio-loud galaxy shows only the inner part of its jet, a thin blue-white line, as optical images of M87 and 3C 273 do.
 
 The disc's gas is drawn inside the disc with its stars and dust, so it is lit, dimmed and reddened with them; the halo's lies over the whole view, thinned over the galaxy so it doesn't hide it. Gas is a shader switch: turning it on or off doesn't rebuild anything.
 

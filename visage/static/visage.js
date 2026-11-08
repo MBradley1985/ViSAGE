@@ -544,8 +544,8 @@
     var _lastWizActive   = null;
 
     // What covers the page while ViSAGE restarts on another model: trees
-    // growing in from every side towards the model's name, joined by threads
-    // like the cosmic web.  Plain DOM on <body>, so it outlives the app's own
+    // growing in from every side towards the model's name, their branches
+    // tapering from trunk to twig.  Plain DOM on <body>, so it outlives the app's own
     // "Connection closed" screen until the page reloads.
     function _showRelaunchCard(name) {
       if (document.getElementById('visage-relaunch')) return;
@@ -583,7 +583,7 @@
       document.body.appendChild(d);
 
       var COL = ['#22d3ee', '#c084fc', '#ffd700', '#fb7185', '#34d399'];
-      var DEPTH = 6, CLEAR = [0.42, 0.17], GAP = 0.034, REACH = 0.16;
+      var DEPTH = 6, CLEAR = [0.42, 0.17], GAP = 0.034;
       var seed = 331;
       function rnd() {
         seed = (seed * 16807) % 2147483647;
@@ -597,6 +597,7 @@
           leaf: depth === 0, big: rnd() < 0.12, hide: false,
         };
         if (par && rnd() < 0.3) n.c = COL[Math.floor(rnd() * 5)];
+        n.w = 2.6 * Math.pow(0.72, n.d);  // tapering, trunk to twig
         nodes.push(n);
         if (!depth) return;
         var m = rnd() < 0.14 ? 3 : rnd() < 0.2 ? 1 : 2;
@@ -635,25 +636,6 @@
           if (!n.hide) kept.push(n);
         }
       });
-      // Each tip gets one thread at most, and only to another tree.
-      var tips = nodes.filter(function (n) {
-        return !n.hide && n.d >= DEPTH - 1;
-      });
-      var threads = [], used = [];
-      tips.forEach(function (a) {
-        if (used.indexOf(a) >= 0) return;
-        var best = null, near = REACH;
-        tips.forEach(function (b) {
-          if (a === b || a.tree === b.tree || used.indexOf(b) >= 0) return;
-          var gap = Math.hypot(a.x - b.x, a.y - b.y);
-          if (gap < near && gap > 0.05) { near = gap; best = b; }
-        });
-        if (best) {
-          used.push(a, best);
-          threads.push([a, best]);
-        }
-      });
-
       var c = cv.getContext('2d'), start = null;
       function dot(x, y, r, col, al) {
         c.globalAlpha = al;
@@ -704,11 +686,12 @@
                     u * u * p.y + 2 * f * u * my + f * f * n.y];
           };
           c.strokeStyle = n.c;
-          c.globalAlpha = 0.34;
-          c.lineWidth = Math.max(0.3, 1.5 - n.d * 0.2) * size;
+          c.globalAlpha = 0.55;
+          c.lineCap = 'round';
+          c.lineWidth = 0.6 * n.w * size;
           c.beginPath();
           c.moveTo(X(p.x), Y(p.y));
-          for (var f = 0.1; f <= a + 0.001; f += 0.1) {
+          for (var f = 0.05; f <= a + 0.001; f += 0.05) {
             var q = on(f);
             c.lineTo(X(q[0]), Y(q[1]));
           }
@@ -716,30 +699,20 @@
           c.globalAlpha = 1;
           if (a < 1) return;
           var m = on((now * 0.16 + i * 0.31) % 1);
-          dot(X(m[0]), Y(m[1]), 1.4 * size, n.c, 0.95);
-          if (n.big || n.leaf) {
-            var r = (n.big ? 1.5 : 1) * (9 + 3 * Math.sin(now * 0.8 + n.p));
+          var nr = Math.max(0.6, 0.45 * n.w);
+          dot(X(m[0]), Y(m[1]), (0.6 + 0.4 * nr) * size, n.c, 0.9);
+          if (n.leaf && n.big) {
+            var r = 1.5 * (9 + 3 * Math.sin(now * 0.8 + n.p));
             glow(X(n.x), Y(n.y), r * size, n.c + 'bb', 1);
-            dot(X(n.x), Y(n.y), (n.big ? 2 : 1.3) * size, '#fff', 1);
+            dot(X(n.x), Y(n.y), 2 * size, '#fff', 1);
+          } else if (n.leaf) {
+            glow(X(n.x), Y(n.y), (4 + 1.5 * Math.sin(now * 0.8 + n.p)) * size,
+                 n.c + '99', 1);
+            dot(X(n.x), Y(n.y), 0.8 * size, '#fff', 0.9);
           } else {
-            dot(X(n.x), Y(n.y), size, n.c, 0.9);
+            dot(X(n.x), Y(n.y), 0.5 * nr * size, n.c, 0.9);
           }
         });
-        var shown = Math.max(0, Math.min(1, grown - DEPTH));
-        if (shown > 0) {
-          c.lineWidth = 0.4 * size;
-          c.strokeStyle = 'rgba(148,163,184,' + 0.3 * shown + ')';
-          threads.forEach(function (l, k) {
-            var a = l[0], b = l[1];
-            c.beginPath();
-            c.moveTo(X(a.x), Y(a.y));
-            c.lineTo(X(b.x), Y(b.y));
-            c.stroke();
-            var f = (now * 0.1 + k * 0.17) % 1;
-            dot(X(a.x + (b.x - a.x) * f), Y(a.y + (b.y - a.y) * f),
-                1.1 * size, a.c, 0.9 * shown);
-          });
-        }
         nodes.forEach(function (n) {
           if (!n.root) return;
           glow(X(n.x), Y(n.y), 22 * size, '#ffd700aa', Math.min(1, grown));

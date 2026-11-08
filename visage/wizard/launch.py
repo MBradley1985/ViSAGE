@@ -75,6 +75,10 @@ def create_launch_app(port: int):
     # that would trigger this transition, so we set it explicitly here.
     server.state.wiz_active = True
 
+    from visage import updates
+
+    updates.register(server)
+
     with SinglePageLayout(
         server,
         full_height=True,
@@ -95,6 +99,15 @@ def create_launch_app(port: int):
         with layout.content:
             build_wizard_ui(server, ctrl)
             build_pso_gallery(server)
+            # The update button's messages.
+            v3.VSnackbar(
+                "{{ notice_text }}",
+                v_model=("notice_show",),
+                timeout=("notice_timeout",),
+                color=("notice_color",),
+                location="top",
+                style="margin-top:56px;",
+            )
 
         with layout.footer as footer:
             footer.style = "display:none;"

@@ -156,6 +156,9 @@ def test_jellyfish_are_disks_stripped_on_first_infall():
         return satellite_context(entries, 0.73).get(1, {})
 
     assert "ram" in ctx(sat)
+    # Its radio jets trail its motion, pushed by the host's hot gas.
+    tail, ram = ctx(sat)["wind"]
+    assert np.allclose(tail, (-1.0, 0.0, 0.0)) and ram > 0
     old = _disk(
         galaxy_index=8, gtype=1, t_since_infall_gyr=4.0, vel=(1500.0, 0, 0)
     )

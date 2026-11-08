@@ -158,6 +158,15 @@ ICM_CORE = 0.1  # the hot gas's core radius, in Rvir
 G_KPC = 4.30091e-6  # kpc (km/s)^2 / Msun
 
 
+def icm_density(host: SageGalaxy, r_kpc: float) -> float:
+    """The host's hot gas density (Msun/kpc^3) at r_kpc: a cored isothermal
+    sphere (Cavaliere & Fusco-Femiano 1976) holding HotGas within Rvir."""
+    rv = max(host.rvir_kpc, 20.0)
+    rc = ICM_CORE * rv
+    rho = host.hot_gas / (4 * np.pi * rc**2 * (rv - rc * np.arctan(rv / rc)))
+    return float(rho / (1 + (r_kpc / rc) ** 2))
+
+
 def stripped_fraction(
     sat: SageGalaxy, host: SageGalaxy, r_kpc: float, v_kms: float
 ) -> float:
@@ -169,10 +178,7 @@ def stripped_fraction(
     e^-x of it, x = r_s / Rd."""
     if host.hot_gas <= 0 or sat.cold_gas <= 0 or v_kms <= 0:
         return 0.0
-    rv = max(host.rvir_kpc, 20.0)
-    rc = ICM_CORE * rv
-    rho = host.hot_gas / (4 * np.pi * rc**2 * (rv - rc * np.arctan(rv / rc)))
-    rho /= 1 + (r_kpc / rc) ** 2
+    rho = icm_density(host, r_kpc)
     rd = max(sat.disk_radius_kpc, 0.1)
     area = 2 * np.pi * rd**2
     stars = max(sat.stellar_mass - sat.bulge_mass, 0.0)
@@ -237,7 +243,9 @@ def tail_gains(entries, sat_ctx) -> dict:
 
 def satellite_context(entries, hubble_h: float) -> dict:
     """For satellites of the group's (hot) central: their ram-pressure
-    tail and tidal streams, as (world direction, strength)."""
+    tail and tidal streams, as (world direction, strength), and the ram
+    pressure on its radio jets, as (world direction they trail, rho v^2 in
+    Msun/kpc^3 (km/s)^2)."""
     out: dict = {}
     if not entries:
         return out
@@ -263,6 +271,8 @@ def satellite_context(entries, hubble_h: float) -> dict:
             continue
         vdir = v / speed
         ctx = {}
+        if hg.hot_gas > 0:
+            ctx["wind"] = (-vdir, icm_density(hg, r_kpc) * speed**2)
         if (
             hg.regime == 1
             and not is_elliptical(g)

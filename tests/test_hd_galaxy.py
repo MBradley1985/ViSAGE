@@ -826,6 +826,23 @@ def test_jets_only_for_radio_loud_agn():
     assert jet(1e-2) > 0.0  # 10^43.8 erg/s
 
 
+def test_satellite_jets_bend_with_ram_pressure():
+    """A satellite's jets curve back along its tail by rho v^2 against
+    their momentum flux (Jones & Owen 1979): fully in a cluster core,
+    hardly at all in thin gas; straight until bent."""
+    from visage.hd.gpu_gas import GasSpec
+
+    g = _disk(radio_accretion=1e-2 * 1e8, dt_myr=100.0)  # 10^43.8 erg/s
+    gs = GasSpec(g, recipe_from_sage(g))
+    assert gs.jet_bend == 0.0
+    # rho v^2 in Msun/kpc^3 (km/s)^2: an ICM core at 1000 km/s ...
+    gs.set_jet_wind((0.0, 0.0, 2.0), 1e5 * 1000.0**2)
+    assert gs.jet_bend == 1.0 and gs.jet_tail == (0.0, 0.0, 1.0)
+    # ... and the thin gas 3 Rvir out.
+    gs.set_jet_wind((1.0, 0.0, 0.0), 60.0 * 400.0**2)
+    assert gs.jet_bend < 0.05
+
+
 def test_thick_disc_share_follows_rotation():
     """Slow rotators have more of their old disc thick (Comeron et al. 2011)."""
     from visage.hd.model import THICK, thick_share
@@ -845,3 +862,40 @@ def test_jet_power_prefers_the_uncapped_accretion():
     assert jet_power_log(capped) == 0.0  # old runs: the capped field alone
     g = _disk(radio_accretion=0.0, radio_accretion_uncapped=1e6, dt_myr=100.0)
     assert jet_power_log(g) == pytest.approx(np.log10(0.1 * 1e-2 * 5.66e46))
+
+
+def test_uncapped_accretion_is_only_a_fallback():
+    """The capped accretion drives jets once a snapshot has radio-loud
+    galaxies of its own; the uncapped field only stands in without any."""
+    from visage.hd.adapter import sage_galaxy_from_snapshot
+    from types import SimpleNamespace as NS
+
+    from visage.hd.model import jet_power_log
+    from visage.io.galaxy_reader import GalaxySnapshot
+
+    def snap_with(capped):
+        snap = GalaxySnapshot.empty(63)
+        for name, value in vars(snap).items():
+            if isinstance(value, np.ndarray) and value.ndim == 1:
+                setattr(snap, name, np.zeros(2, dtype=value.dtype))
+        snap.extra = {
+            "RadioModeBHaccretionMass": np.array(capped),
+            "RadioModeBHaccretionMassUncapped": np.array([1e-3, 1e-3]),
+        }
+        return snap
+
+    table = NS(
+        count=64,
+        snap_to_z=lambda s: 0.0,
+        snap_to_a=lambda s: 1 - 0.02 * (63 - s),
+    )
+    # No galaxy radio-loud from the capped field: the uncapped one is used.
+    quiet = snap_with([0.0, 0.0])
+    g = sage_galaxy_from_snapshot(quiet, 0, hubble_h=0.73, snap_table=table)
+    assert g.radio_accretion_uncapped > 0 and jet_power_log(g) > 42.0
+    # One naturally radio-loud: every galaxy keeps its capped accretion.
+    loud = snap_with([0.0, 1e-3])
+    g = sage_galaxy_from_snapshot(loud, 0, hubble_h=0.73, snap_table=table)
+    assert g.radio_accretion_uncapped == -1.0 and jet_power_log(g) == 0.0
+    g = sage_galaxy_from_snapshot(loud, 1, hubble_h=0.73, snap_table=table)
+    assert jet_power_log(g) > 42.0

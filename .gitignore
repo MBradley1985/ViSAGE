@@ -73,6 +73,7 @@ sage_library/
 !docs/images/*.jpeg
 !docs/images/*.gif
 !docs/images/hd_components/*.jpg
+!docs/images/atlas/*.jpg
 !visage/static/*.jpg
 !visage/static/*.jpeg
 !visage/static/*.png

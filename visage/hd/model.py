@@ -225,8 +225,8 @@ RADIO_LOUD = 42.0
 def jet_power_log(g) -> float:
     """log10 of the radio-mode jet power, 0.1 Mdot c^2 (erg/s) over the
     step; 0 with none.  From the accretion before SAGE26's cap of heating
-    at cooling where the run has it (that cap leaves most massive centrals'
-    capped accretion at zero), else the capped accretion."""
+    at cooling where the adapter passes it on (only for snapshots whose
+    capped accretion makes no radio-loud galaxy), else the capped one."""
     acc = (
         g.radio_accretion_uncapped
         if g.radio_accretion_uncapped >= 0

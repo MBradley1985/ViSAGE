@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.22.0] — 2026-11-08
+
+### Changed
+
+- HD radio jets take their power from the capped radio-mode accretion. The uncapped field is now only a fallback, used where a snapshot has no radio-loud galaxy of its own.
+- HD radio jets, redrawn from the literature:
+  - Shape follows jet power: FR I plumes below about 10⁴⁴ erg/s, FR II lobes with hotspots above it.
+  - Jets are one-sided from relativistic beaming, and the approaching lobe looks longer.
+  - A satellite's jets bend back along its motion through its host's hot gas.
+  - Colour runs from blue to fiery with jet power, and each galaxy's plumes have their own outline.
+  - With Gas off, only the inner optical jet shows.
+- Launch Mode looks like the rest of ViSAGE:
+  - The toolbar is a stepper, and it has an update button.
+  - Clicking Scan Environment rescans; the separate Rescan button is gone.
+  - The background is a field of twinkling stars.
+  - The opening screen draws tapered trees.
+  - The DustySAGE card shows an HD galaxy.
+- Filters tab:
+  - Reset is a small button in the panel's top-right corner.
+  - The galaxy-type dropdowns sit closer together.
+  - Find has no heading, so its results get more room.
+- Photometry tab: the Bands dropdown no longer overlaps its heading.
+
+### Added
+
+- Find has seven new presets: radio-loud AGN, brightest quasars, most gas-rich galaxies, biggest ellipticals, most intracluster light, strongest galactic winds and biggest hot atmospheres.
+- Find offers only the presets that the loaded model can answer.
+
+---
+
 ## [2.21.1] — 2026-11-07
 
 ### Added

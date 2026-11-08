@@ -500,6 +500,26 @@ def test_moving_through_the_group_flies_to_each_member(panel):
     assert state.nav_gal_idx == 4 and at(4)
 
 
+def test_find_offers_only_what_the_model_has(panel):
+    """Find's menu lists only presets the loaded galaxies can answer: none
+    for fields the model doesn't write (or no galaxy qualifies)."""
+    from visage.utils.find import available, find
+
+    server, scene = panel
+    state = server.state
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    galaxies.ffb_regime[:] = 0
+    galaxies.heating[:] = 0.0
+    galaxies.extra.pop("QuasarModeBHaccretionMass", None)
+    keys = available(galaxies)
+    assert "massive" in keys
+    assert not {"ffb", "radio", "quasar"} & set(keys)
+    galaxies.heating[0] = 43.0  # log10 erg/s: radio-loud
+    assert "radio" in available(galaxies)
+    assert find(galaxies, "radio")[0]["idx"] == 0
+    assert {i["value"] for i in state.find_items} >= {"id", "massive"}
+
+
 def test_find_by_galaxy_id_flies_to_it_and_says_when_it_is_not_here(panel):
     server, scene = panel
     state, ctrl = server.state, server.controller
