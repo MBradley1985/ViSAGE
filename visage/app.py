@@ -176,7 +176,6 @@ def _jpeg_quality() -> int:
     95 is visually the same as 100 (mean error under 1/255) at a third of
     the bytes: at 100 a browser on Windows couldn't show large frames as
     fast as they came, and the view lagged seconds behind the mouse."""
-    import os
 
     default = 95 if system.IS_WINDOWS else 100
     try:
@@ -912,112 +911,9 @@ def create_app(
         server.state.wiz_active = True
         server.state.flush()
 
-    @server.controller.set("check_for_updates")
-    async def _on_check_for_updates():
-        import asyncio
-        import json
-        import sys
-        import urllib.request
+    from visage import updates
 
-        from visage._version import __version__ as _current
-
-        server.state.update_checking = True
-        server.state.flush()
-        await asyncio.sleep(0)
-
-        loop = asyncio.get_event_loop()
-
-        def _fetch_latest() -> str:
-            import ssl
-
-            try:
-                import certifi
-
-                ctx = ssl.create_default_context(cafile=certifi.where())
-            except ImportError:
-                ctx = ssl.create_default_context()
-            try:
-                with urllib.request.urlopen(
-                    "https://pypi.org/pypi/sage-viewer/json",
-                    timeout=8,
-                    context=ctx,
-                ) as r:
-                    return json.loads(r.read())["info"]["version"]
-            except ssl.SSLError:
-                # macOS Python may lack system CA certs; retry unverified
-                ctx = ssl._create_unverified_context()
-                with urllib.request.urlopen(
-                    "https://pypi.org/pypi/sage-viewer/json",
-                    timeout=8,
-                    context=ctx,
-                ) as r:
-                    return json.loads(r.read())["info"]["version"]
-
-        try:
-            latest = await loop.run_in_executor(None, _fetch_latest)
-        except Exception as exc:
-            server.state.notice_text = f"Update check failed: {exc}"
-            server.state.notice_color = "error"
-            server.state.notice_timeout = 5000
-            server.state.notice_show = True
-            server.state.update_checking = False
-            server.state.flush()
-            return
-
-        if latest == _current:
-            server.state.notice_text = f"ViSAGE {_current} is up to date."
-            server.state.notice_color = "success"
-            server.state.notice_timeout = 4500
-            server.state.notice_show = True
-            server.state.update_checking = False
-            server.state.flush()
-            return
-
-        server.state.notice_text = f"Updating {_current} → {latest}…"
-        server.state.notice_color = "info"
-        server.state.notice_timeout = -1
-        server.state.notice_show = True
-        server.state.flush()
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--upgrade",
-                "sage-viewer",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=os.name != "nt",
-            )
-            from visage import procs
-
-            procs.track(proc)  # stopped if ViSAGE closes mid-install
-            try:
-                _, stderr = await proc.communicate()
-            finally:
-                procs.untrack(proc)
-            if proc.returncode == 0:
-                server.state.notice_text = (
-                    f"Updated to {latest}. Restart ViSAGE to apply."
-                )
-                server.state.notice_color = "success"
-                server.state.notice_timeout = -1
-            else:
-                server.state.notice_text = (
-                    f"pip failed: {stderr.decode(errors='replace')[:140]}"
-                )
-                server.state.notice_color = "error"
-                server.state.notice_timeout = 7000
-        except Exception as exc:
-            server.state.notice_text = f"Install failed: {exc}"
-            server.state.notice_color = "error"
-            server.state.notice_timeout = 7000
-
-        server.state.notice_show = True
-        server.state.update_checking = False
-        server.state.flush()
+    updates.register(server)
 
     # `theme=("ui_theme",)` reactively binds the active Vuetify theme to
     # our state variable — Vuetify swaps the entire palette plus the root

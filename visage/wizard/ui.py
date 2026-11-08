@@ -6,6 +6,257 @@ from trame.widgets import vuetify3 as v3
 from visage.wizard.controller import WizardController, _STEPS, _MAX_PARAMS
 
 _WIZ_CSS = """
+/* Launch pages' background: stars of different colours (about 100 in
+   view), some binaries and triples, a third of them twinkling (two layers,
+   out of step), behind the page. */
+.wiz-root { isolation: isolate; background:
+    radial-gradient(1.3px 1.3px at 265px 512px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 870px 825px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 460px 589px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 159px 295px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 659px 971px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.3px 1.3px at 475px 315px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 25px 466px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(2px 2px at 1370px 764px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 1384px 600px, rgba(245,248,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 31px 371px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 1206px 189px, rgba(255,160,130,1), transparent),
+    radial-gradient(1.6px 1.6px at 1205px 185px, rgba(245,248,255,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 958px 390px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(1.6px 1.6px at 397px 909px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 93px 183px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 1239px 971px, rgba(255,160,130,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 1285px 475px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 675px 726px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 673px 729px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(2px 2px at 678px 719px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2.6px 2.6px at 127px 474px, rgba(180,205,255,1), transparent),
+    radial-gradient(2px 2px at 121px 471px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 533px 22px, rgba(255,160,130,1), transparent),
+    radial-gradient(1.3px 1.3px at 726px 514px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 946px 209px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 950px 205px, rgba(255,160,130,0.95), transparent),
+    radial-gradient(2px 2px at 390px 220px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 452px 822px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.3px 1.3px at 906px 563px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 338px 148px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 1333px 681px, rgba(255,240,205,1), transparent),
+    radial-gradient(2.6px 2.6px at 748px 45px, rgba(255,240,205,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 282px 880px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.3px 1.3px at 650px 648px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 1363px 968px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(1.6px 1.6px at 491px 91px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 311px 860px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(2px 2px at 731px 837px, rgba(255,160,130,0.85), transparent),
+    radial-gradient(2px 2px at 430px 148px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 704px 603px, rgba(255,160,130,1), transparent),
+    radial-gradient(2px 2px at 706px 597px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(2px 2px at 708px 606px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 863px 917px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 324px 683px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 1019px 130px, rgba(255,240,205,1), transparent),
+    radial-gradient(2.6px 2.6px at 741px 844px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 745px 841px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2px 2px at 193px 96px, rgba(255,240,205,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 157px 47px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 604px 599px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 107px 345px, rgba(255,160,130,0.7), transparent),
+    radial-gradient(2px 2px at 548px 990px, rgba(255,160,130,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 168px 116px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.6px 1.6px at 904px 21px, rgba(255,240,205,1), transparent),
+    radial-gradient(2.6px 2.6px at 543px 930px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 549px 928px, rgba(180,205,255,0.95), transparent),
+    radial-gradient(2px 2px at 539px 927px, rgba(245,248,255,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 818px 630px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 356px 750px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 843px 123px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 739px 132px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 674px 503px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 884px 748px, rgba(255,200,145,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 877px 19px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 623px 742px, rgba(255,240,205,1), transparent),
+    radial-gradient(2px 2px at 1218px 87px, rgba(255,200,145,1), transparent),
+    radial-gradient(2.6px 2.6px at 422px 770px, rgba(245,248,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 693px 759px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 690px 754px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2.6px 2.6px at 455px 442px, rgba(255,240,205,1), transparent),
+    radial-gradient(2px 2px at 447px 441px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.6px 1.6px at 1164px 562px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 722px 543px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.6px 1.6px at 715px 541px, rgba(180,205,255,0.95), transparent),
+    radial-gradient(1.6px 1.6px at 719px 548px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2px 2px at 1251px 93px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.6px 1.6px at 685px 900px, rgba(180,205,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 938px 494px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 1055px 976px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.3px 1.3px at 1332px 637px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 1273px 251px, rgba(180,205,255,1), transparent),
+    radial-gradient(2px 2px at 904px 770px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 1265px 46px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.3px 1.3px at 831px 229px, rgba(255,200,145,1), transparent),
+    radial-gradient(2.6px 2.6px at 875px 933px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.6px 1.6px at 880px 930px, rgba(255,160,130,0.95), transparent),
+    radial-gradient(2.6px 2.6px at 676px 227px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.6px 1.6px at 673px 222px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2px 2px at 681px 221px, rgba(180,205,255,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 1110px 709px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 368px 862px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 218px 765px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 222px 767px, rgba(255,160,130,0.95), transparent),
+    radial-gradient(2.6px 2.6px at 1238px 690px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 36px 194px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 1386px 664px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 992px 476px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 1254px 159px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 1254px 153px, rgba(255,160,130,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 627px 385px, rgba(255,240,205,0.85), transparent),
+    radial-gradient(2px 2px at 227px 132px, rgba(255,160,130,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 1013px 611px, rgba(255,240,205,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 370px 195px, rgba(180,205,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 1098px 819px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 497px 500px, rgba(255,160,130,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 793px 36px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 408px 889px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 738px 126px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 658px 413px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.3px 1.3px at 1259px 525px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(1.6px 1.6px at 419px 614px, rgba(255,240,205,1), transparent),
+    radial-gradient(2.6px 2.6px at 1228px 870px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 1234px 869px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 736px 244px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 146px 787px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2px 2px at 1015px 33px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 205px 688px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.3px 1.3px at 280px 831px, rgba(255,240,205,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 177px 687px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.3px 1.3px at 931px 281px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(1.6px 1.6px at 743px 54px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 237px 979px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2px 2px at 1373px 43px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 830px 766px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.3px 1.3px at 1095px 785px, rgba(255,200,145,1), transparent),
+    radial-gradient(2.6px 2.6px at 459px 606px, rgba(255,160,130,1), transparent),
+    radial-gradient(1.6px 1.6px at 457px 599px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 110px 899px, rgba(255,240,205,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 439px 51px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.3px 1.3px at 132px 814px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 94px 412px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 136px 555px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 135px 559px, rgba(245,248,255,0.95), transparent),
+    radial-gradient(2.6px 2.6px at 587px 94px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 566px 647px, rgba(255,160,130,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 1058px 473px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(1.6px 1.6px at 756px 421px, rgba(255,240,205,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 1033px 512px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 38px 326px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 427px 606px, rgba(255,240,205,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 298px 412px, rgba(255,240,205,1), transparent),
+    radial-gradient(2.6px 2.6px at 443px 453px, rgba(255,240,205,1), transparent),
+    radial-gradient(2px 2px at 439px 456px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 322px 296px, rgba(255,200,145,1), transparent);
+  background-size: 1400px 1000px; background-color: #000; }
+.wiz-root::before, .wiz-root::after { content: ''; position: absolute; inset: 0;
+  z-index: -1; pointer-events: none; animation: wiz-twinkle 3.2s ease-in-out infinite alternate; }
+.wiz-root::before { background:
+    radial-gradient(2px 2px at 135px 803px, rgba(255,160,130,0.85), transparent),
+    radial-gradient(2px 2px at 717px 260px, rgba(255,200,145,1), transparent),
+    radial-gradient(1.3px 1.3px at 415px 182px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(2px 2px at 1015px 391px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 284px 432px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 285px 440px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(2.6px 2.6px at 809px 685px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 42px 630px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 1239px 201px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 287px 625px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.3px 1.3px at 169px 506px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 396px 124px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 1224px 691px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(2px 2px at 330px 936px, rgba(255,240,205,0.7), transparent),
+    radial-gradient(1.6px 1.6px at 512px 739px, rgba(255,240,205,0.85), transparent),
+    radial-gradient(1.6px 1.6px at 110px 95px, rgba(180,205,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 301px 347px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 294px 349px, rgba(255,160,130,0.95), transparent),
+    radial-gradient(1.6px 1.6px at 411px 754px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 944px 583px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(2px 2px at 943px 742px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 364px 206px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 903px 762px, rgba(255,200,145,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 637px 405px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 637px 398px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2px 2px at 859px 638px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(2px 2px at 84px 778px, rgba(255,160,130,0.7), transparent),
+    radial-gradient(2px 2px at 1206px 423px, rgba(255,240,205,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 458px 150px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(1.3px 1.3px at 472px 948px, rgba(245,248,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 93px 73px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 94px 67px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 210px 456px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(2px 2px at 350px 787px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 89px 724px, rgba(255,240,205,0.7), transparent);
+  background-size: 1400px 1000px; }
+.wiz-root::after { background:
+    radial-gradient(2.6px 2.6px at 634px 559px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 641px 283px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 641px 277px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2px 2px at 648px 286px, rgba(245,248,255,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 11px 857px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 23px 608px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 696px 612px, rgba(180,205,255,0.85), transparent),
+    radial-gradient(2.6px 2.6px at 198px 497px, rgba(180,205,255,1), transparent),
+    radial-gradient(2px 2px at 200px 493px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(2px 2px at 553px 786px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 659px 990px, rgba(255,160,130,1), transparent),
+    radial-gradient(2px 2px at 581px 948px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 608px 809px, rgba(245,248,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 265px 210px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.6px 1.6px at 270px 208px, rgba(255,160,130,0.95), transparent),
+    radial-gradient(2px 2px at 262px 215px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 506px 373px, rgba(180,205,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 457px 93px, rgba(255,200,145,1), transparent),
+    radial-gradient(2px 2px at 449px 93px, rgba(245,248,255,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 1345px 567px, rgba(255,240,205,0.7), transparent),
+    radial-gradient(1.6px 1.6px at 677px 274px, rgba(245,248,255,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 79px 979px, rgba(180,205,255,1), transparent),
+    radial-gradient(2.6px 2.6px at 448px 402px, rgba(245,248,255,1), transparent),
+    radial-gradient(2px 2px at 445px 406px, rgba(180,205,255,0.95), transparent),
+    radial-gradient(1.6px 1.6px at 596px 296px, rgba(255,240,205,1), transparent),
+    radial-gradient(1.6px 1.6px at 735px 164px, rgba(180,205,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 258px 404px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2px 2px at 972px 333px, rgba(255,200,145,1), transparent),
+    radial-gradient(2.6px 2.6px at 1354px 143px, rgba(245,248,255,1), transparent),
+    radial-gradient(1.3px 1.3px at 243px 741px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2px 2px at 1237px 464px, rgba(245,248,255,0.7), transparent),
+    radial-gradient(2.6px 2.6px at 746px 241px, rgba(180,205,255,1), transparent),
+    radial-gradient(2px 2px at 749px 234px, rgba(255,240,205,0.95), transparent),
+    radial-gradient(1.6px 1.6px at 750px 236px, rgba(255,200,145,0.95), transparent),
+    radial-gradient(1.3px 1.3px at 524px 659px, rgba(255,160,130,0.85), transparent),
+    radial-gradient(2px 2px at 371px 208px, rgba(255,200,145,0.85), transparent),
+    radial-gradient(1.3px 1.3px at 648px 395px, rgba(245,248,255,1), transparent);
+  background-size: 1400px 1000px; animation-duration: 4.7s; animation-delay: -2s; }
+@keyframes wiz-twinkle { from { opacity: 0.1; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .wiz-root::before, .wiz-root::after { animation: none; } }
+/* Header, as Explore Mode's toolbar */
+.wiz-bar { height: 48px; padding: 0 10px; display: flex;
+  align-items: center; gap: 4px; flex-shrink: 0;
+  font-family: Roboto, 'Segoe UI', system-ui, -apple-system, sans-serif; }
+.wiz-brand { display: flex; align-items: center; height: 36px; margin-left: 8px;
+  padding: 0 12px 0 4px; border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px; color: #fff; font-size: 1.05rem; font-weight: 700; }
+.wiz-brand img { height: 30px; width: 30px; margin-right: 8px;
+  object-fit: cover; border-radius: 50%; }
+.wiz-bar-mode { font-size: 13px; color: #94a3b8; margin: 0 8px; letter-spacing: 0.02em; }
+.wiz-stp { display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: #94a3b8; }
+.wiz-stp.done { color: #e2e8f0; }
+.wiz-stp.on { color: #fff; font-weight: 500; }
+.wiz-dotstep { width: 20px; height: 20px; border-radius: 50%; border: 1px solid #475569;
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.wiz-stp.done .wiz-dotstep { background: #22d3ee; border-color: #22d3ee; color: #04121a; }
+.wiz-stp.on .wiz-dotstep { border: 2px solid #22d3ee; }
+.wiz-link { width: 22px; height: 1px; background: #334155; margin: 0 6px; }
+.wiz-link.done { background: #22d3ee; }
+.wiz-close { width: 28px; height: 28px; margin: 0 6px 0 18px; border: 1px solid #ef4444;
+  border-radius: 8px; color: #ef4444; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; }
 .wiz-title { color: #06b6d4; font-weight: 700; letter-spacing: 0.08em; }
 .wiz-ok    { color: #22c55e; }
 .wiz-warn  { color: #f59e0b; }
@@ -61,10 +312,10 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
     )
 
     with html.Div(
+        classes="wiz-root",
         style=(
             "display:flex;flex-direction:column;height:100%;"
-            "background:#000000;font-family:monospace;"
-            "position:relative;"
+            "font-family:monospace;position:relative;"
         ),
     ):
         html.Link(rel="stylesheet", href=css_url)
@@ -89,67 +340,59 @@ def build_wizard_ui(server, ctrl: WizardController) -> None:
             ),
         )
 
-        # ── Header ──────────────────────────────────────────────────────────
-        with html.Div(
-            style=(
-                "background:#000000;border-bottom:2px solid #06b6d4;"
-                "padding:10px 20px;display:flex;align-items:center;gap:12px;"
-                "flex-shrink:0;"
-            ),
-        ):
-            v3.VIcon("mdi-rocket-launch", color="#06b6d4", size="large")
-            html.Span(
-                "ViSAGE",
-                style="font-size:1.3rem;font-weight:700;color:#06b6d4;",
-            )
-            html.Span(
-                "Launch Mode",
-                style=(
-                    "font-size:1.0rem;color:#06b6d4;"
-                    "border:1px solid #06b6d4;padding:2px 8px;"
-                ),
+        # ── Header: as Explore Mode's toolbar ───────────────────────────────
+        with html.Div(classes="wiz-bar"):
+            with html.Div(classes="wiz-brand"):
+                html.Img(src="/sage_static/SAGElogo.jpg")
+                html.Span("ViSAGE")
+            html.Span("Launch Mode", classes="wiz-bar-mode")
+            v3.VBtn(
+                icon="mdi-update",
+                variant="text",
+                density="compact",
+                color="white",
+                title="Check for updates",
+                loading=("update_checking",),
+                click=server.controller.check_for_updates,
             )
             v3.VSpacer()
-            # Rescan button — to the left of the step chips
-            v3.VBtn(
-                "Rescan",
-                prepend_icon="mdi-refresh",
-                color="#06b6d4",
-                variant="outlined",
-                size="x-small",
-                click=server.controller.wiz_rescan,
-                style=(
-                    "font-family:monospace;text-transform:none;"
-                    "margin-right:10px;"
-                ),
-            )
-            # Step indicator chips — labels come from the `wiz_steps` state var
-            # so they swap per flow (SAGE26 vs SAGEswarm); count is fixed (6).
-            with html.Div(style="display:flex;gap:6px;align-items:center;"):
-                for i in range(len(_STEPS)):
-                    v3.VChip(
-                        "{{ wiz_steps[" + str(i) + "] }}",
-                        size="small",
-                        color=(
-                            f"wiz_step === {i} ? '#06b6d4' : "
-                            f"(wiz_step > {i} ? '#22c55e' : '#e2e8f0')",
-                        ),
-                        variant=(
-                            f"wiz_step === {i} ? 'elevated' : 'outlined'",
-                        ),
-                        style="font-family:monospace;font-size:0.7rem;",
+            # The steps, labelled per flow (`wiz_steps`): done ones ticked,
+            # the current one ringed.  The first rescans the environment.
+            for i in range(len(_STEPS)):
+                if i:
+                    html.Div(
+                        classes=(
+                            f"'wiz-link' + (wiz_step > {i - 1} ? ' done' : '')",
+                        )
                     )
+                with html.Div(
+                    classes=(
+                        f"'wiz-stp' + (wiz_step > {i} ? ' done' : "
+                        f"wiz_step === {i} ? ' on' : '')",
+                    ),
+                    **(
+                        {
+                            "click": server.controller.wiz_rescan,
+                            "title": "Rescan the environment",
+                            "style": "cursor:pointer;",
+                        }
+                        if i == 0
+                        else {}
+                    ),
+                ):
+                    with html.Div(classes="wiz-dotstep"):
+                        v3.VIcon(
+                            "mdi-check", size=13, v_if=(f"wiz_step > {i}",)
+                        )
+                    html.Span("{{ wiz_steps[" + str(i) + "] }}")
             # Close button — only shown when embedded in Explore Mode
-            v3.VBtn(
-                icon="mdi-close",
-                variant="text",
-                color="#9ca3af",
-                size="small",
+            with html.Div(
+                classes="wiz-close",
                 title="Close wizard and return to Explore Mode",
                 click=server.controller.wiz_close,
                 v_show=("wiz_active !== undefined",),
-                style="margin-left:8px;",
-            )
+            ):
+                v3.VIcon("mdi-close", size=18)
 
         # ── Main area ────────────────────────────────────────────────────────
         # paddingRight reserves space for the live PSO gallery (fixed, docked
@@ -545,9 +788,8 @@ def _home_view(server) -> None:
             click=(choose, "['act:all:load']"),
             style=(
                 "align-self:center;width:min(520px,90%);height:60px;"
-                "border-radius:14px;border:1px solid rgba(6,182,212,0.55);"
-                "background:linear-gradient(90deg, rgba(6,182,212,0.10), "
-                "rgba(6,182,212,0.24));color:#e2e8f0;font-size:1.05rem;"
+                "border-radius:14px;border:1px solid rgba(255,255,255,0.16);"
+                "background:#000;color:#e2e8f0;font-size:1.05rem;"
                 "font-weight:500;display:flex;align-items:center;"
                 "justify-content:center;gap:12px;"
             ),
