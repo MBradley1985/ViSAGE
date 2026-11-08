@@ -57,6 +57,8 @@ def _init_state(state) -> None:
         "sel_can_fwd": False,
         "find_preset": None,
         "find_results": [],
+        # Find's menu: Galaxy ID, then the presets this model can answer.
+        "find_items": [{"title": "Galaxy ID", "value": "id"}],
         "find_id": "",
         "find_note": "",
         "hd_available": True,
@@ -949,6 +951,22 @@ def build_selection(server, scene) -> None:
             )
         )
 
+    def _find_menu() -> None:
+        """Offer only the presets the loaded galaxies can answer; drop a
+        chosen one that no longer applies."""
+        from visage.utils.find import PRESETS, available
+
+        _, galaxies = _snap()
+        box = (
+            None if scene.is_lightcone else float(scene.active_model.box_size)
+        )
+        keys = available(galaxies, box=box)
+        state.find_items = [{"title": "Galaxy ID", "value": "id"}] + [
+            {"title": PRESETS[k], "value": k} for k in keys
+        ]
+        if state.find_preset not in (None, "id", *keys):
+            state.find_preset = None
+
     @state.change("find_preset")
     def _on_find_preset(find_preset=None, **_):
         _find(find_preset)
@@ -1032,6 +1050,7 @@ def build_selection(server, scene) -> None:
     @state.change("snap_num")
     def _on_snap(snap_num=None, **_):
         """Find the same galaxy in the new snapshot."""
+        _find_menu()
         if state.find_preset:
             _find()
         gid = sel.get("gid")
@@ -1107,11 +1126,16 @@ def build_selection(server, scene) -> None:
         if state.nav_gal_idx is not None:
             sel["echo"] = None
             state.nav_gal_idx = None
+        _find_menu()
         if state.find_preset:
             _find()
         _push()
 
     scene.register_model_change_callback(_sel_reset)
+    try:
+        _find_menu()
+    except Exception:  # (no galaxies loaded yet)
+        pass
 
     @state.change("hd_active")
     def _on_hd(**_):

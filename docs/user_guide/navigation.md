@@ -76,9 +76,16 @@ The **Environment filter** at the end of the Structure tab shows only galaxies i
 - starbursts;
 - quenched centrals;
 - biggest black holes;
-- feedback-free starbursts.
+- feedback-free starbursts;
+- radio-loud AGN, strongest jets first (jet power 10⁴² erg/s and up);
+- brightest quasars;
+- most gas-rich galaxies (cold gas against stellar mass);
+- biggest ellipticals (B/T above 0.8);
+- most intracluster light;
+- strongest galactic winds;
+- biggest hot atmospheres.
 
-The list updates as the snapshot changes.
+The menu offers only the presets this model can answer: a run without, say, feedback-free starbursts or quasar-mode accretion doesn't list them. The list updates as the snapshot changes. **Reset**, in the Filters tab's top-right corner, clears every filter.
 
 ## Regions tab
 

@@ -21,7 +21,17 @@ PRESETS = {
     "quenched": "Quenched centrals",
     "bh": "Biggest black holes",
     "ffb": "Feedback-free starbursts",
+    "radio": "Radio-loud AGN (strongest jets)",
+    "quasar": "Brightest quasars",
+    "gasrich": "Most gas-rich galaxies",
+    "elliptical": "Biggest ellipticals",
+    "icl": "Most intracluster light",
+    "winds": "Strongest galactic winds",
+    "hot": "Biggest hot atmospheres",
 }
+
+# Radio-loud from this jet power (log10 erg/s; as visage.hd.model).
+RADIO_LOUD = 42.0
 
 
 def _lm(x) -> np.ndarray:
@@ -111,9 +121,49 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
         c = np.flatnonzero(ok & (bh > 0))
         pick = c[np.argsort(-bh[c])]
         detail = {int(k): f"log M_BH {_lm(bh[k]):.1f}" for k in pick[:n]}
-    else:  # ffb
+    elif preset == "ffb":
         c = np.flatnonzero(ok & (np.asarray(galaxies.ffb_regime) == 1))
         pick = c[np.argsort(-ms[c])]
+    elif preset == "radio":
+        # SAGE26's Heating is the jet power, 0.1 Mdot c^2 (log10 erg/s).
+        p = np.asarray(galaxies.heating, float)
+        c = np.flatnonzero(ok & (p >= RADIO_LOUD))
+        pick = c[np.argsort(-p[c])]
+        detail = {int(k): f"log P_jet {p[k]:.1f} erg/s" for k in pick[:n]}
+    elif preset == "quasar":
+        q = (getattr(galaxies, "extra", None) or {}).get(
+            "QuasarModeBHaccretionMass"
+        )
+        if q is None:
+            return []
+        q = np.asarray(q, float)
+        c = np.flatnonzero(ok & (q > 0))
+        pick = c[np.argsort(-q[c])]
+    elif preset == "gasrich":
+        f = np.asarray(galaxies.cold_gas, float) / np.maximum(ms, 1.0)
+        c = np.flatnonzero(ok & (ms > 1e9) & (f > 0))
+        pick = c[np.argsort(-f[c])]
+        detail = {int(k): f"cold gas {f[k]:.1f} x M*" for k in pick[:n]}
+    elif preset == "elliptical":
+        bt = np.asarray(galaxies.bulge_mass, float) / np.maximum(ms, 1.0)
+        c = np.flatnonzero(ok & (bt > 0.8))
+        pick = c[np.argsort(-ms[c])]
+        detail = {int(k): f"B/T {bt[k]:.2f}" for k in pick[:n]}
+    elif preset == "icl":
+        ics = np.asarray(galaxies.ics_mass, float)
+        c = np.flatnonzero(ok & cen & (ics > 0))
+        pick = c[np.argsort(-ics[c])]
+        detail = {int(k): f"log M_ICS {_lm(ics[k]):.1f}" for k in pick[:n]}
+    elif preset == "winds":
+        w = np.asarray(galaxies.outflow_rate, float)
+        c = np.flatnonzero(ok & (w > 0))
+        pick = c[np.argsort(-w[c])]
+        detail = {int(k): f"outflow {w[k]:.0f} Msun/yr" for k in pick[:n]}
+    else:  # hot
+        hot = np.asarray(galaxies.hot_gas, float)
+        c = np.flatnonzero(ok & cen & (hot > 0))
+        pick = c[np.argsort(-hot[c])]
+        detail = {int(k): f"log M_hot {_lm(hot[k]):.1f}" for k in pick[:n]}
 
     out = []
     for k in pick[:n]:
@@ -127,4 +177,22 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
                 f"log M* {lm[k]:.1f}" + (f" · {extra}" if extra else ""),
             }
         )
+    return out
+
+
+def available(galaxies, box: float | None = None) -> list[str]:
+    """The presets this catalogue can answer (its model writes the fields,
+    and some galaxy qualifies), in menu order."""
+    if galaxies.count == 0:
+        return []
+    out = []
+    for k in PRESETS:
+        if k == "pairs":  # (cheaply: some group of exactly two)
+            size, _ = _group_sizes(
+                galaxies, np.asarray(galaxies.stellar_mass) > 0
+            )
+            if np.any(size == 2):
+                out.append(k)
+        elif find(galaxies, k, box=box, n=1):
+            out.append(k)
     return out

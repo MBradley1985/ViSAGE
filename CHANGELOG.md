@@ -17,6 +17,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - A satellite's jets bend back along its motion through its host's hot gas.
   - Colour runs from blue to fiery with jet power, and each galaxy's plumes have their own outline.
   - With Gas off, only the inner optical jet shows.
+- Launch Mode looks like the rest of ViSAGE:
+  - The toolbar is a stepper, and it has an update button.
+  - Clicking Scan Environment rescans; the separate Rescan button is gone.
+  - The background is a field of twinkling stars.
+  - The opening screen draws tapered trees.
+  - The DustySAGE card shows an HD galaxy.
+- Filters tab:
+  - Reset is a small button in the panel's top-right corner.
+  - The galaxy-type dropdowns sit closer together.
+  - Find has no heading, so its results get more room.
+- Photometry tab: the Bands dropdown no longer overlaps its heading.
+
+### Added
+
+- Find has seven new presets: radio-loud AGN, brightest quasars, most gas-rich galaxies, biggest ellipticals, most intracluster light, strongest galactic winds and biggest hot atmospheres.
+- Find offers only the presets that the loaded model can answer.
 
 ---
 
