@@ -429,16 +429,17 @@ def test_hd_draws_the_whole_group(hd_panel):
     assert _cam_dist(scene) == pytest.approx(3.0)
 
 
-def test_group_plan_tiers():
-    from visage.hd.group import N_FULL, N_GROUP, N_HD, N_TOP, plan
+def test_group_plan_draws_every_model_alike():
+    """One quality for every model in a view, the best that fits the
+    texture budget; past N_HD, glows."""
+    from visage.hd.group import N_HD, plan
 
     gals = [_disk()] * (N_HD + 50)
     q = plan(gals)
-    assert q[:N_TOP] == ["full"] * N_TOP
-    assert set(q[N_TOP:N_GROUP]) == {"group"}
-    assert set(q[N_GROUP:N_HD]) == {"lite"}
-    assert q[N_HD:] == [None] * 50
-    assert plan(gals[:N_FULL]) == ["full"] * N_FULL
+    assert set(q[:N_HD]) == {"lite"} and q[N_HD:] == [None] * 50
+    assert plan(gals[:1]) == ["full"]
+    assert set(plan(gals[:25])) == {"full"}
+    assert set(plan(gals[:60])) == {"group"}
 
 
 def test_group_members_build_in_the_process_pool():

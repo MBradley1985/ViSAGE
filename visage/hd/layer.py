@@ -213,7 +213,7 @@ STRIP_CGM = True
 CGM_STRIP = 0.5
 
 QUALITY = {
-    "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 112},
+    "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 160},
     "group": {"map_n": 768, "npts": 1024, "exp_npix": 160, "atlas_n": 80},
     "lite": {"map_n": 384, "npts": 512, "exp_npix": 96, "atlas_n": 48},
 }

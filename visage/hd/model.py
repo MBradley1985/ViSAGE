@@ -1756,9 +1756,16 @@ def cloud_dust(rc, maps):
     return np.minimum(tau / ridges.mean(), TAU_MAX).astype(np.float32)
 
 
+# The disc maps reach this far, in disc extents: just past where the light
+# ends (it fades as exp(-(r / extent)^4), 6% left at 1.3), so their pixels
+# go on the disc and not on empty margin; a disturbed irregular's, drawn
+# out along one axis, reach further along it.
+MAP_REACH = 1.3
+
+
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     rng = np.random.default_rng(rc.seed)
-    half = rc.extent * 1.6
+    half = rc.extent * max(MAP_REACH, 1.15 / np.sqrt(min(rc.elong, 1.0)))
     ax = np.linspace(-half, half, n)
     x, y = np.meshgrid(ax, ax)
     if rc.elong < 1:
@@ -2069,6 +2076,11 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     if rc.tau0 <= 0:
         # No dust at all (a lightcone galaxy whose photometry has none).
         dust = np.zeros_like(dust)
+    if rc.arm_old_amp > 0:
+        # The old disc's smooth light follows the arms too, rather than
+        # sitting over them as an even haze (none for S0s and irregulars).
+        arm_n = arm_eff / max(float(arm_eff.max()), 1e-9)
+        old = old * np.clip(0.55 + 0.9 * arm_n, 0.25, 1.6)
     return PlaneMaps(
         half=half,
         old=old.astype(np.float32),

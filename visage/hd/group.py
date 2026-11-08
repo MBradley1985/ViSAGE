@@ -35,16 +35,10 @@ from visage.hd.model import (
 # Light scale for a shared exposure.
 M_REF = 3e10
 LUM_POWER = 0.35
-# Members by stellar-mass rank: the first N_TOP in full quality (all of a
-# group of up to N_FULL), then "group" quality up to N_GROUP, "lite" up to
-# N_HD; the rest of a big cluster as glows (each built on its own, as an
-# extra, when it is selected).  Quality over build time (a few seconds is
-# fine); textures (~100 / 40 / 24 MB per full / group / lite model) set the
-# limits: N_HD = 100 covers every Millennium cluster's members above the
-# resolution cut (57-91 at z = 0) in ~2.7 GB.
-N_FULL = 5
-N_TOP = 4
-N_GROUP = 16
+# Members by stellar-mass rank: the first N_HD as HD models (see plan for
+# their quality), the rest of a big cluster as glows (each built on its
+# own, as an extra, when it is selected).  N_HD = 100 covers every
+# Millennium cluster's members above the resolution cut (57-91 at z = 0).
 N_HD = 100
 # Quality of a glow built on demand.
 EXTRA_QUALITY = "group"
@@ -310,19 +304,22 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
     return float((ref / M_REF) ** LUM_POWER)
 
 
+# Every model in a view is built at one quality, so neighbours are drawn
+# alike: the best whose textures for all of them fit the budget (MB).
+TEXTURE_BUDGET = 3000
+TEXTURE_MB = {"full": 110, "group": 37, "lite": 15}
+
+
 def plan(gals: list[SageGalaxy]) -> list[str | None]:
     """Build quality for each member (None = drawn as a glow), in the
-    order given (the caller sorts by stellar mass, central first)."""
-    if len(gals) <= N_FULL:
-        return ["full"] * len(gals)
-    return [
-        (
-            "full"
-            if i < N_TOP
-            else "group" if i < N_GROUP else "lite" if i < N_HD else None
-        )
-        for i in range(len(gals))
-    ]
+    order given (the caller sorts by stellar mass, central first): one
+    quality for all the models, the first N_HD."""
+    n = min(len(gals), N_HD)
+    q = next(
+        (k for k in ("full", "group") if n * TEXTURE_MB[k] <= TEXTURE_BUDGET),
+        "lite",
+    )
+    return [q if i < N_HD else None for i in range(len(gals))]
 
 
 def prepare_member(
