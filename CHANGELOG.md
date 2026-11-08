@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.22.0] — 2026-11-08
+
 ### Changed
 
 - HD radio jets take their power from the capped radio-mode accretion. The uncapped field is now only a fallback, used where a snapshot has no radio-loud galaxy of its own.

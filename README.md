@@ -194,7 +194,8 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 
 ### Launch Mode
 - Set up and run SAGE26, LightSAGE (lightcones), SAGEswarm (calibration), DarkSAGE and DustySAGE without leaving the viewer: `visage` with no `--par`/`--lightcone`, or the Launch Mode menu (SAGE-logo button, top-left of the toolbar), which opens **SAGE26**, **LightSAGE** or **SAGEswarm** directly, or the home page
-- **Home:** a picture card per tool, showing whether it's installed (DarkSAGE and DustySAGE share a split card), and **Load a previous model**, listing every model and lightcone found
+- **Home:** a picture card per tool, showing whether it's installed (DarkSAGE and DustySAGE share a split card), and **Load a previous model**, listing every model and lightcone found, on a field of twinkling stars
+- **Toolbar:** the same look as Explore's: the steps as a stepper (clicking **Scan Environment** rescans for the tools) and an update button that installs a newer ViSAGE from PyPI
 - **Each tool's page:** Run, Load existing, Install, Check for update (turns into Update when behind) and Clone / Re-clone. Install and Clone run on their button, showing the step and latest output, then the result:
   - **SAGE26:** downloads the mini-Millennium trees on a first install, then `make` on every core (serial when there's no MPI compiler)
   - **LightSAGE:** CMake, Boost and HDF5 (Homebrew / apt in WSL), the photometry packages and FSPS stellar libraries, then *only* its `sage2kdtree` / `cli_lightcone` tools; SAGE itself is never rebuilt, since ViSAGE feeds it your SAGE26 output
@@ -234,8 +235,8 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - **Double-click a galaxy** (any tab, and inside HD) to select it: a cyan ring on it and smaller rings on the rest of its FOF group (merged where they would pile up). The selection follows the galaxy through snapshots by its GalaxyIndex.
 - **Selection card** (the **i** button beside Focus, or **Show info** in the Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
 - **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
-- **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts and quenched centrals; click a result to select it and fly there
-- **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas), ray-marched on the GPU. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
+- **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts, quenched centrals, radio-loud AGN, brightest quasars, gas-rich galaxies, ellipticals, intracluster light, galactic winds and hot atmospheres; only those the model can answer are offered. Click a result to select it and fly there
+- **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas and radio jets), ray-marched on the GPU. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
 - **Enter to run** in every input field — Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Run / Take Screenshot button
 
 ![Filters in action](https://raw.githubusercontent.com/MBradley1985/ViSAGE/main/docs/images/filters.gif)
