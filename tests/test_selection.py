@@ -678,3 +678,24 @@ def test_isolates_stars_are_hidden_not_darkened(panel):
     assert ((st["dirs"][drawn] * axis).sum(axis=1) < np.cos(0.01)).all()
     assert 0 < len(drawn) < 5000
     camera.clear_sparkles()
+
+
+def test_a_track_can_be_isolated(panel):
+    """With Isolate, each frame keeps only what is followed: the galaxy,
+    or with the whole halo its group."""
+    server, scene = panel
+    ctrl = server.controller
+    _group(scene, [2, 4], central=4)
+    _, galaxies = scene.active_model.loader.get(scene.current_snap)
+    galaxies.galaxy_id[:] = np.arange(1000, 1000 + galaxies.count)
+    galaxies.central_id[[2, 4]] = galaxies.galaxy_id[4]
+    snap = int(scene.current_snap)
+    gid = int(galaxies.galaxy_id[2])
+    path = {snap: gid}
+    centres = {snap: galaxies.positions[2] + scene.active_model.offset}
+    ctrl.track_shower(path, {}, centres, False, False, False, True)(snap)
+    kept = scene._focus_region["galaxy_indices"]
+    assert list(kept) == [2]
+    ctrl.track_shower(path, {}, centres, True, False, False, True)(snap)
+    kept = scene._focus_region["galaxy_indices"]
+    assert sorted(kept) == [2, 4]

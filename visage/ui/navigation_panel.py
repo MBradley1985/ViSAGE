@@ -6643,7 +6643,15 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # ── Halo section ──────────────────────────────
                 v3.VLabel("DARK MATTER HALOES", style=_FSEC_HALO)
-                with html.Div(style=_SH + "height:150px;"):
+                # The sliders take the room until Find lists something;
+                # then both boxes shrink to give it to the results.
+                with html.Div(
+                    style=(
+                        f"'{_SH}' + (find_preset && find_preset !== 'id' "
+                        "? 'height:110px;flex-shrink:0;' "
+                        ": 'height:150px;flex-shrink:0;')",
+                    )
+                ):
                     html.Div(labels.slider("mvir"), style=_FLBL)
                     v3.VRangeSlider(
                         v_model=("filter_halo_mvir",),
@@ -6736,7 +6744,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
                 # ── Galaxy section ────────────────────────────
                 html.Div("GALAXIES", style=_FSEC_GAL)
-                with html.Div(style=_SH + "height:140px;"):
+                with html.Div(
+                    style=(
+                        f"'{_SH}' + (find_preset && find_preset !== 'id' "
+                        "? 'height:140px;flex-shrink:0;' "
+                        ": 'flex:1 1 0;min-height:140px;')",
+                    )
+                ):
                     # Alphabetical, like the Colour-by lists.
                     html.Div(labels.slider("h1_gas"), style=_FLBL)
                     v3.VRangeSlider(
@@ -7485,8 +7499,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 # (The rest of the panel's height, for as many as fit.)
                 with html.Div(
+                    v_show=("find_preset && find_preset !== 'id'",),
                     style="padding-top:4px;flex:1 1 0;min-height:60px;"
-                    "overflow-y:auto;"
+                    "overflow-y:auto;",
                 ):
                     with html.Div(
                         v_for="r in find_results",

@@ -97,11 +97,13 @@ def setup(server, scene) -> None:
     state.track_kind = "galaxy"
     state.track_links = False
     state.track_contrib = False
+    state.track_isolate = False
     state.track_zooms = ZOOMS
     state.track_percent = 0
     state.track_status = ""
     state.track_events = []
     run: dict = {"stop": False, "done": 0, "total": 1, "track": None}
+    ctrl.track_shower = lambda *a, **k: shower(*a, **k)  # (for tests)
 
     def shower(
         path: dict,
@@ -110,11 +112,14 @@ def setup(server, scene) -> None:
         halo: bool,
         links: bool,
         only: bool,
+        alone: bool = False,
     ):
         """What draws the view at a snapshot: which galaxies are shown, and
         the indicators on them.  Rows differ from one snapshot to the next,
         so this runs for each.  ``links`` adds the group and its lines;
-        ``only`` shows just the contributors."""
+        ``only`` shows just the contributors; ``alone`` isolates what is
+        followed (the galaxy, or the halo and its group), with the
+        contributors too when ``only``."""
         grouped = halo or links
 
         def show(snap: int) -> None:
@@ -140,7 +145,19 @@ def setup(server, scene) -> None:
                 if len(lead):
                     central = near(lead)[0]
             members = group
-            if only:
+            if alone and row is not None:
+                kept = group if halo else np.array([row], dtype=np.int64)
+                if only:
+                    chosen = np.flatnonzero(
+                        np.isin(galaxies.galaxy_id, sets.get(snap, ()))
+                    )
+                    kept = np.union1d(kept, chosen).astype(np.int64)
+                host = None
+                if halo and central is not None:
+                    host = ctrl.sel_host_halo(snap, central)
+                scene.set_focus_indices([] if host is None else [host], kept)
+                members = group
+            elif only:
                 chosen = np.flatnonzero(
                     np.isin(galaxies.galaxy_id, sets.get(snap, ()))
                 )
@@ -168,6 +185,9 @@ def setup(server, scene) -> None:
         at any snapshot: a track's rows only hold at its own."""
         framing = run.get("framing")
         scene.camera.marker.set_links(None)
+        if run.get("alone"):
+            scene.clear_focus()
+            state.focus_active = False
         if framing not in (None, "box"):
             ctrl.go_frame()
         elif run.get("only"):
@@ -189,6 +209,7 @@ def setup(server, scene) -> None:
         framing = str(state.track_framing)
         halo = state.track_kind == "halo"
         links, only = bool(state.track_links), bool(state.track_contrib)
+        alone = bool(state.track_isolate)
         if state.isolate_active:
             ctrl.toggle_isolate()
         path_file = scene._cfg.hdf5_path
@@ -252,13 +273,15 @@ def setup(server, scene) -> None:
                     centres, framing, away, float(state.track_zoom)
                 )
                 offset = next(iter(planned.values()))[1]
-                run.update(framing=framing, only=only, away=offset)
+                run.update(
+                    framing=framing, only=only, alone=alone, away=offset
+                )
                 if framing != "box":
                     ctrl.go_frame()
                     state.focus_active = True
-                elif only:
+                elif only or alone:
                     state.focus_active = True
-                show = shower(path, sets, centres, halo, links, only)
+                show = shower(path, sets, centres, halo, links, only, alone)
                 ctrl.sel_follow_track(own_path, show)
                 state.track_ready = await ctrl.track_render(
                     sorted(centres),
@@ -307,6 +330,7 @@ def setup(server, scene) -> None:
             state.track_framing,
             state.track_links,
             state.track_contrib,
+            state.track_isolate,
             state.track_kind,
             state.sel_rings,
         )
@@ -414,6 +438,7 @@ def setup(server, scene) -> None:
         "track_framing",
         "track_links",
         "track_contrib",
+        "track_isolate",
         "track_kind",
         "sel_rings",
     )(option_changed)
@@ -505,6 +530,7 @@ def tab(ctrl) -> None:
                     ("sel_rings", "Indicators", "sage-show-hide"),
                     ("track_links", "FoF links", "sage-show-hide"),
                     ("track_contrib", "Only contributors", ""),
+                    ("track_isolate", "Isolate", ""),
                 ):
                     v3.VCheckbox(  # the app's CSS draws these as switches
                         v_model=(model,),

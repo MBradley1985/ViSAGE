@@ -589,6 +589,11 @@
         seed = (seed * 16807) % 2147483647;
         return seed / 2147483647;
       }
+      var wseed = 977;
+      function wrnd() {
+        wseed = (wseed * 16807) % 2147483647;
+        return wseed / 2147483647;
+      }
       var nodes = [];
       function grow(x, y, ang, len, depth, par, tree) {
         var n = {
@@ -598,6 +603,19 @@
         };
         if (par && rnd() < 0.3) n.c = COL[Math.floor(rnd() * 5)];
         n.w = 2.6 * Math.pow(0.72, n.d);  // tapering, trunk to twig
+        // The limb from its parent wanders like a branch: a random walk
+        // across it, pinned at both ends (a share of its length).  (Its
+        // own random numbers, so the tree itself is unchanged.)
+        if (par) {
+          var walk = [0], s = 0, K = 10;
+          for (var q = 1; q <= K; q++) {
+            s += wrnd() - 0.5;
+            walk.push(s);
+          }
+          n.wob = walk.map(function (v, q) {
+            return 0.09 * (v - walk[K] * q / K);
+          });
+        }
         nodes.push(n);
         if (!depth) return;
         var m = rnd() < 0.14 ? 3 : rnd() < 0.2 ? 1 : 2;
@@ -678,12 +696,14 @@
           var a = Math.max(0, Math.min(1, grown - (n.d - 1)));
           if (a <= 0) return;
           var p = n.par;
-          var mx = (p.x + n.x) / 2 + n.b * (n.y - p.y) * 4;
-          var my = (p.y + n.y) / 2 - n.b * (n.x - p.x) * 4;
+          // Along the limb: its chord, bent a little and wandering.
+          var ex = n.x - p.x, ey = n.y - p.y;
           var on = function (f) {
-            var u = 1 - f;
-            return [u * u * p.x + 2 * f * u * mx + f * f * n.x,
-                    u * u * p.y + 2 * f * u * my + f * f * n.y];
+            var q = f * (n.wob.length - 1), k = Math.min(Math.floor(q),
+              n.wob.length - 2);
+            var off = n.wob[k] + (n.wob[k + 1] - n.wob[k]) * (q - k) +
+              4 * n.b * f * (1 - f);
+            return [p.x + ex * f - ey * off, p.y + ey * f + ex * off];
           };
           c.strokeStyle = n.c;
           c.globalAlpha = 0.55;
@@ -691,7 +711,7 @@
           c.lineWidth = 0.6 * n.w * size;
           c.beginPath();
           c.moveTo(X(p.x), Y(p.y));
-          for (var f = 0.05; f <= a + 0.001; f += 0.05) {
+          for (var f = 0.025; f <= a + 0.001; f += 0.025) {
             var q = on(f);
             c.lineTo(X(q[0]), Y(q[1]));
           }
@@ -711,6 +731,24 @@
             dot(X(n.x), Y(n.y), 0.8 * size, '#fff', 0.9);
           } else {
             dot(X(n.x), Y(n.y), 0.5 * nr * size, n.c, 0.9);
+          }
+          if (n.leaf) {
+            // A cluster of leaves round each tip.
+            for (var q = 0; q < 5; q++) {
+              var la = n.p * 7 + q * 1.3, ld = 0.012 + 0.006 * q;
+              var lx = n.x + Math.cos(la) * ld, ly = n.y + Math.sin(la) * ld;
+              glow(X(lx), Y(ly), 2.6 * size, n.c + '88', 1);
+              dot(X(lx), Y(ly), 0.6 * size, '#fff', 0.8);
+            }
+          }
+          if (n.d >= DEPTH - 1) {
+            // ...and a few along the outer twigs.
+            for (var q = 1; q <= 2; q++) {
+              var tq = on(q / 3), sd = (q % 2 ? 1 : -1) * 0.008;
+              var tx = tq[0] - (n.y - p.y) * sd * 8, ty = tq[1] + (n.x - p.x) * sd * 8;
+              glow(X(tx), Y(ty), 2.2 * size, n.c + '77', 1);
+              dot(X(tx), Y(ty), 0.5 * size, '#fff', 0.7);
+            }
           }
         });
         nodes.forEach(function (n) {

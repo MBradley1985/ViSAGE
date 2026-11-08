@@ -8,6 +8,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Tracking can isolate what it follows: the galaxy, or the halo and its group, plus contributors when **Only contributors** is on.
+- The docs describe the Track panel.
+
+### Changed
+
+- Filters tab: the slider sections take the room until Find lists galaxies, then shrink to give it to the results.
+- The opening screen's trees have branches that wander between their knots like real limbs, with clusters of leaves at the tips and along the outer twigs.
+
 ---
 
 ## [2.22.0] — 2026-11-08
