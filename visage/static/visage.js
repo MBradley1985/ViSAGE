@@ -316,6 +316,13 @@
     });
   })();
 
+  // ─── The screen's pixel ratio (HD's Standard render resolution) ─────
+  (function sendPixelRatio() {
+    var t = window.trame;
+    if (!t || !t.state || !t.state.set) { setTimeout(sendPixelRatio, 300); return; }
+    t.state.set('client_dpr', window.devicePixelRatio || 1);
+  })();
+
   // ─── HD Components: numbered markers on the parts and a still key ───
   // hd_labels (from the server): {cats: [[name, colour]], items: [{t, cat,
   // text, vis}] in key order, marks: [{x, y, n}]} with x, y fractions of

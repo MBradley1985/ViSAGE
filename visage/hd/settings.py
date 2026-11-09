@@ -21,11 +21,35 @@ SETUP_MB = 150
 CACHE_SHARE = 0.2
 
 QUALITIES = ("lite", "group", "full")
+# HD's render resolution on a high-DPI (Retina) screen: every screen pixel
+# ("retina"), or one per point of the page ("standard": a quarter of the
+# pixels at 2x, the same on an ordinary screen).
+RENDERS = ("standard", "retina")
 PRESETS = {
-    "low": {"quality": "lite", "memory_mb": 1000, "max_models": 30},
-    "medium": {"quality": "group", "memory_mb": 1750, "max_models": 60},
-    "high": {"quality": "full", "memory_mb": 2500, "max_models": 100},
-    "crazy": {"quality": "full", "memory_mb": 2900, "max_models": 100},
+    "low": {
+        "quality": "lite",
+        "memory_mb": 1000,
+        "max_models": 30,
+        "render": "standard",
+    },
+    "medium": {
+        "quality": "group",
+        "memory_mb": 1750,
+        "max_models": 60,
+        "render": "standard",
+    },
+    "high": {
+        "quality": "full",
+        "memory_mb": 2500,
+        "max_models": 100,
+        "render": "retina",
+    },
+    "crazy": {
+        "quality": "full",
+        "memory_mb": 2900,
+        "max_models": 100,
+        "render": "retina",
+    },
 }
 DEFAULT = "medium"
 
@@ -34,6 +58,7 @@ def _clean(s: dict) -> dict:
     """Valid values only, the memory under LIMIT_MB."""
     base = PRESETS[DEFAULT]
     q = s.get("quality") if s.get("quality") in QUALITIES else base["quality"]
+    r = s.get("render") if s.get("render") in RENDERS else base["render"]
     try:
         mem = int(s.get("memory_mb", base["memory_mb"]))
         n = int(s.get("max_models", base["max_models"]))
@@ -49,6 +74,7 @@ def _clean(s: dict) -> dict:
             SETUP_MB + 200, min(mem, PRESETS["crazy"]["memory_mb"])
         ),
         "max_models": max(1, min(n, 100)),
+        "render": r,
     }
 
 

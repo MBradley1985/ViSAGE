@@ -345,6 +345,26 @@ def create_app(
             pass
 
     frame_delivery.on_frame.append(_refit_view)
+
+    # HD's render resolution (Settings): Standard renders a Retina screen's
+    # view at one pixel per point of the page while HD is on.  (The page
+    # sends its pixel ratio, visage.js.)
+    server.state.client_dpr = 1
+
+    @server.state.change("hd_active", "client_dpr", "hd_set_render")
+    def _render_scale(**_):
+        dpr = float(server.state.client_dpr or 1)
+        standard = (
+            bool(server.state.hd_active)
+            and server.state.hd_set_render == "standard"
+        )
+        scale = 1.0 / dpr if standard and dpr > 1 else 1.0
+        if scale != frame_delivery.render_scale[0]:
+            frame_delivery.render_scale[0] = scale
+            frame_delivery._mark_dirty()
+            if hasattr(server.controller, "view_update"):
+                server.controller.view_update()
+
     if perf:
         from visage.utils import perf as _perf
 

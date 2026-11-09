@@ -16,6 +16,7 @@ _PRESETS = (
     ("Custom", "custom"),
 )
 _QUALITY = (("Light", "lite"), ("Medium", "group"), ("Full", "full"))
+_RENDER = (("Standard", "standard"), ("Retina", "retina"))
 _NAME = {v: k for k, v in _QUALITY}
 
 
@@ -32,7 +33,14 @@ def _info(s: dict) -> list[str]:
         for q in allowed[::-1]
     ]
     ram = (system.total_memory_bytes() or 0) / 1024**3
+    render = (
+        "Rendered at every screen pixel (sharpest, slowest)."
+        if s["render"] == "retina"
+        else "Rendered at standard resolution on a Retina screen: a quarter "
+        "of the pixels, about 2-4x the frame rate."
+    )
     return [
+        render,
         "Galaxies in one view: " + ", ".join(reach) + "; beyond that, glows.",
         f"Memory limit {s['memory_mb'] / 1000:g} GB of HD's "
         f"{settings.LIMIT_MB / 1000:.0f} GB maximum: setup "
@@ -50,6 +58,7 @@ def build_settings_card(server) -> None:
     state.hd_set_quality = s["quality"]
     state.hd_set_memory = round(s["memory_mb"] / 1000, 2)
     state.hd_set_models = s["max_models"]
+    state.hd_set_render = s["render"]
     state.hd_set_info = _info(s)
     state.hd_set_mem_now = "0.0 GB"
     state.hd_set_models_now = 0
@@ -70,18 +79,24 @@ def build_settings_card(server) -> None:
         state.hd_set_quality = s["quality"]
         state.hd_set_memory = round(s["memory_mb"] / 1000, 2)
         state.hd_set_models = s["max_models"]
+        state.hd_set_render = s["render"]
         state.flush()
         busy["on"] = False
         apply(s)
 
-    @state.change("hd_set_quality", "hd_set_memory", "hd_set_models")
-    def _custom(hd_set_quality, hd_set_memory, hd_set_models, **_):
+    @state.change(
+        "hd_set_quality", "hd_set_memory", "hd_set_models", "hd_set_render"
+    )
+    def _custom(
+        hd_set_quality, hd_set_memory, hd_set_models, hd_set_render, **_
+    ):
         if busy["on"]:
             return
         s = {
             "quality": hd_set_quality,
             "memory_mb": int(round(float(hd_set_memory) * 1000)),
             "max_models": int(hd_set_models),
+            "render": hd_set_render,
         }
         match = next(
             (k for k, p in settings.PRESETS.items() if p == s), "custom"
@@ -153,13 +168,16 @@ def build_settings_card(server) -> None:
                     style="font-size:0.78rem;color:#cbd5e1;margin:2px 0;",
                 )
                 html.Div(
-                    "Changes apply from the next HD build.",
+                    "Quality and memory apply from the next HD build; render "
+                    "resolution at once.",
                     style="font-size:0.75rem;color:#fbbf24;margin-top:4px;",
                 )
 
                 html.Div("CUSTOM", style=sec)
                 v3.VLabel("Best quality", style=head)
                 pills("hd_set_quality", _QUALITY)
+                v3.VLabel("Render resolution (Retina screens)", style=head)
+                pills("hd_set_render", _RENDER)
                 v3.VLabel(
                     "Memory limit  {{ '— ' + hd_set_memory + ' GB' }}",
                     style=head,

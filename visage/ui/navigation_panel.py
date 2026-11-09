@@ -4347,6 +4347,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _push()
         _hd["mode"] = None
         _hd["built_snap"] = None
+        if bool(state.hd_active):
+            state.hd_gas = False  # the card's Gas button goes off with HD
         state.hd_active = False
         state.hd_labels = []
 

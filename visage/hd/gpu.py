@@ -75,6 +75,18 @@ def float_texture(
     return tex
 
 
+def bank_texture(s: int, fine: bool):
+    """A shared star bank as a texture (tiled, mipmapped), made once and
+    given to every galaxy."""
+    key = ("tex", s, fine)
+    if key not in _BANK:
+        t = float_texture(star_bank(s, fine), True, True)
+        t.EdgeClampOff()
+        t.RepeatOn()
+        _BANK[key] = t
+    return _BANK[key]
+
+
 def _splat_plane(pts, half, n, px_proto):
     """Deposit disk-plane point populations into an emissivity-per-area map
     (RGB, n x n over [-half, half]^2), blurred by each population's PSF."""
@@ -192,6 +204,9 @@ VOLUME_POPS = (
 SPRINKLE = 0.2
 # Diffuse 3D gas, drawn only with Gas: a jellyfish's stripped gas.
 GAS_POPS = ("jelly",)
+# Point-like gas, drawn only with Gas: the thin strands of a jellyfish's
+# plumes.
+GAS_SPRINKLE = ("jellystrands",)
 
 
 def _rows(a: np.ndarray, width: int) -> np.ndarray:
@@ -343,6 +358,169 @@ def point_grid(
 # texture (made once, behind the build card) instead of hashing it out
 # every frame: one texture read per octave.  NOISE_P lattice cells per
 # period, NOISE_TPU texels per cell, slices tiled NOISE_COLS across.
+# Star fields from shared banks (prototype): every galaxy keeps only its own
+# smooth light and star count per star population and level (SHARED_DC_N
+# square tiles, one texture); the stars themselves come from one tileable
+# star field per population and resolution, built once (`star_bank`) and
+# faded in by the galaxy's local star density.
+SHARED_STARS = False
+SHARED_DC_N = 256
+BANK_N = 1024
+# Per population (as build_points makes them): its point sets, stars per
+# coarse texel, brightness law (as drawn there), blur (offline PSF units)
+# and complexes (members, size in Rd) or None.  The bank's texels are the
+# star textures' (a 16 Rd map: 1 Rd = 128 fine / 64 coarse texels; one PSF
+# unit = 2 fine / 1 coarse texels).
+SPECIES = (
+    ("field", ("field", "midclusters"), 2.0, ("exp2", 80.0), (0.6, 0.6), None),
+    (
+        "clusters",
+        ("clusters", "ring"),
+        0.5,
+        ("pareto", 1.3, 25.0),
+        (0.45, 0.9),
+        (2, 10, 0.015, 0.06),
+    ),
+    (
+        "hii",
+        ("hii", "ring_hii"),
+        0.5,
+        ("pareto", 1.5, 12.0),
+        (0.175, 0.35),
+        (2, 10, 0.02, 0.05),
+    ),
+)
+# Rank ranges of a bank's four layers: a galaxy's local star density fades
+# them in, rarest first (whole complexes at a time).
+BANK_EDGES = (0.0, 1 / 64, 1 / 16, 1 / 4, 1.0)
+_BANK: dict = {}
+
+
+def star_bank(s: int, fine: bool) -> np.ndarray:
+    """Population `s`'s tileable star field (BANK_N square) in four layers
+    by rank (RGBA), in units of one mean star per texel."""
+    key = (s, fine)
+    if key in _BANK:
+        return _BANK[key]
+    name, _, per_texel, law, sig, cx = SPECIES[s]
+    n = BANK_N
+    scale = 2.0 if fine else 1.0  # texels per PSF unit
+    rd = 64.0 * scale  # texels per Rd
+    rng = np.random.default_rng(101 + 7 * s + int(fine))
+    ns = int(per_texel / (4.0 if fine else 1.0) * n * n)
+    if cx is None:
+        x, y = rng.uniform(0, n, ns), rng.uniform(0, n, ns)
+        rank = rng.uniform(0, 1, ns)
+    else:
+        lo, hi, s0, s1 = cx
+        k = rng.integers(lo, hi + 1, int(ns / ((lo + hi) / 2)))
+        size = np.repeat(rng.uniform(s0, s1, len(k)) * rd, k)
+        x = (
+            np.repeat(rng.uniform(0, n, len(k)), k)
+            + rng.normal(0, 1, k.sum()) * size
+        )
+        y = (
+            np.repeat(rng.uniform(0, n, len(k)), k)
+            + rng.normal(0, 1, k.sum()) * size
+        )
+        rank = np.repeat(rng.uniform(0, 1, len(k)), k)
+        ns = len(x)
+    if law[0] == "exp2":
+        lum = rng.exponential(1.0, ns) ** 2
+    else:
+        lum = np.minimum(rng.pareto(law[1], ns) + 1, law[2])
+    for _ in range(4):
+        lum = np.minimum(
+            lum / lum.mean(), law[-1] if law[0] == "exp2" else 1e9
+        )
+    lum /= lum.mean()
+    sigma = np.maximum(rng.uniform(sig[0], sig[1], ns) * scale, 0.6)
+    layer = np.searchsorted(BANK_EDGES, rank, side="right") - 1
+    x, y = np.mod(x, n), np.mod(y, n)
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    wx, wy = x - x0, y - y0
+    cls = 2.0 ** np.round(np.log2(sigma))
+    out = np.zeros((n, n, 4), np.float32)
+    for kk in range(4):
+        for c in np.unique(cls):
+            m = (layer == kk) & (cls == c)
+            if not m.any():
+                continue
+            light = np.zeros(n * n)
+            for dx, dy, w in (
+                (0, 0, (1 - wx) * (1 - wy)),
+                (1, 0, wx * (1 - wy)),
+                (0, 1, (1 - wx) * wy),
+                (1, 1, wx * wy),
+            ):
+                flat = ((y0[m] + dy) % n) * n + (x0[m] + dx) % n
+                light += np.bincount(
+                    flat, weights=lum[m] * w[m], minlength=n * n
+                )
+            out[..., kk] += gaussian_filter(
+                light.reshape(n, n), c, mode="wrap", truncate=3.0
+            )
+    _BANK[key] = out
+    return out
+
+
+def _count_plane(pts, half, n):
+    """Stars per unit area (n x n over [-half, half]^2)."""
+    cell = 2 * half / n
+    cnt = np.zeros(n * n)
+    for p in pts:
+        ix = np.floor((p.pos[:, 0] + half) / cell).astype(int)
+        iy = np.floor((p.pos[:, 1] + half) / cell).astype(int)
+        ok = (ix >= 0) & (ix < n) & (iy >= 0) & (iy < n)
+        cnt += np.bincount(iy[ok] * n + ix[ok], minlength=n * n)
+    return cnt.reshape(n, n) / (cell * cell)
+
+
+def _bank_glsl() -> str:
+    """restShared(): level K's splatted stars from the banks."""
+    n = len(SPECIES)
+    rows = []
+    for s, (_, _, per_texel, *_r) in enumerate(SPECIES):
+        rows.append(
+            f"""  {{
+    vec2 tl = (vec2({s}.0, float(K)) * uDcN + clamp(mapUV(pm, uMapHalf, uDcN) * uDcN, 0.5, uDcN - 0.5))
+              / vec2({n}.0 * uDcN, {N_LEVELS + 1}.0 * uDcN);
+    vec4 dc = texture(rest0Tex, tl);
+    // (None of this population here: nothing to fetch.  Its stars far
+    // below a pixel: their smooth light, which the bank's mips equal.)
+    if (dc.a > 0.0) {{
+      if (lod > 4.0) out_ += dc.rgb;
+      else {{
+        float nb = fine ? {per_texel / 4.0} : {per_texel};
+        vec2 ub = base + uBankOff{s};
+        vec4 L = fine ? textureLod(bank{s}ATex, ub, lod) : textureLod(bank{s}BTex, ub, lod);
+        float p = dc.a * cell * cell / nb;
+        float sl = dot(L, clamp((p - lo) / (hi - lo), 0.0, 1.0));
+        out_ += dc.rgb * sl / (nb * clamp(p, 1e-6, 1.0));
+      }}
+    }}
+  }}"""
+        )
+    return (
+        """
+// Level K's splatted stars: per population, the bank's stars faded in by
+// the local star density (rarest layer first), at the galaxy's local light
+// per star.
+vec3 restShared(int K, vec2 pm, float lA, float lB) {
+  bool fine = K < 2;
+  float res = fine ? uPtsN : 0.5 * uPtsN;
+  float lod = fine ? lA : lB;
+  float cell = 2.0 * uMapHalf / res;
+  vec2 base = (pm + uMapHalf) / (2.0 * uMapHalf) * res / uBankN;
+  const vec4 lo = vec4(0.0, 1.0 / 64.0, 1.0 / 16.0, 0.25);
+  const vec4 hi = vec4(1.0 / 64.0, 1.0 / 16.0, 0.25, 1.0);
+  vec3 out_ = vec3(0.0);
+"""
+        + "\n".join(rows)
+        + "\n  return out_;\n}\n"
+    )
+
+
 BAKED_NOISE = True
 NOISE_P = 32
 NOISE_TPU = 2
@@ -564,7 +742,10 @@ _IMPL = """//VTK::Light::Impl
   rA = vec2(max(rA.x, t0), min(rA.y, t1));
   rI = vec2(max(rI.x, t0), min(rI.y, t1));
   float rz = abs(rd.z);
-  float dtAtlas = 2.0 * uAtlasHalf / uAtlasN;
+  // (Four voxels a step: the debris is smooth on that scale; measured on
+  // the strongest shells, tails and streams, no pixel changes by more than
+  // 5 of 255, for a third to a half of these galaxies' frame time.)
+  float dtAtlas = 8.0 * uAtlasHalf / uAtlasN;
   float dtIcl = max((rI.y - rI.x) / 40.0, 1e-3);
   float tEnd = max(max(rS.y, rC.y), max(rA.y, rI.y));
 
@@ -660,13 +841,18 @@ _IMPL = """//VTK::Light::Impl
         }
         {
           // Splatted stars: those the current level(s) don't draw exactly.
-          vec2 uA = mapUV(pm, uMapHalf, uPtsN);
-          vec2 uB = mapUV(pm, uMapHalf, 0.5 * uPtsN);
-          float lA = max(log2(fpS * uPtsN / (2.0 * uMapHalf)), 0.0);
-          float lB = max(lA - 1.0, 0.0);
-          vec3 rs = (1.0 - wLV) * REST(LV, uA, uB, lA, lB);
-          if (wLV > 0.0) rs += wLV * REST(LV + 1, uA, uB, lA, lB);
-          e += uPtsGain * rs * pint(z0, z1, 0.04, dt);
+          // (They sit in a thin layer: steps well off it, where they add
+          // next to nothing, skip them.)
+          float wz = pint(z0, z1, 0.04, dt);
+          if (wz > 1e-4) {
+            vec2 uA = mapUV(pm, uMapHalf, uPtsN);
+            vec2 uB = mapUV(pm, uMapHalf, 0.5 * uPtsN);
+            float lA = max(log2(fpS * uPtsN / (2.0 * uMapHalf)), 0.0);
+            float lB = max(lA - 1.0, 0.0);
+            vec3 rs = (1.0 - wLV) * REST(LV, uA, uB, lA, lB);
+            if (wLV > 0.0) rs += wLV * REST(LV + 1, uA, uB, lA, lB);
+            e += uPtsGain * rs * wz;
+          }
         }
       }
       if (inC) {
@@ -868,6 +1054,24 @@ def icl_extent(rc) -> float:
     return float(r_in)
 
 
+def _dots(pops, px_proto, white):
+    """Point-like populations as (pos, radius, display colour) splats."""
+    pos = np.vstack([p.pos for p in pops])
+    sig = np.concatenate([np.maximum(p.sigma, 0.6) for p in pops]) * px_proto
+    lum = np.concatenate(
+        [
+            p.lum * (SPRINKLE if p.name in ("field", "globulars") else 1)
+            for p in pops
+        ]
+    )
+    rgb = np.vstack([p.rgb for p in pops])
+    # Each is a pixel-sized dot in the offline renders: give it the
+    # tone-mapped brightness of its own peak.
+    x = np.maximum(lum / (2 * np.pi * sig**2) / white, 1e-12)
+    c = np.clip(np.arcsinh(40.0 * x) / np.arcsinh(40.0), 0.0, 1.0)
+    return pos, 1.5 * sig, c[:, None] * rgb
+
+
 def icl_stars(gal, rc, px_proto):
     """The ICL's stripped stars (as raymarch.icl_zone's sprinkle), in 3D:
     drawn from the same envelope profile, display brightness as there."""
@@ -926,6 +1130,7 @@ def prepare(
     # filaments, ram-pressure tails.
     vol = [p for p in pts if p.name in VOLUME_POPS]
     gvol = [p for p in pts if p.name in GAS_POPS]
+    gas_sprinkle = [p for p in pts if p.name in GAS_SPRINKLE]
 
     tex = {}
     dummy3 = np.zeros((2, 2, 3), np.float32)
@@ -968,15 +1173,42 @@ def prepare(
         # Splats of what each level leaves out (the finest two at full
         # resolution; coarser levels are only used from further away).
         sizes = [npts, npts] + [npts // 2] * (len(rest) - 2)
-        with ThreadPoolExecutor(len(rest)) as ex:
-            splats = list(
-                ex.map(
-                    lambda a: _splat_plane(a[0], maps.half, a[1], px_proto),
-                    zip(rest, sizes, strict=True),
+        if SHARED_STARS:
+            # Only each population's smooth light and star count per level,
+            # as tiles of one texture (the stars come from the banks).
+            nd = SHARED_DC_N
+
+            def _dc(args):
+                L, s = args
+                a = [p for p in rest[L] if p.name in SPECIES[s][1]]
+                d = gaussian_filter(
+                    _splat_plane(a, maps.half, nd, px_proto), (1, 1, 0)
                 )
+                c = gaussian_filter(_count_plane(a, maps.half, nd), 1)
+                return L, s, np.dstack([d, c])
+
+            atlas = np.zeros(
+                (len(rest) * nd, len(SPECIES) * nd, 4), np.float32
             )
-        for L, img in enumerate(splats):
-            tex[f"rest{L}Tex"] = (img, "mip")
+            jobs = [
+                (L, s) for L in range(len(rest)) for s in range(len(SPECIES))
+            ]
+            with ThreadPoolExecutor(8) as ex:
+                for L, s, img in ex.map(_dc, jobs):
+                    atlas[L * nd : (L + 1) * nd, s * nd : (s + 1) * nd] = img
+            tex["rest0Tex"] = (atlas, "linear")
+        else:
+            with ThreadPoolExecutor(len(rest)) as ex:
+                splats = list(
+                    ex.map(
+                        lambda a: _splat_plane(
+                            a[0], maps.half, a[1], px_proto
+                        ),
+                        zip(rest, sizes, strict=True),
+                    )
+                )
+            for L, img in enumerate(splats):
+                tex[f"rest{L}Tex"] = (img, "mip")
         map_info = (maps.half, maps.old.shape[0], npts)
     else:
         tex["mapTex"] = (dummy3, "mip")
@@ -1041,9 +1273,11 @@ def prepare(
     return {
         "tex": tex,
         "sprinkle": sprinkle,
+        "gas_sprinkle": gas_sprinkle,
         "map": map_info,
         "atlas": atlas_info,
         "grid": grid,
+        "shared": bool(disk and SHARED_STARS),
     }
 
 
@@ -1088,7 +1322,12 @@ class GPUGalaxy:
             for k, (arr, mode) in prep["tex"].items()
         }
         tex["noiseTex"] = float_texture(noise_atlas(), True, False)
+        if prep.get("shared"):
+            for s in range(len(SPECIES)):
+                tex[f"bank{s}ATex"] = bank_texture(s, True)
+                tex[f"bank{s}BTex"] = bank_texture(s, False)
         sprinkle = prep["sprinkle"]
+        gas_sprinkle = prep.get("gas_sprinkle", [])
         map_half, map_n, npts = prep["map"]
         has_atlas = prep["atlas"] is not None
         atlas_half, atlas_n, atlas_nx, atlas_size = prep["atlas"] or (
@@ -1157,6 +1396,15 @@ class GPUGalaxy:
         impl = _IMPL.replace(
             "  //GAS::Impl", gas_glsl if gal is not None else ""
         )
+        shared = bool(prep.get("shared"))
+        if shared:
+            impl = impl.replace(
+                "vec3 rs = (1.0 - wLV) * REST(LV, uA, uB, lA, lB);",
+                "vec3 rs = (1.0 - wLV) * restShared(LV, pm, lA, lB);",
+            ).replace(
+                "if (wLV > 0.0) rs += wLV * REST(LV + 1, uA, uB, lA, lB);",
+                "if (wLV > 0.0) rs += wLV * restShared(LV + 1, pm, lA, lB);",
+            )
         sp.AddFragmentShaderReplacement(
             "//VTK::PositionVC::Dec", True, dec, False
         )
@@ -1167,7 +1415,9 @@ class GPUGalaxy:
         sp.AddFragmentShaderReplacement(
             "//VTK::Picking::Dec",
             True,
-            "//VTK::Picking::Dec\n" + _noise_glsl(),
+            "//VTK::Picking::Dec\n"
+            + _noise_glsl()
+            + (_bank_glsl() if shared else ""),
             False,
         )
 
@@ -1185,6 +1435,14 @@ class GPUGalaxy:
         f("uMapHalf", float(map_half))
         f("uMapN", float(map_n))
         f("uPtsN", float(npts))
+        if shared:
+            f("uDcN", float(SHARED_DC_N))
+            f("uBankN", float(BANK_N))
+            off = np.random.default_rng(rc.seed).uniform(
+                0, 1, (len(SPECIES), 2)
+            )
+            for s in range(len(SPECIES)):
+                u.SetUniform2f(f"uBankOff{s}", [float(v) for v in off[s]])
         f("uHz", float(rc.hz))
         from visage.hd.model import THICK
 
@@ -1308,32 +1566,23 @@ class GPUGalaxy:
         # the ICL's stripped stars.
         parts = []
         if sprinkle:
-            pos = np.vstack([p.pos for p in sprinkle])
-            sig = (
-                np.concatenate([np.maximum(p.sigma, 0.6) for p in sprinkle])
-                * px_proto
-            )
-            lum = np.concatenate(
-                [
-                    p.lum
-                    * (SPRINKLE if p.name in ("field", "globulars") else 1)
-                    for p in sprinkle
-                ]
-            )
-            rgb = np.vstack([p.rgb for p in sprinkle])
-            # Each is a pixel-sized dot in the offline renders: give it the
-            # tone-mapped brightness of its own peak.
-            x = np.maximum(lum / (2 * np.pi * sig**2) / white, 1e-12)
-            c = np.clip(np.arcsinh(40.0 * x) / np.arcsinh(40.0), 0.0, 1.0)
-            parts.append((pos, 1.5 * sig, c[:, None] * rgb))
+            parts.append(_dots(sprinkle, px_proto, white))
         if gal is not None and gal.ics > 0:
             parts.append(icl_stars(gal, rc, px_proto))
         if parts:
-            self._add_sprinkle(
+            self.sprinkle_actor = self._add_sprinkle(
                 np.vstack([p[0] for p in parts]),
                 np.concatenate([p[1] for p in parts]),
                 np.vstack([p[2] for p in parts]),
                 user_matrix,
+            )
+        # A jellyfish's thin gas strands: dots too, shown with Gas.
+        if gas_sprinkle:
+            self.gas_sprinkle_actor = self._add_sprinkle(
+                *_dots(gas_sprinkle, px_proto, white), user_matrix
+            )
+            self.gas_sprinkle_actor.SetVisibility(
+                gas is not None and gas is not False
             )
         return actor
 
@@ -1363,7 +1612,7 @@ class GPUGalaxy:
             for j in range(4):
                 m4.SetElement(i, j, float(user_matrix[i, j]))
         a.SetUserMatrix(m4)
-        self.sprinkle_actor = a
+        return a
 
     def _icl_uniforms(self, u, rc, gal):
         ics = getattr(gal, "ics", 0.0) if gal is not None else 0.0
@@ -1395,6 +1644,9 @@ class GPUGalaxy:
             self._uni.SetUniformf("uDiscGas", 1.0 if on else 0.0)
         if self._uni is not None and self.gas is not None:
             self._uni.SetUniformf("uGasOn", 1.0 if on else 0.0)
+        a = getattr(self, "gas_sprinkle_actor", None)
+        if a is not None:
+            a.SetVisibility(bool(on))
 
     def set_view_half(self, half_kpc: float) -> None:
         """How much of the halo is in view (kpc half-width): the hot gas
@@ -1409,10 +1661,15 @@ class GPUGalaxy:
         """Keep the star splats about a pixel across (`fp_model`: one
         screen pixel at the galaxy, model units) rather than a fixed size
         that balloons as the camera closes in."""
-        a = getattr(self, "sprinkle_actor", None)
-        if a is not None:
-            proto = self.frame_proto / 1024.0
-            a.mapper.SetScaleFactor(float(min(1.0, 1.5 * fp_model / proto)))
+        proto = self.frame_proto / 1024.0
+        for a in (
+            getattr(self, "sprinkle_actor", None),
+            getattr(self, "gas_sprinkle_actor", None),
+        ):
+            if a is not None:
+                a.mapper.SetScaleFactor(
+                    float(min(1.0, 1.5 * fp_model / proto))
+                )
 
     def set_white(self, white: float) -> None:
         """Tone-map white level (see `layer.Exposure`)."""
@@ -1430,11 +1687,16 @@ class GPUGalaxy:
                 self._uni.SetUniformf("uPixAng", float(pix_ang))
 
     def clear(self) -> None:
-        for a in (self.actor, getattr(self, "sprinkle_actor", None)):
+        for a in (
+            self.actor,
+            getattr(self, "sprinkle_actor", None),
+            getattr(self, "gas_sprinkle_actor", None),
+        ):
             if a is not None:
                 self._pl.remove_actor(a, render=False)
         self.actor = None
         self.sprinkle_actor = None
+        self.gas_sprinkle_actor = None
         self._uni = None
 
 

@@ -13,6 +13,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Tracking can isolate what it follows: the galaxy, or the halo and its group, plus contributors when **Only contributors** is on.
 - The docs describe the Track panel.
 - A **Settings** button (cog) in the top toolbar opens HD quality presets — Low, Medium (default), High and Crazy — or custom values: best quality, memory limit and galaxies per view. The card says what each gives and how much memory HD holds now. Nothing HD holds reaches 3 GB; Crazy comes closest.
+- Settings has a **Render resolution** choice for HD on Retina screens: Standard renders HD at the window's size in points, Retina at every screen pixel. Low and Medium use Standard; High and Crazy use Retina. It applies at once; dots and lines keep their size.
 
 ### Changed
 
@@ -22,6 +23,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Sharper HD discs: the disc maps cover 1.3 disc extents instead of 1.6, so disc light, dust and gas are about 1.2× sharper. The full-quality debris volume is 160³ (was 112³).
 - The old disc's smooth light follows the spiral arms, rather than lying over them as an even haze. Lenticulars and irregulars are unchanged.
 - The HD Components (?) markers sit on the part itself, not just beside a thin arm.
+- Faster HD frames with the same look: merger debris is stepped every four voxels, and star fields are skipped far from the star layer.
+- The thin strands in a jellyfish's tail are gas: they show and hide with **Gas**. Its star-forming knots stay.
+
+### Fixed
+
+- The info card's **Gas** button switches off when HD does.
 
 ---
 

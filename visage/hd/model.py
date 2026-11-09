@@ -2507,8 +2507,8 @@ def tidal_points(
 # threads trailing off the disc, blue and H-alpha magenta, a few long ones
 # curling (JW100, JO206, JO201: Poggianti et al. 2017, 2019); and, with
 # Gas, the stripped gas round them, drawn as HD draws the CGM, and long
-# soft twisting plumes of gas in a range of
-# blues, trailing off (ESO 137-001: Sun et al. 2006, 2010).  Each is set
+# soft twisting plumes of gas in a range of blues with thin strands along
+# them, trailing off (ESO 137-001: Sun et al. 2006, 2010).  Each is set
 # by the galaxy: how many threads by its cold gas, how bright by its
 # sSFR, how long by ram pressure and time since infall, the gas by its
 # gas fraction.  Lengths are in disk scale lengths.
@@ -2730,7 +2730,7 @@ def jelly_points(
         lum / lum.sum() * JELLY_KNOTS["strand"] * JELLY_STARS * 0.5 * young,
         rgb,
         np.full(len(lum), 0.5),
-        "jellyknots",
+        "jellystrands",
     )
     return [gas, knots, strands, plumes]
 

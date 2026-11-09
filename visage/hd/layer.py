@@ -67,7 +67,15 @@ def observer_rotation(los, spin, seed) -> np.ndarray:
 
 
 # HD's point layers that are line emission or the AGN, not starlight.
-EMISSION_LAYERS = ("hii", "ring_hii", "halpha", "jelly", "jellyknots", "agn")
+EMISSION_LAYERS = (
+    "hii",
+    "ring_hii",
+    "halpha",
+    "jelly",
+    "jellyknots",
+    "jellystrands",
+    "agn",
+)
 
 
 def _on_stellar_locus(x: float, y: float) -> np.ndarray:

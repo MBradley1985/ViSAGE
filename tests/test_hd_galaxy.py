@@ -170,6 +170,33 @@ def test_gas_switch_changes_the_picture(plotter):
     g.clear()
 
 
+def test_jellyfish_strands_are_gas(plotter):
+    """A jellyfish's thin strands show and hide with Gas; its knots stay."""
+    from visage.hd.gpu import GPUGalaxy
+    from visage.hd.model import jelly_points
+
+    gal = dataclasses.replace(_disk(), cold_gas=2e10, t_since_infall_gyr=4.0)
+    rc = recipe_from_sage(gal)
+    maps = build_disk_maps(rc, n=256)
+    tail = jelly_points(rc, gal, (1, 0, 0), 0.5, 1)
+    assert [p.name for p in tail] == [
+        "jelly",
+        "jellyknots",
+        "jellystrands",
+        "jelly",
+    ]
+    g = GPUGalaxy(plotter)
+    g.build(rc, maps, build_points(rc, maps) + tail, 1.0, np.eye(4), gal=gal)
+    assert g.sprinkle_actor.GetVisibility()  # the knots
+    assert not g.gas_sprinkle_actor.GetVisibility()
+    g.set_gas(True)
+    assert g.gas_sprinkle_actor.GetVisibility()
+    g.set_gas(False)
+    assert not g.gas_sprinkle_actor.GetVisibility()
+    g.clear()
+    assert g.gas_sprinkle_actor is None
+
+
 def test_layer_places_and_orients_the_model(plotter):
     from visage.hd.layer import HDGalaxyLayer
 
@@ -425,6 +452,7 @@ def test_hd_draws_the_whole_group(hd_panel):
     ctrl.toggle_hd()
     state.flush()
     assert not state.hd_active and not grp.active
+    assert not state.hd_gas  # the card's Gas button goes off with HD
     # (Leaving HD: the Go view of the selection, 3 Mpc/h away.)
     assert _cam_dist(scene) == pytest.approx(3.0)
 
@@ -468,6 +496,10 @@ def test_hd_settings_stay_under_the_limit(tmp_path, monkeypatch):
     assert s["memory_mb"] < settings.LIMIT_MB and s["max_models"] == 100
     assert settings.load() == s
     assert sum(settings.split(s)) + settings.SETUP_MB == s["memory_mb"]
+    # Render resolution: Standard by default, Retina only when asked for.
+    assert s["render"] == settings.PRESETS[settings.DEFAULT]["render"]
+    assert settings.save(dict(s, render="retina"))["render"] == "retina"
+    assert settings.save(dict(s, render="8k"))["render"] == "standard"
 
 
 def test_group_members_build_in_the_process_pool():
