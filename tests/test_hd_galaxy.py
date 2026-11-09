@@ -430,18 +430,44 @@ def test_hd_draws_the_whole_group(hd_panel):
 
 
 def test_group_plan_draws_every_model_alike():
-    """One quality for every model in a view, the best that fits the
-    texture budget; past N_HD, glows."""
+    """One quality for every model in a view, the best the HD settings allow
+    that fits their memory; the rest glows."""
+    from visage.hd import settings
     from visage.hd.group import N_HD, plan
 
+    s = settings.from_preset("high")  # 1880 MB for the models
     gals = [_disk()] * (N_HD + 50)
-    q = plan(gals)
-    assert set(q[:N_HD]) == {"lite"} and q[N_HD:] == [None] * 50
-    assert plan(gals[:1]) == ["full"]
-    assert set(plan(gals[:13])) == {"full"}
-    assert set(plan(gals[:14])) == {"group"}
-    assert set(plan(gals[:60])) == {"group"}
-    assert set(plan(gals[:61])) == {"lite"}
+    q = plan(gals, s)
+    assert q[:19] == ["lite"] * 19 and q[19:] == [None] * (N_HD + 31)
+    assert plan(gals[:1], s) == ["full"]
+    assert set(plan(gals[:2], s)) == {"full"}
+    assert set(plan(gals[:3], s)) == {"group"}
+    assert set(plan(gals[:8], s)) == {"group"}
+    assert set(plan(gals[:9], s)) == {"lite"}
+    # A lower best quality caps it, and fewer galaxies are allowed.
+    low = settings.from_preset("low")
+    assert plan(gals[:1], low) == ["lite"]
+    assert plan(gals[:40], low).count("lite") == 7
+
+
+def test_hd_settings_stay_under_the_limit(tmp_path, monkeypatch):
+    """No preset or custom value lets HD reach its 3 GB; settings persist."""
+    from visage.hd import settings
+
+    monkeypatch.setattr(settings, "_FILE", tmp_path / "hd_settings.json")
+    for name in settings.PRESETS:
+        assert settings.from_preset(name)["memory_mb"] < settings.LIMIT_MB
+    s = settings.save(
+        {
+            "preset": "custom",
+            "quality": "group",
+            "memory_mb": 99999,
+            "max_models": 500,
+        }
+    )
+    assert s["memory_mb"] < settings.LIMIT_MB and s["max_models"] == 100
+    assert settings.load() == s
+    assert sum(settings.split(s)) + settings.SETUP_MB == s["memory_mb"]
 
 
 def test_group_members_build_in_the_process_pool():

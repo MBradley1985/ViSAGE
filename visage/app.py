@@ -134,6 +134,7 @@ html, body, .v-application { background: #000000 !important; }
 # fmt: on
 from visage.ui.info_panel import build_info_panel
 from visage.ui.selection import build_selection, selection_card
+from visage.ui.settings_card import build_settings_card
 from visage.ui.navigation_panel import build_navigation_panel
 from visage.ui.toolbar import build_toolbar
 from visage.ui.story_mode import (
@@ -1190,6 +1191,12 @@ def create_app(
                     server.controller.check_for_updates,
                     "white",
                 ),
+                (
+                    "mdi-cog-outline",
+                    "Settings",
+                    "hd_set_dialog = true",
+                    "white",
+                ),
             ):
                 v3.VBtn(
                     icon=icon,
@@ -1221,6 +1228,9 @@ def create_app(
 
             # ── Story Mode playback overlay (hidden unless a story is active)
             build_story_hud(server)
+
+            # ── Settings card (toolbar cog) ────────────────────────────────
+            build_settings_card(server)
 
             # ── Export catalogue dialog ────────────────────────────────────
             # Scope options are built in navigation_panel (state var) so the

@@ -305,23 +305,39 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
 
 
 # Every model in a view is built at one quality, so neighbours are drawn
-# alike: the best whose memory for all of them fits the budget (MB).  Per
-# model as measured in a running process (2026-11-09: textures, plus ~30 MB
-# for each model's actor and shader whatever its quality).
-TEXTURE_BUDGET = 3000
-TEXTURE_MB = {"full": 230, "group": 50, "lite": 45}
+# alike: the best the HD settings allow whose memory for all of them fits
+# their budget.  Per model (MB), everything it holds (GPU textures and its
+# build), measured in the viewer (2026-11-09: galaxies, a 10-member group
+# and a 90-member cluster at each preset), rounded up.
+TEXTURE_MB = {"full": 800, "group": 220, "lite": 95}
 
 
-def plan(gals: list[SageGalaxy]) -> list[str | None]:
+def plan(gals: list[SageGalaxy], s: dict | None = None) -> list[str | None]:
     """Build quality for each member (None = drawn as a glow), in the
     order given (the caller sorts by stellar mass, central first): one
-    quality for all the models, the first N_HD."""
-    n = min(len(gals), N_HD)
-    q = next(
-        (k for k in ("full", "group") if n * TEXTURE_MB[k] <= TEXTURE_BUDGET),
-        "lite",
-    )
-    return [q if i < N_HD else None for i in range(len(gals))]
+    quality for all the models, as many as the HD settings `s` (default:
+    the saved ones) allow and their memory holds."""
+    from visage.hd import settings
+
+    s = s or settings.load()
+    budget, _ = settings.split(s)
+    allowed = settings.QUALITIES[: settings.QUALITIES.index(s["quality"]) + 1]
+    n = min(len(gals), N_HD, s["max_models"])
+    q = next((k for k in allowed[::-1] if n * TEXTURE_MB[k] <= budget), None)
+    if q is None:
+        # Not even light quality for all: fewer models, the rest glows.
+        q = "lite"
+        n = max(1, budget // TEXTURE_MB[q])
+    return [q if i < n else None for i in range(len(gals))]
+
+
+def cap_quality(q: str, s: dict | None = None) -> str:
+    """`q`, or the best the HD settings allow if that is lower."""
+    from visage.hd import settings
+
+    s = s or settings.load()
+    best = settings.QUALITIES.index(s["quality"])
+    return settings.QUALITIES[min(settings.QUALITIES.index(q), best)]
 
 
 def prepare_member(
@@ -418,6 +434,12 @@ class BuildCache:
         self._items.move_to_end(key)
         return hit[0]
 
+    def set_budget(self, budget_bytes: int) -> None:
+        """A new budget, dropping the oldest builds that no longer fit."""
+        self.budget = int(budget_bytes)
+        while len(self._items) > 1 and self.nbytes > self.budget:
+            self._items.popitem(last=False)
+
     def put(self, key, preps) -> None:
         self._items[key] = (preps, _nbytes(preps))
         self._items.move_to_end(key)
@@ -436,11 +458,10 @@ class BuildCache:
 
 
 def default_cache_budget() -> int:
-    """A tenth of the machine's memory, between 0.5 and 3 GB."""
-    from visage import system
+    """The build cache's share of the HD settings' memory limit (bytes)."""
+    from visage.hd import settings
 
-    total = system.total_memory_bytes() or 8 * 1024**3
-    return int(np.clip(total / 10, 0.5 * 1024**3, 3 * 1024**3))
+    return settings.split(settings.load())[1] * 1024**2
 
 
 class HDGroupLayer:

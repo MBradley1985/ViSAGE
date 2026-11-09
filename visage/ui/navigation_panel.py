@@ -4291,6 +4291,37 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _hd["cache"] = BuildCache(default_cache_budget())
         return _hd["cache"]
 
+    @ctrl.set("hd_settings_applied")
+    def _hd_settings_applied():
+        """The HD settings changed: resize the build cache (the models
+        follow on the next build) and refresh the memory line."""
+        from visage.hd.group import default_cache_budget
+
+        if _hd["cache"] is not None:
+            _hd["cache"].set_budget(default_cache_budget())
+        _hd_memory_now()
+
+    @ctrl.set("hd_memory_now")
+    def _hd_memory_now():
+        """Estimate of what HD holds now, for the settings card."""
+        from visage.hd.group import TEXTURE_MB
+        from visage.hd.settings import SETUP_MB
+
+        grp = _hd["group"]
+        live = grp.entries if grp is not None and grp.active else []
+        qs = [
+            e.get("quality")
+            for e in live
+            if e.get("prep") is not None and e.get("quality") in TEXTURE_MB
+        ]
+        mb = sum(TEXTURE_MB[q] for q in qs)
+        if _hd["cache"] is not None:
+            mb += _hd["cache"].nbytes / 1024**2
+        if grp is not None or _hd["layer"] is not None:
+            mb += SETUP_MB
+        state.hd_set_mem_now = f"{mb / 1024:.1f} GB"
+        state.hd_set_models_now = len(qs)
+
     def _hd_layer():
         if _hd["layer"] is None:
             from visage.hd.layer import HDGalaxyLayer
@@ -4813,6 +4844,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
         from visage.hd.group import (
+            cap_quality,
             plan,
             pool,
             prepare_member,
@@ -4869,7 +4901,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             # the group's mass ranking it is.
             for j, k in enumerate(idx):
                 if int(k) == int(focus) and group_q[j] in (None, "lite"):
-                    group_q[j] = "group"
+                    group_q[j] = cap_quality("group")
         entries = [
             entry(k, "member", q, g)
             for k, q, g in zip(idx, group_q, gals, strict=True)
@@ -4884,7 +4916,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 (j for j, e in enumerate(entries) if e["idx"] == int(focus)),
                 0,
             )
-            one = dict(entries[k], quality="full")
+            one = dict(entries[k], quality=cap_quality("full"))
             partners = {0: partners.get(k, [])}
             sat_ctx = {0: sat_ctx[k]} if k in sat_ctx else {}
             entries = [one]
@@ -5189,7 +5221,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
         the group on screen and fly to it."""
         import asyncio
 
-        from visage.hd.group import EXTRA_QUALITY, pool, prepare_member
+        from visage.hd.group import (
+            EXTRA_QUALITY,
+            cap_quality,
+            pool,
+            prepare_member,
+        )
+
+        quality = cap_quality(EXTRA_QUALITY)
 
         if bool(state.hd_building):
             return
@@ -5200,7 +5239,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             grp = _hd["group"]
             if grp is None or not grp.active or e not in grp.entries:
                 return
-            e.update(prep=prep, quality=EXTRA_QUALITY, extra=True)
+            e.update(prep=prep, quality=quality, extra=True)
             lay = grp.add_extra(e)
             _hd_tags()
             _hd_fly_to(lay, np.asarray(e["center"], float))
@@ -5209,14 +5248,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         loop = _running_loop()
         if loop is None:
-            show(prepare_member(e["gal"], EXTRA_QUALITY, ctx))
+            show(prepare_member(e["gal"], quality, ctx))
             return
         state.hd_building = True
         state.hd_progress = "Building HD galaxy… 0/1"
         state.hd_percent = 0
         state.flush()
         token = _hd["build"] = object()
-        prog = _hd_progress({0: {"quality": EXTRA_QUALITY}}, [0])
+        prog = _hd_progress({0: {"quality": quality}}, [0])
 
         async def run():
             ticker = loop.create_task(
@@ -5228,7 +5267,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 except Exception:
                     ex = None
                 prep = await loop.run_in_executor(
-                    ex, prepare_member, e["gal"], EXTRA_QUALITY, ctx
+                    ex, prepare_member, e["gal"], quality, ctx
                 )
                 ticker.cancel()
                 if _hd["build"] is token:
