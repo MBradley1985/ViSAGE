@@ -24,6 +24,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - The old disc's smooth light follows the spiral arms, rather than lying over them as an even haze. Lenticulars and irregulars are unchanged.
 - The HD Components (?) markers sit on the part itself, not just beside a thin arm.
 - Faster HD frames with the same look: merger debris is stepped every four voxels, and star fields are skipped far from the star layer.
+- Faster HD gas: a pair's close-up with **Gas** on runs about 50% faster (23 to 34 FPS on a Retina Mac at Standard). The wind's and HI disc's detail is skipped where it is too faint to show, empty volumes aren't sampled, a jellyfish's gas volume is skipped with Gas off, and rays only cross the part of a volume that holds anything.
 - The thin strands in a jellyfish's tail are gas: they show and hide with **Gas**. Its star-forming knots stay.
 
 ### Fixed

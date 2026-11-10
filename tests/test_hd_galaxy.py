@@ -197,6 +197,38 @@ def test_jellyfish_strands_are_gas(plotter):
     assert g.gas_sprinkle_actor is None
 
 
+def test_a_gas_only_volume_is_marched_only_with_gas(plotter):
+    """A jellyfish tail's volume is all gas: rays skip it with Gas off, and
+    march only the box its gas fills (one side of the galaxy) with it on."""
+    from visage.hd.gpu import GPUGalaxy
+    from visage.hd.model import jelly_points
+
+    gal = dataclasses.replace(_disk(), cold_gas=2e10, t_since_infall_gyr=4.0)
+    rc = recipe_from_sage(gal)
+    maps = build_disk_maps(rc, n=256)
+    tail = jelly_points(rc, gal, (1, 0, 0), 0.5, 1)
+    g = GPUGalaxy(plotter)
+    g.build(rc, maps, build_points(rc, maps) + tail, 1.0, np.eye(4), gal=gal)
+    star, gas = g._atlas
+    assert star is None and gas is not None
+    lo, hi = gas
+    assert hi[0] > 2 * -lo[0]  # it trails along +x
+
+    def has():
+        from vtkmodules.vtkCommonCore import reference
+
+        v = reference(0.0)
+        g._uni.GetUniformf("uHasAtlas", v)
+        return float(v)
+
+    assert has() == 0.0
+    g.set_gas(True)
+    assert has() == 1.0
+    g.set_gas(False)
+    assert has() == 0.0
+    g.clear()
+
+
 def test_layer_places_and_orients_the_model(plotter):
     from visage.hd.layer import HDGalaxyLayer
 

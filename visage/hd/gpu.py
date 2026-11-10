@@ -133,7 +133,8 @@ def _splat_plane(pts, half, n, px_proto):
 
 def _splat_volume(pts, half, n, px_proto):
     """3D point light -> emissivity-per-volume grid (n^3 over [-half, half]^3),
-    returned as a 2D atlas of z slices plus its tile layout."""
+    returned as a 2D atlas of z slices plus its tile layout, and the box
+    (lo, hi) outside which it is zero."""
     vol = np.zeros((n, n, n, 3), np.float64)
     cell = 2 * half / n
     for p in pts:
@@ -157,13 +158,17 @@ def _splat_volume(pts, half, n, px_proto):
                             val[:, c] * ww,
                         )
     vol = gaussian_filter(vol, (0.8, 0.8, 0.8, 0))
+    # (Its lit voxels, and one more each side for the interpolation.)
+    lit = np.argwhere(vol.max(axis=3) > 0)[:, ::-1]
+    lo = np.maximum(lit.min(axis=0) - 1, 0) * cell - half
+    hi = np.minimum(lit.max(axis=0) + 2, n) * cell - half
     nx = int(math.ceil(math.sqrt(n)))
     ny = int(math.ceil(n / nx))
     atlas = np.zeros((ny * n, nx * n, 3), np.float32)
     for k in range(n):
         tx, ty = k % nx, k // nx
         atlas[ty * n : (ty + 1) * n, tx * n : (tx + 1) * n] = vol[k]
-    return atlas, nx, ny
+    return atlas, nx, ny, (lo, hi)
 
 
 # Point sources drawn exactly by the shader: each one's own PSF, sized to
@@ -734,7 +739,7 @@ _IMPL = """//VTK::Light::Impl
     rS = rayBox(ro, inv, vec3(-uMapHalf, -uMapHalf, -uZCut), vec3(uMapHalf, uMapHalf, uZCut));
   vec2 rC = raySphere(ro, rd, uRCore);
   vec2 rA = vec2(1e30, -1e30);
-  if (uHasAtlas > 0.5) rA = rayBox(ro, inv, vec3(-uAtlasHalf), vec3(uAtlasHalf));
+  if (uHasAtlas > 0.5) rA = rayBox(ro, inv, uAtlasLo, uAtlasHi);
   vec2 rI = vec2(1e30, -1e30);
   if (uLIcl > 0.0) rI = raySphere(ro, rd, uIclR);
   rS = vec2(max(rS.x, t0), min(rS.y, t1));
@@ -911,9 +916,12 @@ _IMPL = """//VTK::Light::Impl
           vec2 inT = clamp(q.xy * uAtlasN, 0.5, uAtlasN - 0.5);
           vec2 a0 = vec2(mod(za, uAtlasNx), floor(za / uAtlasNx)) * uAtlasN + inT;
           vec2 a1 = vec2(mod(zb, uAtlasNx), floor(zb / uAtlasNx)) * uAtlasN + inT;
-          acc += mix(texture(atlasTex, a0 / uAtlasSize).rgb,
-                     texture(atlasTex, a1 / uAtlasSize).rgb, fz);
-          if (uDiscGas > 0.5)
+          // (Either volume may be empty: a jellyfish tail is all gas, and
+          // only a galaxy with one has gas in it.)
+          if (uStarAtlas > 0.5)
+            acc += mix(texture(atlasTex, a0 / uAtlasSize).rgb,
+                       texture(atlasTex, a1 / uAtlasSize).rgb, fz);
+          if (uDiscGas > 0.5 && uGasAtlas > 0.5)
             acc += mix(texture(gasAtlasTex, a0 / uAtlasSize).rgb,
                        texture(gasAtlasTex, a1 / uAtlasSize).rgb, fz);
         }
@@ -1221,12 +1229,13 @@ def prepare(
     atlas_info = None
     tex["atlasTex"] = (dummy3, "linear")
     tex["gasAtlasTex"] = (dummy3, "linear")
+    boxes = {}
     if vol or gvol:
         allpos = np.vstack([p.pos for p in vol + gvol])
         atlas_half = float(max(np.percentile(np.abs(allpos), 99.5), E))
         for name, ps in (("atlasTex", vol), ("gasAtlasTex", gvol)):
             if ps:
-                atlas, nx, ny = _splat_volume(
+                atlas, nx, ny, boxes[name] = _splat_volume(
                     ps, atlas_half, atlas_n, px_proto
                 )
                 tex[name] = (atlas, "linear")
@@ -1276,6 +1285,8 @@ def prepare(
         "gas_sprinkle": gas_sprinkle,
         "map": map_info,
         "atlas": atlas_info,
+        "star_atlas": boxes.get("atlasTex"),
+        "gas_atlas": boxes.get("gasAtlasTex"),
         "grid": grid,
         "shared": bool(disk and SHARED_STARS),
     }
@@ -1529,7 +1540,12 @@ class GPUGalaxy:
             f(f"uIdxBase{L}", float(g["base"]))
         u.SetUniformi("uIdxW", _IDX_W)
         u.SetUniformi("uEntW", _ENT_W)
-        f("uHasAtlas", 1.0 if has_atlas else 0.0)
+        # What the volume holds, and where: stars (debris), gas (a
+        # jellyfish tail), or both.
+        self._atlas = (prep.get("star_atlas"), prep.get("gas_atlas"))
+        f("uStarAtlas", 1.0 if self._atlas[0] is not None else 0.0)
+        f("uGasAtlas", 1.0 if self._atlas[1] is not None else 0.0)
+        self._atlas_box(False, u)
         f("uAtlasHalf", float(atlas_half))
         f("uAtlasN", float(atlas_n))
         f("uAtlasNx", float(atlas_nx))
@@ -1642,11 +1658,26 @@ class GPUGalaxy:
             # (The disc's own HI and H2 for any galaxy; the halo gas only
             # for one that draws it.)
             self._uni.SetUniformf("uDiscGas", 1.0 if on else 0.0)
+            self._atlas_box(on)
         if self._uni is not None and self.gas is not None:
             self._uni.SetUniformf("uGasOn", 1.0 if on else 0.0)
         a = getattr(self, "gas_sprinkle_actor", None)
         if a is not None:
             a.SetVisibility(bool(on))
+
+    def _atlas_box(self, gas_on: bool, u=None) -> None:
+        """Rays march the volume only through the box its lit part fills
+        (with Gas, the gas's too); none lit, not at all."""
+        u = self._uni if u is None else u
+        star, gas = getattr(self, "_atlas", (None, None))
+        boxes = [b for b in (star, gas if gas_on else None) if b is not None]
+        lo, hi = np.zeros(3), np.zeros(3)
+        if boxes:
+            lo = np.min([b[0] for b in boxes], axis=0)
+            hi = np.max([b[1] for b in boxes], axis=0)
+        u.SetUniformf("uHasAtlas", 1.0 if boxes else 0.0)
+        u.SetUniform3f("uAtlasLo", [float(v) for v in lo])
+        u.SetUniform3f("uAtlasHi", [float(v) for v in hi])
 
     def set_view_half(self, half_kpc: float) -> None:
         """How much of the halo is in view (kpc half-width): the hot gas
