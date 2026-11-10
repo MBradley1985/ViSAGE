@@ -30,6 +30,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - The info card's **Gas** button switches off when HD does.
+- HD spirals' disc dust matches their photometry's dust screen again (it had come out a median 9% too dusty since the old light began following the arms).
 
 ---
 

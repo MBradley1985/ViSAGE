@@ -1876,6 +1876,13 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         )
         old = old * np.maximum(lop, 0.1)
         young = young * np.maximum(lop, 0.1) ** 1.5
+    if rc.arm_old_amp > 0:
+        # The old disc's smooth light follows the arms too, rather than
+        # sitting over them as an even haze (none for S0s and irregulars);
+        # before the dust is scaled against it, so it weighs the stars as
+        # they are drawn.
+        arm_n = arm_eff / max(float(arm_eff.max()), 1e-9)
+        old = old * np.clip(0.55 + 0.9 * arm_n, 0.25, 1.6)
     giant = np.zeros_like(r)
     if rc.clumps:
         # Giant star-forming clumps (high-z / feedback-free disks): a few
@@ -2076,11 +2083,6 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     if rc.tau0 <= 0:
         # No dust at all (a lightcone galaxy whose photometry has none).
         dust = np.zeros_like(dust)
-    if rc.arm_old_amp > 0:
-        # The old disc's smooth light follows the arms too, rather than
-        # sitting over them as an even haze (none for S0s and irregulars).
-        arm_n = arm_eff / max(float(arm_eff.max()), 1e-9)
-        old = old * np.clip(0.55 + 0.9 * arm_n, 0.25, 1.6)
     return PlaneMaps(
         half=half,
         old=old.astype(np.float32),
