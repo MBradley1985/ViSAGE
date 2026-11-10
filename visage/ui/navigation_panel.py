@@ -4918,7 +4918,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 (j for j, e in enumerate(entries) if e["idx"] == int(focus)),
                 0,
             )
-            one = dict(entries[k], quality=cap_quality("full"))
+            one = dict(entries[k], quality="full")
             partners = {0: partners.get(k, [])}
             sat_ctx = {0: sat_ctx[k]} if k in sat_ctx else {}
             entries = [one]

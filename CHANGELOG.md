@@ -12,14 +12,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 - Tracking can isolate what it follows: the galaxy, or the halo and its group, plus contributors when **Only contributors** is on.
 - The docs describe the Track panel.
-- A **Settings** button (cog) in the top toolbar opens HD quality presets — Low, Medium (default), High and Crazy — or custom values: best quality, memory limit and galaxies per view. The card says what each gives and how much memory HD holds now. Nothing HD holds reaches 3 GB; Crazy comes closest.
+- A **Settings** button (cog) in the top toolbar opens HD quality presets — Low, Medium (default), High and Crazy — or custom values: best quality, memory limit and galaxies per view. The card says what each gives and how much memory HD holds now. Nothing HD holds reaches 4 GB.
 - Settings has a **Render resolution** choice for HD on Retina screens: Standard renders HD at the window's size in points, Retina at every screen pixel. Low and Medium use Standard; High and Crazy use Retina. It applies at once; dots and lines keep their size.
 
 ### Changed
 
 - Filters tab: the slider sections take the room until Find lists galaxies, then shrink to give it to the results.
 - The opening screen's trees have branches that wander between their knots like real limbs, with clusters of leaves at the tips and along the outer twigs.
-- HD groups build every galaxy in a view at one quality, so neighbours are drawn alike: the best quality the Settings preset allows whose memory, as measured in a running viewer (about 95 MB light, 220 MB medium and 800 MB full per galaxy), fits its limit. Beyond that, galaxies are drawn as glows. A single galaxy also follows the preset.
+- HD groups build every galaxy in a view at one quality, so neighbours are drawn alike: the best quality the Settings preset allows whose memory, as measured in a running viewer (about 95 MB light, 220 MB medium and 800 MB full per galaxy), fits its limit. Beyond that, galaxies are drawn as glows. Single galaxies, pairs and triplets are always built at full quality, whatever the preset (a triplet holds about 3.1 GB).
 - Sharper HD discs: the disc maps cover 1.3 disc extents instead of 1.6, so disc light, dust and gas are about 1.2× sharper. The full-quality debris volume is 160³ (was 112³).
 - The old disc's smooth light follows the spiral arms, rather than lying over them as an even haze. Lenticulars and irregulars are unchanged.
 - The HD Components (?) markers sit on the part itself, not just beside a thin arm.

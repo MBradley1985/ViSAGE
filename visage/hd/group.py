@@ -310,15 +310,20 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
 # build), measured in the viewer (2026-11-09: galaxies, a 10-member group
 # and a 90-member cluster at each preset), rounded up.
 TEXTURE_MB = {"full": 800, "group": 220, "lite": 95}
+# Singles, pairs and triplets are always built at full quality; the HD
+# settings only set what bigger groups and clusters get.
+SMALL = 3
 
 
 def plan(gals: list[SageGalaxy], s: dict | None = None) -> list[str | None]:
     """Build quality for each member (None = drawn as a glow), in the
     order given (the caller sorts by stellar mass, central first): one
     quality for all the models, as many as the HD settings `s` (default:
-    the saved ones) allow and their memory holds."""
+    the saved ones) allow and their memory holds; full for up to SMALL."""
     from visage.hd import settings
 
+    if len(gals) <= SMALL:
+        return ["full"] * len(gals)
     s = s or settings.load()
     budget, _ = settings.split(s)
     allowed = settings.QUALITIES[: settings.QUALITIES.index(s["quality"]) + 1]

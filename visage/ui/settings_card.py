@@ -1,5 +1,5 @@
 """Settings card (toolbar cog): HD quality presets, what they give, and
-custom values, within HD's 3 GB."""
+custom values, within HD's 4 GB."""
 
 from __future__ import annotations
 

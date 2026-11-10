@@ -491,7 +491,7 @@ def test_hd_draws_the_whole_group(hd_panel):
 
 def test_group_plan_draws_every_model_alike():
     """One quality for every model in a view, the best the HD settings allow
-    that fits their memory; the rest glows."""
+    that fits their memory; the rest glows.  Up to three: always full."""
     from visage.hd import settings
     from visage.hd.group import N_HD, plan
 
@@ -501,17 +501,20 @@ def test_group_plan_draws_every_model_alike():
     assert q[:19] == ["lite"] * 19 and q[19:] == [None] * (N_HD + 31)
     assert plan(gals[:1], s) == ["full"]
     assert set(plan(gals[:2], s)) == {"full"}
-    assert set(plan(gals[:3], s)) == {"group"}
+    assert set(plan(gals[:3], s)) == {"full"}
+    assert set(plan(gals[:4], s)) == {"group"}
     assert set(plan(gals[:8], s)) == {"group"}
     assert set(plan(gals[:9], s)) == {"lite"}
-    # A lower best quality caps it, and fewer galaxies are allowed.
+    # A lower best quality caps it, and fewer galaxies are allowed; singles,
+    # pairs and triplets are always full.
     low = settings.from_preset("low")
-    assert plan(gals[:1], low) == ["lite"]
+    assert plan(gals[:3], low) == ["full"] * 3
+    assert plan(gals[:4], low) == ["lite"] * 4
     assert plan(gals[:40], low).count("lite") == 7
 
 
 def test_hd_settings_stay_under_the_limit(tmp_path, monkeypatch):
-    """No preset or custom value lets HD reach its 3 GB; settings persist."""
+    """No preset or custom value lets HD reach its 4 GB; settings persist."""
     from visage.hd import settings
 
     monkeypatch.setattr(settings, "_FILE", tmp_path / "hd_settings.json")

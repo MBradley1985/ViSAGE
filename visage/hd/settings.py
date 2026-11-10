@@ -1,5 +1,5 @@
 """HD quality settings: a preset (or custom values) for how much HD may
-build and hold, within a hard 3 GB.
+build and hold, within a hard 4 GB.
 
 Stored in ~/.visage/hd_settings.json.  The memory limit covers all of HD:
 its one-off setup, the cache of recent builds and the models on screen.
@@ -13,7 +13,7 @@ from pathlib import Path
 _FILE = Path.home() / ".visage" / "hd_settings.json"
 
 # Nothing HD holds may reach this (MB); Crazy comes closest.
-LIMIT_MB = 3000
+LIMIT_MB = 4000
 # HD's one-off cost on first use (shaders, buffers), measured in the
 # viewer 2026-11-09.
 SETUP_MB = 150
