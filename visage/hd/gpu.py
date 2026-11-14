@@ -30,6 +30,7 @@ from visage.hd.model import (
     BULGE_RGB,
     HII_LOOK,
     YOUNG_RGB,
+    OLD_SMOOTH,
     YOUNG_SMOOTH,
     GalaxyRecipe,
     PlaneMaps,
@@ -1149,7 +1150,7 @@ def prepare(
         lanes = maps.lanes if maps.lanes is not None else 0 * maps.dust
         m = np.dstack(
             [
-                rc.l_disk * n_old * maps.old,
+                rc.l_disk * OLD_SMOOTH * n_old * maps.old,
                 rc.l_young * YOUNG_SMOOTH * n_young * maps.young,
                 maps.dust,
                 lanes,

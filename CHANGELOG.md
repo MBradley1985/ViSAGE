@@ -17,6 +17,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- No haze over HD discs: the old disc's smooth light is drawn at a quarter of its light (its exposure unchanged), so arms, star-forming knots and dust stand out on dark space. Lenticulars show mostly their bulge and a faint ring.
 - A galaxy looks the same at every HD quality: group and light builds use the full build's random arm, dust and gas patterns (keeping the detail their maps hold) and its exposure, so they are no longer drawn about half as bright with different arms. Group and cluster builds take about 2.5× longer.
 - Filters tab: the slider sections take the room until Find lists galaxies, then shrink to give it to the results.
 - The opening screen's trees have branches that wander between their knots like real limbs, with clusters of leaves at the tips and along the outer twigs.

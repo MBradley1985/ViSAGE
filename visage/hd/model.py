@@ -188,6 +188,10 @@ TAU_MAX = 5.0
 # and its young star clusters' share, drawn as points.
 YOUNG_SMOOTH = 1.2
 YOUNG_CLUSTERS = 0.6
+# The old disc's smooth light is drawn at this share of its light (the user
+# chose a quarter, 2026-11-14: at full it lies over the disc as a haze).
+# The exposure is still set by all of it, so the rest isn't brightened.
+OLD_SMOOTH = 0.25
 
 
 # The thick disc: its height (x the thin disc's; 2-3, Yoachim & Dalcanton
