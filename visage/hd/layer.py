@@ -221,10 +221,14 @@ STRIP_CGM = True
 CGM_STRIP = 0.5
 
 QUALITY = {
-    "full": {"map_n": 1024, "npts": 2048, "exp_npix": 256, "atlas_n": 160},
-    "group": {"map_n": 768, "npts": 1024, "exp_npix": 160, "atlas_n": 80},
-    "lite": {"map_n": 384, "npts": 512, "exp_npix": 96, "atlas_n": 48},
+    "full": {"map_n": 1024, "npts": 2048, "atlas_n": 160},
+    "group": {"map_n": 768, "npts": 1024, "atlas_n": 80},
+    "lite": {"map_n": 384, "npts": 512, "atlas_n": 48},
 }
+# The exposure's face-on render, one size at every quality: its white
+# level depends on the pixel size, so a smaller one drew group and lite
+# galaxies at about half full quality's brightness.
+EXP_NPIX = 256
 
 
 class Exposure:
@@ -392,7 +396,7 @@ class HDGalaxyLayer:
                 rc,
                 maps,
                 [p for p in pts if p.name not in GAS_POPS],
-                npix=q["exp_npix"],
+                npix=EXP_NPIX,
                 threads=8 if quality == "full" else 1,
             ),
             "gpu": prepare(
