@@ -87,6 +87,23 @@ The **Environment filter** at the end of the Structure tab shows only galaxies i
 
 The menu offers only the presets this model can answer: a run without, say, feedback-free starbursts or quasar-mode accretion doesn't list them. The list updates as the snapshot changes. **Reset**, in the Filters tab's top-right corner, clears every filter.
 
+## Track
+
+The **Track** icon on the rail follows the selected galaxy, or its whole halo, through the snapshots of a box (not a lightcone) and plays it as a movie.
+
+1. **Choose what to follow:** **Galaxy** or **Whole halo**. A galaxy that merges carries on with the galaxy it merged into, and the view says so.
+2. **Choose snapshots:** **From** and **To**.
+3. **Choose framing:** **Galaxy**, **Surroundings** or **Whole box**, and a zoom.
+
+The switches:
+
+- **Indicators:** rings on the followed galaxy and its group.
+- **FoF links:** lines from the group's central to each member.
+- **Only contributors:** shows just the galaxies that end up in what is followed.
+- **Isolate:** hides everything except what is followed: the galaxy, or the halo and its group, plus the contributors when **Only contributors** is on.
+
+**Build** renders every snapshot behind a progress card, and then the play bar plays the track. Pause to explore a snapshot live. **Save movie** writes it as GIF, MOV or PNG frames, and **Leave track** goes back to the ordinary view. Changing an option rebuilds a built track.
+
 ## Regions tab
 
 Pick a **Sphere**, **Box** or **Slice**. What is on the tab is the active region: the count below it, and **Active region** in Plotting and Export, all use it. In a periodic box, regions wrap around the edges.

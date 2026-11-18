@@ -316,6 +316,13 @@
     });
   })();
 
+  // ─── The screen's pixel ratio (HD's Standard render resolution) ─────
+  (function sendPixelRatio() {
+    var t = window.trame;
+    if (!t || !t.state || !t.state.set) { setTimeout(sendPixelRatio, 300); return; }
+    t.state.set('client_dpr', window.devicePixelRatio || 1);
+  })();
+
   // ─── HD Components: numbered markers on the parts and a still key ───
   // hd_labels (from the server): {cats: [[name, colour]], items: [{t, cat,
   // text, vis}] in key order, marks: [{x, y, n}]} with x, y fractions of
@@ -589,6 +596,11 @@
         seed = (seed * 16807) % 2147483647;
         return seed / 2147483647;
       }
+      var wseed = 977;
+      function wrnd() {
+        wseed = (wseed * 16807) % 2147483647;
+        return wseed / 2147483647;
+      }
       var nodes = [];
       function grow(x, y, ang, len, depth, par, tree) {
         var n = {
@@ -598,6 +610,19 @@
         };
         if (par && rnd() < 0.3) n.c = COL[Math.floor(rnd() * 5)];
         n.w = 2.6 * Math.pow(0.72, n.d);  // tapering, trunk to twig
+        // The limb from its parent wanders like a branch: a random walk
+        // across it, pinned at both ends (a share of its length).  (Its
+        // own random numbers, so the tree itself is unchanged.)
+        if (par) {
+          var walk = [0], s = 0, K = 10;
+          for (var q = 1; q <= K; q++) {
+            s += wrnd() - 0.5;
+            walk.push(s);
+          }
+          n.wob = walk.map(function (v, q) {
+            return 0.09 * (v - walk[K] * q / K);
+          });
+        }
         nodes.push(n);
         if (!depth) return;
         var m = rnd() < 0.14 ? 3 : rnd() < 0.2 ? 1 : 2;
@@ -678,12 +703,14 @@
           var a = Math.max(0, Math.min(1, grown - (n.d - 1)));
           if (a <= 0) return;
           var p = n.par;
-          var mx = (p.x + n.x) / 2 + n.b * (n.y - p.y) * 4;
-          var my = (p.y + n.y) / 2 - n.b * (n.x - p.x) * 4;
+          // Along the limb: its chord, bent a little and wandering.
+          var ex = n.x - p.x, ey = n.y - p.y;
           var on = function (f) {
-            var u = 1 - f;
-            return [u * u * p.x + 2 * f * u * mx + f * f * n.x,
-                    u * u * p.y + 2 * f * u * my + f * f * n.y];
+            var q = f * (n.wob.length - 1), k = Math.min(Math.floor(q),
+              n.wob.length - 2);
+            var off = n.wob[k] + (n.wob[k + 1] - n.wob[k]) * (q - k) +
+              4 * n.b * f * (1 - f);
+            return [p.x + ex * f - ey * off, p.y + ey * f + ex * off];
           };
           c.strokeStyle = n.c;
           c.globalAlpha = 0.55;
@@ -691,7 +718,7 @@
           c.lineWidth = 0.6 * n.w * size;
           c.beginPath();
           c.moveTo(X(p.x), Y(p.y));
-          for (var f = 0.05; f <= a + 0.001; f += 0.05) {
+          for (var f = 0.025; f <= a + 0.001; f += 0.025) {
             var q = on(f);
             c.lineTo(X(q[0]), Y(q[1]));
           }
@@ -711,6 +738,24 @@
             dot(X(n.x), Y(n.y), 0.8 * size, '#fff', 0.9);
           } else {
             dot(X(n.x), Y(n.y), 0.5 * nr * size, n.c, 0.9);
+          }
+          if (n.leaf) {
+            // A cluster of leaves round each tip.
+            for (var q = 0; q < 5; q++) {
+              var la = n.p * 7 + q * 1.3, ld = 0.012 + 0.006 * q;
+              var lx = n.x + Math.cos(la) * ld, ly = n.y + Math.sin(la) * ld;
+              glow(X(lx), Y(ly), 2.6 * size, n.c + '88', 1);
+              dot(X(lx), Y(ly), 0.6 * size, '#fff', 0.8);
+            }
+          }
+          if (n.d >= DEPTH - 1) {
+            // ...and a few along the outer twigs.
+            for (var q = 1; q <= 2; q++) {
+              var tq = on(q / 3), sd = (q % 2 ? 1 : -1) * 0.008;
+              var tx = tq[0] - (n.y - p.y) * sd * 8, ty = tq[1] + (n.x - p.x) * sd * 8;
+              glow(X(tx), Y(ty), 2.2 * size, n.c + '77', 1);
+              dot(X(tx), Y(ty), 0.5 * size, '#fff', 0.7);
+            }
           }
         });
         nodes.forEach(function (n) {
@@ -1484,11 +1529,12 @@
     [/\b([MLZ])☉/g, '$1<sub class="sun">☉</sub>'],
     [/\b([MRV])(vir|max)\b/g, '$1<sub>$2</sub>'],
     [/\bMsun\b/g, 'M<sub class="sun">☉</sub>'],
+    [/\bZsun\b/g, 'Z<sub class="sun">☉</sub>'],
     [/\bLsun\b/g, 'L<sub class="sun">☉</sub>'],
     [/(\d\.\d+)e([+-])0*(\d+)/g, function (m, a, s, b) {
       return a + '×10<sup>' + (s === '-' ? '−' : '') + b + '</sup>';
     }],
-    [/\b10\^(-?\d+)/g, '10<sup>$1</sup>'],
+    [/\b10\^(-?\d+(?:\.\d+)?)/g, '10<sup>$1</sup>'],
     [/\b([A-Za-z]+)\^-(\d+)/g, '$1<sup>−$2</sup>'],
     [/\b([A-Za-z]+)\^(\d+)/g, '$1<sup>$2</sup>'],
     [/\blog10\b/g, 'log<sub>10</sub>'],
@@ -1508,6 +1554,7 @@
     RULES.forEach(function (r) { out = out.replace(r[0], r[1]); });
     return out;
   }
+  window.sageTypeset = typeset;  // (the Filters dials' units)
   function wrap(node) {
     var html = typeset(node.nodeValue);
     if (html === escapeHtml(node.nodeValue)) return;
@@ -1696,4 +1743,197 @@
     else setTimeout(function () { requestAnimationFrame(frame); }, 300);
   }
   requestAnimationFrame(frame);
+})();
+
+// ─── Filters: the halo and galaxy dials ─────────────────────────────
+// dial_items (from the server): {halo: [...], gal: [...]}, each property
+// {key, title, unit, log, shift, min, max, step, hist}; dial_values: every
+// dial filter's [lo, hi].  The ring shows where the haloes or galaxies sit
+// (lit inside the limits); dragging a handle sets the filter's state, as
+// the sliders did.  The property dropdown in the middle is the page's own.
+(function () {
+  var SIZE = 165, SWEEP = 320, C = SIZE / 2, R = C - 12;
+  var COL = { halo: '#c084fc', gal: '#FFD700' };
+  var items = null, values = {}, sel = { halo: null, gal: null }, drag = null;
+  function st() { return window.trame && window.trame.state; }
+  function item(side) {
+    var list = (items && items[side]) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === sel[side]) return list[i];
+    return null;
+  }
+  function find(key) {
+    var all = items ? (items.halo || []).concat(items.gal || []) : [];
+    for (var i = 0; i < all.length; i++) if (all[i].key === key) return all[i];
+    return null;
+  }
+  function pt(r, f) {
+    var a = (-90 - SWEEP / 2 + SWEEP * f) * Math.PI / 180;
+    return [C + r * Math.cos(a), C + r * Math.sin(a)];
+  }
+  function arc(r, f0, f1) {
+    var p0 = pt(r, f0), p1 = pt(r, f1), big = (f1 - f0) * SWEEP > 180 ? 1 : 0;
+    return 'M' + p0[0].toFixed(1) + ',' + p0[1].toFixed(1) + ' A' + r + ',' + r +
+      ' 0 ' + big + ' 1 ' + p1[0].toFixed(1) + ',' + p1[1].toFixed(1);
+  }
+  // The ring spans the data, lo to hi; a handle at either end is the
+  // filter's own min or max (no limit).
+  function frac(it, v) {
+    if (v <= it.min + 1e-9) return 0;
+    if (v >= it.max - 1e-9) return 1;
+    return Math.min(1, Math.max(0, (v - it.lo) / (it.hi - it.lo)));
+  }
+  function value(it, f) {
+    if (f <= 0.001) return it.min;
+    if (f >= 0.999) return it.max;
+    var x = Math.round((it.lo + f * (it.hi - it.lo)) / it.step) * it.step;
+    return +Math.min(it.hi, Math.max(it.lo, x)).toFixed(6);
+  }
+  function range(it) {
+    var v = drag && drag.key === it.key ? drag.v : values[it.key];
+    return v && v.length === 2 ? v : [it.min, it.max];
+  }
+  function active(it) {
+    var v = values[it.key];
+    return v && (v[0] > it.min + 1e-6 || v[1] < it.max - 1e-6);
+  }
+  function num(it, x) {
+    var d = it.step >= 1 ? 0 : it.step >= 0.1 ? 1 : 2;
+    return String(+x.toFixed(d)).replace('-', '−');
+  }
+  function val(it, x) {
+    // Real units: 10^x for a log property, the number otherwise.  (At an
+    // end: where the data end.)
+    if (x <= it.min + 1e-9) x = it.lo;
+    if (x >= it.max - 1e-9) x = it.hi;
+    return it.log ? '10<sup>' + num(it, x + it.shift) + '</sup>' : num(it, x);
+  }
+  function unit(it) {
+    return it.unit ? ' ' + (window.sageTypeset ? window.sageTypeset(it.unit) : it.unit) : '';
+  }
+  function text(it, v) { return val(it, v[0]) + ' – ' + val(it, v[1]) + unit(it); }
+  function draw(side) {
+    var host = document.getElementById('dial-' + side);
+    if (!host) return;
+    var svg = host.querySelector('svg'), out = host.querySelector('.sage-dial-val');
+    if (!svg) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', SIZE); svg.setAttribute('height', SIZE);
+      host.insertBefore(svg, host.firstChild);
+      out = document.createElement('div');
+      out.className = 'sage-dial-val sage-rich';
+      host.appendChild(out);
+      svg.addEventListener('pointerdown', function (e) { grab(side, e); });
+    }
+    var it = item(side);
+    if (!it) { svg.innerHTML = ''; out.innerHTML = ''; return; }
+    var v = range(it), f0 = frac(it, v[0]), f1 = frac(it, v[1]), col = COL[side], s = '';
+    var n = it.hist.length;
+    it.hist.forEach(function (h, k) {
+      var x = (k + 0.5) / n, a = pt(R - 4, x), b = pt(R - 4 - 0.17 * R * Math.max(h, 0.06), x);
+      var on = h > 0 && x >= f0 && x <= f1;
+      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) +
+        '" y2="' + b[1].toFixed(1) + '" stroke="' + (on ? col : '#3a404b') +
+        '" stroke-width="2.4" stroke-linecap="round"/>';
+    });
+    s += '<path d="' + arc(R + 3, 0, 1) + '" stroke="#2c323d" stroke-width="2" fill="none"/>';
+    if (f1 > f0) s += '<path d="' + arc(R + 3, f0, f1) + '" stroke="' + col + '" stroke-width="2" fill="none"/>';
+    [f0, f1].forEach(function (f) {
+      var p = pt(R + 3, f);
+      s += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="6" fill="' + col + '"/>';
+    });
+    svg.innerHTML = s;
+    var name = window.sageTypeset ? window.sageTypeset(it.title) : it.title;
+    out.innerHTML = '<div class="sage-dial-name"><span>' + name + '</span>' +
+      '<span style="color:' + col + '">▾</span></div>' +
+      '<div class="sage-dial-range">' + text(it, v) + '</div>';
+    // A wide range shrinks to fit inside the ring.
+    var rg = out.lastChild, w = rg.scrollWidth;
+    if (w > 100) rg.style.fontSize = (0.74 * 100 / w).toFixed(3) + 'rem';
+  }
+  function chips() {
+    var host = document.getElementById('dial-chips');
+    if (!host) return;
+    var html = '';
+    ['halo', 'gal'].forEach(function (side) {
+      ((items && items[side]) || []).forEach(function (it) {
+        if (!active(it)) return;
+        html += '<span class="sage-dial-chip" data-key="' + it.key + '" data-side="' + side +
+          '" title="' + it.title + ': show on the dial"><b style="color:' + COL[side] + '">' + it.title +
+          '</b><span>' + text(it, values[it.key]) + '</span><i data-clear title="Clear">×</i></span>';
+      });
+    });
+    host.innerHTML = html;
+  }
+  function sync() {
+    // The page's state as it is now (a watch only fires on a change).
+    var t = st();
+    if (!t || !t.get) return;
+    items = t.get('dial_items'); values = t.get('dial_values') || {};
+    sel.halo = t.get('dial_halo'); sel.gal = t.get('dial_gal');
+  }
+  function all() { sync(); draw('halo'); draw('gal'); chips(); }
+  function at(e, svg) {
+    // The pointer's place along the ring (the gap at the bottom: its
+    // nearer end).
+    var r = svg.getBoundingClientRect();
+    var a = Math.atan2(e.clientY - r.top - C, e.clientX - r.left - C) * 180 / Math.PI;
+    var f = (((a + 90 + SWEEP / 2) % 360) + 360) % 360 / SWEEP;
+    return f > 1 ? (f - 1 < (360 / SWEEP - 1) / 2 ? 1 : 0) : f;
+  }
+  var sendT = null;
+  function send(final) {
+    var t = st();
+    if (!t || !drag) return;
+    var d = drag;
+    clearTimeout(sendT);
+    if (final) { t.set(d.key, [d.v[0], d.v[1]]); return; }
+    sendT = setTimeout(function () { t.set(d.key, [d.v[0], d.v[1]]); }, 60);
+  }
+  function grab(side, e) {
+    var it = item(side), svg = e.currentTarget;
+    if (!it) return;
+    e.preventDefault();
+    var v = range(it).slice(), f = at(e, svg);
+    var h = Math.abs(f - frac(it, v[0])) <= Math.abs(f - frac(it, v[1])) ? 0 : 1;
+    drag = { key: it.key, side: side, v: v, h: h, it: it };
+    function move(ev) {
+      var x = value(it, at(ev, svg));
+      if (drag.h === 0) drag.v[0] = Math.min(x, drag.v[1]);
+      else drag.v[1] = Math.max(x, drag.v[0]);
+      draw(side);
+      send(false);
+    }
+    function up() {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      values[drag.key] = drag.v.slice();
+      send(true);
+      drag = null;
+      all();
+    }
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    move(e);
+  }
+  document.addEventListener('click', function (e) {
+    var chip = e.target.closest && e.target.closest('.sage-dial-chip');
+    var t = st();
+    if (!chip || !t) return;
+    var it = find(chip.getAttribute('data-key'));
+    if (!it) return;
+    if (e.target.hasAttribute('data-clear')) t.set(it.key, [it.min, it.max]);
+    else t.set('dial_' + chip.getAttribute('data-side'), it.key);
+  });
+  (function watch() {
+    var t = st();
+    if (!t || !t.watch) { setTimeout(watch, 300); return; }
+    t.watch(['dial_items', 'dial_values', 'dial_halo', 'dial_gal'], all);
+    // (Until the server's first state arrives there is nothing to draw.)
+    (function first(n) {
+      all();
+      if (!(items && items.gal && items.gal.length) && n) setTimeout(function () { first(n - 1); }, 500);
+    })(40);
+    // (The tab opening: the hosts exist from the start, but draw again.)
+    t.watch(['nav_active_tab', 'panel_open'], function () { setTimeout(all, 60); });
+  })();
 })();

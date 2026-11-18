@@ -8,7 +8,7 @@ import time
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
-from visage.utils import labels
+from visage.utils import dials, labels
 from visage.scene.scene import Scene
 from visage.ui import plotting
 from visage.ui import regions as _regions
@@ -508,6 +508,13 @@ def build_navigation_panel(server, scene: Scene) -> None:
     state.filter_gal_met_em = [-2.0, 12.0]  # log10 Msun (metals ejected)
     state.filter_gal_met_ics = [-2.0, 12.0]  # log10 Msun (metals ICS)
     state.filter_gal_met_cgm = [-2.0, 12.0]  # log10 Msun (metals CGM)
+    # The Filters dials: the property each shows, the properties this
+    # model has (with where they sit on the ring) and every dial filter's
+    # limits (visage.js draws them).
+    state.dial_halo = "filter_halo_mvir"
+    state.dial_gal = "filter_gal_smass"
+    state.dial_items = {"halo": [], "gal": []}
+    state.dial_values = {}
     # Misc
     _snap_max = max(0, scene.primary.snap_table.count - 1)
     # Categoricals
@@ -855,6 +862,29 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Re-apply on every snapshot change (new data, masks must be rebuilt)
     scene.register_snap_change_callback(lambda _n: _apply_filters())
 
+    def _dial_values() -> None:
+        items = state.dial_items or {}
+        state.dial_values = {
+            d["key"]: list(state[d["key"]])
+            for side in ("halo", "gal")
+            for d in items.get(side, [])
+        }
+
+    def _dial_items() -> None:
+        """The dials' properties for this model and snapshot."""
+        halos, galaxies = scene.active_model.loader.get(scene.current_snap)
+        state.dial_items = dials.items(
+            halos,
+            galaxies,
+            scene.active_model.fields_available,
+            state.extra_halo_filters,
+            state.extra_gal_filters,
+        )
+        _dial_values()
+
+    scene.register_snap_change_callback(lambda _n: _dial_items())
+    _dial_items()
+
     # A dragged slider emits a value per step, and every one of them would
     # otherwise recompute the masks AND rebuild every point cloud.  Coalesce
     # the burst and apply once it settles, so dragging stays smooth and the
@@ -946,6 +976,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     )
     def on_filter_change(**_):
         _apply_filters_soon()
+        _dial_values()
 
     @ctrl.set("reset_opacities")
     def on_reset_opacities():
@@ -1169,6 +1200,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
     # Clear draw widgets whenever the primary model changes (world coords shift).
     scene.register_model_change_callback(_clear_draw_widgets)
     scene.register_model_change_callback(_rebuild_extra_fields)
+    scene.register_model_change_callback(lambda *_: _dial_items())
     scene.register_model_change_callback(_rebuild_color_mode_lists)
 
     # ------------------------------------------------------------------
@@ -4291,6 +4323,37 @@ def build_navigation_panel(server, scene: Scene) -> None:
             _hd["cache"] = BuildCache(default_cache_budget())
         return _hd["cache"]
 
+    @ctrl.set("hd_settings_applied")
+    def _hd_settings_applied():
+        """The HD settings changed: resize the build cache (the models
+        follow on the next build) and refresh the memory line."""
+        from visage.hd.group import default_cache_budget
+
+        if _hd["cache"] is not None:
+            _hd["cache"].set_budget(default_cache_budget())
+        _hd_memory_now()
+
+    @ctrl.set("hd_memory_now")
+    def _hd_memory_now():
+        """Estimate of what HD holds now, for the settings card."""
+        from visage.hd.group import TEXTURE_MB
+        from visage.hd.settings import SETUP_MB
+
+        grp = _hd["group"]
+        live = grp.entries if grp is not None and grp.active else []
+        qs = [
+            e.get("quality")
+            for e in live
+            if e.get("prep") is not None and e.get("quality") in TEXTURE_MB
+        ]
+        mb = sum(TEXTURE_MB[q] for q in qs)
+        if _hd["cache"] is not None:
+            mb += _hd["cache"].nbytes / 1024**2
+        if grp is not None or _hd["layer"] is not None:
+            mb += SETUP_MB
+        state.hd_set_mem_now = f"{mb / 1024:.1f} GB"
+        state.hd_set_models_now = len(qs)
+
     def _hd_layer():
         if _hd["layer"] is None:
             from visage.hd.layer import HDGalaxyLayer
@@ -4316,6 +4379,8 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 _push()
         _hd["mode"] = None
         _hd["built_snap"] = None
+        if bool(state.hd_active):
+            state.hd_gas = False  # the card's Gas button goes off with HD
         state.hd_active = False
         state.hd_labels = []
 
@@ -4813,6 +4878,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         from visage.hd.adapter import sage_galaxy_from_snapshot, spin_vector
         from visage.hd.group import (
+            cap_quality,
             plan,
             pool,
             prepare_member,
@@ -4869,7 +4935,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             # the group's mass ranking it is.
             for j, k in enumerate(idx):
                 if int(k) == int(focus) and group_q[j] in (None, "lite"):
-                    group_q[j] = "group"
+                    group_q[j] = cap_quality("group")
         entries = [
             entry(k, "member", q, g)
             for k, q, g in zip(idx, group_q, gals, strict=True)
@@ -5189,7 +5255,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
         the group on screen and fly to it."""
         import asyncio
 
-        from visage.hd.group import EXTRA_QUALITY, pool, prepare_member
+        from visage.hd.group import (
+            EXTRA_QUALITY,
+            cap_quality,
+            pool,
+            prepare_member,
+        )
+
+        quality = cap_quality(EXTRA_QUALITY)
 
         if bool(state.hd_building):
             return
@@ -5200,7 +5273,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
             grp = _hd["group"]
             if grp is None or not grp.active or e not in grp.entries:
                 return
-            e.update(prep=prep, quality=EXTRA_QUALITY, extra=True)
+            e.update(prep=prep, quality=quality, extra=True)
             lay = grp.add_extra(e)
             _hd_tags()
             _hd_fly_to(lay, np.asarray(e["center"], float))
@@ -5209,14 +5282,14 @@ def build_navigation_panel(server, scene: Scene) -> None:
 
         loop = _running_loop()
         if loop is None:
-            show(prepare_member(e["gal"], EXTRA_QUALITY, ctx))
+            show(prepare_member(e["gal"], quality, ctx))
             return
         state.hd_building = True
         state.hd_progress = "Building HD galaxy… 0/1"
         state.hd_percent = 0
         state.flush()
         token = _hd["build"] = object()
-        prog = _hd_progress({0: {"quality": EXTRA_QUALITY}}, [0])
+        prog = _hd_progress({0: {"quality": quality}}, [0])
 
         async def run():
             ticker = loop.create_task(
@@ -5228,7 +5301,7 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 except Exception:
                     ex = None
                 prep = await loop.run_in_executor(
-                    ex, prepare_member, e["gal"], EXTRA_QUALITY, ctx
+                    ex, prepare_member, e["gal"], quality, ctx
                 )
                 ticker.cancel()
                 if _hd["build"] is token:
@@ -6622,821 +6695,86 @@ def build_navigation_panel(server, scene: Scene) -> None:
                     "flex-shrink:0;color:#FFD700;padding:2px 0 2px;display:block;"
                     "text-align:center;"
                 )
-                _FLBL = (
-                    "font-size:0.8rem;color:#9ca3af;display:block;"
-                    "padding:2px 0 0;text-align:center;"
-                )
-                _FSLD = (
-                    "padding:0;margin-top:-14px;margin-bottom:-14px;"
-                    "margin-left:-12.5%;"
-                    "transform:scale(0.65);transform-origin:center center;"
-                    "width:125%;"
-                )
-                _FSEL = (
-                    "--v-input-control-height:30px;"
-                    "--v-field-font-size:0.8rem;"
-                    "margin-top:-6px;"
-                )
-                # Explicit heights so each section scrolls independently
-                # while the panel itself never needs an outer scrollbar.
-                _SH = "overflow-y:auto;overflow-x:hidden;padding-right:2px;padding-top:18px;"
-
-                # ── Halo section ──────────────────────────────
-                v3.VLabel("DARK MATTER HALOES", style=_FSEC_HALO)
-                with html.Div(style=_SH + "height:150px;"):
-                    html.Div(labels.slider("mvir"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_mvir",),
-                        min=10.0,
-                        max=15.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("rvir", log=False), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_rvir",),
-                        min=0.0,
-                        max=3.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("vmax", log=False), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_vmax",),
-                        min=0.0,
-                        max=1000.0,
-                        step=10.0,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.vmax",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("vvir", log=False), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_vvir",),
-                        min=0.0,
-                        max=1000.0,
-                        step=10.0,
-                        thumb_label=True,
-                        color="#c084fc",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    # Halo properties discovered in this model's own
-                    # output — same sliders, ranges read from the file.
-                    for _i in range(_MAX_EXTRA_HALO):
-                        with html.Div(
-                            v_if=(f"extra_halo_filters.length > {_i}",)
-                        ):
-                            html.Div(
-                                f"{{{{ extra_halo_filters[{_i}]?.label }}}}",
-                                style=_FLBL,
-                            )
-                            v3.VRangeSlider(
-                                v_model=(f"extra_halo_filter_{_i}",),
-                                min=(f"extra_halo_filters[{_i}]?.min ?? 0",),
-                                max=(f"extra_halo_filters[{_i}]?.max ?? 1",),
-                                step=(
-                                    f"extra_halo_filters[{_i}]?.step ?? 0.01",
-                                ),
-                                thumb_label=True,
-                                color="#c084fc",
-                                density="compact",
-                                hide_details=True,
-                                thumb_size=10,
-                                track_size=2,
-                                classes="sage-fslider",
-                                style=_FSLD,
-                            )
+                # ── The dials: one for haloes, one for galaxies ──
+                # The dropdown picks the property; visage.js draws the
+                # ring (where they sit, lit inside the limits) and its
+                # handles set the filter.  Every filter set is a chip
+                # below (a click shows it on its dial, × clears it).
+                for _dside, _dlabel, _dsec in (
+                    ("halo", "HALOES", _FSEC_HALO),
+                    ("gal", "GALAXIES", _FSEC_GAL),
+                ):
+                    html.Div(_dlabel, style=_dsec)
+                    with html.Div(id=f"dial-{_dside}", classes="sage-dial"):
+                        v3.VSelect(
+                            v_model=(f"dial_{_dside}",),
+                            items=(f"dial_items.{_dside} || []",),
+                            item_title="title",
+                            item_value="key",
+                            hide_details=True,
+                            variant="plain",
+                            density="compact",
+                            classes="sage-dial-pick",
+                            menu_icon="mdi-chevron-down",
+                            menu_props=("{contentClass: 'sage-menu'}",),
+                        )
+                html.Div(id="dial-chips")
 
                 v3.VDivider(style="margin:4px 0 2px;")
 
-                # ── Galaxy section ────────────────────────────
-                html.Div("GALAXIES", style=_FSEC_GAL)
-                with html.Div(style=_SH + "height:140px;"):
-                    # Alphabetical, like the Colour-by lists.
-                    html.Div(labels.slider("h1_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_h1gas",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.h1_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("bh_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_bhmass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.bh_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("bulge_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_bulge",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("bulge_radius"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_bulgerad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.bulge_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("sfr_bulge_z"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_blg_z",),
-                        min=-6.0,
-                        max=1.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_bulge_z",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("sfr_bulge"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_bulge",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_bulge",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Bulge-to-total ratio (B/T)", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_bt",),
-                        min=0.0,
-                        max=1.0,
-                        step=0.02,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("cgm_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_cgmgas",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.cgm_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("cold_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_coldgas",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("cooling"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_cooling",),
-                        min=34.0,
-                        max=46.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.cooling",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("disk_radius"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_diskrad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.disk_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("sfr_disk_z"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_dsk_z",),
-                        min=-6.0,
-                        max=1.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_disk_z",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("sfr_disk"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr_disk",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.sfr_disk",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("ejected_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ejected",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.ejected_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Halo concentration", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_conc",),
-                        min=0.0,
-                        max=50.0,
-                        step=0.5,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.concentration",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Halo particles", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_len",),
-                        min=0,
-                        max=10000,
-                        step=100,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.len_particles",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div("Halo spin", style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_halo_spin",),
-                        min=0.0,
-                        max=0.2,
-                        step=0.002,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.spin",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("heating"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_heating",),
-                        min=34.0,
-                        max=46.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.heating",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("hot_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_hotgas",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.hot_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        labels.slider("instability_bulge_mass"), style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ib_mass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.instability_bulge_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        labels.slider("instability_bulge_radius"), style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ib_rad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.instability_bulge_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("ics_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ics",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.ics_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(
-                        "Mass loading (log10 outflow rate / SFR)", style=_FLBL
-                    )
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_massload",),
-                        min=-3.0,
-                        max=5.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.mass_loading",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("merger_bulge_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_mb_mass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.merger_bulge_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("merger_bulge_radius"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_mb_rad",),
-                        min=-4.0,
-                        max=1.0,
-                        step=0.05,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.merger_bulge_radius",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_cgm_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_cgm",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_cgm_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_cold_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_cg",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_cold_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_ejected_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_em",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_ejected_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_hot_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_hg",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_hot_gas",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_ics"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_ics",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_ics",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_stellar_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_sm",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_stellar_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("metals_bulge_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_met_bm",),
-                        min=-2.0,
-                        max=12.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.metals_bulge_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("h2_gas"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_h2",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.h2_mass",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("outflow_rate"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_outflow",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.outflow_rate",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("ssfr"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_ssfr",),
-                        min=-14.0,
-                        max=0.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("sfr"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_sfr",),
-                        min=-6.0,
-                        max=5.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("age", log=False), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_age",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        disabled=("!model_fields.mean_age",),
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    html.Div(labels.slider("stellar_mass"), style=_FLBL)
-                    v3.VRangeSlider(
-                        v_model=("filter_gal_smass",),
-                        min=0.0,
-                        max=14.0,
-                        step=0.1,
-                        thumb_label=True,
-                        color="#FFD700",
-                        density="compact",
-                        hide_details=True,
-                        thumb_size=10,
-                        track_size=2,
-                        classes="sage-fslider",
-                        style=_FSLD,
-                    )
-                    # Galaxy properties discovered in this model's own
-                    # output — same sliders, ranges read from the file.
-                    for _i in range(_MAX_EXTRA_GAL):
-                        with html.Div(
-                            v_if=(f"extra_gal_filters.length > {_i}",)
-                        ):
-                            html.Div(
-                                f"{{{{ extra_gal_filters[{_i}]?.label }}}}",
-                                style=_FLBL,
-                            )
-                            v3.VRangeSlider(
-                                v_model=(f"extra_gal_filter_{_i}",),
-                                min=(f"extra_gal_filters[{_i}]?.min ?? 0",),
-                                max=(f"extra_gal_filters[{_i}]?.max ?? 1",),
-                                step=(
-                                    f"extra_gal_filters[{_i}]?.step ?? 0.01",
-                                ),
-                                thumb_label=True,
-                                color="#FFD700",
-                                density="compact",
-                                hide_details=True,
-                                thumb_size=10,
-                                track_size=2,
-                                classes="sage-fslider",
-                                style=_FSLD,
-                            )
-
-                v3.VDivider(style="margin:4px 0 2px;")
-
-                # ── Categorical section ───────────────────────
-                html.Div("GALAXY TYPE", style=_FSEC_GAL)
-                with html.Div(style="padding-top:8px;"):
-                    v3.VSelect(
-                        v_model=("filter_gal_type",),
-                        label="Type",
-                        classes="sage-right sage-sel-gal",
-                        items=(
+                # ── Galaxy type: three small menus ──
+                with html.Div(style="padding-top:6px;"):
+                    for _tvm, _tlab, _titems, _toff in (
+                        (
+                            "filter_gal_type",
+                            "Type",
                             [
                                 {"title": "All", "value": "both"},
                                 {"title": "Centrals", "value": "central"},
                                 {"title": "Satellites", "value": "satellite"},
                             ],
+                            None,
                         ),
-                        hide_details=True,
-                        variant="outlined",
-                        color="cyan",
-                        density="compact",
-                        style=_FSEL,
-                        menu_props=("{contentClass: 'sage-menu'}",),
-                    )
-                    v3.VSelect(
-                        v_model=("filter_gal_ffb",),
-                        label="FFB regime",
-                        classes="sage-right sage-sel-gal",
-                        items=(
+                        (
+                            "filter_gal_ffb",
+                            "FFB regime",
                             [
                                 {"title": "Any", "value": "any"},
                                 {"title": "FFB only", "value": "yes"},
                                 {"title": "Non-FFB only", "value": "no"},
                             ],
+                            "!model_fields.ffb_regime",
                         ),
-                        hide_details=True,
-                        variant="outlined",
-                        color="cyan",
-                        density="compact",
-                        disabled=("!model_fields.ffb_regime",),
-                        style=_FSEL,
-                        menu_props=("{contentClass: 'sage-menu'}",),
-                    )
-                    v3.VSelect(
-                        v_model=("filter_gal_cgm",),
-                        label="Gas regime",
-                        classes="sage-right sage-sel-gal",
-                        items=(
+                        (
+                            "filter_gal_cgm",
+                            "Gas regime",
                             [
                                 {"title": "Any", "value": "any"},
                                 {"title": "CGM", "value": "cold"},
                                 {"title": "Hot atmosphere", "value": "hot"},
                             ],
+                            "!model_fields.cgm_regime",
                         ),
-                        hide_details=True,
-                        variant="outlined",
-                        color="cyan",
-                        density="compact",
-                        disabled=("!model_fields.cgm_regime",),
-                        style=_FSEL,
-                        menu_props=("{contentClass: 'sage-menu'}",),
-                    )
+                    ):
+                        v3.VSelect(
+                            v_model=(_tvm,),
+                            label=_tlab,
+                            items=(_titems,),
+                            hide_details=True,
+                            variant="outlined",
+                            color="cyan",
+                            density="compact",
+                            disabled=(_toff,) if _toff else False,
+                            classes="sage-right sage-sel-gal",
+                            style=(
+                                "--v-input-control-height:30px;"
+                                "--v-field-font-size:0.8rem;margin-top:-8px;"
+                            ),
+                            menu_props=("{contentClass: 'sage-menu'}",),
+                        )
 
                 # Find: galaxies worth a look, by preset; a click selects.
-                v3.VDivider(style="margin:8px 0 10px;")
+                v3.VDivider(style="margin:8px 0 8px;")
                 v3.VSelect(
                     v_model=("find_preset",),
                     # (Only the presets this model can answer.)
@@ -7485,8 +6823,9 @@ def build_navigation_panel(server, scene: Scene) -> None:
                 )
                 # (The rest of the panel's height, for as many as fit.)
                 with html.Div(
+                    v_show=("find_preset && find_preset !== 'id'",),
                     style="padding-top:4px;flex:1 1 0;min-height:60px;"
-                    "overflow-y:auto;"
+                    "overflow-y:auto;",
                 ):
                     with html.Div(
                         v_for="r in find_results",

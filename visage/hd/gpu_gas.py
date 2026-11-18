@@ -346,7 +346,11 @@ GLSL_IMPL = """
       float L = uWindLen;
       float reach = min(3.0 * L, 0.9 * rvir);
       float b = length(cpk);
-      if (b < reach) {
+      // Its brightness per unit density along the ray: a wind too faint to
+      // reach 1/255 anywhere (the most its noise can make of it) is
+      // skipped, and so is the noise of samples too faint to show.
+      float kW = 0.22 * uWindAmp / (1.77 * (0.25 * uDiskRKpc + 0.5 * L * tan(uWindOpen)));
+      if (b < reach && kW * 2.0 * reach * 4.3 > 2e-3) {
         float hs = sqrt(reach * reach - b * b);
         const int NW = 18;
         float ds = 2.0 * hs / float(NW);
@@ -364,7 +368,7 @@ GLSL_IMPL = """
                      * (1.0 - exp(-pow(z / (0.3 * w0 + 0.3), 2.0)))
                      * exp(-pow(r / reach, 6.0))
                      * (exp(-pow((q - 0.7) / 0.35, 2.0)) + 0.25 * exp(-q * q));
-          if (dens > 1e-4) {
+          if (dens * ds * kW > 2e-5) {
             float s = fbm2((p / r) * 3.0 + vec3(0.0, 0.0, 0.12 * r / L)
                            + vec3(73.0)) / uFbm2Std;
             float zc = fbm2(p / (0.45 * L) + vec3(51.0)) / uFbm2Std;
@@ -372,7 +376,7 @@ GLSL_IMPL = """
           }
           acc += dens * ds;
         }
-        gas += 0.22 * uWindAmp * acc / (1.77 * (w0 + 0.5 * L * tw)) * uWindRGB;
+        gas += kW * acc * uWindRGB;
       }
     }
     if (uHiAmp > 0.0) {
@@ -396,9 +400,11 @@ GLSL_IMPL = """
           float sig = exp(-R / uHiRs)
                     * (1.0 - 0.9 * exp(-pow(R / uHiRs, 2.0)))
                     * exp(-pow(R / reach, 6.0));
-          if (uHiClump > 0.0)
+          // (The clumping noise only where the gas can show.)
+          float pz = pint(p0.z - zw, p1.z - zw, uHiH, ds);
+          if (uHiClump > 0.0 && uHiAmp * sig * pz > 2e-5)
             sig *= exp(uHiClump * fbm2(pm / (0.4 * uHiRs) + vec3(91.0)) / uFbm2Std);
-          acc += sig * pint(p0.z - zw, p1.z - zw, uHiH, ds);
+          acc += sig * pz;
         }
         gas += uHiAmp * (1.0 - exp(-0.5 * acc)) * uHiRGB;
       }

@@ -20,6 +20,7 @@ again.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import os
 import io
@@ -70,6 +71,10 @@ stats = {"sent": 0, "skipped": 0, "catch_up": []}
 # For `visage --diagnose`: send frames at this JPEG quality instead of the
 # view's (None: the view's own).
 quality_override: list = [None]
+# Frames are rendered at the browser's size times this (HD's Standard
+# render resolution on a Retina screen: 1 / the pixel ratio).  The page
+# stretches a smaller frame to fill the view.
+render_scale: list = [1.0]
 
 
 def pong(ping_id) -> None:
@@ -179,8 +184,35 @@ def render_jpeg(
     grabber = grabbers.get(view)
     if grabber is None:
         grabber = grabbers[view] = _Grabber(view)
-    view.Render()
+    with _pixel_sizes(view, render_scale[0]):
+        view.Render()
     return grabber.jpeg(quality)
+
+
+@contextlib.contextmanager
+def _pixel_sizes(view, scale: float):
+    """Points and lines (sized in pixels) scaled with the frame while it
+    renders, so they look the same at any render_scale."""
+    if scale == 1.0:
+        yield
+        return
+    props = []
+    rens = view.GetRenderers()
+    rens.InitTraversal()
+    for _ in range(rens.GetNumberOfItems()):
+        actors = rens.GetNextItem().GetActors()
+        actors.InitTraversal()
+        for _ in range(actors.GetNumberOfItems()):
+            p = actors.GetNextActor().GetProperty()
+            props.append((p, p.GetPointSize(), p.GetLineWidth()))
+            p.SetPointSize(p.GetPointSize() * scale)
+            p.SetLineWidth(p.GetLineWidth() * scale)
+    try:
+        yield
+    finally:
+        for p, ps, lw in props:
+            p.SetPointSize(ps)
+            p.SetLineWidth(lw)
 
 
 def install() -> None:
@@ -252,7 +284,11 @@ def install() -> None:
                 stats["skipped"] += 1
                 return {"image": None, "stale": False, "memsize": 0}
         _dirty[0] = False
-        size = list(options.get("size") or view.GetSize()[0:2])
+        size = options.get("size")
+        if size:
+            size = [max(1, int(round(s * render_scale[0]))) for s in size]
+        else:
+            size = list(view.GetSize()[0:2])
         if size != list(view.GetSize()[0:2]) and size[0] > 10 and size[1] > 10:
             view.SetSize(size)
         quality = quality_override[0] or options.get("quality", 100)

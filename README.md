@@ -181,7 +181,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 | Tab | Purpose |
 |---|---|
 | Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); environment filter, Show info (selection card) |
-| Filters    | Range sliders for halo and galaxy properties; Find presets |
+| Filters    | A halo dial and a galaxy dial (pick the property, drag its limits; the ring shows where they sit), galaxy type; Find presets |
 | Regions    | Spheres, boxes, slices and selections, with live counts, drag handles and saved regions; the active region feeds Plotting and Export |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |
@@ -236,6 +236,7 @@ The **Focus button** (top of the right panel) is tab-aware: it focuses on the se
 - **Selection card** (the **i** button beside Focus, or **Show info** in the Structure tab) — key properties and every field on demand, its host halo, the group's members (click to select), and Go / Isolate / HD / Gas. A **Galaxy / Halo + group** switch sets what Go and Isolate act on.
 - **Browsing** — previous / next member, up to the central, hop to the nearest galaxy, back / forward history; on the card and on keys (`[` `]` `C` `N` `B` `Shift+B`)
 - **Find** (Filters tab) — presets such as most massive galaxies, richest clusters, Milky Way analogues, close pairs, mergers, starbursts, quenched centrals, radio-loud AGN, brightest quasars, gas-rich galaxies, ellipticals, intracluster light, galactic winds and hot atmospheres; only those the model can answer are offered. Click a result to select it and fly there
+- **Track** (rail icon) — follow a galaxy or its whole halo through the snapshots, framed on it or the whole box, optionally isolated or showing only the galaxies that end up in it; play it, explore any snapshot, and save it as a movie
 - **HD mode** — the selected galaxy, and its whole pair, group or cluster, as detailed 3D models built from SAGE properties (arms, bars, bulges, star clusters, HII regions, dust, merger debris, tidal features, ICL, optional halo gas and radio jets), ray-marched on the GPU. See the [HD Mode guide](https://mbradley1985.github.io/ViSAGE/user_guide/hd_mode/). Needs a GPU.
 - **Enter to run** in every input field — Console command, script path, screenshot/movie label all submit on Enter, equivalent to clicking the paired Go / Run / Take Screenshot button
 

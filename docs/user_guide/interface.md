@@ -39,7 +39,7 @@ Eight tabs in two rows of four:
 | Tab | Purpose |
 |---|---|
 | Structure   | Layer visibility, opacity, colour-by mode, colormap (inline colorbar beneath each); environment filter |
-| Filters     | Range sliders for halo (Mvir / Rvir / Vvir) and galaxy (stellar mass, sSFR, B/T, age, BH mass, ICS mass, type, FFB regime, CGM regime); **Find** presets |
+| Filters     | A halo dial and a galaxy dial: pick a property from the menu in the middle and drag the two handles to set its limits, read in real units (10^x and the unit). The ring shows where the haloes or galaxies sit, lit inside the limits; a handle at either end means no limit. Every filter set is listed under the dials (click to show it, × to clear). Galaxy type, FFB regime and CGM regime; **Find** presets |
 | Regions     | Spheres, boxes and slices, with live counts and saved regions |
 | Record      | Screenshots (PNG / JPG / TIFF) and movies (GIF / MOV / PNG sequence); playback speed and camera rotation |
 | Console     | PTY-backed xterm.js terminal + Python REPL + SAGE command mode; multiple sessions; pop-out window |

@@ -188,6 +188,14 @@ TAU_MAX = 5.0
 # and its young star clusters' share, drawn as points.
 YOUNG_SMOOTH = 1.2
 YOUNG_CLUSTERS = 0.6
+# The old disc's smooth light is drawn at this share of its light (the user
+# chose a quarter, 2026-11-14: at full it lies over the disc as a haze).
+# The exposure is still set by all of it, so the rest isn't brightened.
+OLD_SMOOTH = 0.25
+# ...but in full round the bulge, fading to that share over this many disc
+# scale lengths, so the bulge sits in its own warm light instead of as a
+# hard ball on a dark disc.  0: no fade.
+OLD_CORE = 1.0
 
 
 # The thick disc: its height (x the thin disc's; 2-3, Yoachim & Dalcanton
@@ -1327,16 +1335,34 @@ def recipe_from_sage(
 # ----------------------------------------------------------------------
 
 
-def gaussian_field(shape, slope, rng, aniso=(1.0, 1.0), periodic_only=True):
-    """Unit-variance Gaussian random field with P(k) ~ k^-slope."""
-    ky = np.fft.fftfreq(shape[0])[:, None] * aniso[0]
-    kx = np.fft.fftfreq(shape[1])[None, :] * aniso[1]
+# The disc maps' size at full quality: their random fields are drawn at
+# this size and kept to the scales a smaller map holds, so a galaxy shows
+# the same arms, dust and gas at every quality.
+MAP_REF = 1024
+
+
+def gaussian_field(
+    shape, slope, rng, aniso=(1.0, 1.0), periodic_only=True, ref=None
+):
+    """Unit-variance Gaussian random field with P(k) ~ k^-slope.  With
+    `ref` (square), drawn at ref x ref and cut to `shape`'s scales."""
+    full = (ref, ref) if ref and ref > shape[0] else shape
+    ky = np.fft.fftfreq(full[0])[:, None] * aniso[0]
+    kx = np.fft.fftfreq(full[1])[None, :] * aniso[1]
     k = np.sqrt(kx**2 + ky**2)
     k[0, 0] = np.inf
     amp = k ** (-slope / 2.0)
-    phase = rng.normal(size=shape) + 1j * rng.normal(size=shape)
-    f = np.real(np.fft.ifft2(amp * phase))
-    return (f - f.mean()) / f.std()
+    phase = rng.normal(size=full) + 1j * rng.normal(size=full)
+    spec = amp * phase
+    f = np.real(np.fft.ifft2(spec))
+    mean, std = f.mean(), f.std()
+    if full != shape:
+        c, h = full[0] // 2, shape[0] // 2
+        spec = np.fft.ifftshift(
+            np.fft.fftshift(spec)[c - h : c + h, c - h : c + h]
+        )
+        f = np.real(np.fft.ifft2(spec)) * (shape[0] / full[0]) ** 2
+    return (f - mean) / std
 
 
 # ----------------------------------------------------------------------
@@ -1728,7 +1754,10 @@ def _ionised_gas(rc, sf, n, half):
     network of glowing filaments and bubble rims (the ridges of a random
     field, as HD draws the CGM's filaments) over where the stars form."""
     f = gaussian_field(
-        (n, n), GAS["ion_slope"], np.random.default_rng(rc.seed + 61)
+        (n, n),
+        GAS["ion_slope"],
+        np.random.default_rng(rc.seed + 61),
+        ref=MAP_REF,
     )
     ridges = np.exp(-((f / GAS["ion_ridge"]) ** 2))
     sf = gaussian_filter(sf, GAS["ion_wide"] * n / (2 * half))
@@ -1749,16 +1778,26 @@ def cloud_dust(rc, maps):
     h2 = gaussian_filter(maps.h2, GAS["h2_smooth"] * n / (2 * maps.half))
     h2 /= max(float(h2.max()), 1e-30)
     f = gaussian_field(
-        h2.shape, GAS["h2_slope"], np.random.default_rng(rc.seed + 62)
+        h2.shape,
+        GAS["h2_slope"],
+        np.random.default_rng(rc.seed + 62),
+        ref=MAP_REF,
     )
     ridges = np.exp(-((f / GAS["h2_ridge"]) ** 2))
     tau = GAS["h2_dust"] * float(np.percentile(d, 99)) * h2 * ridges
     return np.minimum(tau / ridges.mean(), TAU_MAX).astype(np.float32)
 
 
+# The disc maps reach this far, in disc extents: just past where the light
+# ends (it fades as exp(-(r / extent)^4), 6% left at 1.3), so their pixels
+# go on the disc and not on empty margin; a disturbed irregular's, drawn
+# out along one axis, reach further along it.
+MAP_REACH = 1.3
+
+
 def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
     rng = np.random.default_rng(rc.seed)
-    half = rc.extent * 1.6
+    half = rc.extent * max(MAP_REACH, 1.15 / np.sqrt(min(rc.elong, 1.0)))
     ax = np.linspace(-half, half, n)
     x, y = np.meshgrid(ax, ax)
     if rc.elong < 1:
@@ -1796,7 +1835,7 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
 
     wobble = spiral_noise(3.5, 1.0, 1)  # large-scale arm irregularity
     fil = spiral_noise(2.2, 0.25, 2)  # fine filaments along arms
-    clumps = gaussian_field((n, n), 2.6, rng)  # isotropic patchiness
+    clumps = gaussian_field((n, n), 2.6, rng, ref=MAP_REF)  # patchiness
     if rc.arm_class in ("clumpy", "irregular"):
         # No spiral to follow: star formation in isotropic patches.
         fil = clumps / max(float(clumps.std()), 1e-9)
@@ -1869,6 +1908,13 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         )
         old = old * np.maximum(lop, 0.1)
         young = young * np.maximum(lop, 0.1) ** 1.5
+    if rc.arm_old_amp > 0:
+        # The old disc's smooth light follows the arms too, rather than
+        # sitting over them as an even haze (none for S0s and irregulars);
+        # before the dust is scaled against it, so it weighs the stars as
+        # they are drawn.
+        arm_n = arm_eff / max(float(arm_eff.max()), 1e-9)
+        old = old * np.clip(0.55 + 0.9 * arm_n, 0.25, 1.6)
     giant = np.zeros_like(r)
     if rc.clumps:
         # Giant star-forming clumps (high-z / feedback-free disks): a few
@@ -2004,7 +2050,7 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
             d = d * np.exp(-((r / (0.7 * rc.extent)) ** 6)) * (0.5 + floc)
         else:
             f = gaussian_field(
-                (n, n), 2.4, np.random.default_rng(rc.seed + 41)
+                (n, n), 2.4, np.random.default_rng(rc.seed + 41), ref=MAP_REF
             )
             d = np.exp(-r / 1.5) * np.exp(-((f / 0.3) ** 2))
         dust = d * (2 * np.pi * rc.tau0 / max(d.sum() * dA, 1e-9))
@@ -2038,7 +2084,9 @@ def build_disk_maps(rc: GalaxyRecipe, n=2048) -> PlaneMaps:
         rr = rc.ring_r
         clump = np.exp(
             0.4
-            * gaussian_field((n, n), 2.8, np.random.default_rng(rc.seed + 5))
+            * gaussian_field(
+                (n, n), 2.8, np.random.default_rng(rc.seed + 5), ref=MAP_REF
+            )
         )
         rd = RING_DUST
         dust += (
@@ -2495,8 +2543,8 @@ def tidal_points(
 # threads trailing off the disc, blue and H-alpha magenta, a few long ones
 # curling (JW100, JO206, JO201: Poggianti et al. 2017, 2019); and, with
 # Gas, the stripped gas round them, drawn as HD draws the CGM, and long
-# soft twisting plumes of gas in a range of
-# blues, trailing off (ESO 137-001: Sun et al. 2006, 2010).  Each is set
+# soft twisting plumes of gas in a range of blues with thin strands along
+# them, trailing off (ESO 137-001: Sun et al. 2006, 2010).  Each is set
 # by the galaxy: how many threads by its cold gas, how bright by its
 # sSFR, how long by ram pressure and time since infall, the gas by its
 # gas fraction.  Lengths are in disk scale lengths.
@@ -2718,7 +2766,7 @@ def jelly_points(
         lum / lum.sum() * JELLY_KNOTS["strand"] * JELLY_STARS * 0.5 * young,
         rgb,
         np.full(len(lum), 0.5),
-        "jellyknots",
+        "jellystrands",
     )
     return [gas, knots, strands, plumes]
 

@@ -134,6 +134,7 @@ html, body, .v-application { background: #000000 !important; }
 # fmt: on
 from visage.ui.info_panel import build_info_panel
 from visage.ui.selection import build_selection, selection_card
+from visage.ui.settings_card import build_settings_card
 from visage.ui.navigation_panel import build_navigation_panel
 from visage.ui.toolbar import build_toolbar
 from visage.ui.story_mode import (
@@ -344,6 +345,26 @@ def create_app(
             pass
 
     frame_delivery.on_frame.append(_refit_view)
+
+    # HD's render resolution (Settings): Standard renders a Retina screen's
+    # view at one pixel per point of the page while HD is on.  (The page
+    # sends its pixel ratio, visage.js.)
+    server.state.client_dpr = 1
+
+    @server.state.change("hd_active", "client_dpr", "hd_set_render")
+    def _render_scale(**_):
+        dpr = float(server.state.client_dpr or 1)
+        standard = (
+            bool(server.state.hd_active)
+            and server.state.hd_set_render == "standard"
+        )
+        scale = 1.0 / dpr if standard and dpr > 1 else 1.0
+        if scale != frame_delivery.render_scale[0]:
+            frame_delivery.render_scale[0] = scale
+            frame_delivery._mark_dirty()
+            if hasattr(server.controller, "view_update"):
+                server.controller.view_update()
+
     if perf:
         from visage.utils import perf as _perf
 
@@ -1190,6 +1211,12 @@ def create_app(
                     server.controller.check_for_updates,
                     "white",
                 ),
+                (
+                    "mdi-cog-outline",
+                    "Settings",
+                    "hd_set_dialog = true",
+                    "white",
+                ),
             ):
                 v3.VBtn(
                     icon=icon,
@@ -1221,6 +1248,9 @@ def create_app(
 
             # ── Story Mode playback overlay (hidden unless a story is active)
             build_story_hud(server)
+
+            # ── Settings card (toolbar cog) ────────────────────────────────
+            build_settings_card(server)
 
             # ── Export catalogue dialog ────────────────────────────────────
             # Scope options are built in navigation_panel (state var) so the

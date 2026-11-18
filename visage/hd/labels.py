@@ -80,6 +80,7 @@ def _map_cands(arr, half, rlo, rhi, extent, weight=None, k=8):
     a = np.asarray(arr[::step, ::step], float)
     if weight is not None:
         a = a * np.asarray(weight[::step, ::step], float)
+    raw = a
     a = gaussian_filter(a, 3)
     ax = np.linspace(-half, half, a.shape[0])
     x, y = np.meshgrid(ax, ax)
@@ -92,6 +93,13 @@ def _map_cands(arr, half, rlo, rhi, extent, weight=None, k=8):
         m = ok & (th >= lo) & (th < lo + 2 * np.pi / k)
         if m.any():
             i = int(np.argmax(np.where(m, a, -np.inf)))
+            # (Then onto the part itself: the brightest unsmoothed pixel
+            # near there, so a thin arm isn't missed beside it.)
+            r0, c0 = divmod(i, a.shape[1])
+            lo_r, lo_c = max(r0 - 4, 0), max(c0 - 4, 0)
+            win = raw[lo_r : r0 + 5, lo_c : c0 + 5]
+            dr, dc = divmod(int(np.argmax(win)), win.shape[1])
+            i = (lo_r + dr) * a.shape[1] + lo_c + dc
             out.append(((float(x.flat[i]), float(y.flat[i]), 0.0), a.flat[i]))
     top = max((v for _, v in out), default=0.0)
     return [(p, float(v / top)) for p, v in out] if top > 0 else []

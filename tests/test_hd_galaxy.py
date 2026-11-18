@@ -170,6 +170,65 @@ def test_gas_switch_changes_the_picture(plotter):
     g.clear()
 
 
+def test_jellyfish_strands_are_gas(plotter):
+    """A jellyfish's thin strands show and hide with Gas; its knots stay."""
+    from visage.hd.gpu import GPUGalaxy
+    from visage.hd.model import jelly_points
+
+    gal = dataclasses.replace(_disk(), cold_gas=2e10, t_since_infall_gyr=4.0)
+    rc = recipe_from_sage(gal)
+    maps = build_disk_maps(rc, n=256)
+    tail = jelly_points(rc, gal, (1, 0, 0), 0.5, 1)
+    assert [p.name for p in tail] == [
+        "jelly",
+        "jellyknots",
+        "jellystrands",
+        "jelly",
+    ]
+    g = GPUGalaxy(plotter)
+    g.build(rc, maps, build_points(rc, maps) + tail, 1.0, np.eye(4), gal=gal)
+    assert g.sprinkle_actor.GetVisibility()  # the knots
+    assert not g.gas_sprinkle_actor.GetVisibility()
+    g.set_gas(True)
+    assert g.gas_sprinkle_actor.GetVisibility()
+    g.set_gas(False)
+    assert not g.gas_sprinkle_actor.GetVisibility()
+    g.clear()
+    assert g.gas_sprinkle_actor is None
+
+
+def test_a_gas_only_volume_is_marched_only_with_gas(plotter):
+    """A jellyfish tail's volume is all gas: rays skip it with Gas off, and
+    march only the box its gas fills (one side of the galaxy) with it on."""
+    from visage.hd.gpu import GPUGalaxy
+    from visage.hd.model import jelly_points
+
+    gal = dataclasses.replace(_disk(), cold_gas=2e10, t_since_infall_gyr=4.0)
+    rc = recipe_from_sage(gal)
+    maps = build_disk_maps(rc, n=256)
+    tail = jelly_points(rc, gal, (1, 0, 0), 0.5, 1)
+    g = GPUGalaxy(plotter)
+    g.build(rc, maps, build_points(rc, maps) + tail, 1.0, np.eye(4), gal=gal)
+    star, gas = g._atlas
+    assert star is None and gas is not None
+    lo, hi = gas
+    assert hi[0] > 2 * -lo[0]  # it trails along +x
+
+    def has():
+        from vtkmodules.vtkCommonCore import reference
+
+        v = reference(0.0)
+        g._uni.GetUniformf("uHasAtlas", v)
+        return float(v)
+
+    assert has() == 0.0
+    g.set_gas(True)
+    assert has() == 1.0
+    g.set_gas(False)
+    assert has() == 0.0
+    g.clear()
+
+
 def test_layer_places_and_orients_the_model(plotter):
     from visage.hd.layer import HDGalaxyLayer
 
@@ -425,20 +484,57 @@ def test_hd_draws_the_whole_group(hd_panel):
     ctrl.toggle_hd()
     state.flush()
     assert not state.hd_active and not grp.active
+    assert not state.hd_gas  # the card's Gas button goes off with HD
     # (Leaving HD: the Go view of the selection, 3 Mpc/h away.)
     assert _cam_dist(scene) == pytest.approx(3.0)
 
 
-def test_group_plan_tiers():
-    from visage.hd.group import N_FULL, N_GROUP, N_HD, N_TOP, plan
+def test_group_plan_draws_every_model_alike():
+    """One quality for every model in a view, the best the HD settings allow
+    that fits their memory; the rest glows.  Up to three: always full."""
+    from visage.hd import settings
+    from visage.hd.group import N_HD, plan
 
+    s = settings.from_preset("high")  # 1880 MB for the models
     gals = [_disk()] * (N_HD + 50)
-    q = plan(gals)
-    assert q[:N_TOP] == ["full"] * N_TOP
-    assert set(q[N_TOP:N_GROUP]) == {"group"}
-    assert set(q[N_GROUP:N_HD]) == {"lite"}
-    assert q[N_HD:] == [None] * 50
-    assert plan(gals[:N_FULL]) == ["full"] * N_FULL
+    q = plan(gals, s)
+    assert q[:19] == ["lite"] * 19 and q[19:] == [None] * (N_HD + 31)
+    assert plan(gals[:1], s) == ["full"]
+    assert set(plan(gals[:2], s)) == {"full"}
+    assert set(plan(gals[:3], s)) == {"full"}
+    assert set(plan(gals[:4], s)) == {"group"}
+    assert set(plan(gals[:8], s)) == {"group"}
+    assert set(plan(gals[:9], s)) == {"lite"}
+    # A lower best quality caps it, and fewer galaxies are allowed; singles,
+    # pairs and triplets are always full.
+    low = settings.from_preset("low")
+    assert plan(gals[:3], low) == ["full"] * 3
+    assert plan(gals[:4], low) == ["lite"] * 4
+    assert plan(gals[:40], low).count("lite") == 7
+
+
+def test_hd_settings_stay_under_the_limit(tmp_path, monkeypatch):
+    """No preset or custom value lets HD reach its 4 GB; settings persist."""
+    from visage.hd import settings
+
+    monkeypatch.setattr(settings, "_FILE", tmp_path / "hd_settings.json")
+    for name in settings.PRESETS:
+        assert settings.from_preset(name)["memory_mb"] < settings.LIMIT_MB
+    s = settings.save(
+        {
+            "preset": "custom",
+            "quality": "group",
+            "memory_mb": 99999,
+            "max_models": 500,
+        }
+    )
+    assert s["memory_mb"] < settings.LIMIT_MB and s["max_models"] == 100
+    assert settings.load() == s
+    assert sum(settings.split(s)) + settings.SETUP_MB == s["memory_mb"]
+    # Render resolution: Standard by default, Retina only when asked for.
+    assert s["render"] == settings.PRESETS[settings.DEFAULT]["render"]
+    assert settings.save(dict(s, render="retina"))["render"] == "retina"
+    assert settings.save(dict(s, render="8k"))["render"] == "standard"
 
 
 def test_group_members_build_in_the_process_pool():

@@ -35,16 +35,10 @@ from visage.hd.model import (
 # Light scale for a shared exposure.
 M_REF = 3e10
 LUM_POWER = 0.35
-# Members by stellar-mass rank: the first N_TOP in full quality (all of a
-# group of up to N_FULL), then "group" quality up to N_GROUP, "lite" up to
-# N_HD; the rest of a big cluster as glows (each built on its own, as an
-# extra, when it is selected).  Quality over build time (a few seconds is
-# fine); textures (~100 / 40 / 24 MB per full / group / lite model) set the
-# limits: N_HD = 100 covers every Millennium cluster's members above the
-# resolution cut (57-91 at z = 0) in ~2.7 GB.
-N_FULL = 5
-N_TOP = 4
-N_GROUP = 16
+# Members by stellar-mass rank: the first N_HD as HD models (see plan for
+# their quality), the rest of a big cluster as glows (each built on its
+# own, as an extra, when it is selected).  N_HD = 100 covers every
+# Millennium cluster's members above the resolution cut (57-91 at z = 0).
 N_HD = 100
 # Quality of a glow built on demand.
 EXTRA_QUALITY = "group"
@@ -310,19 +304,45 @@ def display_luminosity(gal: SageGalaxy, kind: str) -> float:
     return float((ref / M_REF) ** LUM_POWER)
 
 
-def plan(gals: list[SageGalaxy]) -> list[str | None]:
+# Every model in a view is built at one quality, so neighbours are drawn
+# alike: the best the HD settings allow whose memory for all of them fits
+# their budget.  Per model (MB), everything it holds (GPU textures and its
+# build), measured in the viewer (2026-11-09: galaxies, a 10-member group
+# and a 90-member cluster at each preset), rounded up.
+TEXTURE_MB = {"full": 800, "group": 220, "lite": 95}
+# Singles, pairs and triplets are always built at full quality; the HD
+# settings only set what bigger groups and clusters get.
+SMALL = 3
+
+
+def plan(gals: list[SageGalaxy], s: dict | None = None) -> list[str | None]:
     """Build quality for each member (None = drawn as a glow), in the
-    order given (the caller sorts by stellar mass, central first)."""
-    if len(gals) <= N_FULL:
+    order given (the caller sorts by stellar mass, central first): one
+    quality for all the models, as many as the HD settings `s` (default:
+    the saved ones) allow and their memory holds; full for up to SMALL."""
+    from visage.hd import settings
+
+    if len(gals) <= SMALL:
         return ["full"] * len(gals)
-    return [
-        (
-            "full"
-            if i < N_TOP
-            else "group" if i < N_GROUP else "lite" if i < N_HD else None
-        )
-        for i in range(len(gals))
-    ]
+    s = s or settings.load()
+    budget, _ = settings.split(s)
+    allowed = settings.QUALITIES[: settings.QUALITIES.index(s["quality"]) + 1]
+    n = min(len(gals), N_HD, s["max_models"])
+    q = next((k for k in allowed[::-1] if n * TEXTURE_MB[k] <= budget), None)
+    if q is None:
+        # Not even light quality for all: fewer models, the rest glows.
+        q = "lite"
+        n = max(1, budget // TEXTURE_MB[q])
+    return [q if i < n else None for i in range(len(gals))]
+
+
+def cap_quality(q: str, s: dict | None = None) -> str:
+    """`q`, or the best the HD settings allow if that is lower."""
+    from visage.hd import settings
+
+    s = s or settings.load()
+    best = settings.QUALITIES.index(s["quality"])
+    return settings.QUALITIES[min(settings.QUALITIES.index(q), best)]
 
 
 def prepare_member(
@@ -419,6 +439,12 @@ class BuildCache:
         self._items.move_to_end(key)
         return hit[0]
 
+    def set_budget(self, budget_bytes: int) -> None:
+        """A new budget, dropping the oldest builds that no longer fit."""
+        self.budget = int(budget_bytes)
+        while len(self._items) > 1 and self.nbytes > self.budget:
+            self._items.popitem(last=False)
+
     def put(self, key, preps) -> None:
         self._items[key] = (preps, _nbytes(preps))
         self._items.move_to_end(key)
@@ -437,11 +463,10 @@ class BuildCache:
 
 
 def default_cache_budget() -> int:
-    """A tenth of the machine's memory, between 0.5 and 3 GB."""
-    from visage import system
+    """The build cache's share of the HD settings' memory limit (bytes)."""
+    from visage.hd import settings
 
-    total = system.total_memory_bytes() or 8 * 1024**3
-    return int(np.clip(total / 10, 0.5 * 1024**3, 3 * 1024**3))
+    return settings.split(settings.load())[1] * 1024**2
 
 
 class HDGroupLayer:

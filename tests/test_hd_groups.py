@@ -70,13 +70,13 @@ def test_glow_members_become_extras_when_visited(
     adds it to the scene, and the card tags each member."""
     import visage.hd.group as grp_mod
 
-    for k, v in (("N_FULL", 0), ("N_TOP", 1), ("N_GROUP", 1), ("N_HD", 1)):
-        monkeypatch.setattr(grp_mod, k, v)
+    monkeypatch.setattr(grp_mod, "N_HD", 1)
     server, scene = hd_panel_fixture
     state, ctrl = server.state, server.controller
     _, galaxies = scene.active_model.loader.get(scene.current_snap)
     galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
-    galaxies.central_id[[0, 3, 5]] = 99
+    # (Four: singles, pairs and triplets are always all HD.)
+    galaxies.central_id[[0, 3, 5, 7]] = 99
     state.nav_gal_idx = 0
     state.sel_kind = "halo"
     ctrl.toggle_hd()
