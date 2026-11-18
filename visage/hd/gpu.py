@@ -30,6 +30,7 @@ from visage.hd.model import (
     BULGE_RGB,
     HII_LOOK,
     YOUNG_RGB,
+    OLD_CORE,
     OLD_SMOOTH,
     YOUNG_SMOOTH,
     GalaxyRecipe,
@@ -1148,9 +1149,14 @@ def prepare(
         n_old = 1.0 / (maps.old.sum() * dA)
         n_young = 1.0 / (maps.young.sum() * dA)
         lanes = maps.lanes if maps.lanes is not None else 0 * maps.dust
+        share = OLD_SMOOTH
+        if OLD_CORE > 0 and rc.l_bulge + rc.l_pseudo > 0:
+            ax = np.linspace(-maps.half, maps.half, maps.old.shape[0])
+            r = np.hypot(*np.meshgrid(ax, ax)) / OLD_CORE
+            share = OLD_SMOOTH + (1 - OLD_SMOOTH) * np.exp(-(r**2))
         m = np.dstack(
             [
-                rc.l_disk * OLD_SMOOTH * n_old * maps.old,
+                rc.l_disk * share * n_old * maps.old,
                 rc.l_young * YOUNG_SMOOTH * n_young * maps.young,
                 maps.dust,
                 lanes,

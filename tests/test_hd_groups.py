@@ -75,7 +75,8 @@ def test_glow_members_become_extras_when_visited(
     state, ctrl = server.state, server.controller
     _, galaxies = scene.active_model.loader.get(scene.current_snap)
     galaxies.central_id[:] = np.arange(1, galaxies.count + 1)
-    galaxies.central_id[[0, 3, 5]] = 99
+    # (Four: singles, pairs and triplets are always all HD.)
+    galaxies.central_id[[0, 3, 5, 7]] = 99
     state.nav_gal_idx = 0
     state.sel_kind = "halo"
     ctrl.toggle_hd()

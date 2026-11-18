@@ -120,7 +120,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
         bh = np.asarray(galaxies.bh_mass, float)
         c = np.flatnonzero(ok & (bh > 0))
         pick = c[np.argsort(-bh[c])]
-        detail = {int(k): f"log M_BH {_lm(bh[k]):.1f}" for k in pick[:n]}
+        detail = {int(k): f"M_BH 10^{_lm(bh[k]):.1f} Msun" for k in pick[:n]}
     elif preset == "ffb":
         c = np.flatnonzero(ok & (np.asarray(galaxies.ffb_regime) == 1))
         pick = c[np.argsort(-ms[c])]
@@ -129,7 +129,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
         p = np.asarray(galaxies.heating, float)
         c = np.flatnonzero(ok & (p >= RADIO_LOUD))
         pick = c[np.argsort(-p[c])]
-        detail = {int(k): f"log P_jet {p[k]:.1f} erg/s" for k in pick[:n]}
+        detail = {int(k): f"P_jet 10^{p[k]:.1f} erg s^-1" for k in pick[:n]}
     elif preset == "quasar":
         q = (getattr(galaxies, "extra", None) or {}).get(
             "QuasarModeBHaccretionMass"
@@ -153,7 +153,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
         ics = np.asarray(galaxies.ics_mass, float)
         c = np.flatnonzero(ok & cen & (ics > 0))
         pick = c[np.argsort(-ics[c])]
-        detail = {int(k): f"log M_ICS {_lm(ics[k]):.1f}" for k in pick[:n]}
+        detail = {int(k): f"M_ICS 10^{_lm(ics[k]):.1f} Msun" for k in pick[:n]}
     elif preset == "winds":
         w = np.asarray(galaxies.outflow_rate, float)
         c = np.flatnonzero(ok & (w > 0))
@@ -163,7 +163,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
         hot = np.asarray(galaxies.hot_gas, float)
         c = np.flatnonzero(ok & cen & (hot > 0))
         pick = c[np.argsort(-hot[c])]
-        detail = {int(k): f"log M_hot {_lm(hot[k]):.1f}" for k in pick[:n]}
+        detail = {int(k): f"M_hot 10^{_lm(hot[k]):.1f} Msun" for k in pick[:n]}
 
     out = []
     for k in pick[:n]:
@@ -174,7 +174,7 @@ def find(galaxies, preset: str, box: float | None = None, n: int = 15):
             {
                 "idx": k,
                 "text": f"{galaxy_label(galaxies, k)} · {role} · "
-                f"log M* {lm[k]:.1f}" + (f" · {extra}" if extra else ""),
+                f"M* 10^{lm[k]:.1f} Msun" + (f" · {extra}" if extra else ""),
             }
         )
     return out

@@ -192,6 +192,10 @@ YOUNG_CLUSTERS = 0.6
 # chose a quarter, 2026-11-14: at full it lies over the disc as a haze).
 # The exposure is still set by all of it, so the rest isn't brightened.
 OLD_SMOOTH = 0.25
+# ...but in full round the bulge, fading to that share over this many disc
+# scale lengths, so the bulge sits in its own warm light instead of as a
+# hard ball on a dark disc.  0: no fade.
+OLD_CORE = 1.0
 
 
 # The thick disc: its height (x the thin disc's; 2-3, Yoachim & Dalcanton

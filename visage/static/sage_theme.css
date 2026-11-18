@@ -1244,3 +1244,45 @@ body,
 .sage-panel .v-divider {
     flex-shrink: 0;
 }
+
+/* Filters: the halo and galaxy dials (drawn by visage.js) */
+.sage-dial {
+  position: relative; width: 165px; height: 165px; margin: 0 auto;
+  flex-shrink: 0; touch-action: none;
+}
+.sage-dial svg { position: absolute; left: 0; top: 0; cursor: grab; overflow: visible; }
+.sage-dial-pick {
+  /* The page's own menu, invisible over the name visage.js draws: a
+     click on the name opens it (Vuetify's box can't grow for a long one). */
+  position: absolute; left: 50%; top: 58px; transform: translateX(-50%);
+  width: 120px; height: 22px; overflow: hidden; opacity: 0; z-index: 2;
+}
+.sage-dial-pick .v-field { cursor: pointer; }
+.sage-dial-val {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 118px; display: flex; flex-direction: column; align-items: center;
+  gap: 4px; pointer-events: none;
+}
+.sage-dial-name {
+  /* One line; a long name ends in "…" (the menu shows it in full). */
+  max-width: 112px; display: flex; gap: 3px; white-space: nowrap;
+  font-size: 0.66rem; line-height: 1.2; color: #e2e8f0; text-align: center;
+  border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 6px;
+  padding: 2px 6px; background: #151922;
+}
+.sage-dial-name span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.sage-dial-range { font-size: 0.74rem; color: #f1f5f9; white-space: nowrap; }
+.sage-dial-val sup, .sage-dial-chip sup {
+  font-size: 0.72em; vertical-align: 0.45em; line-height: 0;
+}
+#dial-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0 2px; flex-shrink: 0; }
+.sage-dial-chip {
+  font-size: 0.7rem; color: #e2e8f0; border: 1px solid #3a3f4a;
+  border-radius: 12px; padding: 2px 8px; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: baseline; gap: 4px; max-width: 100%; min-width: 0;
+}
+/* A long name shortens; the range and the clear cross always show. */
+.sage-dial-chip b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sage-dial-chip span, .sage-dial-chip i { flex-shrink: 0; }
+.sage-dial-chip i { font-style: normal; color: #94a3b8; }
+.sage-dial-chip i:hover { color: #ef4444; }

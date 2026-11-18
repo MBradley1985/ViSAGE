@@ -181,7 +181,7 @@ When multiple boxes are loaded a **box strip** appears at the bottom of the view
 | Tab | Purpose |
 |---|---|
 | Structure  | Layer visibility, opacity, colour-by mode, colormap (with inline colorbar); environment filter, Show info (selection card) |
-| Filters    | Range sliders for halo and galaxy properties; Find presets |
+| Filters    | A halo dial and a galaxy dial (pick the property, drag its limits; the ring shows where they sit), galaxy type; Find presets |
 | Regions    | Spheres, boxes, slices and selections, with live counts, drag handles and saved regions; the active region feeds Plotting and Export |
 | Record     | Screenshots (PNG/JPG/TIFF) and movie recording (GIF/MOV/PNG); overlays composite into captures |
 | Console    | Live xterm.js shell terminal (PTY-backed) + SAGE natural-language command mode. Multiple sessions, pop-out window |

@@ -8,6 +8,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [2.23.0] — 2026-11-18
+
 ### Added
 
 - Tracking can isolate what it follows: the galaxy, or the halo and its group, plus contributors when **Only contributors** is on.
@@ -17,7 +21,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- No haze over HD discs: the old disc's smooth light is drawn at a quarter of its light (its exposure unchanged), so arms, star-forming knots and dust stand out on dark space. Lenticulars show mostly their bulge and a faint ring.
+- The Filters tab has two dials instead of about fifty sliders: one for haloes and one for galaxies. Pick the property from the menu in the middle and drag the two handles round the ring to set its limits, shown in real units (10^x M☉, yr⁻¹, Z☉ and so on). The ring shows where this snapshot's haloes or galaxies sit, lit inside the limits, and spans where they are; a handle at either end means no limit. Every filter you set is listed under the dials: click one to show it on its dial, × to clear it. Find has more room, and its results read in real units too.
+- No haze over HD discs: the old disc's smooth light is drawn at a quarter of its light (its exposure unchanged), so arms, star-forming knots and dust stand out on dark space. Within about one disc scale length of a bulge it stays at full light and fades out, so the bulge sits in a soft warm glow rather than as a hard ball. Lenticulars show mostly their bulge and a faint ring.
 - A galaxy looks the same at every HD quality: group and light builds use the full build's random arm, dust and gas patterns (keeping the detail their maps hold) and its exposure, so they are no longer drawn about half as bright with different arms. Group and cluster builds take about 2.5× longer.
 - Filters tab: the slider sections take the room until Find lists galaxies, then shrink to give it to the results.
 - The opening screen's trees have branches that wander between their knots like real limbs, with clusters of leaves at the tips and along the outer twigs.
